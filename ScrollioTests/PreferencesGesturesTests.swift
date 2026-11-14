@@ -699,13 +699,20 @@ final class PreferencesGesturesTests: XCTestCase {
             bindings: [binding(SystemShortcut.mouseGestureNavigation, code: 3), binding(SystemShortcut.copy, code: 1000)],
             isLogitechCode: isLogitech
         )
-        XCTAssertEqual(plain, MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"]))
+        // The picture holds the first of them (TriggerPictureTests has the rest).
+        XCTAssertEqual(plain, MouseGestureBindingSummary(
+            hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"],
+            picture: TriggerPictureSource(event: binding(SystemShortcut.mouseGestureNavigation, code: 3).triggerEvent)
+        ))
 
         let logitech = MouseGestureBindingSummary(
             bindings: [binding(SystemShortcut.mouseGestureNavigation, code: 1000)],
             isLogitechCode: isLogitech
         )
-        XCTAssertEqual(logitech, MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Gesture button"]))
+        XCTAssertEqual(logitech, MouseGestureBindingSummary(
+            hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Gesture button"],
+            picture: TriggerPictureSource(event: binding(SystemShortcut.mouseGestureNavigation, code: 1000).triggerEvent)
+        ))
 
         let disabled = MouseGestureBindingSummary(
             bindings: [binding(SystemShortcut.mouseGestureNavigation, code: 1000, enabled: false)],
@@ -757,10 +764,17 @@ final class PreferencesGesturesTests: XCTestCase {
         controller.reload()
         XCTAssertEqual(controller.gestureButtonRow.explanation, "Only in Calculator: Back button.")
         XCTAssertEqual(controller.gestureButtonButton.title, "Change")
+        // The picture shows the app's button, with the app; the pane hands it to the preview.
+        XCTAssertEqual(MouseGestureBindingSummary.current.picture,
+                       TriggerPictureSource(event: gesture.triggerEvent, onlyInAppPath: "/System/Applications/Calculator.app"))
+        XCTAssertEqual(controller.previewView.picture, MouseGestureBindingSummary.current.picture)
+        XCTAssertEqual(controller.previewView.deviceCard.picture.appPath, "/System/Applications/Calculator.app")
 
         Options.shared.buttons.binding = [gesture]
-        XCTAssertEqual(MouseGestureBindingSummary.current,
-                       MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"]))
+        XCTAssertEqual(MouseGestureBindingSummary.current, MouseGestureBindingSummary(
+            hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"],
+            picture: TriggerPictureSource(event: gesture.triggerEvent)
+        ))
     }
 
     // MARK: - The preview

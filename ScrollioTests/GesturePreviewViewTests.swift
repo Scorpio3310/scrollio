@@ -23,10 +23,14 @@ final class GesturePreviewViewTests: XCTestCase {
     /// The width the preview has in the tab (520 pt pane, 20 pt margins).
     private let size = NSSize(width: 480, height: GesturePreviewView.preferredHeight)
 
-    private func makeView(reduceMotion: Bool = false, size: NSSize? = nil, mouse: MouseArtworkModel = .mxMaster4) -> GesturePreviewView {
+    private func makeView(
+        reduceMotion: Bool = false, size: NSSize? = nil, mouse: MouseArtworkModel = .mxMaster4,
+        picture: TriggerPictureSource = .none
+    ) -> GesturePreviewView {
         let view = GesturePreviewView(frame: NSRect(origin: .zero, size: size ?? self.size))
         view.mouseSource = { mouse }
         view.reloadMouse()
+        view.picture = picture
         view.prefersReducedMotion = { reduceMotion }
         view.reduceMotionDidChange()
         // The test windows are never shown, so none of them is ever really visible.
@@ -48,6 +52,18 @@ final class GesturePreviewViewTests: XCTestCase {
             window.close()
         }
         return window
+    }
+
+    /// The button the tests that hold "the gesture button" hold: the model's gesture
+    /// button, Back on a mouse without one (the plain mouse, the MX Anywhere, the MX Vertical).
+    private func gestureButton(on model: MouseArtworkModel) -> TriggerPictureSource {
+        let code = model.has(.gesture) ? LogiCenter.shared.scrollioCode(for: .gesture) : 3
+        return TriggerPictureSource(event: RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil))
+    }
+
+    private func trigger(_ role: LogiControlRole, modifiers: UInt = 0) -> TriggerPictureSource {
+        let event = RecordedEvent(type: .mouse, code: LogiCenter.shared.scrollioCode(for: role), modifiers: modifiers, deviceFilter: nil)
+        return TriggerPictureSource(event: event)
     }
 
     private func scene(
@@ -350,7 +366,7 @@ final class GesturePreviewViewTests: XCTestCase {
 
     func testReduceMotionShowsAStillFrame() {
         var reduce = true
-        let view = makeView()
+        let view = makeView(picture: gestureButton(on: .mxMaster4))
         view.prefersReducedMotion = { reduce }
         view.reduceMotionDidChange()
         host(view)
@@ -383,9 +399,10 @@ final class GesturePreviewViewTests: XCTestCase {
 
     /// One picture of the view, rendered off screen.
     private func render(
-        _ scene: GesturePreviewScene, dark: Bool, time: TimeInterval?, size: NSSize? = nil, mouse: MouseArtworkModel = .mxMaster4
+        _ scene: GesturePreviewScene, dark: Bool, time: TimeInterval?, size: NSSize? = nil, mouse: MouseArtworkModel = .mxMaster4,
+        picture: TriggerPictureSource = .none
     ) throws -> NSBitmapImageRep {
-        let view = makeView(reduceMotion: time == nil, size: size, mouse: mouse)
+        let view = makeView(reduceMotion: time == nil, size: size, mouse: mouse, picture: picture)
         view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         view.scene = scene
         if let time {
@@ -445,12 +462,13 @@ final class GesturePreviewViewTests: XCTestCase {
     }
 
     func testTheButtonTakesTheAccentColourWhileHeld() throws {
-        let up = try render(scene(focus: .click), dark: false, time: 0)
-        let held = try render(scene(focus: .click), dark: false, time: Loop.pressTime + 0.3)
-        let mouse = makeView().deviceCard.mouse
+        let button = gestureButton(on: .mxMaster4)
+        let up = try render(scene(focus: .click), dark: false, time: 0, picture: button)
+        let held = try render(scene(focus: .click), dark: false, time: Loop.pressTime + 0.3, picture: button)
+        let mouse = makeView(picture: button).deviceCard.mouse
         let mouseOrigin = mouse.frame.origin
-        let button = mouse.buttonRect
-        let x = mouseOrigin.x + button.midX, y = mouseOrigin.y + button.midY
+        let rect = mouse.buttonRect
+        let x = mouseOrigin.x + rect.midX, y = mouseOrigin.y + rect.midY
         let idle = try colour(in: up, x: x, y: y)
         let pressed = try colour(in: held, x: x, y: y)
         let accent = try accent(dark: false)
@@ -466,7 +484,7 @@ final class GesturePreviewViewTests: XCTestCase {
     /// under Reduce Motion the still shows it turned, the button held. The plain mouse does
     /// not turn.
     func testTheMasterFourTurnsToItsThumbSideForTheHold() {
-        let view = makeView(mouse: .mxMaster4)
+        let view = makeView(mouse: .mxMaster4, picture: gestureButton(on: .mxMaster4))
         let card = view.deviceCard
         let mouse = card.mouse
         let loop = view.loop
@@ -498,19 +516,19 @@ final class GesturePreviewViewTests: XCTestCase {
 
         // The MX Master 3's gesture button is its thumb rest, pressed down: it shows from
         // above, so this mouse does not turn for the hold. The plain mouse has one view.
-        let three = makeView(mouse: .mxMaster3)
+        let three = makeView(mouse: .mxMaster3, picture: gestureButton(on: .mxMaster3))
         three.deviceCard.show(three.loop.frame(at: (press + release) / 2))
         XCTAssertEqual(three.deviceCard.mouse.turn, 0)
         XCTAssertEqual(three.deviceCard.mouse.viewpoint, .above)
         XCTAssertTrue(three.deviceCard.mouse.outlineRect.contains(three.deviceCard.mouse.buttonRect))
-        let plain = makeView(mouse: .generic)
+        let plain = makeView(mouse: .generic, picture: gestureButton(on: .generic))
         plain.deviceCard.show(plain.loop.frame(at: (press + release) / 2))
         XCTAssertEqual(plain.deviceCard.mouse.turn, 0, "the plain mouse has one view")
         XCTAssertEqual(plain.deviceCard.mouse.viewpoint, .above)
 
         // A mouse that connects while the frame shows: turned as the frame says, at once.
         var connected = MouseArtworkModel.generic
-        let late = makeView(reduceMotion: true, mouse: .generic)
+        let late = makeView(reduceMotion: true, mouse: .generic, picture: gestureButton(on: .mxMaster4))
         late.mouseSource = { connected }
         late.reloadMouse()
         late.deviceCard.show(late.loop.stillFrame)
@@ -526,7 +544,7 @@ final class GesturePreviewViewTests: XCTestCase {
     /// button held is where the model has its gesture button (the plain mouse: Back).
     func testTheMouseFollowsTheConnectedModel() throws {
         var connected = MouseArtworkModel.mxMaster4
-        let view = makeView()
+        let view = makeView(picture: gestureButton(on: .mxMaster4))
         view.mouseSource = { connected }
         view.reloadMouse()
         let mouse = view.deviceCard.mouse
@@ -552,19 +570,29 @@ final class GesturePreviewViewTests: XCTestCase {
         connected = .generic
         NotificationCenter.default.post(name: LogiCenter.sessionChanged, object: nil)
         XCTAssertEqual(mouse.model, .generic)
+        view.picture = gestureButton(on: .generic)
         let body = mouse.bodyRect.offsetBy(dx: mouse.frame.minX, dy: mouse.frame.minY)
         XCTAssertEqual(body.midX, view.deviceCard.bounds.midX, accuracy: 0.5, "the body stays centred")
         XCTAssertLessThan(mouse.buttonRect.maxX, mouse.bodyRect.minX + 6, "the Back button, on the left side")
         // The held button takes the accent colour on every model.
         for model in MouseArtworkModel.allCases {
-            let held = try render(scene(focus: .click), dark: true, time: Loop.pressTime + 0.3, mouse: model)
-            let preview = makeView(mouse: model).deviceCard.mouse
+            let held = try render(scene(focus: .click), dark: true, time: Loop.pressTime + 0.3, mouse: model, picture: gestureButton(on: model))
+            let preview = makeView(mouse: model, picture: gestureButton(on: model)).deviceCard.mouse
             let button = preview.buttonRect
             let point = preview.frame.origin
-            let colour = try self.colour(in: held, x: point.x + button.midX, y: point.y + button.midY)
+            // Most of it: lit as the Buttons card lights it, its marks (the MX Master 3's
+            // ridge, the panel's dots) drawn lit on it.
             let accent = try accent(dark: true)
-            XCTAssertLessThan(abs(colour.redComponent - accent.redComponent) + abs(colour.greenComponent - accent.greenComponent)
-                              + abs(colour.blueComponent - accent.blueComponent), 0.3, "\(model)")
+            var near = 0, all = 0
+            for x in stride(from: button.minX + 0.25, to: button.maxX, by: 0.5) {
+                for y in stride(from: button.minY + 0.25, to: button.maxY, by: 0.5) {
+                    let colour = try self.colour(in: held, x: point.x + x, y: point.y + y)
+                    all += 1
+                    if abs(colour.redComponent - accent.redComponent) + abs(colour.greenComponent - accent.greenComponent)
+                        + abs(colour.blueComponent - accent.blueComponent) < 0.3 { near += 1 }
+                }
+            }
+            XCTAssertGreaterThan(Double(near) / Double(max(1, all)), 0.3, "\(model)")
         }
     }
 
@@ -652,6 +680,193 @@ final class GesturePreviewViewTests: XCTestCase {
             outline.lineWidth = 2
             outline.stroke()
         }
+    }
+
+    // MARK: - The trigger held (TriggerPicture)
+
+    /// The view of `mouse` alone, rendered in light (the accent forced to the app's purple,
+    /// so a user's grey accent cannot hide it).
+    private func shot(of mouse: GesturePreviewMouse) throws -> NSBitmapImageRep {
+        mouse.appearance = NSAppearance(named: .aqua)
+        let rep = try XCTUnwrap(mouse.bitmapImageRepForCachingDisplay(in: mouse.bounds))
+        mouse.cacheDisplay(in: mouse.bounds, to: rep)
+        return rep
+    }
+
+    private func forceAppAccent() throws -> NSColor {
+        try ForcedAppAccent.install()
+        addTeardownBlock { ForcedAppAccent.uninstall() }
+        return try accent(dark: false)
+    }
+
+    private func distance(_ a: NSColor, _ b: NSColor) -> CGFloat {
+        return abs(a.redComponent - b.redComponent) + abs(a.greenComponent - b.greenComponent) + abs(a.blueComponent - b.blueComponent)
+    }
+
+    /// The owner's case: the MX Master 4 with its thumb panel bound turns to its thumb side
+    /// and lights the panel, as the Buttons card does; held and with the ring at its
+    /// strongest, Forward, Back and the gesture button on the panel's edge stay as they are.
+    func testTheMasterFoursThumbPanelLightsAndLeavesTheButtonsOnItAlone() throws {
+        let accent = try forceAppAccent()
+        let view = makeView(mouse: .mxMaster4, picture: trigger(.thumbPanel))
+        let mouse = view.deviceCard.mouse
+        XCTAssertEqual(view.deviceCard.picture.hold, .part(.thumbPanel))
+        XCTAssertEqual(mouse.buttonViewpoint, .thumbSide)
+        XCTAssertEqual(view.loop.stillFrame.sideTurn, 1)
+        view.deviceCard.show(view.loop.stillFrame)
+        XCTAssertEqual(mouse.viewpoint, .thumbSide, "turned for the hold")
+
+        mouse.show(buttonDepth: 0, pressPulse: 0, turn: 1)
+        let rest = try shot(of: mouse)
+        mouse.show(buttonDepth: 1, pressPulse: 1, turn: 1)
+        let held = try shot(of: mouse)
+        let panel = mouse.buttonRect
+        XCTAssertLessThan(distance(try colour(in: held, x: panel.midX, y: panel.midY), accent), 0.3, "the panel is lit")
+        let side = MouseArtworkShapes(model: .mxMaster4, viewpoint: .thumbSide)
+        for part in [MouseArtworkPart.forward, .back, .gesture] {
+            let shape = try XCTUnwrap(side.shape(of: part))
+            shape.transform(using: mouse.placement(for: .thumbSide))
+            let centre = NSPoint(x: shape.bounds.midX, y: shape.bounds.midY)
+            let lit = try colour(in: held, x: centre.x, y: centre.y)
+            XCTAssertLessThan(distance(lit, try colour(in: rest, x: centre.x, y: centre.y)), 0.03, "\(part) as when nothing is held")
+            XCTAssertGreaterThan(distance(lit, accent), 0.3, "\(part) is not lit")
+        }
+    }
+
+    /// The MX Master 3 has no thumb panel: its badge, which never turns, sits inside the
+    /// mouse view and moves with the mouse; held, it is pressed in.
+    func testTheMasterThreesThumbPanelIsABadgeThatMovesWithTheMouse() throws {
+        let accent = try forceAppAccent()
+        let view = makeView(mouse: .mxMaster3, picture: trigger(.thumbPanel))
+        view.scene = scene(focus: .right)
+        let card = view.deviceCard, mouse = card.mouse
+        XCTAssertEqual(card.picture.hold, .notDrawn(.thumbPanel))
+        XCTAssertTrue(mouse.showsBadge)
+        XCTAssertEqual(mouse.buttonViewpoint, .above)
+        let leg = view.loop.legs[0]
+        view.showLoop(at: (leg.pressTime + leg.releaseTime) / 2)
+        XCTAssertEqual(mouse.turn, 0, "no turn for a badge")
+        XCTAssertEqual(mouse.viewpoint, .above)
+        XCTAssertTrue(mouse.bounds.insetBy(dx: 1, dy: 1).contains(mouse.badgeRect), "inside the mouse view")
+        XCTAssertEqual(mouse.badgeRect.height, GesturePreviewMouse.badgeHeight)
+        XCTAssertEqual(mouse.buttonRect, mouse.badgeRect)
+
+        view.showLoop(at: 0)
+        let home = mouse.frame.origin
+        let badgeAtHome = mouse.badgeRect.offsetBy(dx: home.x, dy: home.y)
+        view.showLoop(at: Loop.moveEnd)
+        XCTAssertGreaterThan(mouse.frame.minX, home.x + 1, "the mouse moved")
+        let badgeMoved = mouse.badgeRect.offsetBy(dx: mouse.frame.minX, dy: mouse.frame.minY)
+        XCTAssertEqual(badgeMoved.minX - badgeAtHome.minX, mouse.frame.minX - home.x, accuracy: 1e-9, "with it")
+
+        // Accent, and smaller while held.
+        mouse.show(buttonDepth: 0, pressPulse: 0)
+        let up = try shot(of: mouse)
+        mouse.show(buttonDepth: 1, pressPulse: 0)
+        let pressed = try shot(of: mouse)
+        let badge = mouse.badgeRect
+        XCTAssertLessThan(distance(try colour(in: up, x: badge.midX - 6, y: badge.midY), accent), 0.3)
+        XCTAssertLessThan(distance(try colour(in: pressed, x: badge.midX - 5, y: badge.midY), accent), 0.3)
+        XCTAssertNotEqual(try pixels(of: up), try pixels(of: pressed), "pressed in")
+    }
+
+    /// Nothing runs the gestures: the default picture has no accent anywhere on its card,
+    /// held or not; its arrow is grey; the dashed outline is where the gesture button is.
+    func testTheDefaultPictureHasNoAccent() throws {
+        let accent = try forceAppAccent()
+        for model in [MouseArtworkModel.mxMaster4, .generic] {
+            let view = makeView(mouse: model)
+            view.appearance = NSAppearance(named: .aqua)
+            view.scene = scene(focus: .right)
+            let card = view.deviceCard
+            XCTAssertNil(card.picture.hold)
+            XCTAssertEqual(card.arrowView.colour, .secondaryLabelColor)
+            XCTAssertNotEqual(card.arrowView.colour, .controlAccentColor)
+            XCTAssertEqual(card.mouse.heldPart, model.gesturePreviewPart, "the outline is where Set Up… usually ends")
+            XCTAssertTrue(card.caps.isEmpty)
+            XCTAssertTrue(card.chip.isHidden)
+            // Just down: held, the ring still strong.
+            let ringTime = Loop.pressTime + Loop.buttonTravel
+            for time in [ringTime, Loop.moveStart + Loop.moveDuration * 0.5] {
+                view.showLoop(at: time)
+                XCTAssertEqual(view.shownFrame.buttonDepth, 1, accuracy: 1e-6, "held")
+                let rep = try XCTUnwrap(card.bitmapImageRepForCachingDisplay(in: card.bounds))
+                card.cacheDisplay(in: card.bounds, to: rep)
+                var near = 0
+                for x in 0..<rep.pixelsWide {
+                    for y in 0..<rep.pixelsHigh {
+                        guard let pixel = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB), pixel.alphaComponent > 0.3 else { continue }
+                        if distance(pixel, accent) < 0.3 { near += 1 }
+                    }
+                }
+                XCTAssertEqual(near, 0, "no accent on the default card: \(model) at \(time)")
+            }
+            XCTAssertGreaterThan(view.loop.frame(at: ringTime).pressPulse, 0.5, "the moment of the ring was looked at")
+        }
+    }
+
+    /// "⌥ Thumb panel" only in Notes: a cap per modifier in the lower-left corner, sinking
+    /// with the button, and the app's icon in the upper-left one; neither is redrawn by a
+    /// frame that does not change them, and the card itself is never.
+    func testTheCapsAndTheChipComeWithTheTrigger() throws {
+        let view = makeView(mouse: .mxMaster4)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(view)
+        addTeardownBlock { window.close() }
+        let notes = "/System/Applications/Notes.app"
+        let option = UInt(CGEventFlags.maskAlternate.rawValue)
+        var source = trigger(.thumbPanel, modifiers: option)
+        source.onlyInAppPath = notes
+        view.scene = scene(focus: .right)
+        view.picture = source
+        let card = view.deviceCard
+        XCTAssertEqual(card.picture, TriggerPicture(hold: .part(.thumbPanel), modifiers: ["⌥"], appPath: notes))
+        XCTAssertEqual(card.caps.map(\.label), ["⌥"])
+        let cap = try XCTUnwrap(card.caps.first)
+        XCTAssertEqual(cap.faceHeight, 20)
+        XCTAssertEqual(cap.frame.minX + TriggerKeyCap.margin, 10, "10 pt in from the left")
+        XCTAssertEqual(cap.frame.maxY - TriggerKeyCap.margin, card.bounds.height - 10, accuracy: 1e-9, "and from the bottom")
+        XCTAssertFalse(card.chip.isHidden)
+        XCTAssertEqual(card.chip.path, notes)
+        XCTAssertEqual(card.chip.frame, NSRect(x: 8, y: 8, width: 18, height: 18))
+        XCTAssertEqual(card.arrowView.colour, .controlAccentColor)
+        let subviews = card.subviews
+        XCTAssertLessThan(try XCTUnwrap(subviews.firstIndex(of: cap)), try XCTUnwrap(subviews.firstIndex(of: card.mouse)), "under the mouse")
+
+        view.showLoop(at: 0)
+        XCTAssertEqual(cap.depth, 0)
+        view.showLoop(at: Loop.moveStart + Loop.moveDuration * 0.4)
+        XCTAssertEqual(cap.depth, 1, "it sinks with the button")
+        window.displayIfNeeded()
+        drawPendingLayers(of: view)
+        view.showLoop(at: Loop.moveStart + Loop.moveDuration * 0.6)
+        XCTAssertEqual(card.layer?.needsDisplay(), false, "the card is not redrawn")
+        XCTAssertEqual(cap.layer?.needsDisplay(), false, "nor the cap, which did not move")
+        XCTAssertEqual(card.arrowView.layer?.needsDisplay(), true)
+
+        // Another trigger redraws the mouse; the demo goes on where it was.
+        let time = view.loopTime
+        view.picture = gestureButton(on: .mxMaster4)
+        XCTAssertEqual(view.loopTime, time)
+        XCTAssertTrue(card.caps.isEmpty)
+        XCTAssertTrue(card.chip.isHidden)
+        XCTAssertEqual(card.mouse.hold, .part(.gesture))
+    }
+
+    /// A trigger is resolved for the mouse that is drawn, again when another connects.
+    func testThePictureFollowsTheMouse() {
+        var connected = MouseArtworkModel.mxMaster4
+        let view = makeView(picture: trigger(.thumbPanel))
+        view.mouseSource = { connected }
+        view.reloadMouse()
+        XCTAssertEqual(view.deviceCard.picture.hold, .part(.thumbPanel))
+        connected = .mxMaster3
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(view.deviceCard.picture.hold, .notDrawn(.thumbPanel))
+        XCTAssertEqual(view.deviceCard.mouse.buttonViewpoint, .above)
+        view.picture = TriggerPictureSource(event: RecordedEvent(type: .mouse, code: 6, modifiers: 0, deviceFilter: nil))
+        XCTAssertEqual(view.deviceCard.picture.hold, .number(6))
     }
 
     // MARK: - Contact sheets

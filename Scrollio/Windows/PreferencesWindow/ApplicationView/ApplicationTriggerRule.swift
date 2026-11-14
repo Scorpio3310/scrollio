@@ -72,12 +72,18 @@ struct ApplicationTriggers: Equatable {
     /// The first app's stored path and its own binding that does it.
     var path: String
     var bindingID: UUID?
+    /// That binding's trigger: what the panes' pictures show (`TriggerPictureSource`).
+    var trigger: RecordedEvent?
 
-    init(applicationNames: [String], triggerTitles: [String], path: String = "", bindingID: UUID? = nil) {
+    init(
+        applicationNames: [String], triggerTitles: [String], path: String = "", bindingID: UUID? = nil,
+        trigger: RecordedEvent? = nil
+    ) {
         self.applicationNames = applicationNames
         self.triggerTitles = triggerTitles
         self.path = path
         self.bindingID = bindingID
+        self.trigger = trigger
     }
 
     /// - Parameter titles: what the Buttons pane calls the triggers, in order.
@@ -97,7 +103,8 @@ struct ApplicationTriggers: Equatable {
             triggerTitles: names,
             path: first.application.path,
             // (Nothing of Buttons does it: every binding that does it there is the app's own.)
-            bindingID: first.bindings.first?.id
+            bindingID: first.bindings.first?.id,
+            trigger: first.bindings.first?.triggerEvent
         )
     }
 

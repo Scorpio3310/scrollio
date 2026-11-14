@@ -41,6 +41,24 @@ enum ButtonTriggerNaming {
         }
     }
 
+    /// The keys of a trigger, one cap each, as the trigger pictures draw them: the modifiers
+    /// in the order of `title(for:)` ("Fn" first), then the key or the button by its name
+    /// ("⌃⌥ Space": ["⌃", "⌥", "Space"]; "⌥ Back button": ["⌥", "Back button"]). A modifier
+    /// on its own is its modifiers only. The same pieces as the title, never another name.
+    static func capLabels(for event: RecordedEvent, logitech: Logitech = .live) -> [String] {
+        let modifiers = UInt64(event.modifiers)
+        switch event.type {
+        case .mouse:
+            return modifierSymbols(modifiers) + [buttonName(for: event, logitech: logitech)]
+        case .keyboard:
+            if KeyCode.modifierKeys.contains(event.code) {
+                return modifierSymbols(modifiers | KeyCode.getKeyMask(event.code).rawValue, includesFn: true)
+            }
+            let fn = !impliesFn(event.code)
+            return modifierSymbols(modifiers, includesFn: fn) + [keyName(event.code, modifiers: modifiers)]
+        }
+    }
+
     /// The button of a mouse trigger: as `buttonName(code:)`, and a numbered button the
     /// user placed by its part with its number after it, so where the name comes from stays
     /// visible: "Gesture button (button 6)".
@@ -142,14 +160,20 @@ enum ButtonTriggerNaming {
 
     /// The modifiers in the order of macOS menus: ⌃ ⌥ ⇧ ⌘, "Fn" in front.
     static func symbols(_ modifiers: UInt64, includesFn: Bool = true) -> String {
-        var result = ""
-        if modifiers & CGEventFlags.maskControl.rawValue != 0 { result += "⌃" }
-        if modifiers & CGEventFlags.maskAlternate.rawValue != 0 { result += "⌥" }
-        if modifiers & CGEventFlags.maskShift.rawValue != 0 { result += "⇧" }
-        if modifiers & CGEventFlags.maskCommand.rawValue != 0 { result += "⌘" }
-        if includesFn, modifiers & CGEventFlags.maskSecondaryFn.rawValue != 0 {
-            result = result.isEmpty ? "Fn" : "Fn " + result
-        }
+        var pieces = modifierSymbols(modifiers, includesFn: includesFn)
+        guard pieces.first == "Fn" else { return pieces.joined() }
+        pieces.removeFirst()
+        return pieces.isEmpty ? "Fn" : "Fn " + pieces.joined()
+    }
+
+    /// The same modifiers one by one: "Fn", then ⌃ ⌥ ⇧ ⌘.
+    static func modifierSymbols(_ modifiers: UInt64, includesFn: Bool = true) -> [String] {
+        var result: [String] = []
+        if includesFn, modifiers & CGEventFlags.maskSecondaryFn.rawValue != 0 { result.append("Fn") }
+        if modifiers & CGEventFlags.maskControl.rawValue != 0 { result.append("⌃") }
+        if modifiers & CGEventFlags.maskAlternate.rawValue != 0 { result.append("⌥") }
+        if modifiers & CGEventFlags.maskShift.rawValue != 0 { result.append("⇧") }
+        if modifiers & CGEventFlags.maskCommand.rawValue != 0 { result.append("⌘") }
         return result
     }
 

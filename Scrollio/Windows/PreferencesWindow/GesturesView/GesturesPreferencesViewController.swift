@@ -5,7 +5,8 @@
 //  code on PreferencesGroupedForm, in the boxes of System Settings like the Scrolling tab.
 //
 //  On top a preview that shows what a gesture does with the current settings (and the
-//  gesture of the row under the pointer). Then a box with the mode, a box with the action
+//  gesture of the row under the pointer), on the connected mouse holding the button the
+//  first row names first (`MouseGestureBindingSummary.picture`). Then a box with the mode, a box with the action
 //  of every direction and of Click, a box with how a gesture behaves (invert, freeze,
 //  swipe speed) and, when a connected mouse can do it, a box with what a Logitech mouse
 //  does itself; under it, while the mouse has its haptics off because the user switched
@@ -261,6 +262,8 @@ final class GesturesPreferencesViewController: NSViewController {
         let presentation = controls.modePresentation
 
         gestureButtonRow.explanation = summary.gestureButtonExplanation
+        // The preview's mouse holds the first button the row names.
+        previewView.picture = summary.picture
         // (Run only by an app's own button: "Change" leads to it, not "Set Up…".)
         let runs = summary.hasGestureButton || summary.onlyInApps != nil
         gestureButtonButton.title = text(runs ? "gestures-gesture-button-change" : "gestures-gesture-button-set-up")

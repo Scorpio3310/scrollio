@@ -263,13 +263,41 @@ extension MouseArtworkPainter {
         }
     }
 
-    /// `part` in the accent colour with a glow, as the cards light it over the drawing.
+    /// The shapes painted over `part` in this view, which a light or a ring on it must leave
+    /// alone: the side buttons, the thumb wheel and its slot (but `part` itself).
+    static func parts(over part: MouseArtworkPart, in shapes: MouseArtworkShapes) -> [NSBezierPath] {
+        var over = [MouseArtworkPart.thumbWheel, .gesture, .forward, .back]
+            .filter { $0 != part }
+            .compactMap { shapes.shape(of: $0) }
+        if part != .thumbWheel, let housing = shapes.views?.thumbWheelHousing {
+            over.append(housing)
+        }
+        return over
+    }
+
+    /// Clips what is drawn next to the outside of `paths` (which do not overlap).
+    static func clip(outside paths: [NSBezierPath]) {
+        guard !paths.isEmpty else { return }
+        let clip = NSBezierPath(rect: MouseArtworkShapes.canvas.insetBy(dx: -40, dy: -40))
+        for path in paths {
+            clip.append(path)
+        }
+        clip.windingRule = .evenOdd
+        clip.addClip()
+    }
+
+    /// `part` in the accent colour with a glow, as the cards light it over the drawing. The
+    /// thumb rest's part (the MX Master 4's thumb panel lies right under Forward and Back)
+    /// leaves the parts painted over it as they are: neither its fill nor its glow covers them.
     static func drawTwoViewsHighlight(
         _ part: MouseArtworkPart, of art: MouseArtworkTwoViews, shapes: MouseArtworkShapes, unit: CGFloat
     ) {
         guard let shape = art.shape(of: part) else { return }
         let accent = NSColor.controlAccentColor
         NSGraphicsContext.saveGraphicsState()
+        if part == art.restPart {
+            clip(outside: parts(over: part, in: shapes))
+        }
         let glow = NSShadow()
         glow.shadowColor = accent.withAlphaComponent(0.65)
         glow.shadowBlurRadius = 6
