@@ -1650,6 +1650,45 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertFalse(part.view.hasAmbiguousLayout)
     }
 
+    /// "Reset to Defaults" under an app's own ring keeps room for its focus ring (Full
+    /// Keyboard Access, Tab to it): no view between it and the part cuts what is drawn
+    /// around it, in the open fold or under the switch's box (R3-1 F2).
+    func testTheRingPartsResetButtonKeepsRoomForItsFocusRing() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.setUsesGeneralRing(false, general: .default)
+        let pane = makePane()
+        _ = makeWindow(for: pane)
+        pane.openApplication(withID: Self.calculator, part: .ring)
+        let part = try XCTUnwrap(pane.detailController?.ringPart)
+        func checkRoom(_ place: String) {
+            pane.view.layoutSubtreeIfNeeded()
+            let button = part.resetToDefaultsButton
+            // The focus ring is drawn about 3 pt outside the button.
+            let focus = button.bounds.insetBy(dx: -4, dy: -4)
+            var view = button.superview
+            while let current = view {
+                if current.clipsToBounds {
+                    XCTAssertTrue(current.bounds.contains(current.convert(focus, from: button)), "\(place): \(type(of: current)) cuts it")
+                }
+                if current === part.view { break }
+                view = current.superview
+            }
+        }
+        try XCTUnwrap(part.ownRingFold).setExpanded(true)
+        checkRoom("in the open fold")
+        Options.shared.buttons.binding = [binding(5, SystemShortcut.shortcutRing.identifier)]
+        part.syncViewWithOptions()
+        XCTAssertNil(part.ownRingFold)
+        checkRoom("under the switch's box")
+        // The ring's view still reaches no further than the body: a title above it stays
+        // uncovered.
+        let body = try XCTUnwrap(part.ownRingBody)
+        let ringView = try XCTUnwrap(part.ringController).view
+        let shown = try XCTUnwrap(ringView.superview).convert(ringView.superview!.bounds, to: body)
+        XCTAssertGreaterThanOrEqual(shown.minY, body.bounds.minY - 0.5)
+        XCTAssertLessThanOrEqual(shown.maxY, body.bounds.maxY + 0.5)
+    }
+
     /// The app's own gestures while no button runs Gesture Navigation with the app in
     /// front: "Directions" folds the five rows, the invert switch and "Reset to Defaults";
     /// a click opens them, and the page measures again. Once a button runs the gestures

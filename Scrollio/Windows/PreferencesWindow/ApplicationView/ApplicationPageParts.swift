@@ -283,8 +283,9 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     private(set) var resetFooter: PreferencesGroupFooter!
     /// The own ring's view and "Reset to Defaults", as one view: there only while "Use the
     /// general ring" is off. Its width is the boxes'; the ring's view inside it reaches past
-    /// its edges by the margins the ring's view brings (clipped away), so it can stand
-    /// under the switch's box or as the body of `ownRingFold` alike.
+    /// its edges by the margins the ring's view brings (clipped away by a view of their
+    /// own, which holds the ring's view alone: the button's focus ring is not cut), so it
+    /// can stand under the switch's box or as the body of `ownRingFold` alike.
     private(set) var ownRingBody: NSView?
     /// "Shortcuts", which folds `ownRingBody`: there while the own ring is in use and
     /// nothing opens the ring with the app in front.
@@ -563,19 +564,27 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         let body = NSView()
         body.translatesAutoresizingMaskIntoConstraints = false
         // The ring's view reaches past the body by its own margins: they are cut off, so
-        // that nothing of it covers a title above the body.
-        body.clipsToBounds = true
+        // that nothing of it covers a title above the body. Only around the ring's view:
+        // the footer's button draws its focus ring past its own edges, which are the body's.
+        let ringClip = NSView()
+        ringClip.translatesAutoresizingMaskIntoConstraints = false
+        ringClip.clipsToBounds = true
         let ringView = ring.view
         ringView.translatesAutoresizingMaskIntoConstraints = false
-        body.addSubview(ringView)
+        ringClip.addSubview(ringView)
+        body.addSubview(ringClip)
         body.addSubview(resetFooter)
         let margin = PreferencesGroupedForm.margin
         NSLayoutConstraint.activate([
-            ringView.topAnchor.constraint(equalTo: body.topAnchor, constant: -margin),
-            ringView.leadingAnchor.constraint(equalTo: body.leadingAnchor, constant: -margin),
-            ringView.trailingAnchor.constraint(equalTo: body.trailingAnchor, constant: margin),
+            ringClip.topAnchor.constraint(equalTo: body.topAnchor),
+            ringClip.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            ringClip.trailingAnchor.constraint(equalTo: body.trailingAnchor),
+            ringView.topAnchor.constraint(equalTo: ringClip.topAnchor, constant: -margin),
+            ringView.leadingAnchor.constraint(equalTo: ringClip.leadingAnchor, constant: -margin),
+            ringView.trailingAnchor.constraint(equalTo: ringClip.trailingAnchor, constant: margin),
+            ringView.bottomAnchor.constraint(equalTo: ringClip.bottomAnchor),
             // Its margin under the rows is the room above a footer.
-            resetFooter.topAnchor.constraint(equalTo: ringView.bottomAnchor),
+            resetFooter.topAnchor.constraint(equalTo: ringClip.bottomAnchor),
             resetFooter.leadingAnchor.constraint(equalTo: body.leadingAnchor),
             resetFooter.trailingAnchor.constraint(equalTo: body.trailingAnchor),
             resetFooter.bottomAnchor.constraint(equalTo: body.bottomAnchor),
