@@ -67,6 +67,8 @@ final class GesturesPreferencesViewController: NSViewController {
     var deviceSource: MouseGestureDeviceSource = .live
     /// Which buttons use Gesture Navigation; tests and screenshots replace it with fixtures.
     var bindingSummary: () -> MouseGestureBindingSummary = { .current }
+    /// What the pane shows of it now: "Set Up…" and "Change" do what the row says.
+    private var shownSummary: MouseGestureBindingSummary?
     /// "Set Up…" or "Change": shows the Buttons pane and, with no gesture button yet
     /// (true), records one that gets Gesture Navigation; with one (false), selects its row
     /// there. Tests replace it.
@@ -231,6 +233,18 @@ final class GesturesPreferencesViewController: NSViewController {
             name: LogiCenter.mouseStateChanged,
             object: nil
         )
+        // Edit › Undo or Redo of a change in Buttons or an app's Buttons part can change
+        // which button runs the gestures while the pane shows.
+        for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+            NotificationCenter.default.addObserver(self, selector: #selector(undoDidRun(_:)), name: name, object: nil)
+        }
+    }
+
+    /// An Undo or Redo ran: the pane on screen shows which button runs the gestures now,
+    /// when that changed (an Undo of typing elsewhere changes nothing here).
+    @objc private func undoDidRun(_ notification: Notification) {
+        guard isViewLoaded, view.window != nil, bindingSummary() != shownSummary else { return }
+        reload()
     }
 
     override func viewWillAppear() {
@@ -272,6 +286,7 @@ final class GesturesPreferencesViewController: NSViewController {
     func reload() {
         guard isViewLoaded, controls != nil else { return }
         let summary = bindingSummary()
+        shownSummary = summary
         controls.showLogiActions = summary.hasLogitechGestureButton
         controls.sync()
         let gesture = Options.shared.gesture
@@ -467,7 +482,8 @@ final class GesturesPreferencesViewController: NSViewController {
     }
 
     @objc func gestureButtonClicked(_ sender: NSButton) {
-        let summary = bindingSummary()
+        // (What the row says, which an Undo keeps up to date.)
+        let summary = shownSummary ?? bindingSummary()
         if !summary.hasGestureButton, let apps = summary.onlyInApps {
             if let openApplicationButtons {
                 openApplicationButtons(apps)

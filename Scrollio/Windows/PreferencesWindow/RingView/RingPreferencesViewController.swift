@@ -251,6 +251,8 @@ final class RingPreferencesViewController: NSViewController {
 
     /// What opens the ring; tests and pictures replace it with fixtures.
     var bindingSummary: () -> ShortcutRingBindingSummary = { .current }
+    /// What the pane shows of it now: "Set Up…" and "Change" do what the row says.
+    private var shownSummary: ShortcutRingBindingSummary?
     /// "Set Up…" or "Change": shows the Buttons pane and, with nothing that opens the ring
     /// yet (true), records a button or key that gets the Shortcut Ring; with one (false),
     /// selects its row there. Tests replace it.
@@ -400,9 +402,30 @@ final class RingPreferencesViewController: NSViewController {
         root.setFrameSize(root.fittingSize)
     }
 
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        guard application == nil else { return }
+        // Edit › Undo or Redo of a change in Buttons or an app's Buttons part can change
+        // what opens the ring while the pane shows.
+        for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+            NotificationCenter.default.addObserver(self, selector: #selector(undoDidRun(_:)), name: name, object: nil)
+        }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     override func viewWillAppear() {
         super.viewWillAppear()
         // A button may have been bound under Buttons meanwhile, or a file imported.
+        reload()
+    }
+
+    /// An Undo or Redo ran: the pane on screen shows what opens the ring now, when that
+    /// changed (an Undo of typing elsewhere changes nothing here).
+    @objc private func undoDidRun(_ notification: Notification) {
+        guard isViewLoaded, view.window != nil, bindingSummary() != shownSummary else { return }
         reload()
     }
 
@@ -439,6 +462,7 @@ final class RingPreferencesViewController: NSViewController {
         let ring = shownRing
         if application == nil {
             let summary = bindingSummary()
+            shownSummary = summary
             triggerRow.explanation = summary.explanation
             triggerCard?.source = summary.picture
             // (Opened only by an app's own button: "Change" leads to it, not "Set Up…".)
@@ -529,7 +553,8 @@ final class RingPreferencesViewController: NSViewController {
     // MARK: - Actions
 
     @objc func triggerButtonClicked(_ sender: NSButton) {
-        let summary = bindingSummary()
+        // (What the row says, which an Undo keeps up to date.)
+        let summary = shownSummary ?? bindingSummary()
         if !summary.hasTrigger, let apps = summary.onlyInApps {
             if let openApplicationButtons {
                 openApplicationButtons(apps)
