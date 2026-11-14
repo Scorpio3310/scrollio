@@ -190,14 +190,19 @@ enum SettingsFileText {
         case .script: key = "general-settings-import-launch-script"
         }
         // A place of the Shortcut Ring is named by where it is ("Shortcut Ring, Top right"),
-        // one of an app's own ring with the app ("Shortcut Ring in Notes, Top right").
+        // one of an app's own ring with the app ("Shortcut Ring in Notes, Top right"); an
+        // app's own button with the app it runs in ("⌥ F5 in Notes").
         let trigger = action.ringPlace.map { place -> String in
             let name = text(ShortcutRingPlaceName.key(of: place))
             guard let path = action.applicationPath else {
                 return String(format: text("general-settings-import-ring-trigger"), name)
             }
             return String(format: text("general-settings-import-ring-trigger-app"), fileName(ofApplicationAt: path), name)
-        } ?? ButtonTriggerNaming.title(for: action.trigger, logitech: logitech)
+        } ?? {
+            let button = ButtonTriggerNaming.title(for: action.trigger, logitech: logitech)
+            guard let path = action.applicationPath else { return button }
+            return String(format: text("general-settings-import-launch-trigger-app"), button, fileName(ofApplicationAt: path))
+        }()
         return String(format: text(key), trigger, target)
     }
 
@@ -240,11 +245,10 @@ enum SettingsFileText {
         return shown.title
     }
 
-    /// An app of the file's list by the name the file gives it, else by its file's name.
+    /// An app of the file's list, in every box of the sheet, by its file's name: its own
+    /// actions run while that app is in front. (A name the file stores for it is only what
+    /// the file calls it.)
     static func name(of application: Application) -> String {
-        if let name = application.displayName, !name.isEmpty {
-            return visible(name)
-        }
         return fileName(ofApplicationAt: application.path)
     }
 
@@ -259,7 +263,9 @@ enum SettingsFileText {
     /// the default one: "Gesture Up: App Exposé". None when the file leaves them alone.
     /// A recorded key combination as a button's: its keys, and a name after them. Then the
     /// same for each app's own gestures (a set kept for later too), with the app: "Gesture
-    /// in Notes, Up: Reload".
+    /// in Notes, Up: Reload"; a set in use with only default actions says so (in that app
+    /// they replace the general ones), and a set with "Invert left and right" on says
+    /// that too.
     static func gestureLines(of contents: SettingsFile.Contents) -> [String] {
         let defaults = GestureActions.default
         func action(_ held: GestureAction) -> String {
@@ -275,10 +281,17 @@ enum SettingsFileText {
         }
         for entry in contents.applicationGestures {
             let name = name(of: entry.application)
-            lines += MouseGestureSettingsControls.Slot.allCases.compactMap { slot in
+            let changed = MouseGestureSettingsControls.Slot.allCases.compactMap { slot -> String? in
                 let held = entry.gestures.actions[keyPath: slot.path]
                 guard held != defaults[keyPath: slot.path] else { return nil }
                 return String(format: text("general-settings-import-gesture-line-app"), name, text(slot.labelKey), action(held))
+            }
+            lines += changed
+            if changed.isEmpty, !entry.gestures.inherit {
+                lines.append(String(format: text("general-settings-import-gesture-defaults-app"), name))
+            }
+            if entry.gestures.invertHorizontal {
+                lines.append(String(format: text("general-settings-import-gesture-invert-app"), name))
             }
         }
         return lines

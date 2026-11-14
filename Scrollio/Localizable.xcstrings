@@ -8535,6 +8535,42 @@
           }
         }
       }
+    },
+    "general-settings-import-launch-trigger-app": {
+      "comment": "Import sheet: the button or key of an app's own action that opens or runs something, %1$@ = the button or key (\"⌥ F5\"), %2$@ = the app (\"Notes\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ in %2$@"
+          }
+        }
+      }
+    },
+    "general-settings-import-gesture-defaults-app": {
+      "comment": "Import sheet: an app's own gestures in use that hold the default actions, %@ = the app (\"Notes\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gestures in %@: the default actions"
+          }
+        }
+      }
+    },
+    "general-settings-import-gesture-invert-app": {
+      "comment": "Import sheet: an app's own gestures with \"Invert left and right\" on, %@ = the app (\"Notes\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gestures in %@: left and right swapped"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

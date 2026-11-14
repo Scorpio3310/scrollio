@@ -755,9 +755,11 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertEqual(contents.applications?.map(\.gestures), [notes.gestures, mail.gestures], "what was exported comes back")
         XCTAssertEqual(contents.leftOutCount, 0)
         let lines = SettingsFileText.gestureLines(of: contents)
-        XCTAssertEqual(lines.count, 3, "\(lines)")
+        XCTAssertEqual(lines.count, 4, "\(lines)")
         XCTAssertTrue(lines[0].hasPrefix("Gesture in Notes, Up: ⇧⌘") && lines[0].hasSuffix("(named “Reload”)"), lines[0])
-        XCTAssertEqual(Array(lines.dropFirst()), ["Gesture in Notes, Click: No Action", "Gesture in Mail, Down: Paste"])
+        XCTAssertEqual(Array(lines.dropFirst()), [
+            "Gesture in Notes, Click: No Action", "Gestures in Notes: left and right swapped", "Gesture in Mail, Down: Paste",
+        ])
         let items = SettingsFileText.items(of: contents).map(\.text)
         XCTAssertTrue(items.contains("1 app with gestures of its own"), "the one in use: \(items)")
 
@@ -2464,12 +2466,47 @@ final class SettingsFileTextTests: XCTestCase {
         XCTAssertEqual(line(button, "/Users/someone/Desktop/start.command", "x", .file),
                        "\(buttonName): opens the file /Users/someone/Desktop/start.command")
 
+        // An app's own button runs only while that app is in front: its line says which
+        // (`testAnAppIsNamedByItsFileAndItsWholeOwnGestureSetIsListed` has more).
+        let own = OpenTargetPayload(path: "/tmp/b.sh", bundleID: nil, arguments: "", kind: .script)
+        XCTAssertEqual(SettingsFileText.launchLine(
+            for: SettingsFile.LaunchAction(trigger: key, target: own, applicationPath: "/Applications/Notes.app"), logitech: names
+        ), "\(keyName) in Notes: runs the script /tmp/b.sh")
+
         // A path that tries to look like another one.
         XCTAssertEqual(SettingsFileText.visible("/tmp/photo\u{202E}gpj.sh"), "/tmp/photo\\u{202E}gpj.sh")
         XCTAssertEqual(SettingsFileText.visible("/tmp/a\n\n\n/Applications/Safe.app"), "/tmp/a\\u{A}×3/Applications/Safe.app")
         XCTAssertEqual(SettingsFileText.visible("/tmp/zero\u{200B}width\u{0}\t"), "/tmp/zero\\u{200B}width\\u{0}\\u{9}")
         XCTAssertEqual(SettingsFileText.visible("/Users/someone/Büro/ファイル 1.sh"), "/Users/someone/Büro/ファイル 1.sh", "ordinary names stay")
         XCTAssertEqual(line(button, "/tmp/a\u{2028}b", "-x\u{202E}", .script), "\(buttonName): runs the script /tmp/a\\u{2028}b (arguments: -x\\u{202E})")
+    }
+
+    /// An app is named by its file in every box, whatever name the file stores for it: its
+    /// own actions run while that app is in front. An app's own gestures in use with only
+    /// the default actions, and its own "Invert left and right", have a line each; the swap
+    /// keeps Return from importing.
+    func testAnAppIsNamedByItsFileAndItsWholeOwnGestureSetIsListed() throws {
+        let script = Fixture.scriptBinding.replacingOccurrences(of: "sync.sh", with: "other.sh")
+        let contents = try Fixture.contents(
+            #""applications":[{"path":"/Applications/Safari.app","displayName":"Notes","buttons":{"binding":["# + script + "]},"
+                + #""gestures":{"inherit":false,"invertHorizontal":true}},"#
+                + #"{"path":"/Applications/Mail.app","gestures":{"inherit":false}},"#
+                + #"{"path":"/Applications/Maps.app","gestures":{"inherit":true}}]"#
+        )
+        let keyName = ButtonTriggerNaming.title(for: RecordedEvent(type: .keyboard, code: 96, modifiers: 524_288, deviceFilter: nil), logitech: names)
+        XCTAssertEqual(contents.launchActions.map { SettingsFileText.launchLine(for: $0, logitech: names) },
+                       ["\(keyName) in Safari: runs the script /Users/someone/bin/other.sh (arguments: --all)"])
+        XCTAssertEqual(SettingsFileText.actionLines(of: contents, logitech: names), ["\(keyName) in Safari: Open App or File: other.sh"])
+        XCTAssertEqual(SettingsFileText.gestureLines(of: contents), [
+            "Gestures in Safari: the default actions", "Gestures in Safari: left and right swapped",
+            "Gestures in Mail: the default actions",
+        ], "a set kept for later with the default actions changes nothing")
+
+        let swapped = try Fixture.contents(#""applications":[{"path":"/Applications/Safari.app","gestures":{"inherit":true,"invertHorizontal":true}}]"#)
+        XCTAssertEqual(SettingsFileText.gestureLines(of: swapped), ["Gestures in Safari: left and right swapped"])
+        XCTAssertTrue(swapped.bringsActions, "Return does not import a swap")
+        let defaults = try Fixture.contents(#""applications":[{"path":"/Applications/Mail.app","gestures":{"inherit":false}}]"#)
+        XCTAssertFalse(defaults.bringsActions)
     }
 
     /// Characters that are blank are written out too, and a run of them, however long,
@@ -2678,7 +2715,7 @@ final class SettingsImportSheetTests: XCTestCase {
             "\(trigger(.mouse, 3, 0)): No Action",
             "\(trigger(.keyboard, 96, 524_288)): Open App or File: sync.sh",
             "\(trigger(.mouse, 4, 0)) in Notes: Mission Control",
-            "\(trigger(.mouse, 4, 0)) in My Editor: Mission Control",
+            "\(trigger(.mouse, 4, 0)) in Other: Mission Control",
             "Gesture Up: Empty Trash",
             "Gesture Left: No Action",
             "Gesture Click: Switch to Computer 3",
