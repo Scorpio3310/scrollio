@@ -383,6 +383,34 @@ final class ApplicationButtonsPressTests: XCTestCase {
         XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, [])), .logiAction(name: smartShift))
         _ = bridge.dispatchLogiButtonEvent(press(.up, []))
     }
+
+    /// The back button set up for the ring while the mouse was on its receiver is stored
+    /// under its Logitech code; over Bluetooth the same button arrives as the standard
+    /// button 3, and it opens the ring all the same: Buttons' ring, and in Figma by Figma's
+    /// own binding. Its release is the ring's. Elsewhere Figma's binding is not there.
+    func testTheStandardButtonOpensTheRingItsLogitechTwinIsSetUpFor() {
+        let logitechBack = LogiCenter.shared.scrollioCode(for: .back)
+        func back(_ phase: InputPhase) -> InputEvent { return RingHarness.button(phase, code: 3) }
+
+        set(general: [binding(logitechBack, ringAction)], figma: figmaEntry(own: []))
+        XCTAssertEqual(process(back(.down)), .consumed)
+        XCTAssertTrue(controller.isHeld, "Buttons' ring")
+        XCTAssertEqual(process(back(.up)), .consumed)
+        controller.cancel()
+
+        set(general: [], figma: figmaEntry(own: [binding(logitechBack, ringAction)], ring: true))
+        front = figma
+        XCTAssertEqual(process(back(.down)), .consumed)
+        XCTAssertTrue(controller.isHeld)
+        harness.runScheduled()
+        XCTAssertEqual(topTitle(), SystemShortcut.copy.localizedName, "Figma's own ring")
+        XCTAssertEqual(process(back(.up)), .consumed)
+        controller.cancel()
+        front = safari
+        XCTAssertEqual(process(back(.down)), .passthrough, "in Safari the button is Safari's")
+        XCTAssertEqual(process(back(.up)), .passthrough)
+        XCTAssertFalse(controller.isOpen)
+    }
 }
 
 // MARK: - The ring's faces

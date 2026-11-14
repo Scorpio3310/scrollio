@@ -90,7 +90,9 @@ class ButtonUtils {
     /// press this is one look into a set.
     func scopeOfPress(for event: InputEvent) -> ButtonBindingScope {
         refreshCacheIfNeeded()
-        guard cachedAppTriggerKeys.contains(ButtonBindingTriggerKey(type: event.type, code: event.code)),
+        let twin = Self.logitechTwin(of: event)
+        guard cachedAppTriggerKeys.contains(ButtonBindingTriggerKey(type: event.type, code: event.code))
+                || twin.map({ cachedAppTriggerKeys.contains(ButtonBindingTriggerKey(type: $0.type, code: $0.code)) }) == true,
               let entry = ApplicationButtons.entry(front: frontApplication(), applications: Options.shared.application.applications),
               cachedAppBindingsByTriggerKey[entry.path] != nil else { return .general }
         return ButtonBindingScope(applicationPath: entry.path)
@@ -99,12 +101,41 @@ class ButtonUtils {
     /// The binding a press goes by. `scope`: whose bindings (`scopeOfPress`); nil reads
     /// the app in front now. A caller that looks twice for one press (the Logitech probe,
     /// then `InputProcessor`) decides the scope once and passes it to both.
+    ///
+    /// A standard middle, back or forward press that no binding of its own button takes
+    /// goes by the bindings of its Logitech twin (`logitechTwin(of:)`): set up while the
+    /// mouse was on its receiver, such a button is stored under the Logitech code, and over
+    /// Bluetooth it arrives as the standard button. Where a standard binding takes the
+    /// press, nothing changes.
     func getBestMatchingBinding(
         for event: InputEvent,
         scope: ButtonBindingScope? = nil,
         where predicate: ((ButtonBinding) -> Bool)? = nil
     ) -> ButtonBinding? {
-        let candidates = getButtonBindings(for: event.type, code: event.code, scope: scope ?? scopeOfPress(for: event))
+        let scope = scope ?? scopeOfPress(for: event)
+        let candidates = getButtonBindings(for: event.type, code: event.code, scope: scope)
+        if let twin = Self.logitechTwin(of: event), Self.bestMatch(in: candidates, for: event) == nil {
+            return Self.bestMatch(in: getButtonBindings(for: twin.type, code: twin.code, scope: scope), for: twin, where: predicate)
+        }
+        return Self.bestMatch(in: candidates, for: event, where: predicate)
+    }
+
+    /// The press as a press of its Logitech twin: a standard middle, back or forward button
+    /// as the Logitech control it is (`LogiStandardMouseButtonAlias`). Nil for any other.
+    private static func logitechTwin(of event: InputEvent) -> InputEvent? {
+        guard event.type == .mouse, let code = LogiStandardMouseButtonAlias.logitechCode(forNativeButton: event.code) else {
+            return nil
+        }
+        return InputEvent(
+            type: .mouse, code: code, modifiers: event.modifiers, phase: event.phase, source: event.source, device: event.device
+        )
+    }
+
+    private static func bestMatch(
+        in candidates: [ButtonBinding],
+        for event: InputEvent,
+        where predicate: ((ButtonBinding) -> Bool)? = nil
+    ) -> ButtonBinding? {
         var bestBinding: ButtonBinding?
         var bestPriority = Int.min
 
