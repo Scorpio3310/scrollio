@@ -70,7 +70,11 @@ final class PreferencesLocalizationTests: XCTestCase {
         "thumb-wheel-function-volume-hint",
         "scrolling-thumb-wheel-function", "scrolling-thumb-wheel-speed",
         "scrolling-thumb-wheel-speed-hint-scroll", "scrolling-thumb-wheel-speed-hint-steps",
-        "scrolling-thumb-wheel-swap", "scrolling-thumb-wheel-swap-hint", "scrolling-thumb-wheel-note",
+        "scrolling-thumb-wheel-reverse", "scrolling-thumb-wheel-reverse-hint-scroll",
+        "scrolling-thumb-wheel-reverse-hint-zoom", "scrolling-thumb-wheel-reverse-hint-tabs",
+        "scrolling-thumb-wheel-reverse-hint-desktops", "scrolling-thumb-wheel-reverse-hint-back-forward",
+        "scrolling-thumb-wheel-reverse-hint-volume", "scrolling-thumb-wheel-follow",
+        "scrolling-thumb-wheel-follow-hint", "scrolling-thumb-wheel-speed-hint-follow", "scrolling-thumb-wheel-note",
     ]
 
     /// Buttons pane: the card, the list and its rows, the action menu, "Which Button Is
@@ -89,7 +93,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-note-gesture-navigation", "buttons-note-hold-action", "buttons-note-no-action",
         "buttons-note-scroll-key", "buttons-note-conflict", "buttons-note-contended", "buttons-note-bluetooth",
         "buttons-note-standard-button", "buttons-note-standard-button-no-pulse", "buttons-scroll-key-title", "buttons-scroll-key-detail",
-        "buttons-problem-info", "buttons-checking", "buttons-undo-remove", "buttons-show-gesture-settings",
+        "buttons-problem-info", "buttons-checking", "buttons-undo-remove", "buttons-show-gesture-settings", "buttons-thumb-wheel-settings",
         "buttons-trigger-placed", "buttons-header-place-this-one", "buttons-place-title", "buttons-place-help",
         "buttons-place-gesture", "buttons-place-thumb-panel", "buttons-place-back", "buttons-place-forward",
         "buttons-place-mode-shift", "buttons-place-middle", "buttons-place-none", "buttons-place-used-by",

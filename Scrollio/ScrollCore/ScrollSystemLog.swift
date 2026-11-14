@@ -244,7 +244,7 @@ enum ScrollSystemLog {
     /// What one roll of the sideways wheel (the thumb wheel) added up to: from its first event
     /// until the wheel rested (`ThumbWheelTuning.logRollRest`), or `ThumbWheelTuning.logInterval`
     /// of a longer roll. Times are the events' own. The deltas are those the events arrived
-    /// with, before "Reverse wheel direction" and "Swap direction": the log is how we learn
+    /// with, before "Reverse wheel direction" and the thumb wheel's "Reverse direction": the log is how we learn
     /// what a wheel sends, and what the tuning numbers are read from.
     struct ThumbWheelRoll: Equatable {
         /// Tells the rolls apart (the steps of a roll run after its events were counted).
@@ -252,7 +252,11 @@ enum ScrollSystemLog {
         /// The settings of the roll's events (a change ends the roll).
         var function: ThumbWheelFunction
         var speed: Double
+        /// The function's "Reverse direction".
         var swapsDirection: Bool
+        /// Switch Desktops follows the wheel (`ThumbWheelSettings.followsWheelNow`): the roll
+        /// drove swipes, not steps.
+        var follows = false
         /// The settings are the app in front's own (its function, or its speed and swap:
         /// `ThumbWheelTurn`); the line never names the app.
         var isAppsOwn = false
@@ -290,12 +294,22 @@ enum ScrollSystemLog {
         /// Steps decided but not run yet (on the main queue, or waiting in the pacer). Not in
         /// the line: a step that never runs (dropped by a stop) is not counted.
         var pendingSteps = 0
+        /// Follow the wheel: how its strokes ended (`ThumbWheelFollower.Outcome`), the
+        /// furthest a swipe went (a share of one desktop), and the strokes not ended yet
+        /// (the line waits for them, as for steps).
+        var swipesEnded = 0
+        var swipesBack = 0
+        var swipesInterrupted = 0
+        var strokesWaited = 0
+        var furthestSwipe = 0.0
+        var pendingSwipes = 0
 
         init(id: Int, settings: ThumbWheelSettings, at time: TimeInterval, seenAt: TimeInterval? = nil) {
             self.id = id
             function = settings.function
             speed = settings.speed
             swapsDirection = settings.swapsDirection
+            follows = settings.followsWheelNow
             startedAt = time
             lastEventAt = time
             firstSeenAt = seenAt ?? time
@@ -335,6 +349,23 @@ enum ScrollSystemLog {
             if steps > 0 { stepsNext += steps } else { stepsPrevious -= steps }
         }
 
+        /// A stroke of Follow the wheel ended (it was pending).
+        mutating func strokeEnded(_ outcome: ThumbWheelFollower.Outcome, furthest: Double) {
+            pendingSwipes = max(0, pendingSwipes - 1)
+            switch outcome {
+            case .ended: swipesEnded += 1
+            case .wentBack: swipesBack += 1
+            case .interrupted: swipesInterrupted += 1
+            case .waited: strokesWaited += 1
+            }
+            if furthest.isFinite { furthestSwipe = max(furthestSwipe, furthest) }
+        }
+
+        /// Steps or swipes are still to come: the line waits for them.
+        var isWaiting: Bool {
+            return pendingSteps > 0 || pendingSwipes > 0
+        }
+
         /// Steps the pacer dropped; they were pending.
         mutating func stepsDropped(_ count: Int) {
             guard count > 0 else { return }
@@ -355,13 +386,16 @@ enum ScrollSystemLog {
 
         func matches(_ settings: ThumbWheelSettings) -> Bool {
             return function == settings.function && speed == settings.speed && swapsDirection == settings.swapsDirection
+                && follows == settings.followsWheelNow
         }
     }
 
     /// One line per roll, for example
     /// `thumb wheel: 14 events in 620 ms (longest gap 85 ms), lines -9, fixed -9.40 (largest 1.25), points -212 (largest 31), 1 direction change, not continuous, volume x3.00, travel 56.8: 7 steps next, 15 dropped`
     /// ("dropped": steps the pacer did not run; only when there are any; "volume (the app's
-    /// own) x3.00" when the function was the app in front's own).
+    /// own) x3.00" when the function was the app in front's own). While Switch Desktops
+    /// follows the wheel the end says what the swipes did instead of steps, for example
+    /// `switch desktops, following x1.00, travel 7.0: 1 swipe ended (furthest 0.83 of a desktop)`.
     static func thumbWheelMessage(for roll: ThumbWheelRoll) -> String {
         let continuity: String
         if roll.continuousEvents == 0 {
@@ -383,6 +417,7 @@ enum ScrollSystemLog {
             steps = "\(next) \(next == 1 ? "step" : "steps") next, \(previous) previous"
         }
         let dropped = roll.droppedSteps > 0 ? ", \(roll.droppedSteps) dropped" : ""
+        let outcome = roll.follows ? followMessage(for: roll) : steps + dropped
         return String(
             format: "thumb wheel: %ld %@ in %.0f ms (longest gap %.0f ms), lines %lld, fixed %.2f (largest %.2f), points %.0f (largest %.0f), %ld %@, %@, %@ x%.2f%@, travel %.1f: %@",
             roll.events, roll.events == 1 ? "event" : "events",
@@ -391,11 +426,26 @@ enum ScrollSystemLog {
             roll.lines, roll.fixed, roll.largestFixed, roll.points, roll.largestPoints,
             roll.directionChanges, roll.directionChanges == 1 ? "direction change" : "direction changes",
             continuity,
-            roll.isAppsOwn ? roll.function.logName + " (the app's own)" : roll.function.logName,
+            (roll.isAppsOwn ? roll.function.logName + " (the app's own)" : roll.function.logName)
+                + (roll.follows ? ", following" : ""),
             roll.speed, roll.swapsDirection ? " swapped" : "",
             roll.travel,
-            steps + dropped
+            outcome
         )
+    }
+
+    /// What the swipes of a roll that followed the wheel did: "1 swipe ended", "1 swipe went
+    /// back", "1 interrupted", "1 stroke waited for another swipe", with the furthest one.
+    static func followMessage(for roll: ThumbWheelRoll) -> String {
+        var parts: [String] = []
+        if roll.swipesEnded > 0 { parts.append("\(roll.swipesEnded) \(roll.swipesEnded == 1 ? "swipe" : "swipes") ended") }
+        if roll.swipesBack > 0 { parts.append("\(roll.swipesBack) went back") }
+        if roll.swipesInterrupted > 0 { parts.append("\(roll.swipesInterrupted) interrupted") }
+        if roll.strokesWaited > 0 {
+            parts.append("\(roll.strokesWaited) \(roll.strokesWaited == 1 ? "stroke" : "strokes") waited for another swipe")
+        }
+        if parts.isEmpty { parts.append("no swipe") }
+        return parts.joined(separator: ", ") + String(format: " (furthest %.2f of a desktop)", roll.furthestSwipe)
     }
 
     /// Main queue, never inside the tap callback.

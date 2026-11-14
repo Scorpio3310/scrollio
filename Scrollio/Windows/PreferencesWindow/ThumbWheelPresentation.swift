@@ -120,12 +120,13 @@ enum ThumbWheelPresentation {
         return String(format: NSLocalizedString("scrolling-speed-value", comment: ""), number)
     }
 
-    /// What the speed means for `function`: how far a sideways scroll goes, or how little of
-    /// a turn each step needs. While the wheel scrolls and "Smooth scrolling" is off the
-    /// speed still applies in an app that smooths with settings of its own (the scroll engine
-    /// uses it for every smoothed sideways scroll), so the slider stays on and the line says
-    /// where it applies.
-    static func speedHintKey(for function: ThumbWheelFunction, smoothing: Bool) -> String {
+    /// What the speed means for `function`: how far a sideways scroll goes, how little of
+    /// a turn each step needs, or how far a turn slides the desktop while it follows the
+    /// wheel. While the wheel scrolls and "Smooth scrolling" is off the speed still applies
+    /// in an app that smooths with settings of its own (the scroll engine uses it for every
+    /// smoothed sideways scroll), so the slider stays on and the line says where it applies.
+    static func speedHintKey(for function: ThumbWheelFunction, smoothing: Bool, follows: Bool = false) -> String {
+        if function == .desktops && follows { return "scrolling-thumb-wheel-speed-hint-follow" }
         guard function == .scroll else { return "scrolling-thumb-wheel-speed-hint-steps" }
         return smoothing ? "scrolling-thumb-wheel-speed-hint-scroll" : "scrolling-thumb-wheel-speed-hint-smoothing-off"
     }
@@ -133,8 +134,24 @@ enum ThumbWheelPresentation {
     /// Every line the speed row can show, so it keeps room for the tallest.
     static let speedHintKeys = [
         "scrolling-thumb-wheel-speed-hint-scroll", "scrolling-thumb-wheel-speed-hint-steps",
-        "scrolling-thumb-wheel-speed-hint-smoothing-off",
+        "scrolling-thumb-wheel-speed-hint-smoothing-off", "scrolling-thumb-wheel-speed-hint-follow",
     ]
+
+    // MARK: Reverse direction
+
+    /// What "Reverse direction" does for `function`, under the switch (at most two lines).
+    static func reverseHint(for function: ThumbWheelFunction) -> String {
+        return NSLocalizedString("scrolling-thumb-wheel-reverse-hint-\(function.identifierName)", comment: "")
+    }
+
+    // MARK: The row's menu
+
+    /// "Thumb Wheel Settings…" at the end of a thumb wheel row's menu (the Buttons pane's,
+    /// an app's Buttons part's): it opens Scrolling › Thumb wheel, as "Show Gesture
+    /// Settings" opens the Gestures pane.
+    static var settingsItemTitle: String {
+        return NSLocalizedString("buttons-thumb-wheel-settings", comment: "")
+    }
 }
 
 // MARK: - Changes

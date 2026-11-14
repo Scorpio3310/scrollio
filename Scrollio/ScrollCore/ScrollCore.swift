@@ -174,7 +174,7 @@ class ScrollCore: ScrollActionPort {
                 timestamp: event.timestamp
             )
             : nil
-        // The function, the speed and the swap are its turn's: what the app in front at the
+        // The function, the speed, the reverses and the follow switch are its turn's: what the app in front at the
         // turn's first event has of its own, else the general ones; kept until the wheel
         // rests (a comparison per event, a look at the list per turn:
         // `ThumbWheelEngine.settings(for:general:)`).
@@ -237,7 +237,7 @@ class ScrollCore: ScrollActionPort {
         if hasVerticalDelta && verticalReversePreference {
             ScrollEvent.reverseY(scrollEvent)
         }
-        // While the sideways wheel scrolls, its "Swap direction" turns it around once more,
+        // While the sideways wheel scrolls, its "Reverse direction" turns it around once more,
         // after "Reverse wheel direction" (global or the app's): X is turned around once or not
         // at all. (Two `reverseX` would not undo each other: each writes the negated original.)
         let flipsHorizontal = ScrollCore.flipsHorizontal(
@@ -248,9 +248,10 @@ class ScrollCore: ScrollActionPort {
             ScrollEvent.reverseX(scrollEvent)
         }
         if let thumbWheelEvent = thumbWheelEvent {
-            // A function's direction is the turn itself, turned around only by "Swap
-            // direction": "Reverse wheel direction" (global or the app's) and the allowlist
-            // depend on the app under the pointer, and the volume or the desktop must not.
+            // A function's direction is the turn itself, turned around only by the function's
+            // own "Reverse direction": "Reverse wheel direction" (global or the app's) and the
+            // allowlist depend on the app under the pointer, and the volume or the desktop
+            // must not.
             ScrollCore.shared.thumbWheelEngine.handle(
                 thumbWheelEvent, settings: thumbWheel,
                 flipped: runsThumbWheelFunction ? thumbWheel.swapsDirection : flipsHorizontal
@@ -374,8 +375,9 @@ class ScrollCore: ScrollActionPort {
     }
 
     /// Whether X of a scrolling event is turned around: by "Reverse wheel direction" (global or
-    /// the app's), or by the thumb wheel's "Swap direction" for a sideways event; both together
-    /// cancel out. (A function's direction uses "Swap direction" only.)
+    /// the app's), or by the thumb wheel's "Reverse direction" of Scroll Sideways for a sideways
+    /// event; both together cancel out. (A function's direction uses its own "Reverse
+    /// direction" only.)
     static func flipsHorizontal(reverseRule: Bool, swapsSideways: Bool) -> Bool {
         return reverseRule != swapsSideways
     }

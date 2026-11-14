@@ -553,6 +553,10 @@ class PreferencesApplicationViewController: NSViewController {
             guard let open = self?.detailController, open.application === entry else { return nil }
             return open.gesturesPart
         }
+        detail.scrollingPartShowing = { [weak self] entry in
+            guard let open = self?.detailController, open.application === entry else { return nil }
+            return open.scrollingPart
+        }
         detail.onHeightChange = { [weak self] in self?.contentHeightDidChange() }
         addChild(detail)
         detailController = detail

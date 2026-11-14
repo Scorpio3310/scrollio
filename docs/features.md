@@ -281,21 +281,36 @@ wheel.
 
 - Action: Scroll Sideways (the default), Zoom, Switch Tabs, Switch Desktops, Back and
   Forward, or Volume.
-- Speed, and Swap direction.
-- An app can have all three of its own, on its page in Apps, where the wheel is the
+- Reverse direction, one switch for each action: the box shows the chosen action's, and
+  each action keeps its own (Volume can be turned around without Switch Desktops). The
+  one "Swap direction" of 1.0.5 and before gives every action its value; 1.0.5 reads the
+  chosen action's.
+- Follow the wheel, for Switch Desktops (off by default): instead of a step per stroke
+  the desktops slide with the wheel like a trackpad swipe, as Gestures' "Follow the
+  hand", at most one desktop per stroke, and settle when the wheel rests (about half a
+  second): half a desktop or more goes on to the next one, less goes back. While a
+  gesture's swipe runs the wheel waits; a gesture that starts one takes over. Where macOS
+  cannot be sent a swipe, the desktops go in steps.
+- Speed: how far a sideways scroll goes, how little of a turn each step needs, or how far
+  a turn slides the desktop.
+- The Thumb wheel row's menu in Buttons ends with "Thumb Wheel Settings…", which opens
+  Scrolling › Thumb wheel (on an app's Buttons part: the app's Scrolling part).
+- An app can have all of them of its own, on its page in Apps, where the wheel is the
   same as in the panes: the Scrolling part has the Thumb wheel box, and the Buttons part
   a Thumb wheel row whose action is the box's action. Its settings count while the app
   is in front (not the one under the pointer: the keys of Zoom, Switch Tabs and Back and
   Forward go to it); a turn keeps them until the wheel rests, whatever comes to the
   front meanwhile. While Scrollio's own Settings are in front, the wheel does what the
   panes say.
-- Speed and Swap direction are scroll settings of the app: they are its own while "Use
+- Speed, Reverse direction and Follow the wheel are scroll settings of the app: they are its own while "Use
   settings from Scrolling" is off on its page (they start as what the wheel did in the
   app at that moment, and stay for later while the switch is on). The Scrolling part
   shows its settings, the Thumb wheel box among them, only while that switch is off: on,
   it is the switch alone, as the Gestures and Shortcut Ring parts are with theirs. An
-  app whose own settings date from before keeps the speed and direction of Scrolling ›
-  Thumb wheel until you change them on its page.
+  app whose own settings date from before keeps the speed and directions of Scrolling ›
+  Thumb wheel until you change them on its page. "Thumb Wheel Settings…" of the app's
+  Buttons part shows the Scrolling part either way: with the switch on it is the switch
+  that gives the app its own.
 - The action is the app's own whatever that switch says: choose it in the Scrolling
   part's box while the switch is off, or, either way, with "+" of the Buttons part, which
   offers "Thumb wheel" while the connected mouse has one (an MX Master 4, 3 or 3S). The
@@ -304,7 +319,8 @@ wheel.
   wheel does everywhere (scrolling against steps). "−" gives the action back to Buttons;
   Edit › Undo takes it again.
 - "Reset to Defaults" of the app's Scrolling part (there while the switch is off) gives
-  the wheel 1× and no swap there and the action of every app again; that of its Buttons
+  the wheel 1×, no action reversed and desktops in steps there, and the action of every
+  app again; that of its Buttons
   part takes the action away.
 
 ## Logitech MX mice

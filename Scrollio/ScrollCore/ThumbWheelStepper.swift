@@ -83,6 +83,24 @@ enum ThumbWheelTuning {
     /// Rounding slack: travel this close under a threshold counts as reaching it (fractions of
     /// a unit added up are not exact in binary).
     static let thresholdSlack = 1e-9
+
+    // Follow the wheel (`ThumbWheelFollower`). Reasoned from the numbers above, not tuned on
+    // a real wheel yet: the `scroll` log's line per roll gives the furthest a swipe went.
+
+    /// Units of travel (accelerated, × the speed) that slide the desktop by one Space: a slow
+    /// roll of 5 to 10 events moves it most or all of the way, three events half of it, a
+    /// flick all of it (a swipe never goes further than one Space).
+    static let followUnitsPerSpace = 6.0
+    /// A pause this long (s) ends a stroke: the swipe settles, by where the desktop stands
+    /// (the hand has stopped, so its speed is nothing). Longer than most gaps inside a slow
+    /// roll (300 to 400 ms), shorter than the turn's rest.
+    static let followRest: TimeInterval = 0.45
+    /// The desktop eases toward where the wheel has put it: this share of the way per 60 Hz
+    /// frame (less per frame on a faster display), so one event is a slide of about 0.1 s,
+    /// not a jump of a sixth of the screen.
+    static let followEasePerFrame = 0.5
+    /// Closer than this (progress) it stands where the wheel put it.
+    static let followEaseSnap = 0.002
 }
 
 extension ThumbWheelFunction {

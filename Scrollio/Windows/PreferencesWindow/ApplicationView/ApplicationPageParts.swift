@@ -152,6 +152,12 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
     var onOwnThumbWheelChange: (() -> Void)? {
         didSet { scrollingController?.onApplicationThumbWheelChange = onOwnThumbWheelChange }
     }
+    /// The pane's answer to which Scrolling part shows an app's entry now: an Undo or Redo
+    /// of "Reset to Defaults" shows there, on the page open when it runs (the page that
+    /// made it may be gone). Nil: this part, while it shows that entry.
+    var partShowing: ((Application) -> ApplicationScrollingPartViewController?)? {
+        didSet { handOnPartShowing() }
+    }
 
     private(set) var inheritRow: PreferencesSwitchRow!
     private(set) var inheritSection: PreferencesGroupSection!
@@ -204,6 +210,7 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
         scrolling.onApplicationThumbWheelChange = onOwnThumbWheelChange
         addChild(scrolling)
         scrollingController = scrolling
+        handOnPartShowing()
         scrolling.view.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(section)
@@ -222,6 +229,20 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
     func syncViewWithOptions() {
         if sync() {
             onHeightChange?()
+        }
+    }
+
+    /// Tells the settings where an Undo or Redo of their reset shows: on the Scrolling part
+    /// that shows the app's entry then, with the Buttons part and the list
+    /// (`onOwnThumbWheelChange`: the reset takes the app's own thumb wheel action too).
+    private func handOnPartShowing() {
+        let showing = partShowing ?? { [weak self] entry in
+            self?.application === entry ? self : nil
+        }
+        scrollingController?.showUndoneResetOfApplication = { entry in
+            guard let part = showing(entry) else { return }
+            part.syncViewWithOptions()
+            part.onOwnThumbWheelChange?()
         }
     }
 

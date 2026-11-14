@@ -8,11 +8,12 @@
 //
 //  On top a preview, then a box with what most people need: smooth scrolling, its feel,
 //  the speed and the direction. Under it "Thumb wheel": what the sideways wheel of a mouse
-//  does, its speed and its direction, with a line under the box on which wheel that is
+//  does, the chosen action's own "Reverse direction" (each action keeps its own), for
+//  Switch Desktops "Follow the wheel", and the speed, with a line under the box on which wheel that is
 //  (VoiceOver hears it as a group of that name, so its "Speed" is not taken for the main
 //  wheel's). On an app's page (which shows these settings only while the app has its own,
-//  `ApplicationScrollingPartViewController`) the same box edits the app's own: its speed
-//  and direction are scroll values of the app, its action is the app's own function, one
+//  `ApplicationScrollingPartViewController`) the same box edits the app's own: its speed,
+//  reverses and follow switch are scroll values of the app, its action is the app's own function, one
 //  value with the thumb wheel's row of the app's Buttons part, which no switch governs
 //  (it stays when the app uses the Scrolling settings again), and the line under the box
 //  says so (`ApplicationThumbWheel.swift`). Then "While you hold a key" with the three
@@ -25,7 +26,8 @@
 //  The tab edits scroll options (Options.shared.scroll, or the target application's own) and,
 //  on the tab itself, Options.shared.thumbWheel, which the Buttons pane edits too: a change
 //  made there shows here at once (ThumbWheelSettingsChange). On an app's page "Reset to
-//  Defaults" also gives the app's thumb wheel 1× and no swap and takes its own action away.
+//  Defaults" also gives the app's thumb wheel 1×, nothing reversed and desktops in steps,
+//  and takes its own action away.
 //
 //  Created by Caldis on 2017/1/26.
 //  Copyright © 2017年 Caldis. All rights reserved.
@@ -178,7 +180,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         static let thumbWheelFunction = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-function")
         static let thumbWheelFunctionHint = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-function-hint")
         static let thumbWheelSpeed = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-speed")
-        static let thumbWheelSwap = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-swap")
+        static let thumbWheelReverse = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-reverse")
+        static let thumbWheelFollow = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-follow")
         static let thumbWheelNote = NSUserInterfaceItemIdentifier("scrolling-thumb-wheel-note")
         static let keysNote = NSUserInterfaceItemIdentifier("scrolling-keys-note")
         static let reset = NSUserInterfaceItemIdentifier("scrolling-reset")
@@ -224,6 +227,12 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// reset and its Undo), which the app's Buttons part and the list's mark show. Given by
     /// the page so that it outlives it (an Undo can run after the page closed).
     var onApplicationThumbWheelChange: (() -> Void)?
+
+    /// On an app's page: an Undo or Redo of "Reset to Defaults" changed the app's entry
+    /// (found by its path when it runs): the page open now shows it, if it is that app's
+    /// (`ApplicationScrollingPartViewController.partShowing`). Outlives the page that made
+    /// the reset, as the reset's Undo does.
+    var showUndoneResetOfApplication: ((Application) -> Void)?
 
     /// How long "Reset to Defaults" reads "Undo Reset" after a reset. Tests shorten it.
     var undoOfferDuration: TimeInterval = 8
@@ -292,8 +301,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     private var contentStack: NSStackView!
     /// `loadView` is through: a row or line that comes or goes now changes the pane's height.
     private var isBuilt = false
-    /// "Thumb wheel": its title and box, the line under the box, and its three rows. On the
-    /// tab and on an app's page (the app's own values, and another line under the box).
+    /// "Thumb wheel": its title and box, the line under the box, and its rows (Action, the
+    /// action's Reverse direction, Switch Desktops' Follow the wheel, Speed). On the tab and
+    /// on an app's page (the app's own values, and another line under the box).
     private(set) var thumbWheelSection: PreferencesGroupSection!
     /// The line under the box (in a holder that insets it, which is what hides).
     private(set) var thumbWheelNote: NSTextField!
@@ -301,8 +311,11 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     private(set) var thumbWheelFunctionPopUp: NSPopUpButton!
     private(set) var thumbWheelSpeedRow: PreferencesSliderRow!
     private(set) var thumbWheelSpeedSlider: NSSlider!
-    private(set) var thumbWheelSwapRow: PreferencesSwitchRow!
-    private(set) var thumbWheelSwapSwitch: NSSwitch!
+    private(set) var thumbWheelReverseRow: PreferencesSwitchRow!
+    private(set) var thumbWheelReverseSwitch: NSSwitch!
+    /// Shown only while the action is Switch Desktops.
+    private(set) var thumbWheelFollowRow: PreferencesSwitchRow!
+    private(set) var thumbWheelFollowSwitch: NSSwitch!
     /// The boxes (as sections), top to bottom: the main box, the thumb wheel, the keys,
     /// "Advanced".
     private(set) var sections: [PreferencesGroupSection] = []
@@ -340,7 +353,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         keysSection = keys
         let keysNoteHolder = makeKeysNote()
         let thumbWheel = PreferencesGroupSection(title: ThumbWheelPresentation.title, width: width, rows: [
-            makeThumbWheelFunctionRow(), makeThumbWheelSpeedRow(), makeThumbWheelSwapRow(),
+            makeThumbWheelFunctionRow(), makeThumbWheelReverseRow(), makeThumbWheelFollowRow(), makeThumbWheelSpeedRow(),
         ])
         thumbWheelSection = thumbWheel
         let thumbWheelNoteHolder = makeThumbWheelNote()
@@ -494,8 +507,10 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// page what a turn runs with while the app is in front (`thumbWheelThatRuns`); it writes
     /// nothing. On the tab the speed slider is always on: with "Smooth scrolling" off an app
     /// with its own settings may still smooth the wheel at this speed, and the line says so.
-    /// On an app's page the speed and the swap are on while the app's own settings are (as
-    /// every other scroll value), and the action always: it is the app's own either way.
+    /// On an app's page the speed, the reverse and the follow switch are on while the app's
+    /// own settings are (as every other scroll value), and the action always: it is the
+    /// app's own either way. "Reverse direction" is the chosen action's own, its line says
+    /// what it does for that action; "Follow the wheel" shows for Switch Desktops only.
     private func syncThumbWheel() {
         let general = Options.shared.thumbWheel
         let settings = currentTargetApplication?.thumbWheelThatRuns(general: general) ?? general
@@ -522,14 +537,29 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         speedRow.valueText = ThumbWheelPresentation.speedText(settings.speed)
         // (The app's own smoothing on its page: the Scrolling settings' while it uses them.)
         let smoothing = getTargetApplicationScrollOptions().smooth
-        let speedHint = text(ThumbWheelPresentation.speedHintKey(for: function, smoothing: smoothing))
+        let speedHint = text(ThumbWheelPresentation.speedHintKey(for: function, smoothing: smoothing, follows: settings.followsWheel))
         if speedRow.explanation != speedHint {
             speedRow.explanation = speedHint
         }
         speedRow.isEnabled = editable
 
-        thumbWheelSwapRow.isOn = settings.swapsDirection
-        thumbWheelSwapRow.isEnabled = editable
+        thumbWheelReverseRow.isOn = settings.swapsDirection
+        let reverseHint = ThumbWheelPresentation.reverseHint(for: function)
+        if thumbWheelReverseRow.explanation != reverseHint {
+            thumbWheelReverseRow.explanation = reverseHint
+        }
+        thumbWheelReverseRow.isEnabled = editable
+
+        thumbWheelFollowRow.isOn = settings.followsWheel
+        thumbWheelFollowRow.isEnabled = editable
+        let showsFollow = function == .desktops
+        if thumbWheelFollowRow.isHidden == showsFollow {
+            thumbWheelFollowRow.isHidden = !showsFollow
+            // Not while the view is still being built (`loadView` sizes it once at the end).
+            if isBuilt {
+                contentHeightDidChange()
+            }
+        }
     }
 
     /// A slider row and its value. A refresh arriving while the user drags this knob must
@@ -550,15 +580,13 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     }
 
     /// True while the options differ from the defaults (an app that inherits has none of its
-    /// own). The thumb wheel counts too: on the tab its settings, on an app's page the speed
-    /// and swap a turn runs with there and the app's own action.
+    /// own). The thumb wheel counts too: on the tab its settings, on an app's page the speed,
+    /// reverses and follow switch a turn runs with there and the app's own action.
     var hasSettingsToReset: Bool {
         guard !isTargetApplicationInheritOptions() else { return false }
         if let application = currentTargetApplication {
             let running = application.thumbWheelThatRuns(general: Options.shared.thumbWheel)
-            let defaults = ApplicationThumbWheelScrolling.defaults
-            if application.thumbWheel != nil || running.speed != defaults.speed
-                || running.swapsDirection != defaults.swapsDirection {
+            if application.thumbWheel != nil || ApplicationThumbWheelScrolling(running) != .defaults {
                 return true
             }
         } else if Options.shared.thumbWheel != .default {
@@ -792,7 +820,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
     /// The thumb wheel's speed, on the slider's grid of 0.05. The slider sends nothing for a
     /// press that does not move its knob, and a value it already has is not written again.
-    /// On an app's page the app's own speed (with the swap it shows: both become its own).
+    /// On an app's page the app's own speed (with the reverses and follow switch it shows:
+    /// all of them become its own).
     @objc func thumbWheelSpeedChanged(_ sender: NSSlider) {
         let value = ThumbWheelPresentation.speedSetting.snapped(sender.doubleValue)
         if let application = currentTargetApplication {
@@ -803,29 +832,52 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         syncViewWithOptions()
     }
 
-    @objc func thumbWheelSwapClick(_ sender: NSSwitch) {
-        let swaps = sender.state == .on
+    /// "Reverse direction" of the action shown (the one that runs): the other actions keep
+    /// theirs.
+    @objc func thumbWheelReverseClick(_ sender: NSSwitch) {
+        let reverses = sender.state == .on
         if let application = currentTargetApplication {
-            setOwnThumbWheelScrolling(of: application) { $0.swapsDirection = swaps }
-        } else if Options.shared.thumbWheel.swapsDirection != swaps {
-            Options.shared.thumbWheel.swapsDirection = swaps
+            setOwnThumbWheelScrolling(of: application) { $0.swapsDirection = reverses }
+        } else if Options.shared.thumbWheel.swapsDirection != reverses {
+            Options.shared.thumbWheel.swapsDirection = reverses
         }
         syncViewWithOptions()
     }
 
-    /// The app's own speed and swap, changed by `change` from what a turn runs with there
-    /// now. Only while the app's own settings are in use (the page shows the rows only then).
+    /// Switch Desktops' "Follow the wheel".
+    @objc func thumbWheelFollowClick(_ sender: NSSwitch) {
+        let follows = sender.state == .on
+        if let application = currentTargetApplication {
+            setOwnThumbWheelScrolling(of: application) { $0.followsWheel = follows }
+        } else if Options.shared.thumbWheel.followsWheel != follows {
+            Options.shared.thumbWheel.followsWheel = follows
+        }
+        syncViewWithOptions()
+    }
+
+    /// The app's own speed, reverses and follow switch, changed by `change` from what a turn
+    /// runs with there now. Only while the app's own settings are in use (the page shows the
+    /// rows only then).
     private func setOwnThumbWheelScrolling(of application: Application, _ change: (inout ThumbWheelSettings) -> Void) {
         guard !application.inherit else { return }
         var settings = application.thumbWheelThatRuns(general: Options.shared.thumbWheel)
         change(&settings)
-        application.setOwnThumbWheelScrolling(speed: settings.speed, swapsDirection: settings.swapsDirection)
+        application.setOwnThumbWheelScrolling(settings)
+    }
+
+    /// Brings the Thumb wheel box into view: "Thumb Wheel Settings…" of a thumb wheel row
+    /// opened this pane (or an app's Scrolling part).
+    func revealThumbWheel() {
+        guard isViewLoaded else { return }
+        view.layoutSubtreeIfNeeded()
+        thumbWheelSection.scrollToVisible(thumbWheelSection.bounds)
     }
 
     /// Back to the scroll options of a new installation: the "Smooth" feel, the default
     /// speed and step, the three default keys, trackpad-style scrolling off; also the
-    /// thumb wheel: on the tab it scrolls sideways at 1×, not swapped; on an app's page its
-    /// speed is 1× and its direction not swapped, and its action is the general one again
+    /// thumb wheel: on the tab it scrolls sideways at 1×, nothing reversed, desktops in
+    /// steps; on an app's page its speed is 1×, nothing reversed, desktops in steps, and its
+    /// action is the general one again
     /// (no function of its own, as "−" on its Buttons part's row gives). "Advanced" stays as
     /// it is. One click, no question: Edit › Undo ("Undo Reset Scrolling") brings back every
     /// value it changed.
@@ -838,10 +890,15 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         // (The page's hook outlives this controller: an Undo after the page closed still
         // tells the list.)
         let thumbWheelChange = currentTargetApplication == nil ? nil : onApplicationThumbWheelChange
-        Self.resetScrollOptions(of: currentTargetApplication, undoManager: undoTarget) { [weak self] in
-            self?.syncViewWithOptions()
-            thumbWheelChange?()
-        }
+        let showOnOpenPage = currentTargetApplication == nil ? nil : showUndoneResetOfApplication
+        Self.resetScrollOptions(
+            of: currentTargetApplication, undoManager: undoTarget,
+            didChange: { [weak self] in
+                self?.syncViewWithOptions()
+                thumbWheelChange?()
+            },
+            showOnOpenPage: showOnOpenPage
+        )
         beginUndoOffer()
     }
 
@@ -898,7 +955,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     }
 
     /// What a reset replaces: the scroll options (on an app's page with the app's thumb
-    /// wheel speed and swap in them), on the tab the thumb wheel settings (nil on an app's
+    /// wheel values in them), on the tab the thumb wheel settings (nil on an app's
     /// page: they are not the app's and are left alone), and on an app's page the app's own
     /// thumb wheel function (its entry's "thumbWheel", stored as it is).
     private struct ResettableSettings {
@@ -920,17 +977,25 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// Gives the app (nil: the Scrolling tab) new default scroll options, and the tab default
     /// thumb wheel settings; Undo gives back the ones it had. The undo target is the
     /// settings, not this controller: an app's page and its controller are gone once the
-    /// list shows again, and its Undo still works.
+    /// list shows again, and its Undo still works. Undo and Redo find the app's entry by its
+    /// path when they run (`currentEntry`, as the other parts' resets do) and show it on the page
+    /// open then (`showOnOpenPage`), besides `didChange` (this controller, while it lives,
+    /// and the list).
     private static func resetScrollOptions(
         of application: Application?,
         undoManager undo: UndoManager?,
-        didChange: @escaping () -> Void
+        didChange: @escaping () -> Void,
+        showOnOpenPage: ((Application) -> Void)?,
+        isRedo: Bool = false
     ) {
         let previous = replaceSettings(of: application, with: .defaults(for: application))
         didChange()
+        if isRedo, let application { showOnOpenPage?(application) }
         guard let undo else { return }
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
-            Self.restoreScrollOptions(previous, of: application, undoManager: undo, didChange: didChange)
+            Self.restoreScrollOptions(
+                previous, of: currentEntry(of: application), undoManager: undo, didChange: didChange, showOnOpenPage: showOnOpenPage
+            )
         }
         undo.setActionName(NSLocalizedString("scrolling-undo-reset", comment: ""))
     }
@@ -940,15 +1005,29 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         _ settings: ResettableSettings,
         of application: Application?,
         undoManager undo: UndoManager?,
-        didChange: @escaping () -> Void
+        didChange: @escaping () -> Void,
+        showOnOpenPage: ((Application) -> Void)?
     ) {
         replaceSettings(of: application, with: settings)
         didChange()
+        if let application { showOnOpenPage?(application) }
         guard let undo else { return }
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
-            Self.resetScrollOptions(of: application, undoManager: undo, didChange: didChange)
+            Self.resetScrollOptions(
+                of: currentEntry(of: application), undoManager: undo, didChange: didChange, showOnOpenPage: showOnOpenPage, isRedo: true
+            )
         }
         undo.setActionName(NSLocalizedString("scrolling-undo-reset", comment: ""))
+    }
+
+    /// Whose settings an Undo or Redo of a reset changes: nil, the tab's; else the entry the
+    /// list holds now for the app (an app removed and added again is a new entry), or the
+    /// one the reset changed when the list has none for it (nothing stores that one).
+    private static func currentEntry(of application: Application?) -> Application? {
+        guard let application else { return nil }
+        return PreferencesApplicationViewController.existingApplication(
+            forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: application.path)
+        ) ?? application
     }
 
     /// Puts `settings` in place of the app's (nil: the global) scroll options, and of the
@@ -1188,16 +1267,34 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         return row
     }
 
-    private func makeThumbWheelSwapRow() -> PreferencesGroupRow {
+    /// "Reverse direction" of the chosen action; its line says what that is for the action,
+    /// and keeps room for the tallest, so picking another action never changes the height.
+    private func makeThumbWheelReverseRow() -> PreferencesGroupRow {
         let row = PreferencesSwitchRow(
-            title: text("scrolling-thumb-wheel-swap"),
-            explanation: text("scrolling-thumb-wheel-swap-hint"),
+            title: text("scrolling-thumb-wheel-reverse"),
+            explanation: ThumbWheelPresentation.reverseHint(for: .scroll),
             target: self,
-            action: #selector(thumbWheelSwapClick(_:))
+            action: #selector(thumbWheelReverseClick(_:))
         )
-        row.toggle.identifier = Identifier.thumbWheelSwap
-        thumbWheelSwapRow = row
-        thumbWheelSwapSwitch = row.toggle
+        row.reservedExplanations = ThumbWheelFunction.allCases.map(ThumbWheelPresentation.reverseHint(for:))
+        row.toggle.identifier = Identifier.thumbWheelReverse
+        thumbWheelReverseRow = row
+        thumbWheelReverseSwitch = row.toggle
+        return row
+    }
+
+    /// Switch Desktops' "Follow the wheel"; hidden for the other actions.
+    private func makeThumbWheelFollowRow() -> PreferencesGroupRow {
+        let row = PreferencesSwitchRow(
+            title: text("scrolling-thumb-wheel-follow"),
+            explanation: text("scrolling-thumb-wheel-follow-hint"),
+            target: self,
+            action: #selector(thumbWheelFollowClick(_:))
+        )
+        row.toggle.identifier = Identifier.thumbWheelFollow
+        row.isHidden = true
+        thumbWheelFollowRow = row
+        thumbWheelFollowSwitch = row.toggle
         return row
     }
 

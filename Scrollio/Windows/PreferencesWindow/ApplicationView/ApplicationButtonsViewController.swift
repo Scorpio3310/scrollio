@@ -57,6 +57,8 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// "Show Gesture Settings" was chosen in a row's menu: the page shows the app's
     /// Gestures part.
     var onGestureSettingsRequested: (() -> Void)?
+    /// "Thumb Wheel Settings…" of the thumb wheel's row: the page shows its Scrolling part.
+    var onThumbWheelSettingsRequested: (() -> Void)?
 
     // MARK: - Seams (tests and screenshots replace them)
 
