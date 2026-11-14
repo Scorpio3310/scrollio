@@ -155,6 +155,61 @@ final class ApplicationThumbWheelTests: XCTestCase {
         XCTAssertTrue(own.contains(", zoom (the app's own) x1.00, "), own)
         XCTAssertEqual(own.replacingOccurrences(of: " (the app's own)", with: ""), general)
     }
+
+    // MARK: The settings file
+
+    private func ownOptions() -> Options {
+        let options = Options()
+        options.defaults = TestDefaults.make(for: self)
+        return options
+    }
+
+    /// Export writes the app's thumb wheel with its entry, a read brings it back, the sheet
+    /// lists it with the app's buttons and counts the app, and an import stores it; the
+    /// general thumb wheel is another setting. A file from elsewhere: a function this
+    /// version does not know is left out and counted, and so is what is no thumb wheel,
+    /// while the app stays; a file from before has none.
+    func testTheSettingsFileCarriesAnAppsThumbWheel() throws {
+        let source = ownOptions()
+        let figma = Application(path: "/Applications/Figma.app")
+        figma.setOwnThumbWheelFunction(.zoom)
+        let notes = Application(path: "/Applications/Notes.app")
+        notes.setOwnThumbWheelFunction(.scroll)
+        source.application.applications.append(figma)
+        source.application.applications.append(notes)
+        source.application.applications.append(Application(path: "/Applications/Mail.app"))
+        let data = try SettingsFile.export(from: source, now: Date(timeIntervalSince1970: 1_794_476_527)).get()
+        let root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let entries = try XCTUnwrap((root["settings"] as? [String: Any])?["applications"] as? [[String: Any]])
+        XCTAssertEqual(entries.map { $0["thumbWheel"] as? NSDictionary }, [["function": "zoom"], ["function": "scroll"], nil])
+
+        let contents = try SettingsFile.read(data).get()
+        XCTAssertEqual(contents.applications?.map(\.ownThumbWheelFunction), [.zoom, .scroll, nil])
+        XCTAssertEqual(contents.leftOutCount, 0)
+        XCTAssertEqual(SettingsFileText.thumbWheelLines(of: contents), ["Thumb wheel in Figma: Zoom", "Thumb wheel in Notes: Default"])
+        let items = SettingsFileText.items(of: contents).map(\.text)
+        XCTAssertTrue(items.contains("2 apps with buttons of their own"), "\(items)")
+
+        let target = ownOptions()
+        target.readOptions()
+        XCTAssertTrue(SettingsFile.apply(contents, to: target))
+        XCTAssertEqual(target.application.applications.get(by: figma.path)?.ownThumbWheelFunction, .zoom)
+        XCTAssertEqual(target.application.applications.get(by: notes.path)?.ownThumbWheelFunction, .scroll)
+        XCTAssertEqual(target.thumbWheel, .default, "the general thumb wheel is another setting")
+
+        let file = Data((#"{"format":"scrollio-settings","formatVersion":1,"settings":{"applications":["#
+            + #"{"path":"/Applications/A.app","thumbWheel":{"function":"brightness"}},"#
+            + #"{"path":"/Applications/B.app","thumbWheel":"zoom"},"#
+            + #"{"path":"/Applications/C.app","thumbWheel":{"function":"tabs"}},"#
+            + StoredDataCanaryTests.readableApp + "]}}").utf8)
+        let foreign = try SettingsFile.read(file).get()
+        XCTAssertEqual(foreign.applications?.map(\.path), ["/Applications/A.app", "/Applications/B.app", "/Applications/C.app", "/Applications/A.app"])
+        XCTAssertEqual(foreign.applications?.map(\.ownThumbWheelFunction), [nil, nil, .tabs, nil])
+        XCTAssertNil(foreign.applications?.first?.thumbWheel, "a later version's function is not brought in")
+        XCTAssertEqual(foreign.unknownActions, 1)
+        XCTAssertEqual(foreign.unreadableEntries, 1)
+        XCTAssertEqual(SettingsFileText.thumbWheelLines(of: foreign), ["Thumb wheel in C: Switch Tabs"])
+    }
 }
 
 // MARK: - The app's Buttons part

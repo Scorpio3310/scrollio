@@ -53,7 +53,8 @@
 //  (`launchActions`: every app, file and script a button, a key or a place of the
 //  Shortcut Ring would open or run). An app's own Shortcut Ring, stored inside the app's
 //  entry, is checked and shown as the general ring is (`applicationRing`,
-//  `applicationRings`), and so are an app's own gestures (`applicationGestures`).
+//  `applicationRings`), and so are an app's own gestures (`applicationGestures`) and its
+//  own thumb wheel (`applicationThumbWheels`).
 //
 //  Importing (`apply`): the settings come in group by group (OptionsGroup). A group the
 //  file holds replaces that group as a whole: a name of the group that the file does not
@@ -329,6 +330,13 @@ enum SettingsFile {
             }
         }
 
+        /// The apps of the file whose thumb wheel has a function of their own, each with it.
+        var applicationThumbWheels: [(application: Application, function: ThumbWheelFunction)] {
+            return (applications ?? []).compactMap { application in
+                application.ownThumbWheelFunction.map { (application, $0) }
+            }
+        }
+
         /// Every action of the file that opens an app or a file, or runs a script: of the
         /// buttons and keys, switched on or off, of each app's own buttons, of the
         /// places of the Shortcut Ring, and of the places of each app's own ring (one
@@ -588,7 +596,8 @@ enum SettingsFile {
     /// - of its own buttons, those that cannot be read or whose action this version does
     ///   not run are left out, one by one (as a whole they would take the app with them);
     /// - its own Shortcut Ring is checked as the ring of every app is (`applicationRing`);
-    /// - its own gestures are checked as those of every app are (`applicationGestures`).
+    /// - its own gestures are checked as those of every app are (`applicationGestures`);
+    /// - its own thumb wheel keeps only a function this version knows (`applicationThumbWheel`).
     /// Anything else is left for the decoder to judge. `counts` says what was changed.
     private static func applicationEntry(_ entry: Any, counts: inout EntryCounts) -> Any {
         guard var object = entry as? [String: Any] else { return entry }
@@ -624,6 +633,25 @@ enum SettingsFile {
         }
         if let gestures = object["gestures"] {
             object["gestures"] = applicationGestures(gestures, counts: &counts)
+        }
+        if let thumbWheel = object["thumbWheel"] {
+            object["thumbWheel"] = applicationThumbWheel(thumbWheel, counts: &counts)
+        }
+        return object
+    }
+
+    /// An app's own thumb wheel as it goes to the decoder: one whose function this version
+    /// does not know is left out (a later version that gives the name a meaning would run
+    /// what the sheet never showed) and counted, and so is what is no thumb wheel (no object,
+    /// no function's name). The app then turns the wheel as Buttons says.
+    private static func applicationThumbWheel(_ value: Any, counts: inout EntryCounts) -> Any? {
+        guard let object = value as? [String: Any], let thumbWheel: ApplicationThumbWheel = decoded(object) else {
+            counts.unreadable += 1
+            return nil
+        }
+        guard thumbWheel.function != nil else {
+            counts.unknownActions += 1
+            return nil
         }
         return object
     }

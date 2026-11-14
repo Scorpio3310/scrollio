@@ -103,8 +103,9 @@ enum SettingsFileText {
                     text: counted(ownRings, "general-settings-import-app-rings")
                 ))
             }
-            // Apps with buttons of their own (only what differs from Buttons).
-            let ownButtons = (contents.applications ?? []).filter(\.hasOwnButtons).count
+            // Apps with buttons of their own (only what differs from Buttons), the thumb
+            // wheel among them.
+            let ownButtons = (contents.applications ?? []).filter(\.hasOwnButtonsPart).count
             if ownButtons > 0 {
                 items.append(Item(
                     symbolName: "button.horizontal.top.press",
@@ -221,6 +222,17 @@ enum SettingsFileText {
             }
             let action = entry.binding.systemShortcutName.isEmpty ? text("buttons-default") : actionName(of: entry.binding)
             return String(format: text("general-settings-import-action-line-app"), trigger, name(of: application), action)
+        }
+    }
+
+    /// One line per app whose thumb wheel has a function of its own, as its page names it:
+    /// "Thumb wheel in Notes: Zoom" ("Default" for scrolling sideways).
+    static func thumbWheelLines(of contents: SettingsFile.Contents) -> [String] {
+        return contents.applicationThumbWheels.map { entry in
+            String(
+                format: text("general-settings-import-action-line-app"),
+                ThumbWheelPresentation.title, name(of: entry.application), ThumbWheelPresentation.buttonsTitle(for: entry.function)
+            )
         }
     }
 
@@ -734,8 +746,8 @@ final class SettingsImportSheetViewController: NSViewController {
         if !launches.isEmpty {
             add(makeLaunchBox(for: launches), to: middle)
         }
-        let lines = SettingsFileText.actionLines(of: contents) + SettingsFileText.gestureLines(of: contents)
-            + SettingsFileText.ringLines(of: contents)
+        let lines = SettingsFileText.actionLines(of: contents) + SettingsFileText.thumbWheelLines(of: contents)
+            + SettingsFileText.gestureLines(of: contents) + SettingsFileText.ringLines(of: contents)
         if !lines.isEmpty {
             add(makeActionsBox(for: lines), to: middle)
         }
