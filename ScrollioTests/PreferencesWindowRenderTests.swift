@@ -284,36 +284,56 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderButtons(name: "buttons-pane-named", source: source)
     }
 
-    /// The recorder's popover after keys were recorded, with the name field and the icon
-    /// choice (`recorder-popover-<appearance>.png`: the symbols open, one chosen;
-    /// `recorder-popover-closed-…`: as it opens, the symbols closed; `recorder-popover-search-…`:
-    /// a search over the symbols; `recorder-popover-empty-…`: right after a recording,
-    /// nothing set yet). Drawn without the popover's arrow.
+    /// The recorder's popover after keys were recorded: the details card with the icon well
+    /// and the name (`details-empty-<appearance>.png`: right after a recording, nothing set;
+    /// `details-named-…`: a name and a symbol; `details-character-…`: a typed emoji), and
+    /// the chooser of icons, a popover of its own (`chooser-…`: a symbol of the last group
+    /// chosen and scrolled into view; `chooser-search-…`; `chooser-character-…`: an emoji
+    /// typed in the search, offered first; `chooser-no-result-…`). Drawn without the
+    /// popovers' arrows.
     func testRenderRecorderPopoverWithNameAndIcon() throws {
         let reload = ShortcutLabel(name: "Reload", icon: .symbol("arrow.clockwise"))
-        let cases: [(name: String, label: ShortcutLabel?, status: KeyPreview.Status, prepare: (ShortcutLabelEditorView) -> Void)] = [
-            ("recorder-popover", reload, .normal, { $0.setChoosingIcon(true) }),
-            ("recorder-popover-closed", reload, .normal, { _ in }),
-            ("recorder-popover-search", ShortcutLabel(name: "Send", icon: nil), .normal, { editor in
-                editor.setChoosingIcon(true)
-                editor.searchField.stringValue = "send"
-                editor.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: editor.searchField))
-            }),
-            ("recorder-popover-empty", nil, .recorded, { _ in }),
+        let details: [(name: String, label: ShortcutLabel?, status: KeyPreview.Status)] = [
+            ("details-empty", nil, .recorded),
+            ("details-named", reload, .normal),
+            ("details-character", ShortcutLabel(name: "Sync", icon: .character("🔄")), .normal),
         ]
-        for item in cases {
+        for item in details {
             let popover = KeyPopover()
             popover.announce = { _ in }
             popover.testingPrepareContent(waitingHint: KeyRecordingMode.adaptive.waitingHint)
             popover.keyPreview.update(from: ["⇧", "⌘", "R"], status: item.status)
             popover.turnToDetails(label: item.label)
-            let editor = try XCTUnwrap(popover.labelEditor)
-            item.prepare(editor)
             let view = try XCTUnwrap(popover.testingContentView)
             view.layoutSubtreeIfNeeded()
             view.setFrameSize(view.fittingSize)
             try renderInPopoverMaterial(view, name: item.name)
             popover.hide()
+        }
+
+        let choosers: [(name: String, icon: ShortcutLabel.Icon?, search: String)] = [
+            ("chooser", .symbol("hammer"), ""),
+            ("chooser-search", nil, "arrow"),
+            ("chooser-character", nil, "🔄"),
+            ("chooser-no-result", .symbol("star"), "zzz"),
+        ]
+        for item in choosers {
+            let chooser = ShortcutIconChooserController(icon: item.icon)
+            let view = chooser.view
+            if !item.search.isEmpty {
+                chooser.searchField.stringValue = item.search
+                chooser.search(item.search)
+            }
+            // In a window that is never shown: the grid makes the items of the place it is
+            // scrolled to only in a window.
+            let window = RenderWindow(contentRect: NSRect(origin: .zero, size: view.fittingSize), styleMask: [.borderless], backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            window.contentView = view
+            view.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            window.contentView = nil
+            view.setFrameSize(view.fittingSize)
+            try renderInPopoverMaterial(view, name: item.name)
         }
     }
 
