@@ -302,6 +302,9 @@ final class LogiGestureController {
     private var hapticState: (flags: UInt8, level: UInt8)?
     /// getCapabilities waveform mask; nil until read.
     private(set) var hapticWaveformMask: UInt32?
+    /// The log said that this mouse has no haptics: once while it is connected, not once
+    /// per cue (a ring asks for one at every place it lights).
+    private var saidNoHapticFeature = false
 
     /// The mouse has a haptic motor Scrollio can pulse.
     var supportsHaptics: Bool { hapticFeatureIndex != nil }
@@ -373,7 +376,10 @@ final class LogiGestureController {
     @discardableResult
     func play(_ cue: MouseGestureHapticCue) -> Bool {
         guard hapticFeatureIndex != nil else {
-            log("Haptic cue \(cue) skipped: this mouse has no haptic feature")
+            if !saidNoHapticFeature {
+                saidNoHapticFeature = true
+                log("Haptic cue \(cue) skipped: this mouse has no haptic feature")
+            }
             return false
         }
         guard let enabled = hapticsEnabled, let mask = hapticWaveformMask else {

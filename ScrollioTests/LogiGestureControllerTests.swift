@@ -640,6 +640,23 @@ final class LogiGestureControllerTests: XCTestCase {
         XCTAssertEqual(haptics, [])
     }
 
+    /// A mouse without haptics (MX Master 3/3S, MX Anywhere 3/3S, MX Vertical) is asked for a
+    /// cue at every place the ring lights and at every gesture: the log says once while it
+    /// is connected that it has none, not once per cue. It says so again after it connects
+    /// again (a new controller).
+    func testAMouseWithoutHapticsIsNamedInTheLogOncePerConnection() {
+        let controller = makeController()
+        for _ in 0..<5 {
+            XCTAssertFalse(controller.play(.lockIn))
+        }
+        XCTAssertFalse(controller.play(.commit))
+        XCTAssertEqual(logLines, ["Haptic cue lockIn skipped: this mouse has no haptic feature"])
+
+        logLines = []
+        XCTAssertFalse(makeController().play(.commit))
+        XCTAssertEqual(logLines, ["Haptic cue commit skipped: this mouse has no haptic feature"])
+    }
+
     /// An MX Master 4 that never ran Options+ reports its haptics off at full intensity.
     /// A cue is only asked for while "Haptic feedback" is on, so the mouse is switched on.
     func testACueSwitchesHapticsOnWhenTheMouseHasThemOff_keepingTheIntensity() {
