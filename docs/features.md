@@ -15,10 +15,13 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   popover or switching to another app ends the recording.
 - A keyboard shortcut you record ("Keyboard Shortcut…" in a row's menu) can have a name
   and an icon, since "⇧⌘R" does not say what it does. Once the keys are recorded, the
-  same popover shows a field for the name and a button for the icon: one of about 130
-  symbols in seven groups, with a search over their names, or one character or emoji
-  you type instead. Both are optional. "Done", Return or a click elsewhere closes the
-  popover and keeps what you set. On a row that already has recorded keys, "Keyboard
+  same popover shows a small square for the icon beside a field for the name. A click on
+  the square (or Space) opens the icons in a popover of their own: about 100 symbols in
+  six groups, the common ones first, with a search over their names. One character or
+  emoji typed into that search, or picked with "Emoji & Symbols…", is offered first.
+  "Remove Icon" there, or Delete on the square, takes the icon away; Esc closes only the
+  icons. Both are optional. "Done", Return or a click elsewhere closes the popover and
+  keeps what you set. On a row that already has recorded keys, "Keyboard
   Shortcut…" opens the name and icon at once; "Record Again" there asks for other keys
   and keeps the name and the icon. The row then shows the icon and the name, and the
   keys after them in grey. A listed shortcut, an app to open and a mouse button have
