@@ -16,10 +16,10 @@ enum LogiUsageBootstrap {
     /// The app in front, whose own buttons count for what the mouse gives to Scrollio.
     /// Tests give one of their own.
     static var frontApplication: () -> ShortcutRingChoice.FrontApp? = { .current() }
-    /// What the buttons of the app in front changed in the divert at the last line of the
-    /// log (a line only after a change of the settings, and only when that changes).
-    private static var lastFrontAppDifference: (taken: Int, givenBack: Int) = (0, 0)
-    /// Writes the line about the buttons of the app in front. Tests give their own.
+    /// What the apps' own bindings change in the divert, as the last line of the log said it
+    /// (a line only after a change of the settings, and only when this changes).
+    private static var lastOwnLogitechButtons = OwnLogitechButtons.none
+    /// Writes the line about the apps' own Logitech buttons. Tests give their own.
     static var log: (String) -> Void = { AppSystemLog.note($0) }
     /// The Logitech buttons that are down now (`LogiIntegrationBridge`). Tests give their own.
     static var heldButtonCodes: () -> Set<UInt16> = { LogiIntegrationBridge.shared.heldButtonCodes }
@@ -109,7 +109,8 @@ enum LogiUsageBootstrap {
     static func refreshButtonUsage(front: ShortcutRingChoice.FrontApp?, afterASettingsChange: Bool = false) {
         let general = Options.shared.buttons.binding
         let isLogiCode: (UInt16) -> Bool = { LogiCenter.shared.isLogiCode($0) }
-        let entry = ApplicationButtons.entry(front: front, applications: Options.shared.application.applications)
+        let applications = Options.shared.application.applications
+        let entry = ApplicationButtons.entry(front: front, applications: applications)
         let wanted = buttonBindingCodes(general: general, frontAppOwn: entry?.ownButtonBindings ?? [], isLogiCode: isLogiCode)
         let kept = lastButtonBindingCodes.subtracting(wanted).intersection(heldButtonCodes())
         let codes = wanted.union(kept)
@@ -117,22 +118,58 @@ enum LogiUsageBootstrap {
         lastButtonBindingCodes = codes
         LogiCenter.shared.setUsage(source: .buttonBinding, codes: codes)
 
-        // One line when what the app in front changes is not what the last line said
-        // (never which app), and only after a change of the settings: a line per switch of
-        // apps filled the log and kept a trail of the user's switches.
+        // One line when what the apps' own bindings change is not what the last line said
+        // (counts over the list, never which app, whatever app is in front: a change of the
+        // settings is made with Scrollio in front), and only after a change of the settings:
+        // a line per switch of apps filled the log and kept a trail of the user's switches.
         guard afterASettingsChange else { return }
-        let generalCodes = buttonBindingCodes(general: general, frontAppOwn: [], isLogiCode: isLogiCode)
-        let difference = (taken: wanted.subtracting(generalCodes).count, givenBack: generalCodes.subtracting(wanted).count)
-        guard difference != lastFrontAppDifference else { return }
-        lastFrontAppDifference = difference
-        if difference == (0, 0) {
-            log("Buttons: the Logitech buttons are as Buttons sets them (the app in front has no binding of its own for one)")
-        } else {
-            log(
-                "Buttons: the app in front has its own binding: \(difference.taken) Logitech button(s) taken from the mouse "
-                    + "and \(difference.givenBack) given back while it is in front"
-            )
+        let own = ownLogitechButtons(general: general, applications: applications, isLogiCode: isLogiCode)
+        guard own != lastOwnLogitechButtons else { return }
+        lastOwnLogitechButtons = own
+        log(own.line)
+    }
+
+    /// What the apps on the list change with bindings of their own in the Logitech buttons
+    /// Scrollio takes: how many apps take a button from the mouse or give one back while
+    /// they are in front, and how many buttons each way (a button counts once).
+    struct OwnLogitechButtons: Equatable {
+        static let none = OwnLogitechButtons(apps: 0, taken: 0, givenBack: 0)
+
+        var apps: Int
+        var taken: Int
+        var givenBack: Int
+
+        /// The log's line (counts only).
+        var line: String {
+            guard apps > 0 else {
+                return "Buttons: no app has its own binding for a Logitech button: the Logitech buttons are as Buttons sets them in every app"
+            }
+            return "Buttons: \(apps) app(s) have their own binding for a Logitech button: \(taken) Logitech button(s) "
+                + "taken from the mouse and \(givenBack) given back while such an app is in front"
         }
+    }
+
+    /// `OwnLogitechButtons` for the list: each entry that a press finds for its path (the
+    /// last of two entries of one path, `ApplicationButtons.entry`) against `general`.
+    static func ownLogitechButtons(
+        general: [ButtonBinding], applications: EnhanceArray<Application>, isLogiCode: (UInt16) -> Bool
+    ) -> OwnLogitechButtons {
+        let generalCodes = buttonBindingCodes(general: general, frontAppOwn: [], isLogiCode: isLogiCode)
+        var apps = 0
+        var taken: Set<UInt16> = []
+        var givenBack: Set<UInt16> = []
+        for index in 0..<applications.count {
+            guard let entry = applications.get(by: index), entry.hasOwnButtons,
+                  applications.get(by: entry.path) === entry else { continue }
+            let wanted = buttonBindingCodes(general: general, frontAppOwn: entry.ownButtonBindings, isLogiCode: isLogiCode)
+            let takes = wanted.subtracting(generalCodes)
+            let givesBack = generalCodes.subtracting(wanted)
+            guard !takes.isEmpty || !givesBack.isEmpty else { continue }
+            apps += 1
+            taken.formUnion(takes)
+            givenBack.formUnion(givesBack)
+        }
+        return OwnLogitechButtons(apps: apps, taken: taken.count, givenBack: givenBack.count)
     }
 
     /// A Logitech button came up (`LogiIntegrationBridge`): if it stayed with Scrollio only
