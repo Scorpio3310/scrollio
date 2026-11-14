@@ -321,6 +321,8 @@ final class ShortcutIconChooserController: NSViewController, NSCollectionViewDat
     let removeButton = NSButton(title: "", target: nil, action: nil)
 
     private(set) var choices = ShortcutIconChoices.matching("")
+    /// Something is typed in the search.
+    private var isSearching = false
     private var scrollsToSelectionOnLayout = true
 
     init(icon: ShortcutLabel.Icon?) {
@@ -362,6 +364,7 @@ final class ShortcutIconChooserController: NSViewController, NSCollectionViewDat
         scrollView.isHidden = !found
         noMatchView.isHidden = found
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        isSearching = !trimmed.isEmpty
         let selected = trimmed.isEmpty ? choices.indexPath(of: icon) : (found ? IndexPath(item: 0, section: 0) : nil)
         grid.selectionIndexPaths = selected.map { [$0] } ?? []
         if trimmed.isEmpty, selected != nil {
@@ -373,11 +376,17 @@ final class ShortcutIconChooserController: NSViewController, NSCollectionViewDat
         }
     }
 
-    /// The selected entry is chosen; with none, the first one (Return in the search field).
+    /// The selected entry is chosen; with none, the first one that was found (Return in
+    /// the search field). With nothing typed and nothing selected (the icon is a typed
+    /// character, a symbol that is not among these, or none) nothing was chosen: the
+    /// chooser closes as for Esc, and the icon stays.
     func chooseSelected() {
-        let indexPath = grid.selectionIndexPaths.first ?? (choices.isEmpty ? nil : IndexPath(item: 0, section: 0))
-        if let indexPath {
+        if let indexPath = grid.selectionIndexPaths.first {
             choose(at: indexPath)
+        } else if !isSearching {
+            onCancel?()
+        } else if !choices.isEmpty {
+            choose(at: IndexPath(item: 0, section: 0))
         }
     }
 

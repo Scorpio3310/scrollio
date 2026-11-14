@@ -368,6 +368,35 @@ final class ShortcutIconChooserTests: XCTestCase {
         XCTAssertFalse(doneEditor.isChoosingIcon)
     }
 
+
+    /// Return with nothing typed in the search and nothing selected (the icon is a typed
+    /// character, a symbol that is not among these, or there is none) chooses nothing: the
+    /// chooser closes as for Esc, and the icon stays. Something typed: Return takes the
+    /// first that was found.
+    func testReturnWithNothingChosenKeepsTheIcon() throws {
+        let icons: [ShortcutLabel.Icon?] = [.character("🔄"), .symbol("tortoise"), nil]
+        for icon in icons {
+            let (popover, editor) = try details(ShortcutLabel(name: "Reload", icon: icon))
+            var closed = 0
+            popover.onClose = { closed += 1 }
+            editor.openChooser()
+            let chooser = try XCTUnwrap(editor.chooser)
+            XCTAssertTrue(chooser.grid.selectionIndexPaths.isEmpty, "\(String(describing: icon)) is not among the symbols")
+            XCTAssertTrue(chooser.control(chooser.searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
+            XCTAssertEqual(editor.icon, icon, "the icon stays")
+            XCTAssertFalse(editor.isChoosingIcon, "the chooser closes")
+            XCTAssertEqual(closed, 0, "the card stays")
+            XCTAssertEqual(popover.testingBehavior, .transient)
+        }
+
+        let (_, editor) = try details(ShortcutLabel(name: "Reload", icon: .character("🔄")))
+        editor.openChooser()
+        let chooser = try XCTUnwrap(editor.chooser)
+        chooser.searchField.stringValue = "hammer"
+        chooser.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: chooser.searchField))
+        XCTAssertTrue(chooser.control(chooser.searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        XCTAssertEqual(editor.icon, .symbol("hammer"))
+    }
     // MARK: Layout of the chooser
 
     /// Eight columns of 32 pt cells; the grid's room ends in the middle of a row, so it
