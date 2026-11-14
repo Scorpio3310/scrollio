@@ -856,8 +856,8 @@ final class ShortcutLabelPopoverTests: XCTestCase {
 
     /// A pull-down in a window that is never shown (the recorder only starts from a
     /// pull-down that is in a window), with what it tells its pane written down.
-    private func makePullDown(_ binding: ButtonBinding, forRingPlace: Bool = false) -> ButtonActionPullDown {
-        let pullDown = ButtonActionPullDown(binding: binding, forRingPlace: forRingPlace)
+    private func makePullDown(_ binding: ButtonBinding, use: ButtonActionPullDown.Use = .binding) -> ButtonActionPullDown {
+        let pullDown = ButtonActionPullDown(binding: binding, use: use)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 200), styleMask: [.titled], backing: .buffered, defer: true
         )
@@ -1200,6 +1200,32 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         XCTAssertEqual(stored.map { $0.action }, [shiftCommandR])
         XCTAssertNil(pullDown.detailsPopover)
         XCTAssertFalse(popover.isShowingDetails)
+    }
+
+    /// The line under the name says where it shows: a place's name in the Shortcut Ring
+    /// and in Settings, a button's or a direction's only in Settings (the ring never shows
+    /// it). The same whether the details open on keys that are there or after a recording.
+    func testTheNoteSaysWhereTheNameShows() throws {
+        let ring = "Shown in the Shortcut Ring and in Settings."
+        let settings = "Shown in Settings."
+        let named = ButtonBinding(triggerEvent: trigger, systemShortcutName: shiftCommandR, label: reload)
+        let uses: [(ButtonActionPullDown.Use, String)] = [
+            (.binding, settings), (.ringPlace, ring), (.gesture(showsLogiActions: false), settings),
+        ]
+        for (use, note) in uses {
+            let pullDown = makePullDown(named, use: use)
+            pullDown.shortcutSelected(try keyboardShortcutItem(of: pullDown))
+            let opened = try XCTUnwrap(pullDown.detailsPopover as? QuietPopover, "\(use)")
+            XCTAssertEqual(opened.labelEditor?.noteLabel.stringValue, note, "\(use)")
+            opened.closeAsTheUserDoes()
+
+            let recorded = makePullDown(ButtonBinding(triggerEvent: trigger, systemShortcutName: "copy"), use: use)
+            let popover = QuietPopover()
+            popover.show(at: recorded, waitingHint: "")
+            XCTAssertTrue(record(shiftCommandRPressed, into: recorded, popover: popover), "\(use)")
+            XCTAssertEqual(popover.labelEditor?.noteLabel.stringValue, note, "\(use)")
+            popover.hide()
+        }
     }
 
     // MARK: The panes store it

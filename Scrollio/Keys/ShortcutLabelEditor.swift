@@ -173,6 +173,12 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
         return NSLocalizedString(key, comment: "")
     }
 
+    /// The line under the name: where the name and the icon show. A place's of the
+    /// Shortcut Ring in the ring and in Settings; a button's or a direction's in Settings.
+    static func note(showsInRing: Bool) -> String {
+        return text(showsInRing ? "key-recorder-label-note" : "key-recorder-label-note-settings")
+    }
+
     // MARK: Filling
 
     /// Shows `label` (nil: an empty name, no icon), with the chooser closed.
@@ -364,7 +370,7 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
         nameField.setAccessibilityLabel(text("key-recorder-name"))
         nameField.translatesAutoresizingMaskIntoConstraints = false
 
-        noteLabel.stringValue = text("key-recorder-label-note")
+        noteLabel.stringValue = Self.note(showsInRing: false)
         noteLabel.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         noteLabel.textColor = .secondaryLabelColor
         noteLabel.identifier = Identifier.note

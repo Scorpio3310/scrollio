@@ -309,6 +309,7 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
 
     private func adoptDetails(_ popover: KeyPopover) {
         detailsPopover = popover
+        popover.labelShowsInRing = isForRingPlace
         popover.onRecordAgain = { [weak self, weak popover] in
             guard let self, let popover, self.detailsPopover === popover else { return }
             // What was typed so far stays with the row, whatever the recording brings.
