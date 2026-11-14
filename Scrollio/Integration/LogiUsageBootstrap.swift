@@ -85,13 +85,14 @@ enum LogiUsageBootstrap {
         lastPushedAppPaths = currentPaths
 
         // 4. Gesture Navigation 绑定里由鼠标自行跟踪位移的按键 (依赖上面的绑定与热键)
-        refreshGestureTracking()
+        refreshGestureTracking(afterASettingsChange: true)
     }
 
     // MARK: - Buttons of the app in front
 
     /// Another app came to the front: the divert and the buttons the mouse tracks follow
-    /// it. Both write nothing to a mouse when their set did not change.
+    /// it. Both write nothing to a mouse when their set did not change, and no line in the
+    /// log either way (that is for a change of the settings).
     static func frontApplicationChanged(to front: ShortcutRingChoice.FrontApp?) {
         refreshButtonUsage(front: front)
         refreshGestureTracking(front: front)

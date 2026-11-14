@@ -346,6 +346,71 @@ final class ApplicationButtonsPressTests: XCTestCase {
         XCTAssertEqual(harness.pointerLocks, ["lock", "unlock"])
         controller.cancel()
     }
+
+    /// A Logitech action on the plain button does not win over a binding of the same button
+    /// with modifier keys that the press holds (the bridge used to look at the Logitech
+    /// bindings alone, and the plain one matched every press): Buttons gives the mode shift
+    /// button SmartShift, Figma ⌥ + mode shift the ring. In Figma ⌥ + mode shift opens the
+    /// ring and the plain press is SmartShift; in Safari ⌥ + mode shift is SmartShift. The
+    /// same with the general bindings alone: ⌥ + mode shift runs Copy.
+    func testABindingWithModifierKeysWinsOverALogitechActionOnThePlainButton() {
+        let modeShift: UInt16 = 1001
+        let option = UInt(CGEventFlags.maskAlternate.rawValue)
+        let smartShift = "logiSmartShiftToggle"
+        let bridge = LogiIntegrationBridge.shared
+        func press(_ phase: InputPhase, _ flags: CGEventFlags) -> InputEvent {
+            return InputEvent(type: .mouse, code: modeShift, modifiers: flags, phase: phase, source: .hidPP, device: nil)
+        }
+        set(general: [binding(modeShift, smartShift)], figma: figmaEntry(own: [binding(modeShift, ringAction, modifiers: option)]))
+
+        front = figma
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, .maskAlternate)), .consumed)
+        XCTAssertTrue(controller.isHeld, "Figma's ⌥ + mode shift opens the ring")
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up, .maskAlternate)), .consumed)
+        controller.cancel()
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, [])), .logiAction(name: smartShift))
+        _ = bridge.dispatchLogiButtonEvent(press(.up, []))
+
+        front = safari
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, .maskAlternate)), .logiAction(name: smartShift))
+        _ = bridge.dispatchLogiButtonEvent(press(.up, .maskAlternate))
+        XCTAssertFalse(controller.isOpen)
+
+        set(general: [binding(modeShift, smartShift), binding(modeShift, SystemShortcut.copy.identifier, modifiers: option)],
+            figma: figmaEntry(own: []))
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, .maskAlternate)), .consumed, "Copy, not SmartShift")
+        _ = bridge.dispatchLogiButtonEvent(press(.up, .maskAlternate))
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, [])), .logiAction(name: smartShift))
+        _ = bridge.dispatchLogiButtonEvent(press(.up, []))
+    }
+
+    /// The back button set up for the ring while the mouse was on its receiver is stored
+    /// under its Logitech code; over Bluetooth the same button arrives as the standard
+    /// button 3, and it opens the ring all the same: Buttons' ring, and in Figma by Figma's
+    /// own binding. Its release is the ring's. Elsewhere Figma's binding is not there.
+    func testTheStandardButtonOpensTheRingItsLogitechTwinIsSetUpFor() {
+        let logitechBack = LogiCenter.shared.scrollioCode(for: .back)
+        func back(_ phase: InputPhase) -> InputEvent { return RingHarness.button(phase, code: 3) }
+
+        set(general: [binding(logitechBack, ringAction)], figma: figmaEntry(own: []))
+        XCTAssertEqual(process(back(.down)), .consumed)
+        XCTAssertTrue(controller.isHeld, "Buttons' ring")
+        XCTAssertEqual(process(back(.up)), .consumed)
+        controller.cancel()
+
+        set(general: [], figma: figmaEntry(own: [binding(logitechBack, ringAction)], ring: true))
+        front = figma
+        XCTAssertEqual(process(back(.down)), .consumed)
+        XCTAssertTrue(controller.isHeld)
+        harness.runScheduled()
+        XCTAssertEqual(topTitle(), SystemShortcut.copy.localizedName, "Figma's own ring")
+        XCTAssertEqual(process(back(.up)), .consumed)
+        controller.cancel()
+        front = safari
+        XCTAssertEqual(process(back(.down)), .passthrough, "in Safari the button is Safari's")
+        XCTAssertEqual(process(back(.up)), .passthrough)
+        XCTAssertFalse(controller.isOpen)
+    }
 }
 
 // MARK: - The ring's faces
@@ -525,8 +590,9 @@ final class ApplicationButtonsLogitechTests: XCTestCase {
         Options.shared.buttons.binding = []
         Options.shared.application.applications = EnhanceArray<Application>(withArray: [], matchKey: "path")
         ButtonUtils.shared.invalidateCache()
-        // From what an earlier test left to nothing tracked.
+        // From what an earlier test left to nothing tracked, and to a log that last said so.
         LogiUsageBootstrap.frontApplicationChanged(to: safari)
+        LogiUsageBootstrap.refreshGestureTracking(front: safari, afterASettingsChange: true)
         lines = []
     }
 
@@ -606,9 +672,11 @@ final class ApplicationButtonsLogitechTests: XCTestCase {
         )
     }
 
-    /// The set handed to the mouse follows the app in front, with one line per change and
-    /// never the app's name; switching between apps without buttons of their own changes
-    /// nothing and writes nothing.
+    /// The set handed to the mouse follows the app in front, and switching apps writes no
+    /// line, however often (it was a line per switch into and out of an app that changes
+    /// the set, a trail of them). A change of the settings writes one when what they make
+    /// the mice track, counted over the list, is not what the last line said, whatever app
+    /// is in front (the change is made in Scrollio's Settings); never an app's name.
     func testTheTrackedSetFollowsTheAppInFront() {
         set(general: [binding(thumbPanel, gestureAction)], figma: figmaEntry(own: [binding(thumbPanel, ringAction)]))
         LogiUsageBootstrap.frontApplicationChanged(to: safari)
@@ -617,30 +685,35 @@ final class ApplicationButtonsLogitechTests: XCTestCase {
         XCTAssertEqual(tracked, [], "the ring in Figma needs the pointer's movement")
         LogiUsageBootstrap.frontApplicationChanged(to: textEdit)
         XCTAssertEqual(tracked, [thumbPanel])
-        XCTAssertEqual(lines, [
-            "Gestures: the mouse tracks the hold of 1 Logitech button(s) itself",
-            "Gestures: the mouse tracks no Logitech button's hold itself, by the own bindings of the app in front",
-            "Gestures: the mouse tracks the hold of 1 Logitech button(s) itself",
-        ])
-        lines = []
         for _ in 0..<3 {
+            LogiUsageBootstrap.frontApplicationChanged(to: figma)
             LogiUsageBootstrap.frontApplicationChanged(to: safari)
             LogiUsageBootstrap.frontApplicationChanged(to: textEdit)
         }
-        XCTAssertEqual(lines, [], "nothing changed")
+        XCTAssertEqual(lines, [], "switching apps")
         XCTAssertEqual(tracked, [thumbPanel])
 
-        // Scrollio itself in front: Buttons.
+        // The change of the settings, with Scrollio itself in front (Buttons' set) and with
+        // Figma: one line.
         var scrollio = figma
         scrollio.isScrollio = true
-        LogiUsageBootstrap.frontApplicationChanged(to: scrollio)
+        LogiUsageBootstrap.refreshGestureTracking(front: scrollio, afterASettingsChange: true)
         XCTAssertEqual(tracked, [thumbPanel])
-        // The setting off: none, wherever.
-        Options.shared.gesture.deviceTracking = false
-        LogiUsageBootstrap.refreshGestureTracking(front: safari)
+        LogiUsageBootstrap.refreshGestureTracking(front: figma, afterASettingsChange: true)
         XCTAssertEqual(tracked, [])
+        XCTAssertEqual(lines, [
+            "Gestures: the mouse tracks the hold of 1 Logitech button(s) itself; 1 app(s) change which by their own bindings while in front",
+        ])
+        // The setting off: none, wherever, and one line.
+        lines = []
+        Options.shared.gesture.deviceTracking = false
+        LogiUsageBootstrap.refreshGestureTracking(front: safari, afterASettingsChange: true)
+        XCTAssertEqual(tracked, [])
+        XCTAssertEqual(lines, ["Gestures: the mouse tracks no Logitech button's hold itself"])
         Options.shared.gesture.deviceTracking = true
-        LogiUsageBootstrap.refreshGestureTracking(front: safari)
+        LogiUsageBootstrap.refreshGestureTracking(front: safari, afterASettingsChange: true)
+        XCTAssertEqual(tracked, [thumbPanel])
+        XCTAssertEqual(lines.count, 2)
         for line in lines {
             XCTAssertFalse(line.contains("Figma") || line.contains("/"), line)
         }
@@ -649,7 +722,7 @@ final class ApplicationButtonsLogitechTests: XCTestCase {
     /// A button that is down keeps its tracking, either way, until it is up: a tracked hold
     /// whose swipe brings Figma forward keeps its movement, and the ring Figma's thumb
     /// panel holds keeps the pointer's when Safari comes forward. The release decides
-    /// again, with one line.
+    /// again.
     func testAButtonThatIsDownKeepsItsTrackingUntilItIsUp() {
         set(general: [binding(thumbPanel, gestureAction)], figma: figmaEntry(own: [binding(thumbPanel, ringAction)]))
         LogiUsageBootstrap.frontApplicationChanged(to: safari)
@@ -667,7 +740,7 @@ final class ApplicationButtonsLogitechTests: XCTestCase {
         waitForMainQueue()
         XCTAssertEqual(tracked, [])
         XCTAssertEqual(LogiUsageBootstrap.trackingKeptWhileHeld, [])
-        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(lines, [], "the release follows the app in front: no line")
 
         held = [thumbPanel]
         LogiUsageBootstrap.frontApplicationChanged(to: safari)

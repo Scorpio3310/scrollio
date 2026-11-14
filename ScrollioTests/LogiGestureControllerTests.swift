@@ -38,6 +38,8 @@ final class LogiGestureControllerTests: XCTestCase {
     private var movements: [Movement] = []
     private var timers: [(delay: TimeInterval, work: () -> Void)] = []
     private var changes = 0
+    /// What the controller wrote to the system log (the session's `log`).
+    private var logLines: [String] = []
     /// What the session remembers as diverted (`lastApplied`).
     private var diverted: Set<UInt16> = []
 
@@ -48,6 +50,7 @@ final class LogiGestureControllerTests: XCTestCase {
         movements = []
         timers = []
         changes = 0
+        logLines = []
         diverted = []
     }
 
@@ -65,6 +68,7 @@ final class LogiGestureControllerTests: XCTestCase {
             },
             schedule: { [unowned self] delay, work in self.timers.append((delay, work)) },
             onChange: { [unowned self] in self.changes += 1 },
+            log: { [unowned self] in self.logLines.append($0) },
             mayEnableHaptics: mayEnableHaptics
         )
         controller.setRawXYCapableControls(capable)
@@ -291,18 +295,52 @@ final class LogiGestureControllerTests: XCTestCase {
         XCTAssertEqual(controller.armedCIDs, [Self.gesture])
     }
 
-    func testARejectedControlGetsANewAttemptWhenTheSettingIsTurnedOnAgain() {
+    /// A control the mouse refused stays on the pointer path while the mouse stays
+    /// connected, however often it leaves the request and comes back (the app in front
+    /// whose own binding takes the button out of the tracked set, and the next app; the
+    /// setting off and on): no write, no wait, no line. A mouse that connects again starts
+    /// with a new controller, which tries again.
+    func testARejectedControlIsNotTriedAgainUntilTheMouseConnectsAgain() {
         let controller = makeController()
         applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
         fireTimers()
         writes = []
+        logLines = []
 
-        applyUsage(controller, bound: [Self.gesture], tracking: [])
+        for _ in 0..<3 {
+            applyUsage(controller, bound: [Self.gesture], tracking: [])
+            applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
+        }
         XCTAssertEqual(writes, [], "already stated as diverted without raw XY")
-        XCTAssertTrue(controller.rejectedCIDs.isEmpty)
+        XCTAssertEqual(controller.rejectedCIDs, [Self.gesture])
+        XCTAssertTrue(timers.isEmpty)
+        XCTAssertEqual(logLines, [])
+        XCTAssertFalse(controller.buttonDown(cid: Self.gesture))
 
-        applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
+        let reconnected = makeController()
+        diverted = []
+        applyUsage(reconnected, bound: [Self.gesture], tracking: [Self.gesture])
         XCTAssertEqual(writes, [Self.arm])
+    }
+
+    /// Writes that only follow the request (the app in front changes what is tracked) put
+    /// no line in the system log: the divert's own writes never did, and a line per switch
+    /// of apps kept a trail of them. A refusal is still written there.
+    func testFollowingTheRequestWritesNoLineButARefusalDoes() {
+        let controller = armedController()
+        logLines = []
+        for _ in 0..<3 {
+            applyUsage(controller, bound: [Self.gesture], tracking: [])
+            applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
+            acknowledge(controller, Self.arm)
+        }
+        XCTAssertEqual(writes.count, 6)
+        XCTAssertEqual(controller.armedCIDs, [Self.gesture])
+        XCTAssertEqual(logLines, [])
+
+        applyUsage(controller, bound: [Self.gesture, Self.modeShift], tracking: [Self.gesture, Self.modeShift])
+        controller.handleReportingError()
+        XCTAssertEqual(logLines, ["raw XY: CID 0x00C4 refused by the device, using pointer movement"])
     }
 
     // MARK: - Teardown
@@ -600,6 +638,23 @@ final class LogiGestureControllerTests: XCTestCase {
         XCTAssertFalse(controller.play(.commit))
         controller.refreshHaptics()
         XCTAssertEqual(haptics, [])
+    }
+
+    /// A mouse without haptics (MX Master 3/3S, MX Anywhere 3/3S, MX Vertical) is asked for a
+    /// cue at every place the ring lights and at every gesture: the log says once while it
+    /// is connected that it has none, not once per cue. It says so again after it connects
+    /// again (a new controller).
+    func testAMouseWithoutHapticsIsNamedInTheLogOncePerConnection() {
+        let controller = makeController()
+        for _ in 0..<5 {
+            XCTAssertFalse(controller.play(.lockIn))
+        }
+        XCTAssertFalse(controller.play(.commit))
+        XCTAssertEqual(logLines, ["Haptic cue lockIn skipped: this mouse has no haptic feature"])
+
+        logLines = []
+        XCTAssertFalse(makeController().play(.commit))
+        XCTAssertEqual(logLines, ["Haptic cue commit skipped: this mouse has no haptic feature"])
     }
 
     /// An MX Master 4 that never ran Options+ reports its haptics off at full intensity.

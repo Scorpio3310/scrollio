@@ -339,6 +339,38 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertEqual(executed.map(\.0), [shortcut(SystemShortcut.copy).code])
     }
 
+    /// A back button set up while the mouse was on its receiver is stored under its Logitech
+    /// code; over Bluetooth the same button arrives as the standard button 3. A standard
+    /// press that has no binding of its own goes by its Logitech twin's, in Buttons and in an
+    /// app's own; a standard binding that takes the press still wins (nothing changes for
+    /// it), an app's "Default" of the standard button too; a button without a twin finds
+    /// nothing, and a Logitech press still goes by the Logitech bindings alone.
+    func testAStandardButtonWithoutABindingGoesByItsLogitechTwin() {
+        let logitechBack = LogiCenter.shared.scrollioCode(for: .back)
+        let command = UInt(CGEventFlags.maskCommand.rawValue)
+        set(general: [binding(logitechBack, "copy")], safari: [])
+        XCTAssertEqual(action(3, in: Self.textEdit), "copy", "Buttons' back button, set up over the receiver")
+        XCTAssertEqual(action(3, modifiers: .maskCommand, in: Self.textEdit), "copy")
+        XCTAssertNil(action(5, in: Self.textEdit), "button 5 has no Logitech twin")
+
+        set(general: [binding(logitechBack, "copy")], safari: [binding(logitechBack, "undo")])
+        XCTAssertEqual(action(3, in: Self.safari), "undo", "Safari's own, set up over the receiver")
+        XCTAssertEqual(action(3, in: Self.textEdit), "copy")
+        set(general: [], safari: [binding(logitechBack, "undo")])
+        XCTAssertEqual(action(3, in: Self.safari), "undo", "only Safari's")
+        XCTAssertNil(action(3, in: Self.textEdit))
+
+        set(general: [binding(3, "paste"), binding(logitechBack, "copy")], safari: [])
+        XCTAssertEqual(action(3, in: Self.textEdit), "paste", "the standard binding wins")
+        set(general: [binding(3, "paste", modifiers: command), binding(logitechBack, "copy")], safari: [])
+        XCTAssertEqual(action(3, modifiers: .maskCommand, in: Self.textEdit), "paste")
+        XCTAssertEqual(action(3, in: Self.textEdit), "copy", "a press the ⌘ binding does not take")
+        set(general: [binding(logitechBack, "copy")], safari: [binding(3, "")])
+        XCTAssertEqual(action(3, in: Self.safari), "", "Safari's own \"Default\" of the standard button")
+        set(general: [binding(3, "paste")], safari: [])
+        XCTAssertNil(action(logitechBack, in: Self.textEdit))
+    }
+
     /// A change of an app's own buttons is seen at the next press without anyone asking for
     /// it (the cache follows the per-app list as it follows Buttons).
     func testAChangeOfAnAppsButtonsIsSeenAtTheNextPress() {

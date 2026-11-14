@@ -589,6 +589,24 @@ final class ThumbWheelTurnTests: XCTestCase {
         XCTAssertEqual(rig.performed.map(\.action), [.volume(.down)], "swapped: the general speed and swap stay")
     }
 
+    /// Scrolling's Speed is set for its function: how far the wheel scrolls, or how soon the
+    /// next step comes. An app's function of the other kind runs at the default speed (a
+    /// general Volume at 3× made Figma's own sideways scroll three times as far); one of the
+    /// same kind takes it. Swap direction is the hand's, and stays as set.
+    func testAnAppsFunctionOfTheOtherKindRunsAtTheDefaultSpeed() {
+        func settings(own: ThumbWheelFunction?, general: ThumbWheelSettings) -> ThumbWheelSettings {
+            return ThumbWheelTurn(ownFunction: own, lastEventAt: 0).settings(general: general)
+        }
+        let volume = ThumbWheelSettings(function: .volume, speed: 3, swapsDirection: true)
+        XCTAssertEqual(settings(own: .scroll, general: volume), ThumbWheelSettings(function: .scroll, speed: 1, swapsDirection: true))
+        let slowScroll = ThumbWheelSettings(function: .scroll, speed: 0.25)
+        XCTAssertEqual(settings(own: .zoom, general: slowScroll), ThumbWheelSettings(function: .zoom, speed: 1))
+        XCTAssertEqual(settings(own: .tabs, general: volume), ThumbWheelSettings(function: .tabs, speed: 3, swapsDirection: true),
+                       "steps, as the general function: its speed")
+        XCTAssertEqual(settings(own: .volume, general: volume), volume)
+        XCTAssertEqual(settings(own: nil, general: slowScroll), slowScroll)
+    }
+
     /// A turn keeps the function it began with until the wheel rests, whatever comes to the
     /// front meanwhile (a step of "switch desktops" brings another app forward); the first
     /// event after a rest looks again.

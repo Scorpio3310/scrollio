@@ -235,7 +235,9 @@ wheel.
   keys of Zoom, Switch Tabs and Back and Forward go to it). A turn keeps its action until
   the wheel rests, whatever comes to the front meanwhile. While Scrollio's own Settings
   are in front, the wheel does what Buttons says. Speed and Swap direction are the same
-  for every app. "−" gives the wheel back to Buttons; Edit › Undo takes it again.
+  for every app, but an app's action runs at the default speed when it is of the other
+  kind than what the wheel does everywhere (scrolling against steps). "−" gives the wheel
+  back to Buttons; Edit › Undo takes it again.
 
 ## Logitech MX mice
 
