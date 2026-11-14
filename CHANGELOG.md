@@ -36,6 +36,12 @@ it for the people who use the app, and give the version its part before you tag 
   it has its own, as its Gestures and Ring do; an app's Buttons, Gestures and Ring reset
   to defaults.
 
+### Changed
+
+- **A click while you hold the ring's button belongs to the ring.** It runs the shortcut
+  that is lit (nothing lit: the ring closes), and nothing reaches the app under the ring.
+  A click right as you press the button does nothing.
+
 ## 1.0.5
 
 **The Shortcut Ring arrives:** eight shortcuts around your pointer, one button away.
