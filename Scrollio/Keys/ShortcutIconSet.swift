@@ -24,17 +24,24 @@ enum ShortcutIconSet {
         /// More words the search finds it by, beside the words of its name.
         let words: String
 
-        /// The name as it is read out and shown as a tool tip: "arrow clockwise".
+        /// The symbol's name in words: "arrow clockwise".
         var spokenName: String {
             return name.replacingOccurrences(of: ".", with: " ")
         }
 
-        /// Whether every word of `query` begins a word of the symbol's name or of its
-        /// extra words. An empty query matches everything.
+        /// What VoiceOver reads and the tool tip shows: "Reload arrow"
+        /// (`ShortcutIconSet.readableName(ofSymbol:)`).
+        var readableName: String {
+            return ShortcutIconSet.readableName(ofSymbol: name)
+        }
+
+        /// Whether every word of `query` begins a word of the symbol's name, of its readable
+        /// name or of its extra words. An empty query matches everything.
         func matches(_ query: String) -> Bool {
             let wanted = query.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber })
             guard !wanted.isEmpty else { return true }
-            let own = (spokenName + " " + words).lowercased().split(separator: " ")
+            let own = (spokenName + " " + readableName + " " + words).lowercased()
+                .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
             return wanted.allSatisfy { word in own.contains { $0.hasPrefix(word) } }
         }
     }
@@ -110,6 +117,20 @@ enum ShortcutIconSet {
             ("globe", "web browser language"),
         ]),
     ]
+
+    /// The catalog key of a symbol's readable name.
+    static func readableNameKey(ofSymbol name: String) -> String {
+        return "key-recorder-icon-name-" + name
+    }
+
+    /// What VoiceOver reads and the tool tip shows for the symbol `name`: its name in the
+    /// catalog ("Reload arrow"); for a symbol outside the set (a settings file may name
+    /// one), its words ("arrow clockwise").
+    static func readableName(ofSymbol name: String) -> String {
+        let key = readableNameKey(ofSymbol: name)
+        let readable = NSLocalizedString(key, comment: "")
+        return readable == key ? name.replacingOccurrences(of: ".", with: " ") : readable
+    }
 
     /// Every symbol of the set, in the order of the groups.
     static var all: [Symbol] {

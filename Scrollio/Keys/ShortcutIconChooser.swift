@@ -188,8 +188,8 @@ final class ShortcutIconChooserCell: NSView {
                 imageView.centerXAnchor.constraint(equalTo: centerXAnchor),
                 imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
             ]
-            toolTip = symbol.spokenName
-            setAccessibilityLabel(symbol.spokenName)
+            toolTip = symbol.readableName
+            setAccessibilityLabel(symbol.readableName)
         case .character(let text)?:
             imageView.image = ShortcutIconSet.image(of: .character(text), side: 22)
             let use = String(format: NSLocalizedString("key-recorder-icon-use-character", comment: ""), text)

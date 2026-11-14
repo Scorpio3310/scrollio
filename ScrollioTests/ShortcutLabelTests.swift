@@ -1000,7 +1000,7 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         XCTAssertEqual(editor.nameField.stringValue, "Reload")
         XCTAssertEqual(editor.icon, .symbol("arrow.clockwise"))
         XCTAssertNotNil(editor.iconWell.image)
-        XCTAssertEqual(editor.iconWell.accessibilityLabel(), "Icon: arrow clockwise")
+        XCTAssertEqual(editor.iconWell.accessibilityLabel(), "Icon: Reload arrow")
         XCTAssertEqual(popover.editedLabel, reload)
 
         let (_, typed) = try details(label: label("Reload", character: "🔄"))

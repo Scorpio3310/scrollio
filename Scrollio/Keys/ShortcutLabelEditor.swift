@@ -76,7 +76,7 @@ final class ShortcutIconWell: NSButton {
         return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
     }
 
-    /// Shows `icon`, and says it to VoiceOver: "Icon: arrow clockwise", or "Choose Icon".
+    /// Shows `icon`, and says it to VoiceOver: "Icon: Reload arrow", or "Choose Icon".
     func show(_ icon: ShortcutLabel.Icon?) {
         let text = { (key: String) in NSLocalizedString(key, comment: "") }
         let name: String
@@ -84,7 +84,7 @@ final class ShortcutIconWell: NSButton {
         case .symbol(let symbol)?:
             image = Self.symbol(symbol, size: 18, colour: .controlAccentColor)
             contentTintColor = .controlAccentColor
-            name = String(format: text("key-recorder-icon-well"), symbol.replacingOccurrences(of: ".", with: " "))
+            name = String(format: text("key-recorder-icon-well"), ShortcutIconSet.readableName(ofSymbol: symbol))
         case .character(let character)?:
             image = ShortcutIconSet.image(of: .character(character), side: 24)
             contentTintColor = nil
