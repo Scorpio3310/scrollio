@@ -220,7 +220,10 @@ the eight places hold.
   that moment (on a German or Slovenian keyboard ⌘Z is still Undo and zoom is the + and
   − keys); a shortcut whose key your layout types only with Option ("[" on those
   layouts) takes Scrollio's own Back or Forward in a browser, or other keys the app has
-  for it, and else its place stays empty (the page says how many). Mail's arrow and
+  for it, and else its place stays empty (the page says how many). So does a shortcut
+  that would be ⌘ or ⇧⌘ with the key beside the left Shift, which switches windows
+  there (⌘<): zoom in Notes, Pages, Keynote, Numbers and TextEdit, and Excel's font
+  size. Mail's arrow and
   Delete keys are not suggested (they would type into a text field); where other apps
   zoom out, Outlook's place stays empty rather than Delete, and Excel gets its font
   size.

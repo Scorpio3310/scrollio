@@ -463,14 +463,12 @@ final class ShortcutRingSuggestionKeysTests: XCTestCase {
         let premiere = try SuggestionFixtures.app("Adobe Premiere Pro").places(on: german)
         XCTAssertEqual(premiere[0].action, custom(29, .maskShift), "Zoom In =: Shift-0")
 
-        // ⇧⌘. is ⌘> on US: ">" is Shift and the key left of Y on German; "<" needs no Shift.
+        // ⇧⌘. is ⌘> on US: ">" and "<" are the key left of Y on German, the key whose ⌘
+        // switches windows, so Notes' zoom stays empty there
+        // (`testOnISOLayoutsNoPlaceIsTheKeyThatSwitchesWindows`).
         let notes = try SuggestionFixtures.app("Notes").places(on: german)
-        let zoomIn = try XCTUnwrap(ShortcutRingPlace.keyCombination(named: notes[0].action))
-        XCTAssertEqual(german.commandShift[zoomIn.code], ">")
-        XCTAssertEqual(zoomIn.modifiers, CGEventFlags([.maskShift, .maskCommand]).rawValue)
-        let zoomOut = try XCTUnwrap(ShortcutRingPlace.keyCombination(named: notes[4].action))
-        XCTAssertEqual(german.command[zoomOut.code], "<")
-        XCTAssertEqual(zoomOut.modifiers, CGEventFlags.maskCommand.rawValue)
+        XCTAssertEqual(notes[0], .empty, "Zoom In ⇧⌘.")
+        XCTAssertEqual(notes[4], .empty, "Zoom Out ⇧⌘,")
 
         let safari = try SuggestionFixtures.app("Safari").places(on: german)
         XCTAssertEqual(safari[6], ShortcutRingPlace(SystemShortcut.navigateBack))
@@ -485,6 +483,46 @@ final class ShortcutRingSuggestionKeysTests: XCTestCase {
         XCTAssertEqual(try SuggestionFixtures.app("Notion").places(on: german)[4], .empty, "Toggle Sidebar ⌘\\")
         XCTAssertEqual(try SuggestionFixtures.app("Microsoft Outlook").places(on: german)[6], .empty, "⌃[")
         XCTAssertEqual(try SuggestionFixtures.app("Adobe Lightroom Classic").places(on: german)[7], .empty, "\\")
+    }
+
+    /// ⌘ and ⇧⌘ with the key that is "`" on US (code 50: beside left Shift on ISO, "<"
+    /// and ">" on German, Slovenian, Swiss, French, Swedish, Spanish) are macOS's "Move
+    /// focus to next window" and back, and a sent shortcut goes through them. ⇧⌘. and ⇧⌘,
+    /// (zoom in Notes, Pages, Keynote, Numbers and TextEdit, Excel's font size) would land
+    /// there as ⇧⌘> and ⌘<: those places stay empty, and the page counts them. On US they
+    /// are the "." and "," keys as before, and ⌘` is still that key where a shortcut asks
+    /// for it.
+    func testOnISOLayoutsNoPlaceIsTheKeyThatSwitchesWindows() throws {
+        let windowKeys: Set<UInt64> = [CGEventFlags.maskCommand.rawValue, CGEventFlags([.maskShift, .maskCommand]).rawValue]
+        let modifierKeys: CGEventFlags = [.maskControl, .maskAlternate, .maskShift, .maskCommand]
+        var checked = 0
+        for id in ["German", "Slovenian", "SwissGerman", "French", "Swedish-Pro", "Spanish-ISO"].map({ "com.apple.keylayout.\($0)" }) {
+            guard let source = SuggestionFixtures.inputSource(id), let layout = KeyboardLayoutLayers.of(source) else { continue }
+            checked += 1
+            for app in catalog.apps {
+                for (slot, place) in zip(app.slots, app.places(on: layout)) {
+                    guard let key = ShortcutRingPlace.keyCombination(named: place.action) else { continue }
+                    let modifiers = CGEventFlags(rawValue: key.modifiers).intersection(modifierKeys)
+                    XCTAssertFalse(key.code == 50 && windowKeys.contains(modifiers.rawValue),
+                                   "\(id) \(app.appName): \(slot.place?.name ?? place.action)")
+                }
+            }
+        }
+        guard checked > 0 else { throw XCTSkip("none of these layouts is on this Mac") }
+
+        let german = try SuggestionFixtures.layout("com.apple.keylayout.German")
+        XCTAssertEqual(german.plain[50], "<", "the layout this test is about")
+        for name in ["Notes", "Pages", "Keynote", "Numbers", "TextEdit", "Microsoft Excel"] {
+            let app = try SuggestionFixtures.app(name)
+            let places = app.places(on: german)
+            XCTAssertEqual(places[0], .empty, name)
+            XCTAssertEqual(places[4], .empty, name)
+            XCTAssertEqual(app.placesLeftEmpty(in: places), 2, name)
+        }
+        XCTAssertEqual(KeyboardLayoutLayers.us.key(for: ".", modifiers: [.maskShift, .maskCommand])?.code, 47)
+        XCTAssertEqual(KeyboardLayoutLayers.us.key(for: ",", modifiers: [.maskShift, .maskCommand])?.code, 43)
+        XCTAssertEqual(KeyboardLayoutLayers.us.key(for: "`", modifiers: .maskCommand)?.code, 50)
+        XCTAssertNil(german.key(for: ",", modifiers: [.maskShift, .maskCommand]))
     }
 
     /// On QWERTZ and the other layouts where signs and digits sit elsewhere (Swiss, Polish,
