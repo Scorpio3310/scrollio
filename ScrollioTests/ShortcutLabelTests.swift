@@ -892,7 +892,7 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         XCTAssertEqual(editor.grid.buttons.map { $0.symbolName }, ["arrow.clockwise", "arrow.triangle.2.circlepath"].filter { name in
             ShortcutIconSet.all.first { $0.name == name }!.matches("reload")
         })
-        XCTAssertEqual(editor.grid.headers.map { $0.stringValue }, ["Arrows"])
+        XCTAssertEqual(editor.grid.headers.map { $0.stringValue }, ["Common"])
         type("no such thing", into: editor.searchField, of: editor)
         XCTAssertTrue(editor.grid.buttons.isEmpty)
         XCTAssertTrue(editor.gridScroll.isHidden)
@@ -950,11 +950,23 @@ final class ShortcutLabelPopoverTests: XCTestCase {
 
     // MARK: The set of symbols
 
+    /// About a hundred symbols in six groups, "Common" first, each group whole rows of the
+    /// chooser's eight columns. (The Mac that runs this is newer than macOS 14: that 14
+    /// has every name is not asked here.)
     func testEverySymbolOfTheSetIsThereOnceAndCanBeStored() {
         let names = ShortcutIconSet.all.map { $0.name }
         XCTAssertEqual(Set(names).count, names.count, "no symbol twice")
-        XCTAssertGreaterThanOrEqual(names.count, 100)
-        XCTAssertEqual(ShortcutIconSet.groups.count, 7)
+        XCTAssertEqual(names.count, 104)
+        XCTAssertEqual(ShortcutIconSet.groups.count, 6)
+        XCTAssertEqual(ShortcutIconSet.groups.first?.titleKey, "key-recorder-icon-group-common")
+        XCTAssertEqual(ShortcutIconSet.groups.first?.symbols.count, 16)
+        for name in ["arrow.clockwise", "arrow.uturn.backward", "square.and.arrow.up", "magnifyingglass", "xmark",
+                     "playpause", "speaker.slash", "lock", "star", "trash", "doc.on.doc", "gearshape"] {
+            XCTAssertTrue(ShortcutIconSet.groups[0].symbols.contains { $0.name == name }, name)
+        }
+        for group in ShortcutIconSet.groups {
+            XCTAssertEqual(group.symbols.count % ShortcutIconGridView.columns, 0, "\(group.titleKey) ends on a full row")
+        }
         for symbol in ShortcutIconSet.all {
             XCTAssertNotNil(NSImage(systemSymbolName: symbol.name, accessibilityDescription: nil), symbol.name)
             XCTAssertEqual(ShortcutLabel.cleaned(.symbol(symbol.name)), .symbol(symbol.name), symbol.name)
@@ -980,7 +992,8 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         XCTAssertTrue(found("paste").contains("doc.on.clipboard"))
         XCTAssertTrue(found("sett").contains("gearshape"))
         XCTAssertEqual(found("qqqq"), [])
-        XCTAssertEqual(ShortcutIconSet.groups(matching: "gearshape").map { $0.titleKey }, ["key-recorder-icon-group-tools"])
+        XCTAssertEqual(ShortcutIconSet.groups(matching: "gearshape").map { $0.titleKey }, ["key-recorder-icon-group-common"])
+        XCTAssertEqual(ShortcutIconSet.groups(matching: "hammer").map { $0.titleKey }, ["key-recorder-icon-group-tools"])
     }
 
     // MARK: The pull-down: recording, then the name and the icon

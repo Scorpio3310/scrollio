@@ -8087,19 +8087,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Media"
-          }
-        }
-      }
-    },
-    "key-recorder-icon-group-people": {
-      "comment": "Key recorder popover: a group of symbols",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "People and Time"
+            "value": "Media and People"
           }
         }
       }
@@ -8116,18 +8104,6 @@
         }
       }
     },
-    "key-recorder-icon-group-signs": {
-      "comment": "Key recorder popover: a group of symbols",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Signs"
-          }
-        }
-      }
-    },
     "general-settings-import-action-named": {
       "comment": "Import sheet: a recorded keyboard shortcut the file gives a name; the first %@ is its keys, the second the name",
       "extractionState": "manual",
@@ -8136,6 +8112,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ (named “%@”)"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-group-common": {
+      "comment": "Key recorder popover: a group of symbols, the ones a shortcut most often means",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Common"
           }
         }
       }
