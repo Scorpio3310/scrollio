@@ -6,16 +6,17 @@
 //  the ring, the switch "Use the general ring" of the app's page, and which ring opens
 //  for the app in front.
 //
-//  An app has a whole ring of its own or none: eight places and nothing else. What opens
+//  An app has a whole ring of its own or none: eight places and "Freeze pointer while the
+//  ring is held", everything of the Shortcut Ring pane but what opens the ring. What opens
 //  the ring is a binding, of Buttons or of the app's own buttons (`ApplicationButtons`),
 //  and whichever opened it, the ring is the one of the app in front: its own, else the
-//  general one. "Freeze pointer while the ring is held" is the general ring's for every
-//  app.
+//  general one.
 //
 //  Stored with the app's entry, under "ring":
 //
 //      {"path": …, "inherit": true, "scroll": {…},
-//       "ring": {"inherit": false, "places": [{"action": "copy"}, {"action": ""}, …]}}
+//       "ring": {"inherit": false, "places": [{"action": "copy"}, {"action": ""}, …],
+//                "freezePointer": false}}
 //
 //  - No "ring" (every entry from before the ring could be an app's): the app uses the
 //    general ring. Such an entry is stored as before: nothing is added to it until the
@@ -26,6 +27,11 @@
 //  - "places" is read as the general ring's list is: place by place, one that cannot be
 //    read is empty, a short list is filled up and a long one cut. A "ring" without a list
 //    of places is not a ring: the entry reads as one without "ring".
+//  - "freezePointer" is written once the ring has it: a ring the switch makes copies it
+//    from the general ring, as it copies the places. A ring from before it was an app's
+//    has none, and one that is missing or no switch is the general ring's, whatever it is
+//    at the time: such a ring was held with the general switch until now and goes on so,
+//    until the app's page sets one. Such a ring is written as before.
 //  Do not rename the keys.
 //
 
@@ -38,10 +44,14 @@ struct ApplicationRing: Codable, Equatable {
     var inherit: Bool
     /// Always `ShortcutRingSettings.placeCount` places.
     private(set) var places: [ShortcutRingPlace]
+    /// "Freeze pointer while the ring is held", the app's own; nil: the general ring's (a
+    /// ring from before it was an app's, or a value that cannot be read).
+    var freezePointer: Bool?
 
-    init(inherit: Bool, places: [ShortcutRingPlace]) {
+    init(inherit: Bool, places: [ShortcutRingPlace], freezePointer: Bool? = nil) {
         self.inherit = inherit
         self.places = ShortcutRingSettings.filledUp(places)
+        self.freezePointer = freezePointer
     }
 
     subscript(index: Int) -> ShortcutRingPlace {
@@ -55,14 +65,23 @@ struct ApplicationRing: Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case inherit, places
+        case inherit, places, freezePointer
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let stored = try c.decode([ShortcutRingSettings.ReadablePlace].self, forKey: .places)
         let inherits = ((try? c.decodeIfPresent(Bool.self, forKey: .inherit)) ?? nil) ?? true
-        self.init(inherit: inherits, places: stored.map { $0.place })
+        let freezes = (try? c.decodeIfPresent(Bool.self, forKey: .freezePointer)) ?? nil
+        self.init(inherit: inherits, places: stored.map { $0.place }, freezePointer: freezes)
+    }
+
+    /// A ring without its own freeze switch is written as before.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(inherit, forKey: .inherit)
+        try c.encode(places, forKey: .places)
+        try c.encodeIfPresent(freezePointer, forKey: .freezePointer)
     }
 }
 
@@ -83,16 +102,17 @@ extension Application {
         return ring.places
     }
 
-    /// The ring that opens while the app is in front: its own places, or the general
-    /// ring. The pointer's freeze is the general ring's either way.
+    /// The ring that opens while the app is in front: its own places and freeze switch
+    /// (the general ring's while it has none), or the general ring.
     func ringThatOpens(general: ShortcutRingSettings) -> ShortcutRingSettings {
-        guard let places = ownRingPlaces else { return general }
-        return ShortcutRingSettings(places: places, freezePointer: general.freezePointer)
+        guard let ring, !ring.inherit else { return general }
+        return ShortcutRingSettings(places: ring.places, freezePointer: ring.freezePointer ?? general.freezePointer)
     }
 
     /// Off: the app's own ring, which starts as the app's suggested shortcuts when
-    /// `suggested` has them (`ShortcutRingSuggestions`), else as a copy of `general` as it
-    /// is now, when the app never had one; one it had before comes back as it was left.
+    /// `suggested` has them (`ShortcutRingSuggestions`), else as a copy of `general`'s
+    /// places as they are now, with `general`'s freeze switch either way, when the app
+    /// never had one; one it had before comes back as it was left.
     /// On: the app's own ring stays stored for later and is not used. As "Use settings from
     /// Scrolling" does it (`setUsesScrollingSettings`). Nothing happens when the app is
     /// already in that state.
@@ -102,15 +122,35 @@ extension Application {
             own.inherit = uses
             ring = own
         } else {
-            ring = ApplicationRing(inherit: false, places: suggested ?? general.places)
+            ring = ApplicationRing(inherit: false, places: suggested ?? general.places, freezePointer: general.freezePointer)
         }
     }
 
     /// Puts `places` into the app's own ring, in use or kept for later; "Use the general
-    /// ring" stays as it is. Nothing happens for an app without a ring of its own.
+    /// ring" and the freeze switch stay as they are. Nothing happens for an app without a
+    /// ring of its own.
     func setOwnRingPlaces(_ places: [ShortcutRingPlace]) {
         guard let own = ring else { return }
-        ring = ApplicationRing(inherit: own.inherit, places: places)
+        ring = ApplicationRing(inherit: own.inherit, places: places, freezePointer: own.freezePointer)
+    }
+
+    /// Puts `places` and `freezePointer` into the app's own ring, in use or kept for later;
+    /// "Use the general ring" stays as it is ("Reset to Defaults" of the app's page and its
+    /// Undo). Nothing happens for an app without a ring of its own, or when nothing changes.
+    func replaceOwnRing(places: [ShortcutRingPlace], freezePointer: Bool?) {
+        guard let own = ring else { return }
+        let replaced = ApplicationRing(inherit: own.inherit, places: places, freezePointer: freezePointer)
+        guard replaced != own else { return }
+        ring = replaced
+    }
+
+    /// "Freeze pointer while the ring is held" of the app's own ring while it is in use
+    /// (its row on the app's page). Nothing happens while the app uses the general ring,
+    /// or when nothing changes.
+    func setOwnRingFreezePointer(_ freezes: Bool) {
+        guard var own = ring, !own.inherit, own.freezePointer != freezes else { return }
+        own.freezePointer = freezes
+        ring = own
     }
 }
 

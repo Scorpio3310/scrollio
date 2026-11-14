@@ -226,11 +226,11 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 
 // MARK: - Shortcut Ring
 
-/// "Use the general ring" and, while it is off, the app's own ring: the drawing and the
-/// eight rows of the Shortcut Ring pane (RingPreferencesViewController with this app), which
-/// open while the app is in front. What opens the ring is a binding of Buttons, or of the
-/// app's Buttons part (the switch's line says when nothing opens it with the app in
-/// front); the freeze switch is the same for every app and stays in the Shortcut Ring pane.
+/// "Use the general ring" and, while it is off, the app's own ring: the drawing, the freeze
+/// switch and the eight rows of the Shortcut Ring pane (RingPreferencesViewController with
+/// this app), which open while the app is in front. What opens the ring is a binding of
+/// Buttons, or of the app's Buttons part (the switch's line says when nothing opens it with
+/// the app in front).
 ///
 /// For an app with suggested shortcuts (`ShortcutRingSuggestions`) the ring the switch
 /// makes starts with them, and while the app's own ring is in use a second row says so
@@ -238,8 +238,9 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 /// click: the switch, or "Reset to Defaults".
 ///
 /// "Reset to Defaults" ends the own ring, there with it: the ring goes back to where it
-/// started (the suggestion, else a copy of the general ring as it is now), the switch
-/// stays; the window's Undo takes it back, also after the page closed.
+/// started (the suggestion, else a copy of the general ring as it is now; the freeze switch
+/// the general ring's as it is now), the switch stays; the window's Undo takes it back, also
+/// after the page closed.
 ///
 /// While nothing opens the ring with the app in front (`ApplicationTriggerRule`), the own
 /// ring and its button are folded under a "Shortcuts" title (`PreferencesDisclosureSection`,
@@ -442,20 +443,24 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         return suggestedPlaces() ?? Options.shared.ring.places
     }
 
-    /// The app's own ring is in use and differs from where it started.
+    /// The app's own ring is in use and differs from where it started (its places, or its
+    /// freeze switch from the general ring's as it is now).
     var hasSettingsToReset: Bool {
         guard let own = application.ownRingPlaces else { return false }
-        return own != startPlaces()
+        let general = Options.shared.ring
+        return own != startPlaces() || application.ringThatOpens(general: general).freezePointer != general.freezePointer
     }
 
-    /// "Reset to Defaults": the own ring as it started, its eight places; the switch stays
-    /// off. Edit › Undo brings back the places that were there.
+    /// "Reset to Defaults": the own ring as it started, its eight places and the general
+    /// ring's freeze switch; the switch stays off. Edit › Undo brings back what was there.
     private func resetRing(undoManager undo: UndoManager?) {
         guard hasSettingsToReset else { return }
         let showing = partShowing ?? { [weak self] entry in
             self?.application === entry ? self : nil
         }
-        Self.fillRing(of: application, with: startPlaces(), undoManager: undo, showing: showing)
+        Self.fillRing(
+            of: application, with: startPlaces(), freezePointer: Options.shared.ring.freezePointer, undoManager: undo, showing: showing
+        )
     }
 
     /// As the removal of a thumb wheel (`ApplicationButtonsViewController`): the undo
@@ -463,11 +468,12 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     /// when they run, and show the change on the part `showing` gives for it. (A ring kept
     /// for later takes them too: the switch is never touched.)
     private static func fillRing(
-        of application: Application, with places: [ShortcutRingPlace], undoManager undo: UndoManager?,
+        of application: Application, with places: [ShortcutRingPlace], freezePointer: Bool?, undoManager undo: UndoManager?,
         showing: @escaping (Application) -> ApplicationRingPartViewController?
     ) {
-        guard let before = application.ring?.places, before != places else { return }
-        application.setOwnRingPlaces(places)
+        guard let before = application.ring else { return }
+        application.replaceOwnRing(places: places, freezePointer: freezePointer)
+        guard application.ring != before else { return }
         showing(application)?.syncViewWithOptions()
         guard let undo else { return }
         let path = application.path
@@ -475,7 +481,7 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             guard let entry = PreferencesApplicationViewController.existingApplication(
                 forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: path)
             ) else { return }
-            fillRing(of: entry, with: before, undoManager: undo, showing: showing)
+            fillRing(of: entry, with: before.places, freezePointer: before.freezePointer, undoManager: undo, showing: showing)
         }
         undo.setActionName(NSLocalizedString(resetActionNameKey, comment: ""))
     }

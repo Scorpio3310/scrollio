@@ -53,8 +53,8 @@ final class ApplicationRingStorageTests: XCTestCase {
         XCTAssertEqual(try storedKeys(of: Application(path: notesPath)), ["path", "displayName", "inherit", "scroll"])
     }
 
-    /// The app's own ring is stored with its entry, eight places and the switch and
-    /// nothing else, and comes back as it was stored.
+    /// The app's own ring is stored with its entry, eight places, its freeze switch and the
+    /// switch, and comes back as it was stored.
     func testAnAppsOwnRingIsStoredWithItsEntryAndComesBack() throws {
         var general = ShortcutRingSettings.default
         general.freezePointer = true
@@ -68,7 +68,8 @@ final class ApplicationRingStorageTests: XCTestCase {
         let data = try XCTUnwrap(list([notes, Application(path: calculatorPath)]).json())
         let stored = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [[String: Any]])
         let ring = try XCTUnwrap(stored[0]["ring"] as? [String: Any])
-        XCTAssertEqual(Set(ring.keys), ["inherit", "places"], "the freeze switch is the general ring's")
+        XCTAssertEqual(Set(ring.keys), ["inherit", "places", "freezePointer"])
+        XCTAssertEqual(ring["freezePointer"] as? Bool, true, "copied from the general ring")
         XCTAssertEqual(ring["inherit"] as? Bool, false)
         XCTAssertEqual((ring["places"] as? [Any])?.count, 8)
         XCTAssertNil(stored[1]["ring"], "an app without a ring of its own stores none")
@@ -79,11 +80,45 @@ final class ApplicationRingStorageTests: XCTestCase {
         XCTAssertFalse(back.usesGeneralRing)
         XCTAssertEqual(back.ownRingPlaces?[1].openTarget, script)
         XCTAssertEqual(back.ownRingPlaces?[0], general[0], "it started as a copy of the general ring")
-        // What opens: the app's places, the general ring's freeze switch.
+        // What opens: the app's places and its own freeze switch, whatever the general
+        // ring's is now.
         XCTAssertEqual(back.ringThatOpens(general: general).places, notes.ring?.places)
         XCTAssertTrue(back.ringThatOpens(general: general).freezePointer)
-        XCTAssertFalse(back.ringThatOpens(general: .default).freezePointer)
+        XCTAssertTrue(back.ringThatOpens(general: .default).freezePointer)
         XCTAssertTrue(try XCTUnwrap(loaded.get(by: calculatorPath)).usesGeneralRing)
+
+        // Its row changes the app's switch alone; nothing changes a ring kept for later.
+        back.setOwnRingFreezePointer(false)
+        XCTAssertFalse(back.ringThatOpens(general: general).freezePointer)
+        XCTAssertTrue(general.freezePointer, "the general ring's stays")
+        back.setUsesGeneralRing(true, general: general)
+        back.setOwnRingFreezePointer(true)
+        XCTAssertEqual(back.ring?.freezePointer, false)
+        XCTAssertEqual(back.ringThatOpens(general: general), general)
+    }
+
+    /// A ring stored before the freeze switch was an app's is held as until now: with the
+    /// general ring's switch, whatever it is at the time, and it is written as it was. One
+    /// that is no switch is the general ring's too.
+    func testARingFromBeforeIsHeldWithTheGeneralFreezeSwitch() throws {
+        func entry(_ ring: String) throws -> Application {
+            let json = #"{"path":"/Applications/Notes.app","ring":"# + ring + "}"
+            return try JSONDecoder().decode(Application.self, from: Data(json.utf8))
+        }
+        let old = try entry(#"{"inherit":false,"places":[{"action":"copy"}]}"#)
+        XCTAssertNil(old.ring?.freezePointer)
+        var general = ShortcutRingSettings.default
+        general.freezePointer = true
+        XCTAssertTrue(old.ringThatOpens(general: general).freezePointer)
+        XCTAssertFalse(old.ringThatOpens(general: .default).freezePointer, "it follows the general ring")
+        let stored = try XCTUnwrap(try JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as? [String: Any])
+        XCTAssertEqual(Set(try XCTUnwrap(stored["ring"] as? [String: Any]).keys), ["inherit", "places"], "written as before")
+        XCTAssertNil(try entry(#"{"inherit":false,"places":[],"freezePointer":"yes"}"#).ring?.freezePointer)
+        XCTAssertEqual(try entry(#"{"inherit":false,"places":[],"freezePointer":true}"#).ring?.freezePointer, true)
+
+        // The page's row makes it the app's own.
+        old.setOwnRingFreezePointer(false)
+        XCTAssertFalse(old.ringThatOpens(general: general).freezePointer)
     }
 
     /// Off: a copy of the general ring as it is at that moment, for an app that never had
@@ -173,15 +208,15 @@ final class ShortcutRingChoiceTests: XCTestCase {
         return ShortcutRingChoice.make(front: front, applications: applications, general: general)
     }
 
-    /// The app in front has a ring of its own: its places open, with the general ring's
-    /// freeze switch. The entry is found by the bundle's path, then by the program's, as
-    /// the scroll engine finds it.
+    /// The app in front has a ring of its own: its places open, with its own freeze switch.
+    /// The entry is found by the bundle's path, then by the program's, as the scroll engine
+    /// finds it.
     func testAnAppWithARingOfItsOwnGetsIt() {
         let notes = choice(FrontApp(bundlePath: notesPath, executablePath: notesPath + "/Contents/MacOS/Notes"))
         XCTAssertTrue(notes.isAppsOwn)
         XCTAssertEqual(notes.ring[0].action, "copy")
         XCTAssertEqual(notes.ring[7], ShortcutRingSettings.default[7], "the app's own place, not the general ring's")
-        XCTAssertTrue(notes.ring.freezePointer, "the freeze switch is the general ring's")
+        XCTAssertFalse(notes.ring.freezePointer, "its own freeze switch (a copy of a new ring's), not the general ring's")
 
         let calculator = choice(FrontApp(bundlePath: calculatorPath, executablePath: calculatorProgram))
         XCTAssertTrue(calculator.isAppsOwn, "stored by its program, as a running app is added")
@@ -385,21 +420,45 @@ final class ShortcutRingPerAppControllerTests: XCTestCase {
         controller.cancel()
 
         front = FrontApp(bundlePath: notesPath, executablePath: nil)
-        harness.ring.freezePointer = true
+        applications.get(by: notesPath)?.setOwnRingFreezePointer(true)
+        harness.ring.freezePointer = false
         harness.tap()
         XCTAssertEqual(topTitle(), SystemShortcut.copy.localizedName)
         XCTAssertTrue(harness.logLines.contains(
             "Shortcut Ring: opened by a mouse button, the own ring of the app in front, the pointer is kept still while it is held"
         ), "\(harness.logLines)")
-        XCTAssertEqual(harness.pointerLocks.first, "lock", "the freeze switch is the general ring's, for an app's ring too")
+        XCTAssertEqual(harness.pointerLocks.first, "lock", "the app's own freeze switch, the general one off")
         controller.cancel()
         XCTAssertFalse(harness.logLines.contains { $0.contains("Notes") || $0.contains(notesPath) })
 
         front = FrontApp(bundlePath: "/Applications/Preview.app", executablePath: nil)
-        harness.ring.freezePointer = false
+        let locks = harness.pointerLocks.filter { $0 == "lock" }.count
         harness.tap()
         XCTAssertEqual(topTitle(), SystemShortcut.missionControl.localizedName)
         XCTAssertEqual(harness.logLines.suffix(2).first, "Shortcut Ring: opened by a mouse button")
+        XCTAssertEqual(harness.pointerLocks.filter { $0 == "lock" }.count, locks, "the general ring's switch, off")
+    }
+
+    /// The freeze switch of the ring that opened holds until the ring closes: Calculator's
+    /// own (on) while another app comes forward during the hold; the next ring is the other
+    /// app's, with its own switch.
+    func testAHeldRingKeepsTheFreezeSwitchItOpenedWith() throws {
+        try XCTUnwrap(applications.get(by: calculatorPath)).setOwnRingFreezePointer(true)
+        front = FrontApp(bundlePath: calculatorPath, executablePath: nil)
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertEqual(harness.pointerLocks, ["lock"])
+        front = FrontApp(bundlePath: notesPath, executablePath: nil)
+        harness.moveHand(by: CGPoint(x: 0, y: -70))
+        XCTAssertEqual(harness.pointerLocks, ["lock"], "still Calculator's ring")
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertEqual(harness.pointerLocks, ["lock", "unlock"])
+
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertEqual(harness.pointerLocks, ["lock", "unlock"], "Notes' own switch, off")
+        controller.cancel()
     }
 
     /// A face belongs to the places it was made for: the ring of one app is never shown

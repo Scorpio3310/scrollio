@@ -334,11 +334,13 @@ final class ApplicationButtonsPressTests: XCTestCase {
         XCTAssertFalse(controller.isOpen)
     }
 
-    /// A ring an app's binding opens keeps the pointer still as the general ring's switch
-    /// says, for the hold alone.
-    func testARingAnAppsBindingOpensKeepsThePointerStillAsTheGeneralSwitchSays() {
-        set(general: [], figma: figmaEntry(own: [binding(thumbPanel, ringAction)], ring: true))
-        harness.ring.freezePointer = true
+    /// A ring an app's binding opens keeps the pointer still as the switch of the ring
+    /// that opens says (here the app's own ring's, the general one off), for the hold alone.
+    func testARingAnAppsBindingOpensKeepsThePointerStillAsItsRingsSwitchSays() {
+        let entry = figmaEntry(own: [binding(thumbPanel, ringAction)], ring: true)
+        entry.setOwnRingFreezePointer(true)
+        set(general: [], figma: entry)
+        harness.ring.freezePointer = false
         front = figma
         XCTAssertEqual(process(button(.down)), .consumed)
         XCTAssertEqual(harness.pointerLocks, ["lock"])

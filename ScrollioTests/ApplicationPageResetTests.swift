@@ -212,6 +212,32 @@ final class ApplicationPageResetTests: XCTestCase {
         XCTAssertEqual(marks(in: pane), [.ring], "the app keeps its own ring")
     }
 
+    /// The own ring's freeze switch goes back with it, to the general ring's as it is now;
+    /// the switch alone turns the button on, and Undo brings it back.
+    func testTheRingsResetTakesItsFreezeSwitchToTheGeneralRingsToo() throws {
+        let calculator = addCalculator()
+        calculator.setUsesGeneralRing(false, general: .default)
+        let pane = makePane()
+        let undo = undoManager()
+        let part = try XCTUnwrap(try open(.ring, in: pane, undo: undo).ringPart)
+        XCTAssertFalse(part.resetToDefaultsButton.isEnabled)
+        let freeze = try XCTUnwrap(part.ringController?.freezeToggle as? NSSwitch)
+        freeze.state = .on
+        XCTAssertTrue(freeze.sendAction(freeze.action, to: freeze.target))
+        XCTAssertEqual(calculator.ring?.freezePointer, true)
+        XCTAssertFalse(Options.shared.ring.freezePointer)
+        XCTAssertTrue(part.resetToDefaultsButton.isEnabled, "the switch alone turns it on")
+
+        click(part.resetToDefaultsButton, undo: undo)
+        XCTAssertEqual(calculator.ring?.freezePointer, false)
+        XCTAssertEqual(calculator.ownRingPlaces, ShortcutRingSettings.default.places)
+        XCTAssertEqual(freeze.state, .off, "the row shows it")
+        XCTAssertFalse(calculator.usesGeneralRing)
+        undo.undo()
+        XCTAssertEqual(calculator.ring?.freezePointer, true)
+        XCTAssertEqual(freeze.state, .on)
+    }
+
     // MARK: - Gestures
 
     /// The rest of the own set goes back with it: the mode, the speed, the freeze and a

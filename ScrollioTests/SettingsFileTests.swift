@@ -802,6 +802,67 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertFalse(older.bringsActions)
     }
 
+    /// The rest of an app's own gestures (the mode, the speed, the freeze, a Logitech
+    /// mouse's switches) and its own ring's freeze switch travel with the app's entry, and
+    /// an import puts them in effect. None of them is an action: the sheet lists nothing
+    /// for them, as for the general ones. A value a file spells oddly is the general one, a
+    /// speed is kept in range; a set without them (one from before) reads as it ran.
+    func testTheRestOfAnAppsOwnGesturesAndItsRingsFreezeAreInTheFile() throws {
+        let source = makeSource()
+        let notes = try XCTUnwrap(source.options.application.applications.get(by: "/Applications/Notes.app"))
+        notes.setUsesGeneralGestures(false, general: .default)
+        notes.changeOwnGestures { own in
+            own.mode = .interactive
+            own.trackingSpeed = 2.25
+            own.freezePointer = false
+            own.deviceTracking = true
+            own.hapticFeedback = false
+        }
+        notes.setUsesGeneralRing(false, general: .default)
+        notes.setOwnRingFreezePointer(true)
+        let data = try SettingsFile.export(from: source.options, now: Self.moment).get()
+
+        let contents = try SettingsFile.read(data).get()
+        let read = try XCTUnwrap(contents.applications?.first { $0.path == "/Applications/Notes.app" })
+        XCTAssertEqual(read.gestures, notes.gestures)
+        XCTAssertEqual(read.ring, notes.ring)
+        XCTAssertEqual(contents.leftOutCount, 0)
+        // The sheet: the one line of a set in use with the default actions; the rest are no
+        // actions and get no line, as the general ones get none.
+        XCTAssertEqual(SettingsFileText.gestureLines(of: contents), [
+            String(format: NSLocalizedString("general-settings-import-gesture-defaults-app", comment: ""), "Notes"),
+        ])
+        XCTAssertEqual(SettingsFileText.ringLines(of: contents), [])
+
+        let target = OwnSettings(for: self)
+        target.options.readOptions()
+        XCTAssertTrue(SettingsFile.apply(contents, to: target.options))
+        let imported = try XCTUnwrap(target.options.application.applications.get(by: "/Applications/Notes.app"))
+        let runs = imported.gesturesThatRun(general: .default)
+        XCTAssertEqual(runs.mode, .interactive)
+        XCTAssertEqual(runs.trackingSpeed, 2.25)
+        XCTAssertFalse(runs.freezePointer)
+        XCTAssertTrue(runs.deviceTracking)
+        XCTAssertFalse(runs.hapticFeedback)
+        XCTAssertTrue(imported.ringThatOpens(general: .default).freezePointer)
+        XCTAssertEqual(target.options.gesture, .default, "the general gestures are another setting")
+        XCTAssertEqual(target.options.ring, .default, "and so is the general ring")
+
+        // A file from elsewhere: odd values are the general ones, a speed is kept in range.
+        let foreign = try Fixture.contents(
+            #""applications":[{"path":"/Applications/A.app","gestures":{"inherit":false,"mode":"sideways","trackingSpeed":99,"#
+                + #""freezePointer":"no","deviceTracking":1},"ring":{"inherit":false,"places":[],"freezePointer":"yes"}}]"#
+        )
+        let app = try XCTUnwrap(foreign.applications?.first)
+        XCTAssertNil(app.ownGestures?.mode)
+        XCTAssertEqual(app.ownGestures?.trackingSpeed, MouseGestureSettings.trackingSpeedRange.upperBound)
+        XCTAssertNil(app.ownGestures?.freezePointer)
+        XCTAssertNil(app.ownGestures?.deviceTracking)
+        XCTAssertNil(app.ring?.freezePointer)
+        XCTAssertFalse(app.usesGeneralRing)
+        XCTAssertEqual(foreign.unreadableEntries, 0, "one odd value never takes the set or the ring with it")
+    }
+
     /// A ring as a file from elsewhere can spell it, read through the whole import: a name
     /// together with a target, the old spelling of an app, a file with arguments, and a
     /// ninth place that runs a script. Every place that is stored with something to open
