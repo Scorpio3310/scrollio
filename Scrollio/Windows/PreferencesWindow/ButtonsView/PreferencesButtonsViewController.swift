@@ -176,8 +176,11 @@ class PreferencesButtonsViewController: NSViewController {
         list.rowsView.setAccessibilityLabel(text("buttons-list-label"))
         list.onAdd = { [weak self] _ in self?.beginAddingBinding() }
         list.onRemove = { [weak self] id in
-            guard let id = id as? UUID else { return }
-            self?.removeBinding(id: id)
+            guard let self, let id = id as? UUID else { return }
+            // A name still typed in the row's popover goes into the binding first, so that
+            // Undo brings it back with the row.
+            self.row(for: id)?.pullDown.cancelShortcutRecording()
+            self.removeBinding(id: id)
         }
         list.onOpen = { [weak self] id in
             guard let self else { return }

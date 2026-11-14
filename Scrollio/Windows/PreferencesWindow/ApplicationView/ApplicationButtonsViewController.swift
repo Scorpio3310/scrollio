@@ -132,8 +132,11 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         list.onAdd = { [weak self] button in self?.showAddMenu(from: button) }
         list.onRemove = { [weak self] id in
             if id == ButtonsListLayout.thumbWheelRowID { self?.removeOwnThumbWheel(); return }  // (ApplicationThumbWheelRow.swift)
-            guard let id = id as? UUID else { return }
-            self?.removeOwnBinding(id: id)
+            guard let self, let id = id as? UUID else { return }
+            // A name still typed in the row's popover goes into the binding first, so that
+            // Undo brings it back with the row.
+            self.row(for: id)?.pullDown.cancelShortcutRecording()
+            self.removeOwnBinding(id: id)
         }
         list.onOpen = { [weak self] id in
             if id == ButtonsListLayout.thumbWheelRowID { self?.openThumbWheelMenu(); return }  // (ApplicationThumbWheelRow.swift)
