@@ -43,8 +43,9 @@ final class ShortcutRingDropContentView: NSView {
         case nothing
         /// A place's symbol, icon or keys.
         case place(ShortcutRingFace.Place)
-        /// The hub's name of the lit action.
-        case name(String)
+        /// The hub's name of the lit action; `keys` under it for a key combination that
+        /// has a name (empty: nothing under it).
+        case name(String, keys: String)
     }
 
     /// The side of a place's content at rest: room for its symbol when lit.
@@ -136,9 +137,9 @@ final class ShortcutRingDropContentView: NSView {
                 scale: 1 + (ShortcutRingDrops.litContentScale - 1) * lit,
                 colour: ShortcutRingArtwork.blend(ink, ShortcutRingArtwork.litInk, lit)
             )
-        case .name(let title):
+        case .name(let title, let keys):
             ShortcutRingArtwork.drawTitle(
-                title, centre: middle, colour: ink,
+                title, keys: keys, centre: middle, colour: ink,
                 width: ShortcutRingArtwork.titleWidth, pointSize: ShortcutRingArtwork.titleFont.pointSize
             )
         }
@@ -276,8 +277,22 @@ final class ShortcutRingDropsView: NSView {
     var title: String? {
         didSet {
             guard title != oldValue else { return }
-            contents[ShortcutRingDrops.placeCount].content = (title?.isEmpty ?? true) ? .nothing : .name(title ?? "")
+            showName()
         }
+    }
+
+    /// The keys under the name in the hub, for a key combination that has a name; empty:
+    /// none.
+    var titleKeys = "" {
+        didSet {
+            guard titleKeys != oldValue else { return }
+            showName()
+        }
+    }
+
+    private func showName() {
+        contents[ShortcutRingDrops.placeCount].content = (title?.isEmpty ?? true)
+            ? .nothing : .name(title ?? "", keys: titleKeys)
     }
 
     var increasesContrast = false {

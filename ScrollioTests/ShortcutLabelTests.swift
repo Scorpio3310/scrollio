@@ -248,3 +248,210 @@ final class ShortcutLabelStorageTests: XCTestCase {
         XCTAssertEqual(both.label?.icon, .symbol("star"))
     }
 }
+
+// MARK: - The ring
+
+final class ShortcutLabelRingTests: XCTestCase {
+
+    private var keys: String {
+        return ButtonTriggerNaming.shortcutText(type: .keyboard, code: 15, modifiers: 1_179_648)
+    }
+
+    private func face(of label: ShortcutLabel?) -> ShortcutRingFace.Place {
+        var ring = ShortcutRingSettings.default
+        ring[2] = ShortcutRingPlace(action: shiftCommandR, label: label)
+        return ShortcutRingFace(ring, looksOnDisk: false).places[2]
+    }
+
+    /// The four cases of a recorded key combination. Nothing set: the keys in the drop
+    /// and in the middle, as before. A name: the drop keeps the keys, the middle says
+    /// the name with the keys under it. An icon: the drop shows it, the middle the keys
+    /// as before. Both: the icon in the drop, the name over the keys in the middle.
+    func testTheFaceOfAPlaceInEachOfTheFourCases() {
+        let plain = face(of: nil)
+        XCTAssertEqual(plain.title, keys)
+        XCTAssertEqual(plain.keys, "")
+        XCTAssertEqual(plain.glyphs, [keys])
+        XCTAssertFalse(plain.glyphIsIcon)
+        XCTAssertEqual(plain.symbolName, "keyboard")
+        XCTAssertFalse(plain.isEmpty)
+
+        let named = face(of: label("Reload"))
+        XCTAssertEqual(named.title, "Reload")
+        XCTAssertEqual(named.keys, keys)
+        XCTAssertEqual(named.glyphs, [keys], "the drop keeps the keys")
+        XCTAssertFalse(named.glyphIsIcon)
+
+        let withIcon = face(of: label(nil, symbol: "arrow.clockwise"))
+        XCTAssertEqual(withIcon.title, keys, "the middle shows the keys as before")
+        XCTAssertEqual(withIcon.keys, "")
+        XCTAssertEqual(withIcon.glyphs, [], "the drop shows the symbol, through the symbols' own drawing")
+        XCTAssertEqual(withIcon.symbolName, "arrow.clockwise")
+        XCTAssertNil(withIcon.image)
+
+        let both = face(of: label("Reload", symbol: "arrow.clockwise"))
+        XCTAssertEqual(both.title, "Reload")
+        XCTAssertEqual(both.keys, keys)
+        XCTAssertEqual(both.glyphs, [])
+        XCTAssertEqual(both.symbolName, "arrow.clockwise")
+
+        // A typed character is drawn as the keys are, in the keys' place.
+        let typed = face(of: label("Reload", character: "🔄"))
+        XCTAssertEqual(typed.glyphs, ["🔄"])
+        XCTAssertTrue(typed.glyphIsIcon)
+        XCTAssertEqual(typed.title, "Reload")
+        XCTAssertEqual(typed.keys, keys)
+    }
+
+    /// A symbol this Mac does not have (a file from a newer macOS) leaves the keys in the
+    /// drop: never an empty drop for a place that runs.
+    func testASymbolThisMacDoesNotHaveLeavesTheKeysInTheDrop() {
+        let unknown = face(of: label("Reload", symbol: "no.such.symbol.anywhere"))
+        XCTAssertEqual(unknown.glyphs, [keys])
+        XCTAssertEqual(unknown.symbolName, "keyboard")
+        XCTAssertEqual(unknown.title, "Reload", "the name does not depend on the symbol")
+        XCTAssertFalse(ShortcutRingFace.hasSymbol(named: "no.such.symbol.anywhere"))
+        XCTAssertTrue(ShortcutRingFace.hasSymbol(named: "arrow.clockwise"))
+    }
+
+    /// The other kinds of places are as they were: nothing under their name.
+    func testTheOtherPlacesHaveNothingUnderTheirName() {
+        var ring = ShortcutRingSettings.default
+        ring[1] = ShortcutRingPlace(
+            openTarget: OpenTargetPayload(path: "/System/Applications/Notes.app", bundleID: nil, arguments: "", kind: .application)
+        )
+        ring[3] = .empty
+        for place in ShortcutRingFace(ring, looksOnDisk: false).places {
+            XCTAssertEqual(place.keys, "")
+            XCTAssertFalse(place.glyphIsIcon)
+        }
+    }
+
+    /// The middle: the name on one or two lines, the keys on one line under it and
+    /// smaller, the two together inside the round drop, on screen and in the pane.
+    func testTheMiddleShowsTheNameOverSmallerKeysWithinItsRoom() {
+        let widest = String(repeating: "W", count: ShortcutLabel.maximumNameLength)
+        let names = ["Reload", "Reload Without Cache", "Paste and Match Style", widest, "Wwwwwwwwwwww Wwwwwwwwwww"]
+        let combinations = [keys, "Fn⌃⌥⇧⌘Space", "⌃⌥⇧⌘F19"]
+        let paneScale = ShortcutRingPreviewView.ringScale
+        for (what, scale) in [("on screen", CGFloat(1)), ("in the pane", paneScale)] {
+            let width = ShortcutRingArtwork.titleWidth * scale
+            let size = ShortcutRingArtwork.titleFont.pointSize * scale
+            let diameter = ShortcutRingDrops.hubDiameter * scale
+            for name in names {
+                for combination in combinations {
+                    let layout = ShortcutRingArtwork.namedTitleLayout(name, keys: combination, width: width, pointSize: size)
+                    let about = "\(name) / \(combination) \(what)"
+                    XCTAssertLessThanOrEqual(layout.nameLines, 2, about)
+                    XCTAssertGreaterThanOrEqual(layout.nameLines, 1, about)
+                    XCTAssertLessThan(layout.keysPointSize, layout.namePointSize, about)
+                    XCTAssertGreaterThanOrEqual(layout.keysPointSize, 6 * scale, about)
+                    let keysFont = NSFont.systemFont(ofSize: layout.keysPointSize, weight: .medium)
+                    XCTAssertLessThanOrEqual(
+                        (combination as NSString).size(withAttributes: [.font: keysFont]).width, width + 0.5, about
+                    )
+                    // Where the block's top and bottom edges are, the drop is still as
+                    // wide as the text may be (as for a listed action's name).
+                    let chord = 2 * (pow(diameter / 2, 2) - pow(layout.height / 2 - 2, 2)).squareRoot()
+                    XCTAssertGreaterThanOrEqual(chord, width, about)
+                    // Never taller than the three lines a long listed name takes.
+                    let longest = ShortcutRingArtwork.titleLayout("Screenshot and Recording Options", width: width, pointSize: size)
+                    XCTAssertLessThanOrEqual(layout.height, longest.height + 4 * scale, about)
+                }
+            }
+            let short = ShortcutRingArtwork.namedTitleLayout("Reload", keys: keys, width: width, pointSize: size)
+            XCTAssertEqual(short.nameLines, 1)
+            XCTAssertEqual(short.namePointSize, size, "a short name keeps the size of every other name")
+            XCTAssertEqual(short.keysPointSize, size * ShortcutRingArtwork.titleKeysShrink, accuracy: 0.001)
+        }
+    }
+
+    /// What is drawn in the middle: with keys there is ink under the name, and all of it
+    /// stays in the hub's circle.
+    func testTheKeysAreDrawnUnderTheNameInsideTheHub() throws {
+        let side = Int(ShortcutRingDrops.hubDiameter)
+        func inkRows(keys: String) throws -> ClosedRange<Int> {
+            let bitmap = try XCTUnwrap(NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8, samplesPerPixel: 4,
+                hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            ))
+            let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: bitmap))
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            ShortcutRingArtwork.drawTitle(
+                "Reload", keys: keys, centre: CGPoint(x: CGFloat(side) / 2, y: CGFloat(side) / 2), colour: .black,
+                width: ShortcutRingArtwork.titleWidth, pointSize: ShortcutRingArtwork.titleFont.pointSize
+            )
+            NSGraphicsContext.restoreGraphicsState()
+            let data = try XCTUnwrap(bitmap.bitmapData)
+            var first = side, last = -1
+            for row in 0..<side {
+                for column in 0..<side where data[row * bitmap.bytesPerRow + column * 4 + 3] > 40 {
+                    first = min(first, row)
+                    last = max(last, row)
+                    let dx = CGFloat(column) + 0.5 - CGFloat(side) / 2, dy = CGFloat(row) + 0.5 - CGFloat(side) / 2
+                    XCTAssertLessThan(hypot(dx, dy), CGFloat(side) / 2, "ink outside the hub")
+                }
+            }
+            return try XCTUnwrap(first <= last ? first...last : nil)
+        }
+        let alone = try inkRows(keys: "")
+        let withKeys = try inkRows(keys: keys)
+        // (The bitmap's rows run downwards.)
+        XCTAssertLessThan(withKeys.lowerBound, alone.lowerBound, "the name moves up to make room")
+        XCTAssertGreaterThan(withKeys.upperBound, alone.upperBound, "the keys stand under it")
+        XCTAssertGreaterThan(withKeys.count, alone.count + 6)
+    }
+
+    /// The hub of the ring on screen gets the keys with the name, and loses them with it.
+    func testTheRingOnScreenPutsTheKeysUnderTheNameInItsHub() {
+        let drops = ShortcutRingDropsView(material: .drawn)
+        var ring = ShortcutRingSettings.default
+        ring[2] = ShortcutRingPlace(action: shiftCommandR, label: label("Reload", symbol: "arrow.clockwise"))
+        let face = ShortcutRingFace(ring, looksOnDisk: false)
+        drops.face = face
+        drops.titleKeys = face.places[2].keys
+        drops.title = face.places[2].title
+        guard case .name(let title, let under) = drops.contents[ShortcutRingDrops.placeCount].content else {
+            return XCTFail("the hub shows a name")
+        }
+        XCTAssertEqual(title, "Reload")
+        XCTAssertEqual(under, keys)
+        guard case .place(let place) = drops.contents[2].content else { return XCTFail("the drop shows the place") }
+        XCTAssertEqual(place.symbolName, "arrow.clockwise")
+
+        drops.titleKeys = face.places[0].keys
+        drops.title = face.places[0].title
+        guard case .name(let listed, let nothing) = drops.contents[ShortcutRingDrops.placeCount].content else {
+            return XCTFail("the hub shows a name")
+        }
+        XCTAssertEqual(listed, SystemShortcut.missionControl.localizedName)
+        XCTAssertEqual(nothing, "")
+    }
+
+    /// A run of a named place: VoiceOver hears the name, the log never does. Its line
+    /// stays "a recorded key combination".
+    func testTheNameIsSaidAndNeverLogged() {
+        let reload = ShortcutRingPlace(action: shiftCommandR, label: label("Reload Secretly", symbol: "arrow.clockwise"))
+        XCTAssertEqual(ShortcutRingController.logName(of: reload), "a recorded key combination")
+        XCTAssertEqual(ShortcutRingController.logName(of: reload), ShortcutRingController.logName(of: ShortcutRingPlace(action: shiftCommandR)))
+
+        let harness = RingHarness()
+        harness.ring[5] = reload
+        harness.controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        harness.moveHand(by: CGPoint(x: -50, y: 50))
+        XCTAssertEqual(harness.presenter.lit.last, 5)
+        harness.runScheduled()
+        harness.controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+
+        XCTAssertEqual(harness.announced.last, "Reload Secretly")
+        XCTAssertEqual(harness.logLines.last, "Shortcut Ring: closed, ran a recorded key combination")
+        XCTAssertFalse(harness.logLines.isEmpty)
+        for line in harness.logLines + harness.problems + harness.log {
+            XCTAssertFalse(line.contains("Reload") || line.contains("Secretly"), line)
+            XCTAssertFalse(line.contains("arrow.clockwise") || line.contains("custom::"), line)
+        }
+    }
+}

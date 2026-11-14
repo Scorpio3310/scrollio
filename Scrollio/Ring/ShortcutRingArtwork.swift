@@ -22,8 +22,12 @@ import Cocoa
 struct ShortcutRingFace {
 
     struct Place {
-        /// The action's name, for the middle of the ring; empty for an empty place.
+        /// The action's name, for the middle of the ring; empty for an empty place. A
+        /// recorded key combination's is the name the user gave it, else its keys.
         var title: String
+        /// The keys of a key combination that has a name: they stand under the name in
+        /// the middle, smaller. Empty for everything else.
+        var keys: String = ""
         /// The action's SF Symbol.
         var symbolName: String
         /// A picture instead of the symbol: the icon of an app or a file.
@@ -31,6 +35,9 @@ struct ShortcutRingFace {
         /// Text instead of the symbol: a recorded key combination as its keys ("⇧⌘K"),
         /// on one line or two (the modifiers above a key with a long name).
         var glyphs: [String] = []
+        /// `glyphs` is the one character the user chose as the icon, not keys: drawn as
+        /// the keys are, at a symbol's size.
+        var glyphIsIcon = false
         /// Nothing is here, or nothing this version runs: a faint dot.
         var isEmpty: Bool
 
@@ -54,6 +61,9 @@ struct ShortcutRingFace {
 
     /// The face of a stored ring: each place as the Buttons pane shows that action (a
     /// listed action's name and symbol, an app's name and icon, a key combination's keys).
+    /// A key combination with a label (`ShortcutLabel`): its icon stands in the drop
+    /// instead of the keys, and its name in the middle with the keys under it; with only
+    /// one of the two the other stays as it is without a label.
     ///
     /// An app's or a file's name and icon are looked up on disk (does the file exist,
     /// Launch Services, the icon): never while a ring is held or is being shown, when the
@@ -69,10 +79,26 @@ struct ShortcutRingFace {
                 return Place(title: shortcut.localizedName, symbolName: shortcut.symbolName, isEmpty: false)
             case .keyCombination(let code, let modifiers):
                 let text = ButtonTriggerNaming.shortcutText(type: .keyboard, code: code, modifiers: modifiers)
-                return Place(
+                var shown = Place(
                     title: text, symbolName: "keyboard",
                     glyphs: Self.glyphLines(code: code, modifiers: modifiers), isEmpty: false
                 )
+                if let name = place.label?.name {
+                    shown.title = name
+                    shown.keys = text
+                }
+                switch place.label?.icon {
+                case .symbol(let name)? where Self.hasSymbol(named: name):
+                    shown.symbolName = name
+                    shown.glyphs = []
+                case .character(let character)?:
+                    shown.glyphs = [character]
+                    shown.glyphIsIcon = true
+                case .symbol?, nil:
+                    // (A symbol this Mac does not have: the keys, as without an icon.)
+                    break
+                }
+                return shown
             case .open(let target):
                 guard looksOnDisk else {
                     return Place(title: Self.plainName(of: target), symbolName: "arrow.up.forward.app", isEmpty: false)
@@ -84,6 +110,20 @@ struct ShortcutRingFace {
                 )
             }
         })
+    }
+
+    private static var knownSymbols: [String: Bool] = [:]
+    private static let knownSymbolsLock = NSLock()
+
+    /// Whether this Mac has an SF Symbol of that name (a settings file can come from a
+    /// newer macOS). Asked once per name.
+    static func hasSymbol(named name: String) -> Bool {
+        knownSymbolsLock.lock()
+        defer { knownSymbolsLock.unlock() }
+        if let known = knownSymbols[name] { return known }
+        let has = NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil
+        knownSymbols[name] = has
+        return has
     }
 
     /// What a place that opens something is called without a look on disk: the file's
@@ -142,6 +182,10 @@ enum ShortcutRingArtwork {
     static let titleWidth: CGFloat = ShortcutRingDrops.hubDiameter - 12
     /// A name too long for two lines of the hub gets three, this much smaller.
     static let longTitleShrink: CGFloat = 0.88
+    /// A named key combination's keys under its name in the hub: this much of the name's
+    /// size, and this much of its colour.
+    static let titleKeysShrink: CGFloat = 0.84
+    static let titleKeysOpacity: CGFloat = 0.6
 
     // MARK: Colours
 
@@ -203,13 +247,17 @@ enum ShortcutRingArtwork {
         let lit = lit.flatMap { face.places.indices.contains($0) && !face.places[$0].isEmpty ? $0 : nil }
         draw(
             face, drops: ShortcutRingDrops.settled(filled: face.filled, lit: lit),
-            title: lit.map { face.places[$0].title }, centre: centre, style: style
+            title: lit.map { face.places[$0].title }, keys: lit.map { face.places[$0].keys } ?? "",
+            centre: centre, style: style
         )
     }
 
     /// Draws the ring as `drops` has it: the bodies, what stands in the places and
-    /// `title` in the hub.
-    static func draw(_ face: ShortcutRingFace, drops: ShortcutRingDrops.Frame, title: String?, centre: CGPoint, style: Style = Style()) {
+    /// `title` in the hub, with `keys` under it when the title is a key combination's name.
+    static func draw(
+        _ face: ShortcutRingFace, drops: ShortcutRingDrops.Frame, title: String?, keys: String = "",
+        centre: CGPoint, style: Style = Style()
+    ) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         let dark = isDark()
         let scale = style.scale
@@ -228,7 +276,7 @@ enum ShortcutRingArtwork {
         if let title, !title.isEmpty {
             let grow = drops.hub.contentScale
             drawTitle(
-                title, centre: centre, colour: ink(dark: dark), width: titleWidth * scale * grow,
+                title, keys: keys, centre: centre, colour: ink(dark: dark), width: titleWidth * scale * grow,
                 pointSize: titleFont.pointSize * scale * grow
             )
         }
@@ -329,7 +377,7 @@ enum ShortcutRingArtwork {
             return
         }
         if !place.glyphs.isEmpty {
-            drawGlyphs(place.glyphs, at: middle, colour: colour, scale: scale)
+            drawGlyphs(place.glyphs, at: middle, colour: colour, scale: scale, isIcon: place.glyphIsIcon)
             return
         }
         guard let symbol = symbolImage(named: place.symbolName, pointSize: symbolPointSize * scale, colour: colour) else {
@@ -410,10 +458,11 @@ enum ShortcutRingArtwork {
         return CGPoint(x: (middleX - size.width / 2) / size.width, y: (middleY - size.height / 2) / size.height)
     }
 
-    /// A key combination's keys in the middle of a place, as large as fits.
-    private static func drawGlyphs(_ lines: [String], at middle: CGPoint, colour: NSColor, scale: CGFloat) {
+    /// A key combination's keys in the middle of a place, as large as fits; or the one
+    /// character that is its icon, at a symbol's size.
+    private static func drawGlyphs(_ lines: [String], at middle: CGPoint, colour: NSColor, scale: CGFloat, isIcon: Bool = false) {
         let lines = Array(lines.prefix(2))
-        let base = (lines.count > 1 ? glyphPointSize - 3 : glyphPointSize) * scale
+        let base = (isIcon ? symbolPointSize : lines.count > 1 ? glyphPointSize - 3 : glyphPointSize) * scale
         let texts: [NSAttributedString] = lines.map { line in
             var size = base
             let width = (line as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: .semibold)]).width
@@ -447,22 +496,72 @@ enum ShortcutRingArtwork {
 
     /// The lit action's name in the hub, `width` wide: one or two lines; a name that
     /// needs a third ("Screenshot and Recording Options") gets it, a little smaller. Only
-    /// what is longer still is cut with an ellipsis.
-    static func drawTitle(_ title: String, centre: CGPoint, colour: NSColor, width: CGFloat, pointSize: CGFloat) {
+    /// what is longer still is cut with an ellipsis. With `keys` (a named key
+    /// combination's): the name on one or two lines and the keys on a line under it,
+    /// smaller and fainter (`namedTitleLayout`).
+    static func drawTitle(
+        _ title: String, keys: String = "", centre: CGPoint, colour: NSColor, width: CGFloat, pointSize: CGFloat
+    ) {
         guard width > 0, pointSize > 0 else { return }
-        let layout = titleLayout(title, width: width, pointSize: pointSize)
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         paragraph.lineBreakMode = .byWordWrapping
-        let text = NSAttributedString(string: title, attributes: [
-            .font: NSFont.systemFont(ofSize: layout.pointSize, weight: .semibold),
-            .foregroundColor: colour,
-            .paragraphStyle: paragraph,
-        ])
-        text.draw(
-            with: CGRect(x: centre.x - width / 2, y: centre.y - layout.height / 2, width: width, height: layout.height),
+        func name(at size: CGFloat) -> NSAttributedString {
+            return NSAttributedString(string: title, attributes: [
+                .font: NSFont.systemFont(ofSize: size, weight: .semibold),
+                .foregroundColor: colour,
+                .paragraphStyle: paragraph,
+            ])
+        }
+        guard !keys.isEmpty else {
+            let layout = titleLayout(title, width: width, pointSize: pointSize)
+            name(at: layout.pointSize).draw(
+                with: CGRect(x: centre.x - width / 2, y: centre.y - layout.height / 2, width: width, height: layout.height),
+                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine]
+            )
+            return
+        }
+        let layout = namedTitleLayout(title, keys: keys, width: width, pointSize: pointSize)
+        // The name above the keys, the two together about the middle. (Above is the
+        // larger y in a drawing whose y grows upwards.)
+        let flipped = NSGraphicsContext.current?.isFlipped ?? false
+        let top = flipped ? centre.y - layout.height / 2 : centre.y + layout.height / 2
+        let nameY = flipped ? top : top - layout.nameHeight
+        name(at: layout.namePointSize).draw(
+            with: CGRect(x: centre.x - width / 2, y: nameY, width: width, height: layout.nameHeight),
             options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine]
         )
+        let keysText = NSAttributedString(string: keys, attributes: [
+            .font: NSFont.systemFont(ofSize: layout.keysPointSize, weight: .medium),
+            .foregroundColor: colour.withAlphaComponent(colour.alphaComponent * titleKeysOpacity),
+        ])
+        let keysWidth = keysText.size().width
+        let keysY = flipped ? top + layout.nameHeight + layout.gap : top - layout.height
+        keysText.draw(at: CGPoint(x: centre.x - keysWidth / 2, y: keysY))
+    }
+
+    /// How a key combination's name stands in a hub with `width` of room when its keys
+    /// stand under it: the name at `pointSize` on one or two lines, or smaller when it
+    /// needs more (still two lines at most, the rest cut with an ellipsis); the keys on
+    /// one line, `titleKeysShrink` of the size and smaller still when they are wider
+    /// than the room. Never taller than three lines of a long name are today.
+    static func namedTitleLayout(
+        _ name: String, keys: String, width: CGFloat, pointSize: CGFloat
+    ) -> (namePointSize: CGFloat, nameLines: Int, nameHeight: CGFloat, keysPointSize: CGFloat, gap: CGFloat, height: CGFloat) {
+        let usual = titleLayout(name, width: width, pointSize: pointSize)
+        let nameLines = min(2, usual.lines)
+        // (`titleLayout` gives `lineHeight × lines + 1`.)
+        let lineHeight = (usual.height - 1) / CGFloat(usual.lines)
+        let nameHeight = lineHeight * CGFloat(nameLines) + 1
+        var keysSize = pointSize * titleKeysShrink
+        let keysWidth = (keys as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: keysSize, weight: .medium)]).width
+        if keysWidth > width {
+            keysSize = max(pointSize * 0.5, keysSize * width / keysWidth)
+        }
+        let keysFont = NSFont.systemFont(ofSize: keysSize, weight: .medium)
+        let keysHeight = ceil(keysFont.ascender - keysFont.descender + keysFont.leading)
+        let gap: CGFloat = 0
+        return (usual.pointSize, nameLines, nameHeight, keysSize, gap, nameHeight + gap + keysHeight)
     }
 
     /// How a name stands in a hub with `width` of room: at `pointSize` on up to two lines, else
