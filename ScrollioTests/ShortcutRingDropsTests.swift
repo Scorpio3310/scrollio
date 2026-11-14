@@ -821,4 +821,47 @@ final class ShortcutRingDropContentTests: XCTestCase {
         let empty = NSImage(size: NSSize(width: 20, height: 20), flipped: false) { _ in true }
         XCTAssertEqual(ShortcutRingArtwork.inkOffset(of: empty), .zero)
     }
+
+    /// Under "Increase contrast" the keys under a name in the hub have the name's whole
+    /// ink (at 60 % of it they came to about 3.8:1 on the light hub); without it they stay
+    /// fainter than the name. The panel's hub hears of the setting with the drops.
+    func testUnderIncreaseContrastTheKeysUnderANameHaveTheNamesWholeInk() throws {
+        let side = Int(ShortcutRingDrops.hubDiameter)
+        /// The strongest ink of the lowest rows that have any: the keys' line.
+        func keysInk(increasesContrast: Bool) throws -> Int {
+            let bitmap = try XCTUnwrap(NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8, samplesPerPixel: 4,
+                hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            ))
+            let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: bitmap))
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            ShortcutRingArtwork.drawTitle(
+                "Reload", keys: "⇧⌘R", centre: CGPoint(x: CGFloat(side) / 2, y: CGFloat(side) / 2), colour: .black,
+                width: ShortcutRingArtwork.titleWidth, pointSize: ShortcutRingArtwork.titleFont.pointSize,
+                increasesContrast: increasesContrast
+            )
+            NSGraphicsContext.restoreGraphicsState()
+            let data = try XCTUnwrap(bitmap.bitmapData)
+            func alpha(_ row: Int, _ column: Int) -> Int {
+                return Int(data[row * bitmap.bytesPerRow + column * 4 + 3])
+            }
+            let last = try XCTUnwrap((0..<side).last { row in (0..<side).contains { alpha(row, $0) > 40 } })
+            return ((last - 4)...last).flatMap { row in (0..<side).map { alpha(row, $0) } }.max() ?? 0
+        }
+        let usual = try keysInk(increasesContrast: false)
+        let contrast = try keysInk(increasesContrast: true)
+        XCTAssertGreaterThan(contrast, 120)
+        XCTAssertGreaterThanOrEqual(Double(contrast), Double(usual) * 1.5, "the name's whole ink, not 60 % of it")
+
+        let drops = ShortcutRingDropsView(material: .drawn)
+        let hub = drops.contents[ShortcutRingDrops.placeCount]
+        XCTAssertFalse(hub.increasesContrast)
+        drops.increasesContrast = true
+        XCTAssertTrue(hub.increasesContrast)
+        XCTAssertEqual(drops.bodiesView?.style.increasesContrast, true)
+        XCTAssertTrue(drops.contents.prefix(ShortcutRingDrops.placeCount).allSatisfy { !$0.increasesContrast }, "only the hub has keys under a name")
+        drops.increasesContrast = false
+        XCTAssertFalse(hub.increasesContrast)
+    }
 }

@@ -244,7 +244,8 @@ enum ShortcutRingArtwork {
     /// A name too long for two lines of the hub gets three, this much smaller.
     static let longTitleShrink: CGFloat = 0.88
     /// A named key combination's keys under its name in the hub: this much of the name's
-    /// size, and this much of its colour.
+    /// size, and this much of its colour (all of it under "Increase contrast": at 60 % the
+    /// keys came to about 3.8:1 on the light hub).
     static let titleKeysShrink: CGFloat = 0.84
     static let titleKeysOpacity: CGFloat = 0.6
 
@@ -338,7 +339,7 @@ enum ShortcutRingArtwork {
             let grow = drops.hub.contentScale
             drawTitle(
                 title, keys: keys, centre: centre, colour: ink(dark: dark), width: titleWidth * scale * grow,
-                pointSize: titleFont.pointSize * scale * grow
+                pointSize: titleFont.pointSize * scale * grow, increasesContrast: style.increasesContrast
             )
         }
     }
@@ -559,9 +560,10 @@ enum ShortcutRingArtwork {
     /// needs a third ("Screenshot and Recording Options") gets it, a little smaller. Only
     /// what is longer still is cut with an ellipsis. With `keys` (a named key
     /// combination's): the name on one or two lines and the keys on a line under it,
-    /// smaller and fainter (`namedTitleLayout`).
+    /// smaller and fainter (`namedTitleLayout`); with `increasesContrast`, smaller only.
     static func drawTitle(
-        _ title: String, keys: String = "", centre: CGPoint, colour: NSColor, width: CGFloat, pointSize: CGFloat
+        _ title: String, keys: String = "", centre: CGPoint, colour: NSColor, width: CGFloat, pointSize: CGFloat,
+        increasesContrast: Bool = false
     ) {
         guard width > 0, pointSize > 0 else { return }
         let paragraph = NSMutableParagraphStyle()
@@ -592,9 +594,10 @@ enum ShortcutRingArtwork {
             with: CGRect(x: centre.x - width / 2, y: nameY, width: width, height: layout.nameHeight),
             options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine]
         )
+        let keysOpacity = increasesContrast ? 1 : titleKeysOpacity
         let keysText = NSAttributedString(string: keys, attributes: [
             .font: NSFont.systemFont(ofSize: layout.keysPointSize, weight: .medium),
-            .foregroundColor: colour.withAlphaComponent(colour.alphaComponent * titleKeysOpacity),
+            .foregroundColor: colour.withAlphaComponent(colour.alphaComponent * keysOpacity),
         ])
         let keysWidth = keysText.size().width
         let keysY = flipped ? top + layout.nameHeight + layout.gap : top - layout.height

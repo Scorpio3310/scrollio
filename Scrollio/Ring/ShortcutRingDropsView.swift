@@ -68,6 +68,13 @@ final class ShortcutRingDropContentView: NSView {
     }
     /// Inside glass: the system's label colour, which follows what the glass does.
     var usesLabelColour = false
+    /// "Increase contrast": the keys under a name in the hub have the name's whole ink.
+    var increasesContrast = false {
+        didSet {
+            guard increasesContrast != oldValue else { return }
+            needsDisplay = true
+        }
+    }
     /// How often a new picture was asked for because the size changed (tests read it).
     private(set) var picturesForANewSize = 0
 
@@ -140,7 +147,8 @@ final class ShortcutRingDropContentView: NSView {
         case .name(let title, let keys):
             ShortcutRingArtwork.drawTitle(
                 title, keys: keys, centre: middle, colour: ink,
-                width: ShortcutRingArtwork.titleWidth, pointSize: ShortcutRingArtwork.titleFont.pointSize
+                width: ShortcutRingArtwork.titleWidth, pointSize: ShortcutRingArtwork.titleFont.pointSize,
+                increasesContrast: increasesContrast
             )
         }
     }
@@ -299,6 +307,7 @@ final class ShortcutRingDropsView: NSView {
         didSet {
             guard increasesContrast != oldValue else { return }
             bodiesView?.style.increasesContrast = increasesContrast
+            contents[ShortcutRingDrops.placeCount].increasesContrast = increasesContrast
         }
     }
 

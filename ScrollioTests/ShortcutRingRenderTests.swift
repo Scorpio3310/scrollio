@@ -206,11 +206,15 @@ final class ShortcutRingRenderTests: XCTestCase {
         let side = ShortcutRingGeometry.canvasSide + 40
         let size = CGSize(width: side * 2, height: side * 2)
         let lit = [[7, 3], [1, 2]]  // (rows from the bottom)
-        for (suffix, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
-            try render(size: size, scale: 2, appearance: appearance, to: directory.appendingPathComponent("ring-named-\(suffix).png")) {
+        // (And as "Increase contrast" draws them: firmer outlines, the keys in the name's ink.)
+        let looks = [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)].flatMap { look in [(look, false), (look, true)] }
+        for ((suffix, appearance), contrast) in looks {
+            let name = "ring-named-\(suffix)\(contrast ? "-contrast" : "").png"
+            try render(size: size, scale: 2, appearance: appearance, to: directory.appendingPathComponent(name)) {
                 RingMock.drawDesktop(in: CGRect(origin: .zero, size: size), dark: ShortcutRingArtwork.isDark(), window: false)
                 var style = ShortcutRingArtwork.Style()
                 style.backdrop = .drawn
+                style.increasesContrast = contrast
                 for (row, places) in lit.enumerated() {
                     for (column, place) in places.enumerated() {
                         ShortcutRingArtwork.draw(
