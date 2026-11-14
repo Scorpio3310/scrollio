@@ -780,12 +780,42 @@ class InputProcessor: ModifierFlagsProviding {
         }
     }
 
-    /// The one line a gesture's action leaves in the log: what ran, a listed action by its
-    /// identifier, a recorded key combination by its kind, and whether it was of the own
-    /// gestures of the app in front. Never its keys, never the name the user gave it, never
-    /// the app's name.
-    static func mouseGestureRunLine(_ action: GestureAction, part: MouseGesturePart, appsOwn: Bool = false) -> String {
-        return "Gestures: \(part.logName) ran \(action.logName)" + (appsOwn ? ", the app in front has its own gestures" : "")
+    /// What became of a gesture's action, for its line in the log.
+    enum MouseGestureOutcome: Equatable {
+        /// Sent: keys, a click, the Dock asked, an app or a file handed on to be opened.
+        case ran
+        /// A Logitech action, asked of the mouse (the `logi` log says whether one could).
+        case askedFor
+        /// A listed action that sent nothing.
+        case sentNothing(ShortcutRefusal)
+
+        init(_ action: ResolvedAction, _ result: ActionExecutionResult) {
+            if let refusal = result.refusal {
+                self = .sentNothing(refusal)
+            } else if case .logiAction = action {
+                self = .askedFor
+            } else {
+                self = .ran
+            }
+        }
+    }
+
+    /// The one line a gesture's action leaves in the log: what it did, a listed action by
+    /// its identifier, a recorded key combination by its kind, and whether it was of the
+    /// own gestures of the app in front. Never its keys, never the name the user gave it,
+    /// never the app's name.
+    static func mouseGestureRunLine(
+        _ action: GestureAction, part: MouseGesturePart, appsOwn: Bool = false, outcome: MouseGestureOutcome = .ran
+    ) -> String {
+        let what: String
+        switch outcome {
+        case .ran: what = "ran \(action.logName)"
+        case .askedFor: what = "asked for \(action.logName)"
+        case .sentNothing(.retired): what = "sent nothing: \(action.logName) is retired"
+        case .sentNothing(.switchedOffInSystemSettings):
+            what = "sent nothing: \(action.logName) is switched off in System Settings"
+        }
+        return "Gestures: \(part.logName) \(what)" + (appsOwn ? ", the app in front has its own gestures" : "")
     }
 
     /// Runs one gesture action as a single press (`ShortcutExecutor.executeOnePress`, the
@@ -801,8 +831,10 @@ class InputProcessor: ModifierFlagsProviding {
         let log = mouseGestureLog
         DispatchQueue.main.async {
             guard let action = gestureAction.resolvedAction else { return }
-            ShortcutExecutor.shared.executeOnePress(action)
-            log(InputProcessor.mouseGestureRunLine(gestureAction, part: part, appsOwn: appsOwn))
+            let result = ShortcutExecutor.shared.executeOnePress(action)
+            log(InputProcessor.mouseGestureRunLine(
+                gestureAction, part: part, appsOwn: appsOwn, outcome: MouseGestureOutcome(action, result)
+            ))
         }
     }
 

@@ -288,6 +288,44 @@ final class GestureKeysRunTests: XCTestCase {
         XCTAssertTrue(logLines.isEmpty)
     }
 
+    /// A listed action that sends nothing says so in its line, and why: a Spaces action
+    /// whose shortcut is switched off in System Settings (its toast tells the user), a
+    /// retired one. A Logitech action is asked for: the `logi` log says whether a mouse
+    /// could. Still one line per gesture.
+    func testTheLineSaysWhatTheActionDid() {
+        SystemShortcut.setTestingSystemShortcutState(SystemShortcut.SystemShortcutState(switchedOff: ["moveSpaceLeft"]))
+        let savedNotice = ShortcutExecutor.shared.switchedOffNotice
+        let savedPerformer = ShortcutExecutor.shared.logiActionPerformer
+        var notices: [String] = []
+        var asked: [String] = []
+        ShortcutExecutor.shared.switchedOffNotice = { notices.append($0) }
+        ShortcutExecutor.shared.logiActionPerformer = { asked.append($0) }
+        defer {
+            SystemShortcut.setTestingSystemShortcutState(nil)
+            ShortcutExecutor.shared.switchedOffNotice = savedNotice
+            ShortcutExecutor.shared.logiActionPerformer = savedPerformer
+        }
+        func swipeLeft(_ action: GestureAction) {
+            Options.shared.gesture.actions.left = action
+            XCTAssertEqual(InputProcessor.shared.process(button(.down)), .consumed)
+            InputProcessor.shared.handleMouseGestureMovement(deltaX: -45, deltaY: 0)
+            XCTAssertEqual(InputProcessor.shared.process(button(.up)), .consumed)
+            waitForMainQueue()
+        }
+
+        swipeLeft(GestureAction(SystemShortcut.moveSpaceLeft))
+        swipeLeft(GestureAction(SystemShortcut.shutdownDialog))
+        XCTAssertTrue(posted.isEmpty, "nothing was sent")
+        XCTAssertEqual(notices.count, 1)
+        swipeLeft(GestureAction(SystemShortcut.logiSmartShiftToggle))
+        XCTAssertEqual(asked, [SystemShortcut.logiSmartShiftToggle.identifier])
+        XCTAssertEqual(logLines, [
+            "Gestures: left sent nothing: moveSpaceLeft is switched off in System Settings",
+            "Gestures: left sent nothing: shutdownDialog is retired",
+            "Gestures: left asked for logiSmartShiftToggle",
+        ])
+    }
+
     /// The line itself, for each part of a gesture.
     func testTheLogLineNamesTheKindNeverTheName() {
         let named = GestureAction(action: shiftCommandR, label: label("Open Secret Vault"))
