@@ -6,17 +6,36 @@
 //  Idempotent. Options 订阅驱动: 绑定/热键/应用列表变更时整体刷新 (installOptionsObservers).
 //
 
-import Foundation
+import Cocoa
 
 enum LogiUsageBootstrap {
 
     /// 上次推送过 appScroll 用量的 app path, 用于 app 移除后推送空集清理注册表残留
     private static var lastPushedAppPaths: Set<String> = []
 
+    /// The app in front, whose own buttons count for what the mouse gives to Scrollio.
+    /// Tests give one of their own.
+    static var frontApplication: () -> ShortcutRingChoice.FrontApp? = { .current() }
+    /// What the buttons of the app in front changed in the divert the last time (for the
+    /// log: a line only when that changes).
+    private static var lastFrontAppDifference: (taken: Int, givenBack: Int) = (0, 0)
+    private static var frontApplicationObserver: NSObjectProtocol?
+
     /// 订阅 Options 变更, 集中刷新 Logi 用量 (替代偏好面板各处手动 setUsage)
     static func installOptionsObservers() {
         Options.shared.observe([.buttons, .scroll, .application]) { _ in
             refreshAll()
+        }
+        // The buttons the mouse gives to Scrollio follow the app in front: an app with
+        // buttons of its own may need one the general bindings leave to the mouse, or give
+        // one back.
+        if frontApplicationObserver == nil {
+            frontApplicationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+            ) { note in
+                let application = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                refreshButtonUsage(front: ShortcutRingChoice.FrontApp.current(application))
+            }
         }
         // Logitech 滚轮硬件设置 (SmartShift / 灵敏度 / 齿感力度), 见 LogiUsageBootstrap+Wheel
         installWheelObserver()
@@ -27,14 +46,9 @@ enum LogiUsageBootstrap {
     }
 
     static func refreshAll() {
-        // 1. Button bindings (直读 Options, 不依赖 ButtonUtils 缓存失效的订阅顺序)
-        let buttonCodes: Set<UInt16> = Set(
-            Options.shared.buttons.binding
-                .filter { $0.isEnabled && $0.triggerEvent.type == .mouse }
-                .map { $0.triggerEvent.code }
-                .filter { LogiCenter.shared.isLogiCode($0) }
-        )
-        LogiCenter.shared.setUsage(source: .buttonBinding, codes: buttonCodes)
+        // 1. Button bindings (直读 Options, 不依赖 ButtonUtils 缓存失效的订阅顺序): those
+        //    that count while the app in front is.
+        refreshButtonUsage(front: frontApplication())
 
         // 2. Global scroll
         for role in ScrollRole.allCases {
@@ -63,6 +77,56 @@ enum LogiUsageBootstrap {
 
         // 4. Gesture Navigation 绑定里由鼠标自行跟踪位移的按键 (依赖上面的绑定与热键)
         refreshGestureTracking()
+    }
+
+    // MARK: - Buttons of the app in front
+
+    /// Tells the mice which of their Logitech buttons Scrollio takes for the bindings that
+    /// count while `front` is in front: the general ones with the app's own merged over them
+    /// (`ApplicationButtons`). A button no general binding uses is taken only while an app
+    /// with its own binding for it is in front, and given back to the mouse when another
+    /// app comes; a general one the app sets to "Default" is the mouse's while the app is in
+    /// front. Without an app of its own in front this is exactly the general set. The
+    /// registry ignores a set that did not change; a change is written to the mouse off the
+    /// main thread, as every divert is.
+    static func refreshButtonUsage(front: ShortcutRingChoice.FrontApp?) {
+        let general = Options.shared.buttons.binding
+        let isLogiCode: (UInt16) -> Bool = { LogiCenter.shared.isLogiCode($0) }
+        let entry = ApplicationButtons.entry(front: front, applications: Options.shared.application.applications)
+        let codes = buttonBindingCodes(general: general, frontAppOwn: entry?.ownButtonBindings ?? [], isLogiCode: isLogiCode)
+        LogiCenter.shared.setUsage(source: .buttonBinding, codes: codes)
+
+        // One line when what the app in front changes is not what it was (never which app).
+        let generalCodes = buttonBindingCodes(general: general, frontAppOwn: [], isLogiCode: isLogiCode)
+        let difference = (taken: codes.subtracting(generalCodes).count, givenBack: generalCodes.subtracting(codes).count)
+        guard difference != lastFrontAppDifference else { return }
+        lastFrontAppDifference = difference
+        if difference == (0, 0) {
+            AppSystemLog.note("Buttons: the Logitech buttons are as Buttons sets them (the app in front has no binding of its own for one)")
+        } else {
+            AppSystemLog.note(
+                "Buttons: the app in front has its own binding: \(difference.taken) Logitech button(s) taken from the mouse "
+                    + "and \(difference.givenBack) given back while it is in front"
+            )
+        }
+    }
+
+    /// The Logitech buttons the bindings that count while an app is in front use: every
+    /// enabled binding of a mouse button, the general ones with `frontAppOwn` merged over
+    /// them, except an app's own "Default" (that button does what it does by itself there).
+    /// With no own bindings: the codes of the enabled general bindings, as ever.
+    static func buttonBindingCodes(
+        general: [ButtonBinding], frontAppOwn: [ButtonBinding], isLogiCode: (UInt16) -> Bool
+    ) -> Set<UInt16> {
+        let own = ApplicationButtons.usable(frontAppOwn, general: general)
+        let ownIdentities = own.map(\.identity)
+        var codes: Set<UInt16> = []
+        for binding in ApplicationButtons.merged(general: general, own: own)
+        where binding.isEnabled && binding.triggerEvent.type == .mouse && isLogiCode(binding.triggerEvent.code) {
+            if binding.systemShortcutName.isEmpty, ownIdentities.contains(binding.identity) { continue }
+            codes.insert(binding.triggerEvent.code)
+        }
+        return codes
     }
 
     static func globalScrollCodes(role: ScrollRole) -> Set<UInt16> {

@@ -83,6 +83,14 @@ class OPTIONS_BUTTONS_DEFAULT: Codable {
         // 容器被全局/per-app 复用, 由 Options 按引用身份路由归属组
         didSet { Options.shared.markChanged(buttonsContainer: self) }
     }
+
+    init() {}
+
+    /// A container that holds `binding` from the start (no change is reported): an app's
+    /// own buttons (`Application.setOwnButtonBindings`).
+    init(binding: [ButtonBinding]) {
+        self.binding = binding
+    }
 }
 
 // 滚动
