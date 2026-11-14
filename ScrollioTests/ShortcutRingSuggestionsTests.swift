@@ -131,6 +131,25 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
         XCTAssertEqual(gimp.keys, ShortcutRingSuggestion.Keys(character: "=", modifiers: .maskShift))
     }
 
+    /// Every suggested name stands whole in the middle of the ring when its place lights,
+    /// on screen and in the pane: at the size `namedTitleLayout` gives a name with its keys
+    /// under it, it takes at most two lines, so nothing is cut ("Paste Unformatted Text"
+    /// needed three and was cut to "Paste / Unformatted T…").
+    func testEverySuggestedNameStandsWholeInTheMiddleOfTheRing() {
+        for scale in [CGFloat(1), ShortcutRingPreviewView.ringScale] {
+            let width = ShortcutRingArtwork.titleWidth * scale
+            let size = ShortcutRingArtwork.titleFont.pointSize * scale
+            for app in catalog.apps {
+                for place in app.slots.compactMap(\.place) {
+                    let layout = ShortcutRingArtwork.namedTitleLayout(place.name, keys: "⌥⇧⌘V", width: width, pointSize: size)
+                    let lines = ShortcutRingArtwork.titleLines(place.name, width: width, pointSize: layout.namePointSize).lines
+                    XCTAssertLessThanOrEqual(lines, 2, "\(app.appName): \(place.name), scale \(scale)")
+                }
+            }
+        }
+        XCTAssertEqual(try SuggestionFixtures.place("Paste as Plain Text", of: "LibreOffice").keys.modifiers, [.maskAlternate, .maskShift, .maskCommand])
+    }
+
     /// Every bundle identifier names one app, case aside, and no app's prefix takes an
     /// identifier of another: Android Studio is found as itself, no longer as IntelliJ
     /// IDEA (whose ring is the same, place for place).

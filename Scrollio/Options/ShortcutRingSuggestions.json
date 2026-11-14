@@ -653,7 +653,7 @@
       "bundleIdentifiers": ["org.libreoffice.script", "com.collabora.libreoffice-free"],
       "places": [
         {"name": "Increase Font Size", "symbol": "textformat.size.larger", "character": "]", "modifiers": ["command"], "modifierless": false},
-        {"name": "Paste Unformatted Text", "symbol": "doc.plaintext", "character": "v", "modifiers": ["option", "shift", "command"], "modifierless": false},
+        {"name": "Paste as Plain Text", "symbol": "doc.plaintext", "character": "v", "modifiers": ["option", "shift", "command"], "modifierless": false},
         {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
         {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
         {"name": "Decrease Font Size", "symbol": "textformat.size.smaller", "character": "[", "modifiers": ["command"], "modifierless": false},
