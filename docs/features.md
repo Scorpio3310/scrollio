@@ -204,13 +204,16 @@ the eight places hold.
   later. An app added for its ring has its scrolling changed too while "Change
   scrolling only in these apps" is on, as one added for its buttons (see
   [Buttons and keys](#buttons-and-keys)).
-- Scrollio suggests shortcuts for 50 popular apps (Figma, Photoshop, Final Cut Pro,
-  Safari, Word, Xcode …: each app's most used ones, Undo and Redo on the left and right,
-  zoom on top and bottom, Copy and Paste below). Nothing changes by itself: only when you
-  turn "Use the general ring" off for such an app does its ring start with them instead
-  of the copy, and while its own ring is in use, "Reset to Defaults" under it puts them
-  in all eight places again (Edit › Undo takes that back). They are ordinary
-  places afterwards: change any of them. The keys are those of your keyboard layout at
+- Scrollio suggests shortcuts for 100 popular apps (Figma, Photoshop, Final Cut Pro,
+  Safari, Word, Xcode, Discord, Zed, GitHub Desktop …: each app's most used ones, Undo
+  and Redo on the left and right, zoom on top and bottom, Copy and Paste below). Nothing
+  changes by itself: only when you turn "Use the general ring" off for such an app does
+  its ring start with them instead of the copy, and while its own ring is in use,
+  "Reset to Defaults" under it puts them in all eight places again (Edit › Undo takes
+  that back); the page says whether the ring started from them. They are ordinary
+  places afterwards: change any of them. No suggested place deletes what cannot be
+  brought back or changes something outside the Mac at one flick (a git app fetches
+  rather than pushes), and a place whose key the app does not document stays empty. The keys are those of your keyboard layout at
   that moment (on a German or Slovenian keyboard ⌘Z is still Undo and zoom is the + and
   − keys); a shortcut whose key your layout types only with Option ("[" on those
   layouts) takes Scrollio's own Back or Forward in a browser, or other keys the app has
