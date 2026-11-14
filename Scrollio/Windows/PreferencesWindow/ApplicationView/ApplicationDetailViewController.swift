@@ -64,6 +64,11 @@ final class ApplicationDetailViewController: NSViewController {
     var gesturesPartShowing: ((Application) -> ApplicationGesturesPartViewController?)? {
         didSet { gesturesPart?.partShowing = gesturesPartShowing }
     }
+    /// The same for the Scrolling part (its "Reset to Defaults" takes the app's own thumb
+    /// wheel action too, which the Buttons part and the list show).
+    var scrollingPartShowing: ((Application) -> ApplicationScrollingPartViewController?)? {
+        didSet { scrollingPart?.partShowing = scrollingPartShowing }
+    }
     /// The page's height changed: another part, the settings loaded, "Advanced" opened or
     /// closed, a row came or went.
     var onHeightChange: (() -> Void)?
@@ -206,6 +211,7 @@ final class ApplicationDetailViewController: NSViewController {
             if let scrolling = controller as? ApplicationScrollingPartViewController {
                 scrolling.onInheritChange = { [weak self] in self?.onInheritChange?() }
                 scrolling.onOwnThumbWheelChange = ownThumbWheelChange()
+                scrolling.partShowing = scrollingPartShowing
             }
             if let buttons = controller as? ApplicationButtonsViewController {
                 buttons.onOwnButtonsChange = onInheritChange

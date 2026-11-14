@@ -225,6 +225,12 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// the page so that it outlives it (an Undo can run after the page closed).
     var onApplicationThumbWheelChange: (() -> Void)?
 
+    /// On an app's page: an Undo or Redo of "Reset to Defaults" changed the app's entry
+    /// (found by its path when it runs): the page open now shows it, if it is that app's
+    /// (`ApplicationScrollingPartViewController.partShowing`). Outlives the page that made
+    /// the reset, as the reset's Undo does.
+    var showUndoneResetOfApplication: ((Application) -> Void)?
+
     /// How long "Reset to Defaults" reads "Undo Reset" after a reset. Tests shorten it.
     var undoOfferDuration: TimeInterval = 8
     /// The button offers to take the reset back (it reads "Undo Reset").
@@ -838,10 +844,15 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         // (The page's hook outlives this controller: an Undo after the page closed still
         // tells the list.)
         let thumbWheelChange = currentTargetApplication == nil ? nil : onApplicationThumbWheelChange
-        Self.resetScrollOptions(of: currentTargetApplication, undoManager: undoTarget) { [weak self] in
-            self?.syncViewWithOptions()
-            thumbWheelChange?()
-        }
+        let showOnOpenPage = currentTargetApplication == nil ? nil : showUndoneResetOfApplication
+        Self.resetScrollOptions(
+            of: currentTargetApplication, undoManager: undoTarget,
+            didChange: { [weak self] in
+                self?.syncViewWithOptions()
+                thumbWheelChange?()
+            },
+            showOnOpenPage: showOnOpenPage
+        )
         beginUndoOffer()
     }
 
@@ -920,17 +931,25 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// Gives the app (nil: the Scrolling tab) new default scroll options, and the tab default
     /// thumb wheel settings; Undo gives back the ones it had. The undo target is the
     /// settings, not this controller: an app's page and its controller are gone once the
-    /// list shows again, and its Undo still works.
+    /// list shows again, and its Undo still works. Undo and Redo find the app's entry by its
+    /// path when they run (`currentEntry`, as the other parts' resets do) and show it on the page
+    /// open then (`showOnOpenPage`), besides `didChange` (this controller, while it lives,
+    /// and the list).
     private static func resetScrollOptions(
         of application: Application?,
         undoManager undo: UndoManager?,
-        didChange: @escaping () -> Void
+        didChange: @escaping () -> Void,
+        showOnOpenPage: ((Application) -> Void)?,
+        isRedo: Bool = false
     ) {
         let previous = replaceSettings(of: application, with: .defaults(for: application))
         didChange()
+        if isRedo, let application { showOnOpenPage?(application) }
         guard let undo else { return }
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
-            Self.restoreScrollOptions(previous, of: application, undoManager: undo, didChange: didChange)
+            Self.restoreScrollOptions(
+                previous, of: currentEntry(of: application), undoManager: undo, didChange: didChange, showOnOpenPage: showOnOpenPage
+            )
         }
         undo.setActionName(NSLocalizedString("scrolling-undo-reset", comment: ""))
     }
@@ -940,15 +959,29 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         _ settings: ResettableSettings,
         of application: Application?,
         undoManager undo: UndoManager?,
-        didChange: @escaping () -> Void
+        didChange: @escaping () -> Void,
+        showOnOpenPage: ((Application) -> Void)?
     ) {
         replaceSettings(of: application, with: settings)
         didChange()
+        if let application { showOnOpenPage?(application) }
         guard let undo else { return }
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
-            Self.resetScrollOptions(of: application, undoManager: undo, didChange: didChange)
+            Self.resetScrollOptions(
+                of: currentEntry(of: application), undoManager: undo, didChange: didChange, showOnOpenPage: showOnOpenPage, isRedo: true
+            )
         }
         undo.setActionName(NSLocalizedString("scrolling-undo-reset", comment: ""))
+    }
+
+    /// Whose settings an Undo or Redo of a reset changes: nil, the tab's; else the entry the
+    /// list holds now for the app (an app removed and added again is a new entry), or the
+    /// one the reset changed when the list has none for it (nothing stores that one).
+    private static func currentEntry(of application: Application?) -> Application? {
+        guard let application else { return nil }
+        return PreferencesApplicationViewController.existingApplication(
+            forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: application.path)
+        ) ?? application
     }
 
     /// Puts `settings` in place of the app's (nil: the global) scroll options, and of the

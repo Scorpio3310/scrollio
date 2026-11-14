@@ -1175,4 +1175,52 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
         XCTAssertEqual(calculator.ownThumbWheelFunction, .volume)
         XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.scrolling, .buttons], "the list follows")
     }
+
+    /// The reset on the Scrolling part, back to the list, the app's page opened again on its
+    /// Buttons part, then Edit › Undo: the page open now shows what came back (the thumb
+    /// wheel's row and its reset button; the Scrolling part its values); Redo the same way.
+    func testUndoOfTheResetShowsOnAPageOpenedAgain() throws {
+        let calculator = addCalculator()
+        calculator.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
+        calculator.scroll.speed = 4.5
+        calculator.setOwnThumbWheelFunction(.volume)
+        let pane = makePane()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        try autoreleasepool {
+            let page = try page(pane: pane)
+            let tab = try XCTUnwrap(page.scrollingController)
+            tab.paneUndoManager = undo
+            undo.beginUndoGrouping()
+            send(tab.resetToDefaultsButton)
+            undo.endUndoGrouping()
+            XCTAssertNil(calculator.thumbWheel)
+            pane.leaveSubpage()
+        }
+        pane.openApplication(withID: Self.calculator, part: .buttons)
+        let reopened = try XCTUnwrap(pane.detailController)
+        let buttons = try XCTUnwrap(reopened.buttonsPart)
+        buttons.deviceSource = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { "MX Master 3S" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        buttons.reloadRows()
+        XCTAssertNil(buttons.thumbWheelRow)
+        XCTAssertFalse(buttons.resetToDefaultsButton.isEnabled)
+
+        undo.undo()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .volume)
+        XCTAssertEqual(buttons.thumbWheelRow?.function, .volume, "the page open now shows the row")
+        XCTAssertTrue(buttons.resetToDefaultsButton.isEnabled)
+        let tab = try XCTUnwrap(reopened.scrollingController)
+        XCTAssertTrue(tab.resetToDefaultsButton.isEnabled, "and the Scrolling part its values")
+        XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .volume)
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.scrolling, .buttons])
+
+        undo.redo()
+        XCTAssertNil(calculator.thumbWheel)
+        XCTAssertNil(buttons.thumbWheelRow)
+        XCTAssertFalse(buttons.resetToDefaultsButton.isEnabled)
+        XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .tabs)
+        XCTAssertFalse(tab.resetToDefaultsButton.isEnabled)
+    }
 }
