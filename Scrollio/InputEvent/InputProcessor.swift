@@ -40,6 +40,11 @@ class InputProcessor: ModifierFlagsProviding {
     /// button-up is swallowed too, so the app under the pointer never gets an up without its
     /// down. A new press of the button or `clearActiveBindings` forgets the entry.
     private var swallowedTriggerPresses: Set<TriggerKey> = []
+    /// Whose bindings a key's press went by (`ButtonUtils.scopeOfPress`), for that key's
+    /// auto-repeats: a repeat belongs to its press, whatever app the press brought to the
+    /// front (an app's own ⌘Q that hides it must not let the repeats quit the next app).
+    /// Set at a key's first down; its up and `clearActiveBindings` forget it.
+    private var keyPressScopes: [TriggerKey: ButtonBindingScope] = [:]
 
     var hasActiveMouseGestureSessions: Bool {
         return !activeMouseGestures.isEmpty
@@ -406,6 +411,7 @@ class InputProcessor: ModifierFlagsProviding {
         }
         activeBindings.removeAll()
         swallowedTriggerPresses.removeAll()
+        keyPressScopes.removeAll()
         // An open Shortcut Ring closes and runs nothing. A key that holds it stays the
         // ring's until it is up: its repeats match no binding once the modifiers are let
         // go, and would be typed into the document. (A button's release may pass, as a
@@ -460,12 +466,16 @@ class InputProcessor: ModifierFlagsProviding {
     /// - Parameter event: 统一输入事件
     /// - Parameter scope: whose bindings a press goes by, when the caller decided it for this
     ///   press already (the Logitech probe); nil: the app in front decides here, once, at the
-    ///   down (`ButtonUtils.scopeOfPress`). A release never looks: it ends what its press
-    ///   started, whatever app is in front by then.
+    ///   down (`ButtonUtils.scopeOfPress`); a key's auto-repeat goes by its press's. A
+    ///   release never looks: it ends what its press started, whatever app is in front by
+    ///   then.
     /// - Returns: .consumed 表示事件已处理, .passthrough 表示未匹配
     func process(_ event: InputEvent, scope: ButtonBindingScope? = nil) -> InputResult {
         assertMainThread()
         if event.phase == .up {
+            if event.type == .keyboard {
+                keyPressScopes.removeValue(forKey: TriggerKey(type: event.type, code: event.code))
+            }
             // Up 事件: 按 (type, code) 查表, 忽略 modifiers (用户可能已松开修饰键)
             if releaseForShortcutRing(event) {
                 return .consumed
@@ -504,9 +514,20 @@ class InputProcessor: ModifierFlagsProviding {
         if event.isAutoRepeat, let session = activeBindings[key], !Self.repeatsWhileHeld(session.action) {
             return .consumed
         }
-        guard let binding = ButtonUtils.shared.getBestMatchingBinding(
-            for: event, scope: scope ?? ButtonUtils.shared.scopeOfPress(for: event)
-        ) else {
+        // A trigger action holds nothing, so its repeats come this far: they go by the
+        // bindings of their press, not by those of the app that press brought forward.
+        let pressScope: ButtonBindingScope
+        if let scope {
+            pressScope = scope
+        } else if event.isAutoRepeat, let kept = keyPressScopes[key] {
+            pressScope = kept
+        } else {
+            pressScope = ButtonUtils.shared.scopeOfPress(for: event)
+        }
+        if event.type == .keyboard, !event.isAutoRepeat {
+            keyPressScopes[key] = pressScope
+        }
+        guard let binding = ButtonUtils.shared.getBestMatchingBinding(for: event, scope: pressScope) else {
             return .passthrough
         }
         if binding.systemShortcutName == SystemShortcut.shortcutRing.identifier {

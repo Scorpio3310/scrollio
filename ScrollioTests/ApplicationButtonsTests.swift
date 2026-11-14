@@ -246,6 +246,53 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertEqual(InputProcessor.shared.activeModifierFlags, 0, "no Shift from the general binding")
     }
 
+    /// A key the system repeats, as it sends it (`keyboardEventAutorepeat`).
+    private func key(_ code: CGKeyCode, flags: CGEventFlags, down: Bool = true, repeating: Bool = false) -> InputEvent {
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)!
+        event.flags = flags
+        if repeating {
+            event.setIntegerValueField(.keyboardEventAutorepeat, value: 1)
+        }
+        return InputEvent(fromCGEvent: event)
+    }
+
+    /// A held key's repeats belong to its press: they go by the bindings the press went by,
+    /// whatever app that press brought to the front. Safari's own ⌘Q runs Copy and TextEdit
+    /// comes forward while ⌘Q is held: the repeats are swallowed, not handed to TextEdit
+    /// (where ⌘Q would quit it). The other way round, a general ⌘Q pressed in TextEdit keeps
+    /// its repeats when Safari, whose ⌘Q is "Default", comes forward. The next press asks
+    /// the app in front again.
+    func testAHeldKeysRepeatsGoByItsPressWhenAnotherAppComesToTheFront() {
+        let q: CGKeyCode = 12
+        let command = UInt(CGEventFlags.maskCommand.rawValue)
+        set(general: [], safari: [binding(q, "copy", modifiers: command, type: .keyboard)])
+
+        front = Self.safari
+        XCTAssertEqual(InputProcessor.shared.process(key(q, flags: .maskCommand)), .consumed)
+        XCTAssertEqual(executed.map(\.0), [shortcut(SystemShortcut.copy).code])
+        front = Self.textEdit
+        frontLookups = 0
+        XCTAssertEqual(InputProcessor.shared.process(key(q, flags: .maskCommand, repeating: true)), .consumed,
+                       "a repeat of Safari's press never reaches TextEdit")
+        XCTAssertEqual(InputProcessor.shared.process(key(q, flags: .maskCommand, repeating: true)), .consumed)
+        XCTAssertEqual(executed.count, 1, "a trigger action runs once per press")
+        XCTAssertEqual(frontLookups, 0, "a repeat does not ask which app is in front")
+        _ = InputProcessor.shared.process(key(q, flags: .maskCommand, down: false))
+        XCTAssertEqual(InputProcessor.shared.process(key(q, flags: .maskCommand)), .passthrough,
+                       "the next press goes by the app in front")
+        _ = InputProcessor.shared.process(key(q, flags: .maskCommand, down: false))
+
+        executed = []
+        set(general: [binding(q, "copy", modifiers: command, type: .keyboard)], safari: [binding(q, "", modifiers: command, type: .keyboard)])
+        front = Self.textEdit
+        XCTAssertEqual(InputProcessor.shared.process(key(q, flags: .maskCommand)), .consumed)
+        front = Self.safari
+        XCTAssertEqual(InputProcessor.shared.process(key(q, flags: .maskCommand, repeating: true)), .consumed,
+                       "Safari's \"Default\" does not take the repeats of a press made in TextEdit")
+        XCTAssertEqual(executed.count, 1)
+        _ = InputProcessor.shared.process(key(q, flags: .maskCommand, down: false))
+    }
+
     /// The Logitech probe goes by the same bindings as InputProcessor: an app's own
     /// Logitech action runs while it is in front, and its "Default" passes through.
     func testTheLogitechProbeSeesTheAppInFront() {
