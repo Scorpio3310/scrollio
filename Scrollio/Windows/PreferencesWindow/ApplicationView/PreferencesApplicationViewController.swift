@@ -645,6 +645,7 @@ struct ApplicationSettings {
     let buttons: OPTIONS_BUTTONS_DEFAULT?
     let ring: ApplicationRing?
     let gestures: ApplicationGestures?
+    let thumbWheel: ApplicationThumbWheel?
 
     init(of application: Application) {
         displayName = application.displayName
@@ -653,6 +654,7 @@ struct ApplicationSettings {
         buttons = application.buttons
         ring = application.ring
         gestures = application.gestures
+        thumbWheel = application.thumbWheel
     }
 
     func apply(to application: Application) {
@@ -662,6 +664,7 @@ struct ApplicationSettings {
         application.buttons = buttons
         application.ring = ring
         application.gestures = gestures
+        application.thumbWheel = thumbWheel
     }
 }
 

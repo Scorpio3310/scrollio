@@ -41,6 +41,11 @@ class Application: Codable, Equatable {
     var gestures: ApplicationGestures? {
         didSet { Options.shared.markChanged(.application) }
     }
+    // The thumb wheel's function of the app's own (`ApplicationThumbWheel.swift`). Nil: the
+    // general one; nothing is stored for it then, so an entry from before stays as it was.
+    var thumbWheel: ApplicationThumbWheel? {
+        didSet { Options.shared.markChanged(.application) }
+    }
     // 初始化
     init(path: String) {
         self.path = path
@@ -72,6 +77,8 @@ class Application: Codable, Equatable {
         // Gestures that cannot be read do not take the app's entry with them either: the app
         // then uses the general gestures.
         gestures = (try? container.decodeIfPresent(ApplicationGestures.self, forKey: .gestures)) ?? nil
+        // Nor does a thumb wheel that cannot be read: the app then turns it as Buttons says.
+        thumbWheel = (try? container.decodeIfPresent(ApplicationThumbWheel.self, forKey: .thumbWheel)) ?? nil
     }
     
     // Equatable

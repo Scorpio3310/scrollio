@@ -70,6 +70,10 @@ enum ThumbWheelTuning {
 
     /// A pause this long (s) ends a roll for the log: its line is written.
     static let logRollRest: TimeInterval = 0.6
+    /// A pause this long (s) ends a turn: the next event looks at the app in front again
+    /// (`ThumbWheelTurn`). The roll's rest, so a turn and its first log line begin together;
+    /// longer than every function's own rest, so a quick second stroke is the same turn.
+    static let turnRest: TimeInterval = logRollRest
     /// During a long roll a log line is written at least this often (s), and at most this
     /// often apart from the line at its end.
     static let logInterval: TimeInterval = 2.0

@@ -120,10 +120,42 @@ struct ThumbWheelActionPerformer {
     }
 }
 
+/// One turn of the thumb wheel: its events until the wheel rests (`ThumbWheelTuning.turnRest`,
+/// by the events' own times). It runs the function of the app that was in front at its
+/// first event (an app's own, `ThumbWheelChoice`), whatever comes to the front meanwhile:
+/// a turn that switches desktops brings another app forward, and its next stroke still
+/// switches desktops.
+struct ThumbWheelTurn: Equatable {
+    /// The own function of the app in front at the first event; nil: the general function,
+    /// read at every event (a change of it counts at once, as it always did).
+    let ownFunction: ThumbWheelFunction?
+    /// The last event's own time.
+    var lastEventAt: TimeInterval
+
+    /// The wheel has rested before an event at `time`: the turn is over.
+    func hasRested(at time: TimeInterval) -> Bool {
+        return time >= lastEventAt + ThumbWheelTuning.turnRest
+    }
+
+    /// The settings an event of the turn goes by: `general` with the app's function in it.
+    func settings(general: ThumbWheelSettings) -> ThumbWheelSettings {
+        guard let ownFunction, ownFunction != general.function else { return general }
+        var settings = general
+        settings.function = ownFunction
+        return settings
+    }
+}
+
 /// The thumb wheel in the scroll tap. Main thread only: the tap callback and the main queue.
 final class ThumbWheelEngine {
 
     typealias Roll = ScrollSystemLog.ThumbWheelRoll
+
+    /// The turn whose events still come (`settings(for:general:)`).
+    private(set) var turn: ThumbWheelTurn?
+    /// The app in front, asked at a turn's first event, and only while some app on the list
+    /// has a function of its own (`ThumbWheelChoice`). Tests give their own.
+    var frontApplication: () -> ShortcutRingChoice.FrontApp? = { .current() }
 
     private(set) var stepper = ThumbWheelStepper()
     /// The roll whose events still come.
@@ -178,6 +210,26 @@ final class ThumbWheelEngine {
         } else {
             DispatchQueue.main.async(execute: work)
         }
+    }
+
+    /// The settings a sideways wheel event goes by, in the scroll tap's callback, before
+    /// `handle`: `general` with the function of the event's turn. The turn's first event (the
+    /// first ever, or one after the wheel rested) decides whose function it is: the app in
+    /// front's own, else the general one (`ThumbWheelChoice`: the list looked at, the app in
+    /// front read only while some app has a function of its own; nothing on disk, no Launch
+    /// Services). Every later event of the turn keeps it: one comparison of times.
+    func settings(for event: ThumbWheelEvent, general: ThumbWheelSettings) -> ThumbWheelSettings {
+        let time = event.timestamp == 0 ? clock() : Double(event.timestamp) * secondsPerTimestampUnit
+        let current: ThumbWheelTurn
+        if var open = turn, !open.hasRested(at: time) {
+            open.lastEventAt = time
+            current = open
+        } else {
+            let own = ThumbWheelChoice.ownFunction(front: frontApplication, applications: Options.shared.application.applications)
+            current = ThumbWheelTurn(ownFunction: own, lastEventAt: time)
+        }
+        turn = current
+        return current.settings(general: general)
     }
 
     /// One sideways wheel event, in the scroll tap's callback. A few sums per event; a closure
@@ -281,6 +333,8 @@ final class ThumbWheelEngine {
         if roll == nil {
             nextRollID &+= 1
             roll = Roll(id: nextRollID, settings: settings, at: time, seenAt: seenAt)
+            // (The log says when it was an app's own function, never which app.)
+            roll?.isAppsOwn = turn?.ownFunction != nil
         }
         roll?.add(event, travel: travel, at: time, seenAt: seenAt)
         if !checkScheduled {
@@ -343,10 +397,12 @@ final class ThumbWheelEngine {
     }
 
     /// Scrollio's scroll handling stopped (`ScrollCore.disable`): steps already decided do not
-    /// run (waiting ones included), the next event starts a new roll, and the lines of the rolls
-    /// so far are written now with the steps that ran.
+    /// run (waiting ones included), the next event starts a new roll and a new turn (which
+    /// looks at the app in front again), and the lines of the rolls so far are written now
+    /// with the steps that ran.
     func reset() {
         generation &+= 1
+        turn = nil
         stepper.reset()
         dropWaitingSteps()
         pacer = ThumbWheelPacer()

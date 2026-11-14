@@ -8607,6 +8607,18 @@
           }
         }
       }
+    },
+    "apps-buttons-undo-remove-thumb-wheel": {
+      "comment": "Edit menu: Undo of taking an app's own thumb wheel off its page (\"Undo Remove Thumb Wheel\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove Thumb Wheel"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

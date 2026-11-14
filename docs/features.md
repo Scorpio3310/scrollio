@@ -222,11 +222,20 @@ nothing opens the ring until you do. The pane also sets what the eight places ho
 
 The sideways wheel (an MX Master's thumb wheel, or a wheel that tilts) has its own
 settings, under Scrolling › Thumb wheel and, with an MX Master, in the Thumb wheel row of
-the Buttons pane. They apply to every app.
+the Buttons pane. They apply to every app, unless an app has an action of its own for the
+wheel.
 
 - Action: Scroll Sideways (the default), Zoom, Switch Tabs, Switch Desktops, Back and
   Forward, or Volume.
 - Speed, and Swap direction.
+- An app can have an action of its own for the wheel. On its page in Apps, "+" of the
+  Buttons part offers "Thumb wheel" while the connected mouse has one (an MX Master 4, 3
+  or 3S); the new row starts with what the wheel does everywhere, and its menu sets what
+  it does while the app is in front (the app in front, not the one under the pointer: the
+  keys of Zoom, Switch Tabs and Back and Forward go to it). A turn keeps its action until
+  the wheel rests, whatever comes to the front meanwhile. While Scrollio's own Settings
+  are in front, the wheel does what Buttons says. Speed and Swap direction are the same
+  for every app. "−" gives the wheel back to Buttons; Edit › Undo takes it again.
 
 ## Logitech MX mice
 

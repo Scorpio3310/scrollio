@@ -153,6 +153,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-buttons-add-mouse", "apps-buttons-add-record", "apps-buttons-add-general", "apps-buttons-add-general-item",
         "apps-detail-ring-no-trigger", "apps-detail-allowlist-note",
         "apps-detail-ring-replaced", "apps-detail-gestures-no-button", "apps-detail-gestures-button",
+        "apps-buttons-undo-remove-thumb-wheel",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).

@@ -158,17 +158,13 @@ class ScrollCore: ScrollActionPort {
         // own settings. The tap's run loop source is on the main run loop (in the common modes,
         // so this also runs while a menu is open): Options are read here, on the main thread,
         // as everywhere in this callback; one copy of a small struct, nothing allocated.
-        let thumbWheel = Options.shared.thumbWheel
+        var thumbWheel = Options.shared.thumbWheel
         let sideways = ScrollCore.isSidewaysWheelEvent(
             hasVerticalDelta: hasVerticalDelta,
             hasHorizontalDelta: hasHorizontalDelta,
             remoteSmoothed: remoteSmoothed,
             shiftDown: event.flags.contains(.maskShift)
         )
-        // A turn that runs a function (zoom, tabs, ...) is swallowed further down: it is not
-        // smoothed and never reaches an app, whatever "Smooth scrolling", an app's rule, the
-        // allowlist or Launchpad say.
-        let runsThumbWheelFunction = sideways && thumbWheel.function != .scroll
         // Its X deltas as they arrived, before any direction rule, and its own time (for the
         // stepper and the log).
         let thumbWheelEvent = sideways
@@ -178,6 +174,16 @@ class ScrollCore: ScrollActionPort {
                 timestamp: event.timestamp
             )
             : nil
+        // The function is its turn's: the own function of the app in front at the turn's
+        // first event, else the general one; kept until the wheel rests (a comparison per
+        // event, a look at the list per turn: `ThumbWheelEngine.settings(for:general:)`).
+        if let thumbWheelEvent = thumbWheelEvent {
+            thumbWheel = ScrollCore.shared.thumbWheelEngine.settings(for: thumbWheelEvent, general: thumbWheel)
+        }
+        // A turn that runs a function (zoom, tabs, ...) is swallowed further down: it is not
+        // smoothed and never reaches an app, whatever "Smooth scrolling", an app's rule, the
+        // allowlist or Launchpad say.
+        let runsThumbWheelFunction = sideways && thumbWheel.function != .scroll
         // A wheel event takes over a trackpad glide that still runs, whether it is smoothed or
         // not: let through raw, it would still move the page against the glide. A turn of the
         // thumb wheel that runs a function moves no page: the glide goes on.
