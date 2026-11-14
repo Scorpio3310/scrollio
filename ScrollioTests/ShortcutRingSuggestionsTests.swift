@@ -5,9 +5,10 @@
 //  The Shortcut Ring suggested for popular apps (`ShortcutRingSuggestions`): the shipped
 //  file and what is in it, finding an app by its bundle identifier, the keys a suggestion
 //  becomes on the US layout and on layouts where letters and signs sit elsewhere, the
-//  safety rules over the whole file, the switch "Use the general ring" and "Use
-//  Suggested Shortcuts" with its Undo on an app's page, that nothing is filled or added
-//  without the user, and a filled ring in a settings file.
+//  safety rules over the whole file and the lead's decisions on the second fifty, the
+//  switch "Use the general ring", "Reset to Defaults" with its Undo and the Suggested
+//  row's line on an app's page, that nothing is filled or added without the user, and a
+//  filled ring in a settings file.
 //
 //  The apps need not be on this Mac: entries get their bundle identifier through
 //  `ShortcutRingSuggestions.bundleIdentifierOfApplication`. Layouts the system has are
@@ -82,17 +83,16 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
 
     private var catalog: ShortcutRingSuggestions.Catalog { ShortcutRingSuggestions.shipped }
 
-    /// The app carries the file, and it reads: fifty apps, eight places each, a place left
-    /// empty only with its reason; names fit a label, symbols are on this Mac, keys are
-    /// one character or a named key.
-    func testTheShippedFileReadsWithFiftyAppsOfEightPlaces() throws {
-        XCTAssertEqual(catalog.apps.count, 50)
+    /// The app carries the file, and it reads: a hundred apps, eight places each, a place
+    /// left empty only with its reason (for safety, or because its key is a guess); names
+    /// fit a label, symbols are on this Mac, keys are one character or a named key.
+    func testTheShippedFileReadsWithAHundredAppsOfEightPlaces() throws {
+        XCTAssertEqual(catalog.apps.count, 100)
+        XCTAssertEqual(Set(catalog.apps.map(\.appName)).count, 100)
         var empty: [String] = []
-        var identifiers: [String] = []
         for app in catalog.apps {
             XCTAssertEqual(app.slots.count, ShortcutRingSettings.placeCount, app.appName)
             XCTAssertFalse(app.bundleIdentifiers.isEmpty, app.appName)
-            identifiers += app.bundleIdentifiers.map { $0.lowercased() }
             for (index, slot) in app.slots.enumerated() {
                 switch slot {
                 case .empty(let reason):
@@ -107,14 +107,73 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
                     XCTAssertTrue(
                         ShortcutRingSuggestion.Keys.namedKeys[place.keys.character] != nil || place.keys.character.count == 1, what
                     )
-                    XCTAssertEqual(place.modifierless, place.keys.modifiers.isEmpty, what)
+                    // Without a modifier: none, or Shift where US types the sign with it
+                    // (GIMP's "+", which is Shift and "=" on US and a key of its own on
+                    // many layouts, where the fill sends it without Shift).
+                    let character = place.keys.character
+                    let usShifted = place.keys.modifiers == .maskShift && KeyboardLayoutLayers.usShifted[character] != nil
+                    XCTAssertEqual(place.modifierless, place.keys.modifiers.isEmpty || usShifted, what)
                 }
             }
         }
         XCTAssertEqual(empty, [
-            "Mail ring-place-right", "Mail ring-place-bottom", "Mail ring-place-left", "Microsoft Outlook ring-place-bottom",
+            "iMovie ring-place-top", "iMovie ring-place-bottom",
+            "Mail ring-place-right", "Mail ring-place-bottom", "Mail ring-place-left",
+            "Microsoft Copilot ring-place-top", "Microsoft Copilot ring-place-top-right",
+            "Microsoft Copilot ring-place-bottom", "Microsoft Copilot ring-place-top-left",
+            "Microsoft Outlook ring-place-bottom",
+            "Perplexity ring-place-top", "Perplexity ring-place-top-right", "Perplexity ring-place-bottom",
+            "Perplexity ring-place-top-left",
+            "WhatsApp ring-place-top", "WhatsApp ring-place-right", "WhatsApp ring-place-bottom", "WhatsApp ring-place-left",
         ])
+        let gimp = try SuggestionFixtures.place("Zoom In", of: "GIMP")
+        XCTAssertTrue(gimp.modifierless)
+        XCTAssertEqual(gimp.keys, ShortcutRingSuggestion.Keys(character: "=", modifiers: .maskShift))
+    }
+
+    /// Every bundle identifier names one app, case aside, and no app's prefix takes an
+    /// identifier of another: Android Studio is found as itself, no longer as IntelliJ
+    /// IDEA (whose ring is the same, place for place).
+    func testEveryBundleIdentifierNamesOneApp() throws {
+        let identifiers = catalog.apps.flatMap { $0.bundleIdentifiers.map { $0.lowercased() } }
         XCTAssertEqual(Set(identifiers).count, identifiers.count, "every bundle identifier names one app")
+        for app in catalog.apps {
+            for identifier in app.bundleIdentifiers {
+                XCTAssertEqual(catalog.suggestion(forBundleIdentifier: identifier)?.appName, app.appName, identifier)
+            }
+        }
+        XCTAssertEqual(catalog.suggestion(forBundleIdentifier: "com.google.android.studio")?.appName, "Android Studio")
+        let intellij = try SuggestionFixtures.app("IntelliJ IDEA (and other JetBrains IDEs)")
+        XCTAssertFalse(intellij.bundleIdentifiers.contains("com.google.android.studio"))
+        XCTAssertEqual(try SuggestionFixtures.app("Android Studio").slots, intellij.slots)
+    }
+
+    /// Every symbol of the file came with macOS 14 or earlier (the deployment target), by
+    /// the system's own table of when each SF Symbol came; a newer one would be blank there.
+    func testEverySymbolIsOnMacOS14() throws {
+        let url = URL(fileURLWithPath: "/System/Library/CoreServices/CoreGlyphs.bundle/Contents/Resources/name_availability.plist")
+        guard let table = NSDictionary(contentsOf: url),
+              let symbols = table["symbols"] as? [String: String],
+              let releases = table["year_to_release"] as? [String: [String: String]] else {
+            throw XCTSkip("the system's table of SF Symbols is not there")
+        }
+        let macOS14 = OperatingSystemVersion(majorVersion: 14, minorVersion: 0, patchVersion: 0)
+        func version(_ text: String) -> OperatingSystemVersion {
+            let parts = text.split(separator: ".").compactMap { Int($0) }
+            return OperatingSystemVersion(
+                majorVersion: parts.first ?? 99, minorVersion: parts.count > 1 ? parts[1] : 0, patchVersion: 0
+            )
+        }
+        let names = Set(catalog.apps.flatMap { $0.slots.compactMap(\.place).map(\.symbol) })
+        XCTAssertGreaterThan(names.count, 100)
+        for name in names.sorted() {
+            guard let year = symbols[name], let mac = releases[year]?["macOS"] else {
+                XCTFail("\(name) is not in the system's table")
+                continue
+            }
+            let came = version(mac)
+            XCTAssertTrue((came.majorVersion, came.minorVersion) <= (macOS14.majorVersion, macOS14.minorVersion), "\(name) came with macOS \(mac)")
+        }
     }
 
     /// What ships is the suggestion and nothing of the research behind it.
@@ -166,19 +225,20 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
     // MARK: Safety, over the whole file
 
     /// Nothing destructive is suggested: no place that deletes what cannot be brought
-    /// back, ends a call or quits; Excel's Delete Cells (where every other app zooms out)
-    /// gave way to the font size pair, and Outlook's Delete left that place empty, as
-    /// Mail's is: a flick down from habit would delete a message. The deletes left are
-    /// each taken back by the app's Undo or a bin, or asked about first, and none is on
-    /// the bottom place.
+    /// back, ends a call, quits, or changes something outside the Mac (a push, a sent
+    /// request); Excel's Delete Cells (where every other app zooms out) gave way to the
+    /// font size pair, and Outlook's Delete left that place empty, as Mail's is: a flick
+    /// down from habit would delete a message. The deletes left are each taken back by the
+    /// app's Undo or a bin, or asked about first, and none is on the bottom place.
     func testNoPlaceIsDestructive() throws {
         let never: Set<String> = [
             "Delete Cells", "Insert Cells", "Leave Call", "Leave Meeting", "Delete Now", "Empty Trash", "Quit", "Force Quit",
-            "Close Window",
+            "Close Window", "Push", "Force Push", "Commit & Push", "Send Request", "Delete Chat",
         ]
         let recoverable: Set<String> = [
             "Finder: Move to Trash", "Photos: Delete",
             "Final Cut Pro: Ripple Delete", "Adobe Premiere Pro: Ripple Delete", "DaVinci Resolve: Ripple Delete",
+            "CapCut: Delete", "iMovie: Delete",
         ]
         for app in catalog.apps {
             for place in app.slots.compactMap(\.place) {
@@ -197,17 +257,19 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
     }
 
     /// A key without modifiers only in apps whose canvas, timeline or player takes it
-    /// (creative and CAD apps, Photos, Spotify); never in apps with text fields as their
-    /// main surface. An alternative always has modifiers.
+    /// (creative and CAD apps, audio and video editors and players, Photos); never in
+    /// apps with text fields as their main surface. An alternative always has modifiers.
     func testKeysWithoutModifiersAreOnlyInCanvasApps() {
         let canvasApps: Set<String> = [
             "Adobe After Effects", "Adobe Lightroom Classic", "Adobe Premiere Pro", "Autodesk Fusion", "Blender", "Cinema 4D",
             "Final Cut Pro", "Logic Pro", "Photos", "Rhinoceros", "SketchUp", "Spotify",
+            "Ableton Live", "CapCut", "Capture One", "GarageBand", "GIMP", "IINA", "iMovie", "Music", "QuickTime Player",
+            "Unity", "VLC",
         ]
         var withoutModifiers: Set<String> = []
         for app in catalog.apps {
             for place in app.slots.compactMap(\.place) {
-                if place.keys.modifiers.isEmpty {
+                if place.modifierless || place.keys.modifiers.isEmpty {
                     withoutModifiers.insert(app.appName)
                     XCTAssertTrue(canvasApps.contains(app.appName), "\(app.appName): \(place.name)")
                 }
@@ -218,6 +280,97 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
         }
         XCTAssertEqual(withoutModifiers, canvasApps)
         XCTAssertFalse(withoutModifiers.contains("Mail"))
+    }
+
+    // MARK: The lead's decisions on the second fifty
+
+    private func keys(_ character: String, _ modifiers: CGEventFlags) -> ShortcutRingSuggestion.Keys {
+        return ShortcutRingSuggestion.Keys(character: character, modifiers: modifiers)
+    }
+
+    /// Nothing changes something outside the Mac at one flick: the git clients fetch where
+    /// they pushed (Pull stays), Postman opens a tab where it sent the request.
+    func testNoPlacePushesOrSendsARequest() throws {
+        let github = try SuggestionFixtures.app("GitHub Desktop")
+        XCTAssertEqual(github.slots[1].place?.name, "Fetch")
+        XCTAssertEqual(github.slots[1].place?.keys, keys("t", [.maskShift, .maskCommand]))
+        XCTAssertEqual(github.slots[7].place?.name, "Pull")
+        let tower = try SuggestionFixtures.app("Tower")
+        XCTAssertEqual(tower.slots[0].place?.name, "Fetch")
+        XCTAssertEqual(tower.slots[0].place?.keys, keys("f", [.maskShift, .maskCommand]))
+        XCTAssertEqual(tower.slots[4].place?.name, "Pull")
+        // Fork had Fetch on the top right already: it moved to where Push was, over Pull.
+        let fork = try SuggestionFixtures.app("Fork")
+        XCTAssertEqual(fork.slots[0].place?.name, "Fetch")
+        XCTAssertEqual(fork.slots[0].place?.keys, keys("f", [.maskShift, .maskCommand]))
+        XCTAssertEqual(fork.slots[1].place?.name, "Reveal HEAD")
+        XCTAssertEqual(fork.slots[4].place?.name, "Pull")
+        let pushes: [(app: ShortcutRingSuggestion, keys: ShortcutRingSuggestion.Keys)] = [
+            (github, keys("p", .maskCommand)), (tower, keys("u", [.maskShift, .maskCommand])),
+            (tower, keys("u", [.maskControl, .maskCommand])), (fork, keys("p", [.maskShift, .maskCommand])),
+            (fork, keys("return", [.maskAlternate, .maskCommand])),
+        ]
+        for push in pushes {
+            XCTAssertFalse(push.app.slots.compactMap(\.place).contains { $0.keys == push.keys }, push.app.appName)
+        }
+        let postman = try SuggestionFixtures.app("Postman")
+        XCTAssertEqual(postman.slots[1].place?.name, "New Tab")
+        XCTAssertEqual(postman.slots[1].place?.keys, keys("t", .maskCommand))
+        XCTAssertFalse(postman.slots.compactMap(\.place).contains { $0.keys.character == "return" }, "⌘↩ sends the request")
+        // (SketchUp's Push/Pull is a modelling tool.)
+        let sends: Set<String> = ["Push", "Force Push", "Commit & Push", "Send", "Send Request", "Publish"]
+        for app in catalog.apps {
+            for place in app.slots.compactMap(\.place) {
+                XCTAssertFalse(sends.contains(place.name), "\(app.appName): \(place.name)")
+            }
+        }
+    }
+
+    /// The low-confidence apps keep only the places whose keys are confirmed (Copy, Paste,
+    /// Undo, Redo; WhatsApp's New Chat and Mark Read/Unread); a guessed place stays empty
+    /// with its reason, in every app (iMovie's zoom).
+    func testGuessedPlacesStayEmpty() throws {
+        for name in ["Microsoft Copilot", "Perplexity"] {
+            let app = try SuggestionFixtures.app(name)
+            XCTAssertEqual(app.slots.compactMap(\.place).map(\.name), ["Redo", "Paste", "Copy", "Undo"], name)
+            for index in [0, 1, 4, 7] {
+                guard case .empty(let reason) = app.slots[index] else { return XCTFail("\(name) \(index)") }
+                XCTAssertTrue(reason.contains("guess"), reason)
+            }
+        }
+        let whatsapp = try SuggestionFixtures.app("WhatsApp")
+        XCTAssertEqual(whatsapp.slots.compactMap(\.place).map(\.name), ["Mark Read/Unread", "Paste", "Copy", "New Chat"])
+        for (index, word) in [(0, "guess"), (4, "guess"), (2, "not confirmed"), (6, "not confirmed")] {
+            guard case .empty(let reason) = whatsapp.slots[index] else { return XCTFail("WhatsApp \(index)") }
+            XCTAssertTrue(reason.contains(word), reason)
+        }
+        let imovie = try SuggestionFixtures.app("iMovie")
+        XCTAssertNil(imovie.slots[0].place, "Zoom In: remembered, on no Apple page")
+        XCTAssertNil(imovie.slots[4].place)
+        XCTAssertEqual(imovie.slots.compactMap(\.place).count, 6)
+    }
+
+    /// ⌘[ in Discord starts a call in the open conversation: no place of Discord sends
+    /// "[" or "]", nor anything that falls back to them.
+    func testDiscordNeverSendsABracket() throws {
+        let discord = try SuggestionFixtures.app("Discord")
+        XCTAssertEqual(discord.slots.compactMap(\.place).count, 8)
+        for place in discord.slots.compactMap(\.place) {
+            XCTAssertFalse(["[", "]"].contains(place.keys.character), place.name)
+            XCTAssertNil(place.alternative, place.name)
+        }
+        for layout in [KeyboardLayoutLayers.us] + ((try? SuggestionFixtures.layout("com.apple.keylayout.German")).map { [$0] } ?? []) {
+            for place in discord.places(on: layout) {
+                guard let key = ShortcutRingPlace.keyCombination(named: place.action) else { continue }
+                XCTAssertFalse([33, 30].contains(key.code), "\(place.action): the [ and ] keys of US")
+            }
+        }
+    }
+
+    /// The apps the lead kept: ChatGPT Atlas, and Windsurf under the researchers' name.
+    func testTheKeptAppsAreThere() throws {
+        XCTAssertEqual(catalog.suggestion(forBundleIdentifier: "com.openai.atlas")?.appName, "ChatGPT Atlas")
+        XCTAssertEqual(catalog.suggestion(forBundleIdentifier: "com.exafunction.windsurf")?.appName, "Windsurf (Devin Desktop)")
     }
 }
 
@@ -430,6 +583,45 @@ final class ShortcutRingSuggestionKeysTests: XCTestCase {
         XCTAssertEqual(layout.key(for: "z", modifiers: .maskCommand)?.code, 6)
         XCTAssertEqual(KeyboardLayoutLayers.us.key(for: "=", modifiers: [.maskControl, .maskShift])?.modifiers,
                        [.maskControl, .maskShift], "⌃⇧= on US is the = key with Shift")
+    }
+
+    /// The cases of the second fifty's report, through the same resolution: Telegram's ⌘0
+    /// is the 0 key with Command alone (also on AZERTY, which types "0" with Shift);
+    /// GIMP's "+" without a modifier is Shift and "=" on US and the "+" key without Shift
+    /// on German; Opera's bottom corners are Copy and Paste (its ⌃⇥ cycler switches when
+    /// Control is let go, which a sent shortcut does not do as a key of its own); the new
+    /// browsers' ⌘[ / ⌘] take Scrollio's Back and Forward where "[" needs Option, and
+    /// BBEdit's four bracket places stay empty there.
+    func testTheSecondFiftysLayoutCasesComeOutRight() throws {
+        XCTAssertEqual(try SuggestionFixtures.app("Telegram").places(on: .us)[1].action, custom(29, .maskCommand), "Saved Messages ⌘0")
+        let gimp = try SuggestionFixtures.app("GIMP").places(on: .us)
+        XCTAssertEqual(gimp[0].action, custom(24, .maskShift), "Zoom In: + is Shift and = on US")
+        XCTAssertEqual(gimp[4].action, custom(27, []), "Zoom Out: -")
+        XCTAssertEqual(gimp[2].action, custom(16, .maskCommand), "Redo ⌘Y (⇧⌘Z is Strong Undo in GIMP)")
+        let opera = try SuggestionFixtures.app("Opera").places(on: .us)
+        XCTAssertEqual(opera[5], ShortcutRingPlace(SystemShortcut.copy))
+        XCTAssertEqual(opera[3], ShortcutRingPlace(SystemShortcut.paste))
+        XCTAssertEqual(opera[6].action, custom(123, [.maskCommand, .maskSecondaryFn]), "Back ⌘←")
+        XCTAssertFalse(try SuggestionFixtures.app("Opera").slots.compactMap(\.place).contains { $0.keys.character == "tab" })
+
+        if let french = try? SuggestionFixtures.layout("com.apple.keylayout.French") {
+            XCTAssertEqual(try SuggestionFixtures.app("Telegram").places(on: french)[1].action, custom(29, .maskCommand),
+                           "⌘0 on AZERTY: the 0 key, no Shift added")
+        }
+        let german = try SuggestionFixtures.layout("com.apple.keylayout.German")
+        XCTAssertEqual(try SuggestionFixtures.app("Telegram").places(on: german)[1].action, custom(29, .maskCommand))
+        let gimpGerman = try SuggestionFixtures.app("GIMP").places(on: german)
+        XCTAssertEqual(gimpGerman[0].action, custom(30, []), "Zoom In: the + key, without Shift")
+        XCTAssertEqual(german.plain[30], "+")
+        XCTAssertEqual(gimpGerman[2].action, custom(6, .maskCommand), "Redo ⌘Y: the key that types Y")
+        for name in ["Brave Browser", "ChatGPT Atlas", "Dia", "Orion", "Zen Browser"] {
+            let places = try SuggestionFixtures.app(name).places(on: german)
+            XCTAssertEqual(places[6], ShortcutRingPlace(SystemShortcut.navigateBack), name)
+            XCTAssertEqual(places[2], ShortcutRingPlace(SystemShortcut.navigateForward), name)
+        }
+        let bbedit = try SuggestionFixtures.app("BBEdit")
+        XCTAssertEqual(bbedit.placesLeftEmpty(in: bbedit.places(on: german)), 4)
+        XCTAssertEqual(bbedit.placesLeftEmpty(in: bbedit.places(on: .us)), 0)
     }
 }
 
@@ -733,13 +925,82 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertGreaterThan(width, 200)
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
-        for empty in [0, 1, 3] {
-            let text = ApplicationRingPartViewController.suggestionExplanation(name: long.displayName!, emptyPlaces: empty)
-            let height = (text as NSString).boundingRect(
-                with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
-            ).height
-            XCTAssertLessThanOrEqual(height, twoLines, text)
+        for started in [true, false] {
+            for empty in [0, 1, 3] {
+                let text = ApplicationRingPartViewController.suggestionExplanation(
+                    name: long.displayName!, emptyPlaces: empty, startedFromIt: started
+                )
+                let height = (text as NSString).boundingRect(
+                    with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
+                ).height
+                XCTAssertLessThanOrEqual(height, twoLines, text)
+            }
         }
+    }
+
+    /// A ring of the app's own that did not start from the suggestion (made before there
+    /// were suggestions, as a copy of the general ring, or read from the settings and
+    /// changed): the row does not say it started from them, it says what "Reset to
+    /// Defaults" does. After the reset it started from them, also after a change; Undo
+    /// brings back the ring and its line; Redo the reset again.
+    func testTheRowOfARingMadeByHandSaysWhatResetToDefaultsDoes() throws {
+        let figma = add(SuggestionFixtures.figmaPath, name: "Figma")
+        figma.setUsesGeneralRing(false, general: .default, suggested: nil)
+        let byHand = try XCTUnwrap(figma.ownRingPlaces)
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        let part = part(for: figma, undo: undo)
+        XCTAssertFalse(part.suggestionRow.isHidden)
+        let reset = "Reset to Defaults fills the ring with the shortcuts suggested for Figma."
+        let started = "The ring started from the shortcuts suggested for Figma."
+        XCTAssertEqual(part.suggestionRow.explanation, reset)
+
+        undo.beginUndoGrouping()
+        XCTAssertTrue(part.resetToDefaultsButton.sendAction(part.resetToDefaultsButton.action, to: part.resetToDefaultsButton.target))
+        undo.endUndoGrouping()
+        XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
+        XCTAssertEqual(part.suggestionRow.explanation, started)
+        figma.ring?[0] = ShortcutRingPlace(SystemShortcut.find)
+        part.syncViewWithOptions()
+        XCTAssertEqual(part.suggestionRow.explanation, started, "filled from them, then changed")
+        figma.ring?[0] = figmaSuggestion[0]
+        part.syncViewWithOptions()
+
+        undo.undo()
+        XCTAssertEqual(figma.ownRingPlaces, byHand)
+        XCTAssertEqual(part.suggestionRow.explanation, reset)
+        undo.redo()
+        XCTAssertEqual(part.suggestionRow.explanation, started)
+
+        // A ring read from the settings knows only its places: the same as the suggestion,
+        // it started from them; changed, the row says what the reset does.
+        let read = try JSONDecoder().decode(Application.self, from: JSONEncoder().encode(figma))
+        XCTAssertEqual(read.ring, figma.ring)
+        XCTAssertFalse(try XCTUnwrap(read.ring).startedFromSuggestion)
+        Options.shared.application.applications = list([read])
+        let again = self.part(for: read)
+        XCTAssertEqual(again.suggestionRow.explanation, started)
+        read.ring?[3] = .empty
+        again.syncViewWithOptions()
+        XCTAssertEqual(again.suggestionRow.explanation, reset)
+    }
+
+    /// The same on a layout that leaves places of the suggestion empty: the line says how
+    /// many the reset would leave empty.
+    func testTheRowOfARingMadeByHandSaysHowManyPlacesTheResetLeavesEmpty() throws {
+        let german = try SuggestionFixtures.layout("com.apple.keylayout.German")
+        ShortcutRingSuggestions.layout = { german }
+        let finder = add(SuggestionFixtures.finderPath, name: "Finder")
+        finder.setUsesGeneralRing(false, general: .default, suggested: nil)
+        let part = part(for: finder)
+        XCTAssertEqual(
+            part.suggestionRow.explanation,
+            "Reset to Defaults fills the ring with them, except 2 places whose keys can't be typed on this keyboard layout."
+        )
+        XCTAssertEqual(
+            ApplicationRingPartViewController.suggestionExplanation(name: "Finder", emptyPlaces: 1, startedFromIt: false),
+            "Reset to Defaults fills the ring with them, except 1 place whose keys can't be typed on this keyboard layout."
+        )
     }
 
     /// A ring filled from a suggestion is ordinary places: it travels in a settings file

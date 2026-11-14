@@ -2,9 +2,10 @@
 //  ShortcutRingSuggestions.swift
 //  Scrollio
 //
-//  The Shortcut Ring suggested for popular apps: for each, the app's most used shortcuts on
-//  the eight places, from `ShortcutRingSuggestions.json` beside this file (made from the
-//  researched presets; no notes, no sources in it).
+//  The Shortcut Ring suggested for popular apps (100): for each, the app's most used
+//  shortcuts on the eight places, from `ShortcutRingSuggestions.json` beside this file
+//  (made by a generator from the researched presets; no notes, no sources in it; a place
+//  left empty on purpose says why: no safe shortcut there, or its key is a guess).
 //
 //  Nothing is filled by itself. A suggestion is used only when the user turns off "Use the
 //  general ring" on the page of an app that has one and never had a ring of its own (its
