@@ -145,6 +145,11 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-undo-remove", "apps-detail-inherit",
         "apps-detail-inherit-on", "apps-detail-inherit-off", "apps-limit-empty",
         "apps-detail-ring-general", "apps-detail-ring-general-on", "apps-detail-ring-general-off",
+        "apps-detail-part-scrolling", "apps-detail-part-buttons", "apps-detail-part-ring", "apps-detail-parts",
+        "apps-mark-scrolling", "apps-mark-buttons", "apps-mark-ring",
+        "apps-buttons-empty", "apps-buttons-list-label", "apps-buttons-note", "apps-buttons-note-empty", "apps-buttons-everywhere",
+        "apps-buttons-add-mouse", "apps-buttons-add-record", "apps-buttons-add-general", "apps-buttons-add-general-item",
+        "apps-buttons-recorder-general",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -259,6 +264,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-ring", "general-settings-import-ring-line", "general-settings-import-ring-trigger",
         "general-settings-import-ring-line-app", "general-settings-import-ring-trigger-app",
         "general-settings-import-app-rings-one", "general-settings-import-app-rings-other",
+        "general-settings-import-app-buttons-one", "general-settings-import-app-buttons-other",
         "ring-undo-reset",
     ]
 
@@ -341,6 +347,12 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-ring-line-app": "@@@",
         "general-settings-import-ring-trigger-app": "@@",
         "general-settings-import-app-rings-other": "d",
+        "general-settings-import-app-buttons-other": "d",
+        // An app's page
+        "apps-buttons-note": "@",
+        "apps-buttons-note-empty": "@",
+        "apps-buttons-everywhere": "@",
+        "apps-buttons-add-general-item": "@@",
         "ring-trigger-bound": "@",
         "general-settings-problem-damaged": "@",
         "general-settings-problem-too-many": "d",

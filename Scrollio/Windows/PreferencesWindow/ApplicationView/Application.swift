@@ -24,7 +24,8 @@ class Application: Codable, Equatable {
     var scroll = OPTIONS_SCROLL_DEFAULT() {
         didSet { Options.shared.markChanged(.application) }
     }
-    // 配置: 按钮绑定 (可选表示继承全局配置)
+    // The app's own buttons, only those that differ from Buttons (`ApplicationButtons.swift`).
+    // Nil: none; nothing is stored for it then.
     var buttons: OPTIONS_BUTTONS_DEFAULT? {
         didSet { Options.shared.markChanged(.application) }
     }
@@ -56,8 +57,9 @@ class Application: Codable, Equatable {
         if let legacy = try? container.decodeIfPresent(OPTIONS_SCROLL_DEFAULT.LegacySimTrackpadLock.self, forKey: .scroll) {
             scroll.restoreDuration(from: legacy)
         }
-        // 按钮绑定
-        buttons = try container.decodeIfPresent(OPTIONS_BUTTONS_DEFAULT.self, forKey: .buttons)
+        // The app's own buttons: a value that cannot be read is none, and does not take the
+        // app's entry with it.
+        buttons = Self.readOwnButtons(from: container, forKey: .buttons)
         // A ring that cannot be read does not take the app's entry with it: the app then
         // uses the general ring.
         ring = (try? container.decodeIfPresent(ApplicationRing.self, forKey: .ring)) ?? nil
@@ -117,10 +119,6 @@ extension Application {
         if block { return false }
         let target = resolvedScrollOptions()
         return target.smooth && target.smoothHorizontal
-    }
-    // 按钮绑定
-    func getButtonBindings() -> [ButtonBinding] {
-        return buttons?.binding ?? Options.shared.buttons.binding
     }
 }
 

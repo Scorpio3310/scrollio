@@ -1108,10 +1108,69 @@ final class PreferencesWindowRenderTests: XCTestCase {
                     .uiStateDefaults = defaults
             }, afterLoad: { controller in
                 let apps = controller as? PreferencesApplicationViewController
-                apps?.openApplication(withID: calculator.path)
+                apps?.openApplication(withID: calculator.path, part: .ring)
                 apps?.detailController?.ringController?.placeHoverChanged(0, inside: true)
             })
         }
+    }
+
+    /// An app's page in parts and the marks of the list (`app-page-<part>-<appearance>.png`,
+    /// `apps-list-marks-<appearance>.png`): Scrolling with the app's own settings; Buttons
+    /// with two rows of the app's own on an MX Master 3S (one with an action, one
+    /// "Default" on a Logitech button no binding of Buttons uses); Buttons without own
+    /// rows; the Shortcut Ring part with the app's own ring; the list with an app that has
+    /// all three kinds of its own, one with scrolling only and one with none.
+    func testRenderAppPageParts() throws {
+        let stored = Options.shared.application.applications
+        let savedRing = Options.shared.ring
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            Options.shared.ring = savedRing
+            ShortcutRingController.forgetPreparedFaces()
+            ButtonUtils.shared.invalidateCache()
+        }
+        Options.shared.ring = .default
+        Options.shared.buttons.binding = [
+            binding(3, SystemShortcut.navigateBack.identifier),
+            binding(4, SystemShortcut.missionControl.identifier),
+        ]
+        let mouse = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { "MX Master 3S" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        let safari = Application(path: "/Applications/Safari.app")
+        safari.inherit = false
+        safari.setOwnButtonBindings([
+            ButtonBinding(triggerEvent: RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil),
+                          systemShortcutName: SystemShortcut.appExpose.identifier),
+            ButtonBinding(triggerEvent: RecordedEvent(type: .mouse, code: 1000, modifiers: 0, deviceFilter: nil),
+                          systemShortcutName: "", isEnabled: true),
+        ])
+        safari.setUsesGeneralRing(false, general: .default)
+        safari.ring?[0] = ShortcutRingPlace(SystemShortcut.copy)
+        let calculator = Application(path: "/System/Applications/Calculator.app")
+        calculator.inherit = false
+        let textEdit = Application(path: "/System/Applications/TextEdit.app")
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [safari, calculator, textEdit], matchKey: "path")
+
+        func page(_ name: String, app: Application, part: ApplicationPagePart) throws {
+            let defaults = uiDefaults(advanced: false)
+            try renderPane(PANEL_IDENTIFIER.application, name: name, prepare: { preferences in
+                (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                    .uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                let apps = controller as? PreferencesApplicationViewController
+                apps?.openApplication(withID: app.path, part: part)
+                apps?.detailController?.buttonsPart.deviceSource = mouse
+                apps?.detailController?.buttonsPart.reloadRows()
+            })
+        }
+        try page("app-page-scrolling", app: safari, part: .scrolling)
+        try page("app-page-buttons", app: safari, part: .buttons)
+        try page("app-page-buttons-empty", app: calculator, part: .buttons)
+        try page("app-page-ring", app: safari, part: .ring)
+        try renderPane(PANEL_IDENTIFIER.application, name: "apps-list-marks", afterLoad: { controller in
+            (controller as? PreferencesApplicationViewController)?.list.select(calculator.path)
+        })
     }
 
     // MARK: - States for the final visual check

@@ -97,6 +97,8 @@
 		D1A2B3C4E5F6A7B8C9D0120A /* ScrollioTests/LogiTestDoubles/FakeLogiDeviceSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D0120B /* ScrollioTests/LogiTestDoubles/FakeLogiDeviceSession.swift */; };
 		D1A2B3C4E5F6A7B8C9D0120C /* ScrollioTests/UsageRegistryEndToEndTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D0120D /* ScrollioTests/UsageRegistryEndToEndTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D0120F /* ScrollioTests/LogiUsageBootstrapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01210 /* ScrollioTests/LogiUsageBootstrapTests.swift */; };
+		AB7700000000000000000202 /* ScrollioTests/ApplicationPageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB7700000000000000000201 /* ScrollioTests/ApplicationPageTests.swift */; };
+		AB7700000000000000000102 /* ScrollioTests/ApplicationButtonsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB7700000000000000000101 /* ScrollioTests/ApplicationButtonsTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D01211 /* ScrollioTests/LogiCenterDeviceIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01212 /* ScrollioTests/LogiCenterDeviceIntegrationTests.swift */; };
 		D1A2B3C4E5F6A7B8C9D01215 /* ScrollioTests/LogiTestDoubles/FakeLogiExternalBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01216 /* ScrollioTests/LogiTestDoubles/FakeLogiExternalBridge.swift */; };
 		D1A2B3C4E5F6A7B8C9D01217 /* ScrollioTests/LogiBridgeDispatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6A7B8C9D01218 /* ScrollioTests/LogiBridgeDispatchTests.swift */; };
@@ -225,6 +227,8 @@
 		D1A2B3C4E5F6A7B8C9D0120B /* ScrollioTests/LogiTestDoubles/FakeLogiDeviceSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiTestDoubles/FakeLogiDeviceSession.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D0120D /* ScrollioTests/UsageRegistryEndToEndTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/UsageRegistryEndToEndTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01210 /* ScrollioTests/LogiUsageBootstrapTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiUsageBootstrapTests.swift; sourceTree = SOURCE_ROOT; };
+		AB7700000000000000000201 /* ScrollioTests/ApplicationPageTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ApplicationPageTests.swift; sourceTree = SOURCE_ROOT; };
+		AB7700000000000000000101 /* ScrollioTests/ApplicationButtonsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ApplicationButtonsTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01212 /* ScrollioTests/LogiCenterDeviceIntegrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiCenterDeviceIntegrationTests.swift; sourceTree = SOURCE_ROOT; };
 		D1A2B3C4E5F6A7B8C9D01214 /* DebugWithDevice.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = DebugWithDevice.xctestplan; sourceTree = "<group>"; };
 		D1A2B3C4E5F6A7B8C9D01216 /* ScrollioTests/LogiTestDoubles/FakeLogiExternalBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/LogiTestDoubles/FakeLogiExternalBridge.swift; sourceTree = SOURCE_ROOT; };
@@ -374,6 +378,8 @@
 				D1A2B3C4E5F6A7B8C9D01209 /* ScrollioTests/UsageRegistryTests.swift */,
 				D1A2B3C4E5F6A7B8C9D0120D /* ScrollioTests/UsageRegistryEndToEndTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01210 /* ScrollioTests/LogiUsageBootstrapTests.swift */,
+				AB7700000000000000000201 /* ScrollioTests/ApplicationPageTests.swift */,
+				AB7700000000000000000101 /* ScrollioTests/ApplicationButtonsTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01212 /* ScrollioTests/LogiCenterDeviceIntegrationTests.swift */,
 				D1A2B3C4E5F6A7B8C9D01218 /* ScrollioTests/LogiBridgeDispatchTests.swift */,
 				D1A2B3C4E5F6A7B8C9D0121A /* ScrollioTests/LogiTeardownTests.swift */,
@@ -638,6 +644,8 @@
 				D1A2B3C4E5F6A7B8C9D01215 /* ScrollioTests/LogiTestDoubles/FakeLogiExternalBridge.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D0120C /* ScrollioTests/UsageRegistryEndToEndTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D0120F /* ScrollioTests/LogiUsageBootstrapTests.swift in Sources */,
+				AB7700000000000000000202 /* ScrollioTests/ApplicationPageTests.swift in Sources */,
+				AB7700000000000000000102 /* ScrollioTests/ApplicationButtonsTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01211 /* ScrollioTests/LogiCenterDeviceIntegrationTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01217 /* ScrollioTests/LogiBridgeDispatchTests.swift in Sources */,
 				D1A2B3C4E5F6A7B8C9D01219 /* ScrollioTests/LogiTeardownTests.swift in Sources */,

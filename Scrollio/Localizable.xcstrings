@@ -8187,6 +8187,234 @@
           }
         }
       }
+    },
+    "general-settings-import-app-buttons-one": {
+      "comment": "Import sheet: one app of the file has buttons of its own (only those that differ from Buttons)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 app with buttons of its own"
+          }
+        }
+      }
+    },
+    "general-settings-import-app-buttons-other": {
+      "comment": "Import sheet: how many apps of the file have buttons of their own; %d is the number",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d apps with buttons of their own"
+          }
+        }
+      }
+    },
+    "apps-detail-part-scrolling": {
+      "comment": "An app's page: the segment that shows the app's scrolling settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrolling"
+          }
+        }
+      }
+    },
+    "apps-detail-part-buttons": {
+      "comment": "An app's page: the segment that shows the app's own buttons",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buttons"
+          }
+        }
+      }
+    },
+    "apps-detail-part-ring": {
+      "comment": "An app's page: the segment that shows the app's Shortcut Ring",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shortcut Ring"
+          }
+        }
+      }
+    },
+    "apps-detail-parts": {
+      "comment": "An app's page: accessibility label of the control that chooses the part of the page",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings to show"
+          }
+        }
+      }
+    },
+    "apps-mark-scrolling": {
+      "comment": "Apps list: tooltip and VoiceOver of the mark of an app with scrolling settings of its own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Own scrolling settings"
+          }
+        }
+      }
+    },
+    "apps-mark-buttons": {
+      "comment": "Apps list: tooltip and VoiceOver of the mark of an app with buttons of its own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Own button settings"
+          }
+        }
+      }
+    },
+    "apps-mark-ring": {
+      "comment": "Apps list: tooltip and VoiceOver of the mark of an app with a Shortcut Ring of its own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Own Shortcut Ring"
+          }
+        }
+      }
+    },
+    "apps-buttons-empty": {
+      "comment": "An app's page, Buttons: what the list says while the app has no buttons of its own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every button does what Buttons says."
+          }
+        }
+      }
+    },
+    "apps-buttons-list-label": {
+      "comment": "An app's page, Buttons: accessibility label of the list of the app's own buttons",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Own buttons"
+          }
+        }
+      }
+    },
+    "apps-buttons-note": {
+      "comment": "An app's page, Buttons: the line under the list; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These buttons do this while %@ is in front; every other button does what Buttons says."
+          }
+        }
+      }
+    },
+    "apps-buttons-everywhere": {
+      "comment": "An app's page, Buttons: the line under a button; %@ is what the button does in every other app",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Everywhere: %@"
+          }
+        }
+      }
+    },
+    "apps-buttons-add-mouse": {
+      "comment": "An app's page, Buttons: section of the + menu with the buttons of the connected mouse",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your Mouse"
+          }
+        }
+      }
+    },
+    "apps-buttons-add-record": {
+      "comment": "An app's page, Buttons: + menu item that records a button or a key",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record a Button or Key…"
+          }
+        }
+      }
+    },
+    "apps-buttons-add-general": {
+      "comment": "An app's page, Buttons: section of the + menu with the buttons the Buttons pane gives an action",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In Buttons"
+          }
+        }
+      }
+    },
+    "apps-buttons-add-general-item": {
+      "comment": "An app's page, Buttons: a + menu item of a button of the Buttons pane; the first %@ is the button, the second its action",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "apps-buttons-recorder-general": {
+      "comment": "An app's page, Buttons: the recorder's hint for a button that opens the Shortcut Ring or runs Gesture Navigation",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This button stays as Buttons sets it"
+          }
+        }
+      }
+    },
+    "apps-buttons-note-empty": {
+      "comment": "An app's page, Buttons: the line under the empty list; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click + to give a button something else to do while %@ is in front."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

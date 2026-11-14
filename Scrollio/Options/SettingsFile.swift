@@ -207,6 +207,7 @@ enum SettingsFile {
         LeftOut(AppsLeftToMacOS.offeredKey, "written by version 1.0.4, which put Calendar on the list of apps by itself; nothing reads it, and the list of apps is in the file"),
         LeftOut("preferencesSelectedPane", "window state: the pane that was open last"),
         LeftOut("scrollingAdvancedExpanded", "window state: whether Advanced is open"),
+        LeftOut(ApplicationPagePart.shownDefaultsKey, "window state: the part of an app's page that was shown last"),
         LeftOut("generalAdvancedExpanded", "retired window state; nothing reads it"),
         LeftOut("durationForOtherTrackpadState", "retired scroll setting, removed at launch"),
         LeftOut("scrollTuning", "retired scroll settings, removed at launch"),
@@ -245,8 +246,8 @@ enum SettingsFile {
         let trigger: RecordedEvent
         let target: OpenTargetPayload
         /// The app whose own buttons, or whose own Shortcut Ring, the action is stored
-        /// with; nil for the buttons and the ring of every app. (No version runs an app's
-        /// own buttons yet; they are listed anyway.)
+        /// with; nil for the buttons and the ring of every app. (An app's own buttons run
+        /// while it is in front, `ApplicationButtons`.)
         let applicationPath: String?
         /// The place of the Shortcut Ring that holds the action (0 the top one, clockwise);
         /// nil for a button or key. `trigger` means nothing then: a place is chosen in

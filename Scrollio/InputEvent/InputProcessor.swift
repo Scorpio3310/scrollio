@@ -446,8 +446,12 @@ class InputProcessor: ModifierFlagsProviding {
 
     /// 处理输入事件
     /// - Parameter event: 统一输入事件
+    /// - Parameter scope: whose bindings a press goes by, when the caller decided it for this
+    ///   press already (the Logitech probe); nil: the app in front decides here, once, at the
+    ///   down (`ButtonUtils.scopeOfPress`). A release never looks: it ends what its press
+    ///   started, whatever app is in front by then.
     /// - Returns: .consumed 表示事件已处理, .passthrough 表示未匹配
-    func process(_ event: InputEvent) -> InputResult {
+    func process(_ event: InputEvent, scope: ButtonBindingScope? = nil) -> InputResult {
         assertMainThread()
         if event.phase == .up {
             // Up 事件: 按 (type, code) 查表, 忽略 modifiers (用户可能已松开修饰键)
@@ -488,7 +492,9 @@ class InputProcessor: ModifierFlagsProviding {
         if event.isAutoRepeat, let session = activeBindings[key], !Self.repeatsWhileHeld(session.action) {
             return .consumed
         }
-        guard let binding = ButtonUtils.shared.getBestMatchingBinding(for: event) else {
+        guard let binding = ButtonUtils.shared.getBestMatchingBinding(
+            for: event, scope: scope ?? ButtonUtils.shared.scopeOfPress(for: event)
+        ) else {
             return .passthrough
         }
         if binding.systemShortcutName == SystemShortcut.shortcutRing.identifier {

@@ -8,8 +8,10 @@
 //  On top "Limit scrolling to these apps" (the allowlist: it only gates smoothing and
 //  reversing, so it says so; buttons and gestures work everywhere). While it is on and no
 //  app is on the list, a muted line under it says that every app then scrolls the way
-//  macOS does. Then the list of apps, each with its icon, its name and whether it has
-//  settings of its own. "+" offers the running apps and "Choose in Finder…" and opens the
+//  macOS does. Then the list of apps, each with its icon, its name, whether it has
+//  scrolling settings of its own, and a small mark per kind of settings it has of its own
+//  (scrolling, buttons, ring; a click on one opens the page on that part). "+" offers the
+//  running apps and "Choose in Finder…" and opens the
 //  page of the app it added; "−" and Delete remove (Edit › Undo brings the
 //  app back with its settings; when it was added again meanwhile, its settings go onto
 //  that entry, and Redo takes them off again). Double-click, Return or the chevron open the
@@ -314,6 +316,9 @@ class PreferencesApplicationViewController: NSViewController {
         )
         row.toolTip = ApplicationDetailViewController.toolTip(name: name, path: application.path)
         row.onChevronClick = { [weak self] in self?.openApplication(withID: id) }
+        // A mark per kind of settings the app has of its own; a click opens that part.
+        row.showMarks(ApplicationPagePart.ownSettings(of: application))
+        row.onMarkClick = { [weak self] part in self?.openApplication(withID: id, part: part) }
         return row
     }
 
@@ -512,15 +517,20 @@ class PreferencesApplicationViewController: NSViewController {
 
     // MARK: - App page
 
-    /// Opens the page of the app of the row `id` in place of the list.
-    func openApplication(withID id: String) {
+    /// Opens the page of the app of the row `id` in place of the list, on `part` (a mark
+    /// of the row), or on the part shown last.
+    func openApplication(withID id: String, part: ApplicationPagePart? = nil) {
         guard isViewLoaded, let application = application(forRowID: id) else { return }
         list.select(id)
         if let detail = detailController {
-            guard detail.application !== application else { return }
+            guard detail.application !== application else {
+                if let part { detail.show(part) }
+                return
+            }
             closeDetail(detail)
         }
-        let detail = ApplicationDetailViewController(application: application, uiStateDefaults: uiStateDefaults)
+        let detail = ApplicationDetailViewController(application: application, uiStateDefaults: uiStateDefaults, part: part)
+        part?.remember(in: uiStateDefaults)
         detail.onBack = { [weak self] in self?.showList(focusList: true) }
         detail.onInheritChange = { [weak self] in self?.reloadRows() }
         detail.onHeightChange = { [weak self] in self?.contentHeightDidChange() }
@@ -549,6 +559,7 @@ class PreferencesApplicationViewController: NSViewController {
     }
 
     private func closeDetail(_ detail: ApplicationDetailViewController) {
+        detail.pageWillClose()
         detail.view.removeFromSuperview()
         detail.removeFromParent()
         detailController = nil
@@ -643,18 +654,75 @@ struct ApplicationSettings {
 // MARK: - List row
 
 /// A row of the apps list: a click on its chevron opens the app's page, as a double click
-/// on the row does.
+/// on the row does. Before the chevron a small mark per kind of settings the app has of
+/// its own (`ApplicationPagePart`); a click on one opens the page on that part.
 final class ApplicationListRow: PreferencesListRow {
 
     var onChevronClick: (() -> Void)?
+    var onMarkClick: ((ApplicationPagePart) -> Void)?
 
     /// Around the chevron, where a click counts as a click on it.
     static let chevronHitOutset: CGFloat = 8
+    /// The marks' symbols, in points, and the room between two.
+    static let markPointSize: CGFloat = 12
+    static let markSpacing: CGFloat = 5
+
+    /// The kinds the marks are of, in the order of the page's parts; empty: no marks.
+    private(set) var marks: [ApplicationPagePart] = []
+    private(set) var markViews: [NSImageView] = []
+    private var marksStack: NSStackView?
+
+    /// Shows a mark per part of `parts` (once, after the row is made).
+    func showMarks(_ parts: [ApplicationPagePart]) {
+        guard marksStack == nil, !parts.isEmpty else { return }
+        marks = parts
+        let configuration = NSImage.SymbolConfiguration(pointSize: Self.markPointSize, weight: .regular)
+        markViews = parts.map { part in
+            let view = PreferencesListImageView()
+            view.image = NSImage(systemSymbolName: part.markSymbol, accessibilityDescription: part.markLabel)?
+                .withSymbolConfiguration(configuration)
+            view.imageScaling = .scaleNone
+            view.toolTip = part.markLabel
+            view.setAccessibilityElement(false)
+            return view
+        }
+        let stack = NSStackView(views: markViews)
+        stack.orientation = .horizontal
+        stack.spacing = Self.markSpacing
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        let spacing = PreferencesListRow.chevronSpacing
+        var constraints = [
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: stack.leadingAnchor, constant: -spacing),
+            explanationLabel.trailingAnchor.constraint(lessThanOrEqualTo: stack.leadingAnchor, constant: -spacing),
+        ]
+        if let chevronView {
+            constraints.append(stack.trailingAnchor.constraint(equalTo: chevronView.leadingAnchor, constant: -spacing))
+        } else {
+            constraints.append(stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset))
+        }
+        NSLayoutConstraint.activate(constraints)
+        marksStack = stack
+        applyEnabled()
+    }
+
+    /// The marks in the tertiary colour, white on the accent-coloured selection.
+    override func applyEnabled() {
+        super.applyEnabled()
+        for view in markViews {
+            view.contentTintColor = isHighlighted ? .alternateSelectedControlTextColor : .tertiaryLabelColor
+        }
+    }
 
     override func mouseDown(with event: NSEvent) {
         super.mouseDown(with: event)
         guard event.clickCount == 1 else { return }
-        if isChevronHit(at: convert(event.locationInWindow, from: nil)) {
+        let point = convert(event.locationInWindow, from: nil)
+        if let part = mark(at: point) {
+            onMarkClick?(part)
+        } else if isChevronHit(at: point) {
             onChevronClick?()
         }
     }
@@ -664,6 +732,22 @@ final class ApplicationListRow: PreferencesListRow {
         guard let chevronView else { return false }
         let outset = Self.chevronHitOutset
         return chevronView.frame.insetBy(dx: -outset, dy: -outset).contains(point)
+    }
+
+    /// The part of the mark at `point` in the row's coordinates (or close around it).
+    func mark(at point: NSPoint) -> ApplicationPagePart? {
+        for (index, view) in markViews.enumerated() {
+            let frame = convert(view.bounds, from: view).insetBy(dx: -2, dy: -4)
+            if frame.contains(point) { return marks[index] }
+        }
+        return nil
+    }
+
+    /// The title and the line under it, then what the marks say ("Own button settings").
+    override func accessibilityLabel() -> String? {
+        let base = super.accessibilityLabel() ?? title
+        guard !marks.isEmpty else { return base }
+        return ([base] + marks.map(\.markLabel)).joined(separator: ", ")
     }
 }
 

@@ -100,7 +100,10 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   ran" or "closed, ran" with the shortcut's name, or for a key combination or an app
   only what kind of thing it was), each action a gesture runs (`Gestures: up ran
   missionControl`; a key combination only as "a recorded key combination", never its
-  keys or its name), at launch which accent colour is
+  keys or its name), a line when the Logitech buttons Scrollio takes from
+  the mouse change because the app in front has its own binding for one ("the app in
+  front has its own binding: 1 Logitech button(s) taken from the mouse and 0 given back
+  while it is in front", never which app), at launch which accent colour is
   in effect, at the first Mission Control or Show Desktop whether the Dock is asked for
   them directly or they are sent as key presses (a macOS without the call), a sent
   shortcut that left modifier keys set (once), for "Trackpad-style scrolling (Experimental)" whether the wheel's hardware event is

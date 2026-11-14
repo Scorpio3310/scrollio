@@ -1736,7 +1736,7 @@ final class PreferencesScrollingTests: XCTestCase {
         page.onHeightChange = { heightChanges += 1 }
         _ = page.view
         let tab = try XCTUnwrap(page.scrollingController)
-        XCTAssertTrue(page.children.first === tab)
+        XCTAssertTrue(page.scrollingPart.children.first === tab, "in the page's Scrolling part")
         XCTAssertTrue(tab.isViewLoaded, "the settings load with the page")
         XCTAssertTrue(tab.view.isDescendant(of: page.view))
 
@@ -1745,11 +1745,13 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(tab.scrollSpeedSlider.doubleValue, 4.2, accuracy: 1e-9)
         XCTAssertTrue(tab.previewView.isHidden)
         XCTAssertEqual(page.inheritSwitch.state, .off)
-        // "Use settings from Scrolling" is a switch row in the app's box, as in the boxes under it.
+        // "Use settings from Scrolling" is a switch row in a box of its own over the
+        // settings, as in the boxes under it; the app's box holds the app alone.
         XCTAssertEqual(page.inheritSwitch.controlSize, PreferencesGroupedForm.switchControlSize)
         XCTAssertEqual(page.inheritRow.title, "Use settings from Scrolling")
-        XCTAssertEqual(page.headerSection.box.rows.count, 2)
+        XCTAssertEqual(page.headerSection.box.rows.count, 1)
         XCTAssertTrue(page.headerSection.box.rows.first === page.headerRow)
+        XCTAssertTrue(page.scrollingPart.inheritSection.box.rows.first === page.inheritRow)
 
         // The page is as tall as the app's box and the settings under it, and follows
         // when "Advanced" opens and closes.
@@ -1769,7 +1771,7 @@ final class PreferencesScrollingTests: XCTestCase {
 
         // "Use settings from Scrolling" greys the settings out.
         page.inheritSwitch.state = .on
-        page.inheritClick(page.inheritSwitch)
+        page.scrollingPart.inheritClick(page.inheritSwitch)
         XCTAssertTrue(application.inherit)
         XCTAssertFalse(tab.scrollSpeedSlider.isEnabled)
         XCTAssertEqual(tab.scrollSpeedSlider.doubleValue, 6.5, accuracy: 1e-9, "the global value")

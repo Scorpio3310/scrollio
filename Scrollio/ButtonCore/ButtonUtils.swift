@@ -13,13 +13,30 @@ struct ButtonBindingTriggerKey: Hashable {
     let code: UInt16
 }
 
+/// Whose bindings a press goes by, decided once when the button or key goes down: the
+/// general ones, or those of the app in front that has buttons of its own
+/// (`ApplicationButtons`). The release never asks again: it ends what the press started.
+struct ButtonBindingScope: Equatable {
+    /// The path of the app's entry; nil: the general bindings.
+    let applicationPath: String?
+
+    static let general = ButtonBindingScope(applicationPath: nil)
+
+    /// The bindings of the app in front, not the general ones (for the log, which never
+    /// names an app).
+    var isAppsOwn: Bool {
+        return applicationPath != nil
+    }
+}
+
 class ButtonUtils {
 
     // 单例
     static let shared = ButtonUtils()
     init() {
-        // 绑定组变更时自动失效缓存 (订阅者为进程级单例, 无需注销)
-        Options.shared.observe([.buttons]) { [weak self] _ in
+        // 绑定组变更时自动失效缓存 (订阅者为进程级单例, 无需注销). An app's own buttons are
+        // stored with the per-app list: its changes count too.
+        Options.shared.observe([.buttons, .application]) { [weak self] _ in
             self?.invalidateCache()
         }
     }
@@ -29,11 +46,22 @@ class ButtonUtils {
     /// 缓存的绑定列表 (已预解析 custom:: 字段)
     private var cachedBindings: [ButtonBinding] = []
     private var cachedBindingsByTriggerKey: [ButtonBindingTriggerKey: [ButtonBinding]] = [:]
+    /// For each app with buttons of its own (by its entry's path, the first entry of a
+    /// path): the general bindings with the app's own merged over them, by trigger. Built
+    /// with the general table; an app without buttons of its own has none and costs nothing.
+    private var cachedAppBindingsByTriggerKey: [String: [ButtonBindingTriggerKey: [ButtonBinding]]] = [:]
+    /// The buttons and keys some app has a binding of its own on: only a press of one of
+    /// them asks which app is in front.
+    private var cachedAppTriggerKeys: Set<ButtonBindingTriggerKey> = []
     /// An enabled binding has a key as its trigger (and can run): the key tap is needed.
+    /// The general bindings and every app's own.
     private var cachedHasKeyboardTriggers = false
     private var isDirty = true
     /// Called after the bindings changed (ButtonCore: its key tap follows them).
     var onInvalidate: (() -> Void)?
+
+    /// The app in front when a button or key goes down. Tests give one of their own.
+    var frontApplication: () -> ShortcutRingChoice.FrontApp? = { .current() }
 
     // MARK: - 获取按钮绑定配置
 
@@ -44,16 +72,38 @@ class ButtonUtils {
         return cachedBindings
     }
 
-    func getButtonBindings(for type: EventType, code: UInt16) -> [ButtonBinding] {
+    func getButtonBindings(for type: EventType, code: UInt16, scope: ButtonBindingScope = .general) -> [ButtonBinding] {
         refreshCacheIfNeeded()
-        return cachedBindingsByTriggerKey[ButtonBindingTriggerKey(type: type, code: code)] ?? []
+        let key = ButtonBindingTriggerKey(type: type, code: code)
+        if let path = scope.applicationPath, let table = cachedAppBindingsByTriggerKey[path] {
+            return table[key] ?? []
+        }
+        return cachedBindingsByTriggerKey[key] ?? []
     }
 
+    /// Whose bindings a press of `event`'s button or key goes by now: those of the app in
+    /// front when it has a binding of its own on that button or key, else the general ones
+    /// (for any other button the app's bindings are the general ones). The app in front is
+    /// read only for a button or key some app has a binding of its own on (what
+    /// `NSWorkspace` holds already: nothing on disk, no Launch Services); for every other
+    /// press this is one look into a set.
+    func scopeOfPress(for event: InputEvent) -> ButtonBindingScope {
+        refreshCacheIfNeeded()
+        guard cachedAppTriggerKeys.contains(ButtonBindingTriggerKey(type: event.type, code: event.code)),
+              let entry = ApplicationButtons.entry(front: frontApplication(), applications: Options.shared.application.applications),
+              cachedAppBindingsByTriggerKey[entry.path] != nil else { return .general }
+        return ButtonBindingScope(applicationPath: entry.path)
+    }
+
+    /// The binding a press goes by. `scope`: whose bindings (`scopeOfPress`); nil reads
+    /// the app in front now. A caller that looks twice for one press (the Logitech probe,
+    /// then `InputProcessor`) decides the scope once and passes it to both.
     func getBestMatchingBinding(
         for event: InputEvent,
+        scope: ButtonBindingScope? = nil,
         where predicate: ((ButtonBinding) -> Bool)? = nil
     ) -> ButtonBinding? {
-        let candidates = getButtonBindings(for: event.type, code: event.code)
+        let candidates = getButtonBindings(for: event.type, code: event.code, scope: scope ?? scopeOfPress(for: event))
         var bestBinding: ButtonBinding?
         var bestPriority = Int.min
 
@@ -118,30 +168,46 @@ class ButtonUtils {
     private func refreshCacheIfNeeded() {
         guard isDirty else { return }
 
-        cachedBindings = Options.shared.buttons.binding.map { binding in
-            var b = binding
-            b.prepareCustomCache()
-            return b
-        }
+        cachedBindings = Self.prepared(Options.shared.buttons.binding)
 
         // Only what can run is matched (`isRunnable`); the list above keeps every binding.
-        let runnable = cachedBindings.filter { Self.isRunnable($0.triggerEvent) }
-        cachedBindingsByTriggerKey = Dictionary(grouping: runnable) { binding in
-            ButtonBindingTriggerKey(
-                type: binding.triggerEvent.type,
-                code: binding.triggerEvent.code
-            )
+        cachedBindingsByTriggerKey = Self.table(of: cachedBindings)
+        var hasKeyboardTriggers = Self.hasKeyboardTriggers(cachedBindings)
+
+        // The apps with buttons of their own: the general bindings with theirs merged in.
+        var appTables: [String: [ButtonBindingTriggerKey: [ButtonBinding]]] = [:]
+        var appTriggerKeys: Set<ButtonBindingTriggerKey> = []
+        let applications = Options.shared.application.applications
+        for index in 0..<applications.count {
+            guard let application = applications.get(by: index), appTables[application.path] == nil else { continue }
+            let own = ApplicationButtons.usable(application.ownButtonBindings, general: Options.shared.buttons.binding)
+            guard !own.isEmpty else { continue }
+            let merged = ApplicationButtons.merged(general: cachedBindings, own: Self.prepared(own))
+            appTables[application.path] = Self.table(of: merged)
+            appTriggerKeys.formUnion(own.map(\.triggerKey))
+            hasKeyboardTriggers = hasKeyboardTriggers || Self.hasKeyboardTriggers(merged)
         }
-        cachedHasKeyboardTriggers = runnable.contains { $0.isEnabled && $0.triggerEvent.type == .keyboard }
+        cachedAppBindingsByTriggerKey = appTables
+        cachedAppTriggerKeys = appTriggerKeys
+        cachedHasKeyboardTriggers = hasKeyboardTriggers
 
         isDirty = false
     }
 
-    // MARK: - 分应用支持 (预留接口)
+    private static func prepared(_ bindings: [ButtonBinding]) -> [ButtonBinding] {
+        return bindings.map { binding in
+            var b = binding
+            b.prepareCustomCache()
+            return b
+        }
+    }
 
-    /// 获取当前焦点应用的配置对象 (预留)
-    /// - Returns: Application 对象或 nil
-    private func getTargetApplication() -> Application? {
-        return nil
+    /// The bindings that can run (`isRunnable`), by trigger.
+    private static func table(of bindings: [ButtonBinding]) -> [ButtonBindingTriggerKey: [ButtonBinding]] {
+        return Dictionary(grouping: bindings.filter { isRunnable($0.triggerEvent) }, by: \.triggerKey)
+    }
+
+    private static func hasKeyboardTriggers(_ bindings: [ButtonBinding]) -> Bool {
+        return bindings.contains { $0.isEnabled && $0.triggerEvent.type == .keyboard && isRunnable($0.triggerEvent) }
     }
 }

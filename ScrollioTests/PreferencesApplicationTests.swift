@@ -262,7 +262,8 @@ final class PreferencesApplicationTests: XCTestCase {
             XCTAssertEqual(icon.image?.isTemplate, false, "an app's own icon, not a symbol")
             XCTAssertNotNil(row.chevronView, "\(row.title) opens a page of its own")
         }
-        XCTAssertEqual(rows[0].accessibilityLabel(), "Calculator, Uses its own scrolling settings.")
+        XCTAssertEqual(rows[0].accessibilityLabel(), "Calculator, Uses its own scrolling settings., Own scrolling settings",
+                       "then what its marks say")
         XCTAssertEqual(rows[1].toolTip, "TextEdit\n" + Self.textEditProgram, "the name, then the path")
     }
 
@@ -799,8 +800,8 @@ final class PreferencesApplicationTests: XCTestCase {
         controller.openApplication(withID: Self.calculator)
         let page = try XCTUnwrap(controller.detailController)
         let scrolling = try XCTUnwrap(page.scrollingController)
-        XCTAssertTrue(scrolling.parent === page)
-        XCTAssertTrue((scrolling.parent as? PreferencesScrollingContainer) === page)
+        XCTAssertTrue(scrolling.parent === page.scrollingPart, "in the page's Scrolling part")
+        XCTAssertTrue((scrolling.parent as? PreferencesScrollingContainer) === page.scrollingPart)
 
         let closed = controller.view.frame.height
         scrolling.setAdvancedExpanded(true)
@@ -1012,18 +1013,18 @@ final class PreferencesApplicationTests: XCTestCase {
         Options.shared.ring = ring
     }
 
-    /// The page ends with "Shortcut Ring". While "Use the general ring" is on (as for
-    /// every app until the user turns it off) there is the switch and nothing else: no
-    /// drawing, no rows, and nothing new is stored for the app.
+    /// The page's "Shortcut Ring" part. While "Use the general ring" is on (as for every
+    /// app until the user turns it off) there is the switch and nothing else: no drawing,
+    /// no rows, and nothing new is stored for the app.
     func testTheShortcutRingSectionHasOnlyItsSwitchWhileTheAppUsesTheGeneralRing() throws {
         setGeneralRing(.default)
         let calculator = application(Self.calculator, inherit: true)
         Options.shared.application.applications = Self.makeStore([calculator])
         let controller = makeController()
-        controller.openApplication(withID: Self.calculator)
+        controller.openApplication(withID: Self.calculator, part: .ring)
         let page = try XCTUnwrap(controller.detailController)
 
-        XCTAssertEqual(page.ringSection.titleLabel?.stringValue, "Shortcut Ring")
+        XCTAssertNil(page.ringSection.titleLabel, "the part's segment names it")
         XCTAssertEqual(page.ringSection.box.visibleRows.count, 1)
         XCTAssertEqual(page.generalRingRow.title, "Use the general ring")
         XCTAssertEqual(page.generalRingSwitch.state, .on)
@@ -1031,10 +1032,10 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(page.generalRingRow.explanation, "While Calculator is in front, the general ring opens.")
         XCTAssertNil(page.ringController, "no drawing and no rows")
         XCTAssertFalse(allSubviews(of: page.view).contains { $0 is ShortcutRingPreviewView || $0 is ButtonActionPullDown })
-        // The section stands under the Scrolling settings, and the page ends under it.
+        // The section is the part's first box, and the part ends under it.
         page.view.layoutSubtreeIfNeeded()
         XCTAssertFalse(page.view.hasAmbiguousLayout)
-        XCTAssertEqual(page.ringSection.frame.maxY, page.scrollingController.view.frame.minY, accuracy: 0.5)
+        XCTAssertEqual(page.ringPart.view.frame.height - page.ringSection.frame.maxY, PreferencesGroupedForm.margin, accuracy: 0.5)
         XCTAssertEqual(page.ringSection.frame.minY, PreferencesGroupedForm.margin, accuracy: 0.5)
         let stored = try XCTUnwrap(try storedObject()?.firstObject as? NSDictionary)
         XCTAssertEqual(Set(stored.allKeys.compactMap { $0 as? String }), ["path", "displayName", "inherit", "scroll"])
@@ -1053,7 +1054,7 @@ final class PreferencesApplicationTests: XCTestCase {
         let calculator = application(Self.calculator, inherit: true)
         Options.shared.application.applications = Self.makeStore([calculator])
         let controller = makeController()
-        controller.openApplication(withID: Self.calculator)
+        controller.openApplication(withID: Self.calculator, part: .ring)
         let page = try XCTUnwrap(controller.detailController)
         var heightChanges = 0
         page.onHeightChange = { heightChanges += 1 }
@@ -1067,7 +1068,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(heightChanges, 1)
         let ring = try XCTUnwrap(page.ringController)
         XCTAssertTrue(ring.view.isDescendant(of: page.view))
-        XCTAssertTrue(page.children.contains(ring))
+        XCTAssertTrue(page.ringPart.children.contains(ring))
         XCTAssertEqual(ring.sections.count, 2, "the drawing and the box of rows")
         XCTAssertEqual(ring.placeRows.map(\.title), [
             "Top", "Top right", "Right", "Bottom right", "Bottom", "Bottom left", "Left", "Top left",
@@ -1116,7 +1117,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertTrue(calculator.usesGeneralRing)
         XCTAssertNil(page.ringController)
         XCTAssertNil(ring.view.superview)
-        XCTAssertFalse(page.children.contains(ring))
+        XCTAssertFalse(page.ringPart.children.contains(ring))
         XCTAssertEqual(calculator.ring?[0].action, "paste", "kept in storage")
         XCTAssertEqual(page.view.fittingSize.height, shortHeight, accuracy: 0.5)
         XCTAssertEqual(heightChanges, 2)
@@ -1170,7 +1171,7 @@ final class PreferencesApplicationTests: XCTestCase {
         long.displayName = "An Application With A Remarkably Long Name For Its Kind"
         Options.shared.application.applications = Self.makeStore([long])
         let controller = makeController()
-        controller.openApplication(withID: Self.calculator)
+        controller.openApplication(withID: Self.calculator, part: .ring)
         let page = try XCTUnwrap(controller.detailController)
         page.view.layoutSubtreeIfNeeded()
         let rowHeight = page.generalRingRow.frame.height

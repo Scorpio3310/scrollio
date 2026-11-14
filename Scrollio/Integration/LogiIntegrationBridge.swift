@@ -26,12 +26,17 @@ final class LogiIntegrationBridge: LogiExternalBridge {
             return .consumed
         }
 
+        // Whose bindings this press goes by (the app in front may have its own), decided
+        // once for the probe and InputProcessor alike. A release does not look again.
+        let scope = event.phase == .down ? ButtonUtils.shared.scopeOfPress(for: event) : nil
+
         // Probe for logi* binding; the session executes the action so the
         // hardware action stays scoped to the originating device (no global
         // activeBindings registration).
-        if event.phase == .down,
+        if let scope,
            let binding = ButtonUtils.shared.getBestMatchingBinding(
                for: event,
+               scope: scope,
                where: { $0.systemShortcutName.hasPrefix("logi") }
            ) {
             return .logiAction(name: binding.systemShortcutName)
@@ -39,7 +44,7 @@ final class LogiIntegrationBridge: LogiExternalBridge {
 
         // Generic binding via InputProcessor (covers up phase + non-Logi
         // bindings like custom::).
-        let result = InputProcessor.shared.process(event)
+        let result = InputProcessor.shared.process(event, scope: scope)
         if result == .consumed { return .consumed }
 
         // Unconsumed: fire the relay so KeyRecorder + other observers see it.
