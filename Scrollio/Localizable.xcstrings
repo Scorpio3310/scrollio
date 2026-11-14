@@ -7948,18 +7948,6 @@
         }
       }
     },
-    "key-recorder-icon-none": {
-      "comment": "Key recorder popover: the icon button while no icon is chosen",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "None"
-          }
-        }
-      }
-    },
     "key-recorder-icon-remove": {
       "comment": "Key recorder popover: the button that takes the chosen icon away",
       "extractionState": "manual",
@@ -7967,7 +7955,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No Icon"
+            "value": "Remove Icon"
           }
         }
       }
@@ -7979,19 +7967,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Search symbols"
-          }
-        }
-      }
-    },
-    "key-recorder-icon-character": {
-      "comment": "Key recorder popover: before the small field that takes one character or emoji as the icon",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Or type a character:"
+            "value": "Search symbols or type a character"
           }
         }
       }
@@ -8003,7 +7979,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No symbol with that name. A typed character can be the icon instead."
+            "value": "No Symbols Found"
           }
         }
       }
@@ -8015,7 +7991,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shown in the ring and in Settings. The keys stay beside it, smaller."
+            "value": "Shown in the Shortcut Ring and in Settings."
           }
         }
       }
@@ -8124,6 +8100,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "Common"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-no-match-hint": {
+      "comment": "Key recorder popover, icon chooser: under \"No Symbols Found\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try another word, or type one character."
+          }
+        }
+      }
+    },
+    "key-recorder-icon-use-character": {
+      "comment": "Key recorder popover, icon chooser: the first result when the search holds one character; %@ is that character",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use “%@”"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-emoji": {
+      "comment": "Key recorder popover, icon chooser: opens the system's Emoji & Symbols viewer",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Emoji & Symbols…"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-well": {
+      "comment": "Key recorder popover: VoiceOver name and tool tip of the icon well; %@ is the symbol's name or the character",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Icon: %@"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-choose": {
+      "comment": "Key recorder popover: VoiceOver name and tool tip of the icon well while there is no icon",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Icon"
           }
         }
       }

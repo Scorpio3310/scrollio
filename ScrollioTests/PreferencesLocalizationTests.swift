@@ -105,9 +105,10 @@ final class PreferencesLocalizationTests: XCTestCase {
         "appExposeApps", "categoryMissionControlAndSpaces",
         "key-recorder-waiting-combination", "key-recorder-waiting-adaptive", "buttons-recorder-waiting-gesture",
         "key-recorder-left-right-refused", "key-recorder-left-refused", "key-recorder-secure-input",
-        "key-recorder-name", "key-recorder-name-placeholder", "key-recorder-icon", "key-recorder-icon-none",
-        "key-recorder-icon-remove", "key-recorder-icon-search", "key-recorder-icon-character",
-        "key-recorder-icon-no-match", "key-recorder-label-note", "key-recorder-record-again", "key-recorder-done",
+        "key-recorder-name", "key-recorder-name-placeholder", "key-recorder-icon", "key-recorder-icon-choose",
+        "key-recorder-icon-well", "key-recorder-icon-remove", "key-recorder-icon-search", "key-recorder-icon-emoji",
+        "key-recorder-icon-use-character", "key-recorder-icon-no-match", "key-recorder-icon-no-match-hint",
+        "key-recorder-label-note", "key-recorder-record-again", "key-recorder-done",
         "key-recorder-icon-group-arrows", "key-recorder-icon-group-editing", "key-recorder-icon-group-files",
         "key-recorder-icon-group-common", "key-recorder-icon-group-media", "key-recorder-icon-group-tools",
         "open-target-mode-label", "open-target-mode-open", "open-target-mode-open-tooltip",
@@ -270,6 +271,9 @@ final class PreferencesLocalizationTests: XCTestCase {
     /// the toast debug menu); a value must take exactly these arguments, or the text shows
     /// garbage or crashes. Add the key with its arguments when you format a new string.
     static let formatArguments: [String: String] = [
+        // The recorder's popover: the icon well, and a typed character in the chooser
+        "key-recorder-icon-well": "@",
+        "key-recorder-icon-use-character": "@",
         // Mouse pane
         "mouse-header-connected-several": "@",
         "mouse-battery-about": "@",
