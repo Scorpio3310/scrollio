@@ -76,8 +76,8 @@ final class RingHarness {
     private(set) var clickWatches = 0
     private(set) var stoppedClickWatches: [String] = []
     private var scheduled: [() -> Void] = []
-    /// How often a whole face (with a look on disk) was made.
-    private(set) var wholeFacesMade = 0
+    /// How often a place of a face was looked up on disk (an app's name and icon).
+    private(set) var placesLookedUp = 0
     /// What was asked to run after a delay, with the time it is due.
     private var delayed: [(due: TimeInterval, block: () -> Void)] = []
 
@@ -99,9 +99,9 @@ final class RingHarness {
             scheduleAfter: { [unowned self] delay, block in self.delayed.append((self.now + delay, block)) },
             makeTimer: { _, _ in nil },
             ring: { [unowned self] in self.ring },
-            makeFace: { [unowned self] in
-                self.wholeFacesMade += 1
-                return ShortcutRingFace($0)
+            makePlace: { [unowned self] in
+                self.placesLookedUp += 1
+                return ShortcutRingFace.place($0)
             },
             run: { [unowned self] in self.log.append("run \(ShortcutRingController.logName(of: $0))") },
             allowsHaptics: { [unowned self] in self.hapticsAllowed },
@@ -130,6 +130,14 @@ final class RingHarness {
             scheduled = []
             blocks.forEach { $0() }
         }
+    }
+
+    /// Runs what is on the "next turn of the main queue" now; what that puts there waits
+    /// for the turn after.
+    func runOneTurn() {
+        let blocks = scheduled
+        scheduled = []
+        blocks.forEach { $0() }
     }
 
     var hasScheduledWork: Bool {
@@ -440,25 +448,68 @@ final class ShortcutRingControllerTests: XCTestCase {
         controller.triggerPressed(by: RingHarness.button(.down))
         harness.runScheduled()
         let first = harness.presenter.shown.last?.face.places[1]
-        XCTAssertEqual(harness.wholeFacesMade, 0, "shown without a look on disk")
+        XCTAssertEqual(harness.placesLookedUp, 0, "shown without a look on disk")
         XCTAssertEqual(first?.title, "Calculator", "the file's name, without .app")
         XCTAssertNil(first?.image)
         XCTAssertEqual(first?.isEmpty, false)
         XCTAssertEqual(harness.presenter.shown.last?.face.filled, Array(repeating: true, count: 8))
 
         controller.triggerReleased(isMadeUp: false)   // nothing lit: it stands open
-        XCTAssertEqual(harness.wholeFacesMade, 0, "not while it stands open either")
+        XCTAssertEqual(harness.placesLookedUp, 0, "not while it stands open either")
         controller.cancel()
         harness.runScheduled()
-        XCTAssertEqual(harness.wholeFacesMade, 1, "after it closed")
+        XCTAssertEqual(harness.placesLookedUp, 1, "after it closed")
 
         controller.triggerPressed(by: RingHarness.button(.down))
         harness.runScheduled()
         XCTAssertNotNil(harness.presenter.shown.last?.face.places[1].image, "the next ring has the icon")
-        XCTAssertEqual(harness.wholeFacesMade, 1)
+        XCTAssertEqual(harness.placesLookedUp, 1)
         controller.cancel()
         harness.runScheduled()
-        XCTAssertEqual(harness.wholeFacesMade, 1, "a whole face is not made twice")
+        XCTAssertEqual(harness.placesLookedUp, 1, "a whole face is not made twice")
+    }
+
+    /// The face made after a ring closed is made as the faces at launch are: one place
+    /// that opens something per turn of the main queue (a cold icon takes a while to draw,
+    /// and the taps wait on that queue). A ring that opens meanwhile stops it: nothing is
+    /// looked up while it is open, and its close begins the face again.
+    func testTheFaceMadeAfterARingClosedIsMadeOnePlacePerTurn() {
+        for (index, path) in [(1, "/System/Applications/Calculator.app"), (3, "/System/Applications/TextEdit.app"),
+                              (6, "/System/Applications/Preview.app")] {
+            harness.ring[index] = ShortcutRingPlace(openTarget: OpenTargetPayload(path: path, bundleID: nil, arguments: "", kind: .application))
+        }
+        harness.tap()
+        XCTAssertNil(harness.presenter.shown.last?.face.places[1].image, "no face was made beforehand")
+        controller.cancel()
+        harness.runOneTurn()
+        XCTAssertEqual(harness.placesLookedUp, 1, "one place in a turn")
+        XCTAssertNil(ShortcutRingController.preparedFace(for: harness.ring), "a face is kept only when it is whole")
+
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runOneTurn()
+        XCTAssertEqual(harness.presenter.shown.count, 2)
+        XCTAssertNil(harness.presenter.shown.last?.face.places[3].image)
+        controller.triggerReleased(isMadeUp: false)   // nothing lit: it stands open
+        harness.runScheduled()
+        XCTAssertEqual(harness.placesLookedUp, 1, "nothing is looked up while a ring is open")
+
+        controller.cancel()
+        var perTurn: [Int] = []
+        while harness.hasScheduledWork {
+            let before = harness.placesLookedUp
+            harness.runOneTurn()
+            perTurn.append(harness.placesLookedUp - before)
+        }
+        XCTAssertEqual(perTurn, [1, 1, 1], "begun again, one place in a turn")
+        let face = ShortcutRingController.preparedFace(for: harness.ring)
+        XCTAssertEqual(face?.places.map { $0.image != nil }, [false, true, false, true, false, false, true, false])
+
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertNotNil(harness.presenter.shown.last?.face.places[6].image, "the next ring has the icons")
+        controller.cancel()
+        harness.runScheduled()
+        XCTAssertEqual(harness.placesLookedUp, 4)
     }
 
     /// The Settings pane makes the face whenever it shows a ring, and hands it on: a ring
@@ -475,7 +526,7 @@ final class ShortcutRingControllerTests: XCTestCase {
         XCTAssertNotNil(harness.presenter.shown.last?.face.places[4].image)
         controller.cancel()
         harness.runScheduled()
-        XCTAssertEqual(harness.wholeFacesMade, 0)
+        XCTAssertEqual(harness.placesLookedUp, 0)
         // A ring without anything to open needs no look on disk at all.
         XCTAssertFalse(ShortcutRingSettings.default.opensSomething)
         XCTAssertTrue(ring.opensSomething)

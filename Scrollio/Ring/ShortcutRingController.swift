@@ -123,31 +123,44 @@ final class ShortcutRingController {
     static let launchFaceWait: TimeInterval = 0.5
 
     /// At launch: when something opens the ring and a place of a ring opens an app or a
-    /// file, the faces are made on later turns of the main queue, one ring per turn (the
-    /// event taps wait on the same queue) and never while a ring is open, so that the
-    /// first ring already has the icons. For everyone else: one pass over the bindings
-    /// and the apps, nothing more. `after` runs a block on the main queue after a delay.
+    /// file, the faces are made on later turns of the main queue, one place that opens
+    /// something per turn (`ShortcutRingFace.InSteps`: the event taps wait on the same
+    /// queue), a ring's face kept once its last place is in, and never while a ring is
+    /// open, so that the first ring already has the icons. For everyone else: one pass
+    /// over the bindings and the apps, nothing more. `after` runs a block on the main
+    /// queue after a delay; `makePlace` makes one place with its look on disk.
     static func prepareFaceAtLaunch(
         options: Options = .shared,
         after: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, block in
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: block)
-        }
+        },
+        makePlace: @escaping (ShortcutRingPlace) -> ShortcutRingFace.Place = { ShortcutRingFace.place($0) }
     ) {
         // The general ring last, so that it is the newest.
-        prepareFaces(of: ringsToPrepareAtLaunch(options: options).reversed(), after: after)
+        prepareFaces(of: ringsToPrepareAtLaunch(options: options).reversed(), after: after, makePlace: makePlace)
     }
 
+    /// One turn: the next place of the first of `rings` (whose face `steps` holds once it
+    /// is begun), then a turn for what is left.
     private static func prepareFaces(
-        of rings: [ShortcutRingSettings], after: @escaping (TimeInterval, @escaping () -> Void) -> Void
+        of rings: [ShortcutRingSettings], steps: ShortcutRingFace.InSteps? = nil,
+        after: @escaping (TimeInterval, @escaping () -> Void) -> Void,
+        makePlace: @escaping (ShortcutRingPlace) -> ShortcutRingFace.Place
     ) {
         guard let ring = rings.first else { return }
         after(0) {
             guard existing?.isOpen != true else {
-                after(launchFaceWait) { prepareFaces(of: rings, after: after) }
+                after(launchFaceWait) { prepareFaces(of: rings, steps: steps, after: after, makePlace: makePlace) }
                 return
             }
-            prepare(ShortcutRingFace(ring), for: ring)
-            prepareFaces(of: Array(rings.dropFirst()), after: after)
+            var steps = steps ?? ShortcutRingFace.InSteps(ring)
+            steps.step(makePlace)
+            guard let whole = steps.whole else {
+                prepareFaces(of: rings, steps: steps, after: after, makePlace: makePlace)
+                return
+            }
+            prepare(whole, for: ring)
+            prepareFaces(of: Array(rings.dropFirst()), after: after, makePlace: makePlace)
         }
     }
 
@@ -189,9 +202,9 @@ final class ShortcutRingController {
         /// inside the event callback: nothing slow in it (no disk, no Launch Services).
         /// By default the general ring (tests).
         var choice: (ShortcutRingSettings) -> ShortcutRingChoice = { .general($0) }
-        /// The whole face of a ring, with a look on disk for what it opens. Only called
-        /// while no ring is open.
-        var makeFace: (ShortcutRingSettings) -> ShortcutRingFace
+        /// One place of a ring's face with its look on disk (an app's or a file's name
+        /// and icon, the icon drawn). Only called while no ring is open.
+        var makePlace: (ShortcutRingPlace) -> ShortcutRingFace.Place
         /// Runs a place's action.
         var run: (ShortcutRingPlace) -> Void
         /// Whether a ring may ask a mouse for pulses: Gestures › Haptic feedback, the one
@@ -240,7 +253,7 @@ final class ShortcutRingController {
                     front: .current(), applications: Options.shared.application.applications, general: general
                 )
             },
-            makeFace: { ShortcutRingFace($0) },
+            makePlace: { ShortcutRingFace.place($0) },
             run: { ShortcutRingController.run($0) },
             allowsHaptics: { Options.shared.gesture.hapticFeedback },
             playHaptic: { cue, code in LogiCenter.shared.playGestureHaptic(cue, forScrollioCode: code) },
@@ -615,12 +628,19 @@ final class ShortcutRingController {
     }
 
     /// After a ring that was shown without its icons has closed (and after its action was
-    /// started): the whole face is made, for the next ring.
-    private func completeFaceLater() {
-        let wanted = ring
+    /// started): the whole face is made, for the next ring, one place per turn of the main
+    /// queue as at launch (`steps`: what the turns before made). A ring that opens
+    /// meanwhile ends it; the next close of a ring without its icons begins it again.
+    private func completeFaceLater(_ steps: ShortcutRingFace.InSteps? = nil) {
+        let wanted = steps?.ring ?? ring
         environment.schedule { [weak self] in
             guard let self, !self.session.isOpen, self.ring == wanted, !self.faceIsComplete else { return }
-            let whole = self.environment.makeFace(wanted)
+            var steps = steps ?? ShortcutRingFace.InSteps(wanted)
+            steps.step(self.environment.makePlace)
+            guard let whole = steps.whole else {
+                self.completeFaceLater(steps)
+                return
+            }
             self.face = whole
             self.faceIsComplete = true
             Self.prepare(whole, for: wanted)
