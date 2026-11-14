@@ -469,11 +469,16 @@ class PreferencesButtonsViewController: NSViewController {
         let standard = binding.standardMouseAliasBindingIfAvailable().map {
             ButtonTriggerNaming.buttonName(code: $0.triggerEvent.code)
         }
+        // The Shortcut Ring and Gesture Navigation pulse an MX Master 4 (the one mouse with
+        // haptics) only for a button that arrives as its Logitech control; the standard
+        // button arrives as the system's, without a pulse: the hint says so.
+        let pulses = [SystemShortcut.shortcutRing.identifier, SystemShortcut.mouseGestureNavigation.identifier]
         return ButtonRowNote.make(
             for: binding,
             captureStatus: status,
             scrollHoldKeys: scrollHoldKeys(),
-            standardButtonName: standard
+            standardButtonName: standard,
+            standardButtonLosesPulse: mouse == .mxMaster4 && binding.isEnabled && pulses.contains(binding.systemShortcutName)
         )
     }
 

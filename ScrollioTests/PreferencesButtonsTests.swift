@@ -2212,6 +2212,32 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(plain.row(for: ButtonsMousePart.back)).infoButton.isHidden)
     }
 
+    /// On an MX Master 4 the Shortcut Ring and Gesture Navigation pulse only for the
+    /// Logitech control: the hint that offers the standard button says it gets no pulse
+    /// (in two lines at most); for another action, or on a mouse without haptics, the hint
+    /// stays as it is.
+    func testTheStandardButtonHintSaysItGetsNoPulseForTheRingOnAnMXMaster4() throws {
+        captureStatus = [1006: .standardMouseAliasAvailable]
+        let plain = "Can use the standard Back button instead."
+        let noPulse = "Can use the standard Back button (no pulse)."
+        func hint(_ action: String) throws -> ButtonBindingRow {
+            let bindings = [binding(1006, action)]
+            let pane = makePane(bindings)
+            pane.view.layoutSubtreeIfNeeded()
+            return try XCTUnwrap(try rows(of: bindings, in: pane).first)
+        }
+        let oneLine = NSTextField(labelWithString: "Xg")
+        oneLine.font = PreferencesGroupedForm.explanationFont
+        let ring = try hint(SystemShortcut.shortcutRing.identifier)
+        XCTAssertEqual(ring.explanation, noPulse)
+        XCTAssertEqual(ring.note?.tone, .hint)
+        XCTAssertLessThanOrEqual(ring.explanationLabel.frame.height, 2 * oneLine.fittingSize.height + 1)
+        XCTAssertEqual(try hint(SystemShortcut.mouseGestureNavigation.identifier).explanation, noPulse)
+        XCTAssertEqual(try hint("copy").explanation, plain, "no pulse either way")
+        deviceName = "MX Master 3S"
+        XCTAssertEqual(try hint(SystemShortcut.shortcutRing.identifier).explanation, plain, "a mouse without haptics")
+    }
+
     func testUseStandardButtonTurnsTheLogitechButtonIntoTheStandardOne() throws {
         captureStatus = [1006: .standardMouseAliasAvailable]
         let pane = makePane([binding(1006, SystemShortcut.navigateBack.identifier)])

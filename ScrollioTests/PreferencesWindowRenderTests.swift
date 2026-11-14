@@ -1389,6 +1389,21 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
+    /// On an MX Master 4, a Logitech Back button that opens the Shortcut Ring and has a
+    /// standard twin: the hint says the standard one gets no pulse
+    /// (`buttons-standard-no-pulse-<appearance>.png`).
+    func testRenderStandardButtonHintWithoutPulse() throws {
+        Options.shared.buttons.binding = [
+            binding(1006, SystemShortcut.shortcutRing.identifier),
+            binding(5, SystemShortcut.copy.identifier),
+        ]
+        let source = ButtonsDeviceSource(
+            captureStatus: { $0 == 1006 ? .standardMouseAliasAvailable : .normal },
+            deviceName: { "MX Master 4" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        try renderButtons(name: "buttons-standard-no-pulse", source: source)
+    }
+
     /// The ⓘ popover of each kind of problem, in the popover's material.
     func testRenderButtonProblemPopovers() throws {
         let kinds: [(String, ButtonCapturePresentationStatus?)] = [

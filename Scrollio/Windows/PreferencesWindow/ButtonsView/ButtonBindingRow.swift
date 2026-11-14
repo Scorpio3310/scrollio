@@ -101,11 +101,14 @@ struct ButtonRowNote: Equatable {
     ///     any other button).
     ///   - scrollHoldKeys: the keys of Scrolling › While you hold a key.
     ///   - standardButtonName: the standard button a Logitech one can stand in for.
+    ///   - standardButtonLosesPulse: that standard button would get no haptic pulse where
+    ///     the Logitech one gets them (the ring or the gestures on an MX Master 4).
     static func make(
         for binding: ButtonBinding,
         captureStatus: ButtonCapturePresentationStatus,
         scrollHoldKeys: [ScrollHotkey],
-        standardButtonName: String? = nil
+        standardButtonName: String? = nil,
+        standardButtonLosesPulse: Bool = false
     ) -> ButtonRowNote? {
         let trigger = binding.triggerEvent
         if trigger.type == .mouse, scrollHoldKeys.contains(where: { $0.type == .mouse && $0.code == trigger.code }) {
@@ -115,7 +118,8 @@ struct ButtonRowNote: Equatable {
             let line: String
             if captureStatus == .standardMouseAliasAvailable {
                 let name = standardButtonName ?? text("buttons-trigger-back")
-                line = String(format: text(captureStatus.noteKey), name)
+                let key = standardButtonLosesPulse ? "buttons-note-standard-button-no-pulse" : captureStatus.noteKey
+                line = String(format: text(key), name)
             } else {
                 line = text(captureStatus.noteKey)
             }
