@@ -34,8 +34,10 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   wheel. It drops the names and icons the first time it saves the buttons, the ring or
   the gestures (a change in that pane, or an import), and every app's own gestures, ring
   and thumb wheel the first time it saves the list of apps (a change in the Apps pane,
-  or "Smooth Scrolling in …" in the menu bar menu). Coming back to this version does not
-  bring them back.
+  or "Smooth Scrolling in …" in the menu bar menu). Export…, Import… and Restore… in
+  1.0.5 save every setting first, so they drop all of it at once, from the file Export…
+  writes too. Coming back to this version does not bring them back: export your settings
+  in this version before you go back, and importing that file here later does.
 - A drawing of the mouse lights the button each row is about. The MX Master 4, the MX
   Master 3 and 3S, the MX Anywhere 3 and 3S and the MX Vertical each have a drawing of
   their own, from above and from their thumb side, where the side buttons are (on an MX
