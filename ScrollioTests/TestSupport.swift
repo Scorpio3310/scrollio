@@ -224,6 +224,11 @@ final class TestIsolationTests: XCTestCase {
             "Scrollio/Windows/IntroductionWindow/IntroductionViewController.swift",
             "Scrollio/Windows/PreferencesWindow/GeneralView/PreferencesGeneralViewController.swift",
         ]),
+        // The system's Emoji & Symbols viewer, a panel on the screen: the chooser of icons
+        // opens it through a closure that does nothing under XCTest.
+        Effect(name: "opens the Emoji & Symbols viewer", pattern: #"orderFrontCharacterPalette\("#, allowed: [
+            "Scrollio/Keys/ShortcutIconChooser.swift",
+        ]),
         Effect(name: "starts a process", pattern: #"posix_spawn\(|Process\(\)"#, allowed: ["Scrollio/Shortcut/ShortcutExecutor.swift"]),
         // The login item: InertLoginItemService under XCTest.
         Effect(name: "registers a login item", pattern: #"SMAppService\.mainApp\.(register|unregister)\("#, allowed: ["Scrollio/Utils/LoginItem.swift"]),

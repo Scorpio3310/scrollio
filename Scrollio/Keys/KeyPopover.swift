@@ -20,6 +20,13 @@ import Cocoa
 /// and an icon, with "Record Again" and "Done". The waiting hint and the Esc line are gone
 /// then: nothing is being recorded, and the keyboard types into the name. Whoever uses
 /// the popover hears when it closes (`onClose`) and reads `editedLabel`.
+///
+/// The icon is chosen in a second popover that points at the editor's icon well. A
+/// transient popover shown from inside another may close it, and a click in the second
+/// is outside the first: while the chooser is open this popover is semi-transient (a
+/// click in the settings window still closes it, a click in the chooser does not), and
+/// it closes with the chooser when that one closed for a click outside both, or when
+/// another app comes forward. Afterwards it is transient again.
 class KeyPopover: NSObject, NSPopoverDelegate {
     private enum RecordingHint {
         case escape
@@ -55,6 +62,9 @@ class KeyPopover: NSObject, NSPopoverDelegate {
     private(set) var isShowingDetails = false
     private var recordingConstraints: [NSLayoutConstraint] = []
     private var detailsConstraints: [NSLayoutConstraint] = []
+    /// What the popover's behaviour was before the chooser opened; nil: it is not open.
+    private var behaviorBeforeChooser: NSPopover.Behavior?
+    private var appResignObserver: NSObjectProtocol?
     /// "Record Again" was pressed.
     var onRecordAgain: (() -> Void)?
     /// The popover closed, in whatever way ("Done", a click elsewhere, Esc, `hide`). Told
@@ -123,6 +133,7 @@ class KeyPopover: NSObject, NSPopoverDelegate {
 
     /// 隐藏 popover
     func hide() {
+        labelEditor?.closeChooser()
         guard let closing = popover else { return }
         popover = nil
         // (Told here, not by the system: a popover that was never on screen closes
@@ -136,7 +147,35 @@ class KeyPopover: NSObject, NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         guard let closed = notification.object as? NSPopover, closed === popover else { return }
         popover = nil
+        labelEditor?.closeChooser()
         tellClosed()
+    }
+
+    // MARK: - The chooser of icons, a popover in this one
+
+    private func chooserWillOpen() {
+        guard let popover, behaviorBeforeChooser == nil else { return }
+        behaviorBeforeChooser = popover.behavior
+        popover.behavior = .semitransient
+        appResignObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.hide()
+        }
+    }
+
+    private func chooserDidClose(closesParent: Bool) {
+        if let observer = appResignObserver {
+            NotificationCenter.default.removeObserver(observer)
+            appResignObserver = nil
+        }
+        if let behavior = behaviorBeforeChooser {
+            popover?.behavior = behavior
+            behaviorBeforeChooser = nil
+        }
+        if closesParent {
+            hide()
+        }
     }
 
     private func tellClosed() {
@@ -169,6 +208,7 @@ class KeyPopover: NSObject, NSPopoverDelegate {
     /// Back to asking for keys, in the popover as it is open.
     private func turnToRecording(waitingHint: String) {
         isShowingDetails = false
+        labelEditor?.closeChooser()
         labelEditor?.isHidden = true
         waitingLabel?.stringValue = waitingHint
         waitingLabel?.isHidden = false
@@ -261,6 +301,11 @@ class KeyPopover: NSObject, NSPopoverDelegate {
         popover?.contentSize
     }
 
+    /// The system popover's behaviour; nil: there is none (it closed).
+    var testingBehavior: NSPopover.Behavior? {
+        popover?.behavior
+    }
+
     /// The details without a window: the keys, their name and icon.
     func testingPrepareDetails(keys: [String], label: ShortcutLabel?) {
         hide()
@@ -273,6 +318,7 @@ class KeyPopover: NSObject, NSPopoverDelegate {
     func testingCloseAsTheUserDoes() {
         guard popover != nil else { return }
         popover = nil
+        labelEditor?.closeChooser()
         tellClosed()
     }
 
@@ -342,8 +388,11 @@ class KeyPopover: NSObject, NSPopoverDelegate {
         editor.onDone = { [weak self] in
             self?.hide()
         }
-        editor.onLayoutChange = { [weak self] in
-            self?.updatePopoverContentSize()
+        editor.onChooserOpen = { [weak self] in
+            self?.chooserWillOpen()
+        }
+        editor.onChooserClose = { [weak self] closesParent in
+            self?.chooserDidClose(closesParent: closesParent)
         }
         labelEditor = editor
         isShowingDetails = false

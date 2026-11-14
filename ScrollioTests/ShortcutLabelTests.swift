@@ -829,7 +829,7 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         XCTAssertFalse(popover.testingHintIsVisible, "nor says how to cancel a recording")
         content.layoutSubtreeIfNeeded()
         let size = content.fittingSize
-        XCTAssertGreaterThan(size.height, waiting.height + 80)
+        XCTAssertGreaterThan(size.height, waiting.height + 50)
         XCTAssertEqual(size.width, ShortcutLabelEditorView.width + 32, accuracy: 1)
         XCTAssertFalse(content.hasAmbiguousLayout)
         content.setFrameSize(size)
@@ -838,14 +838,17 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         XCTAssertTrue(content.bounds.contains(editor.frame))
         XCTAssertFalse(editor.isChoosingIcon, "the symbols open when asked for")
         XCTAssertEqual(editor.nameField.placeholderString, "What these keys do")
-        XCTAssertEqual(editor.iconButton.title, "None")
+        XCTAssertEqual(editor.iconWell.accessibilityLabel(), "Choose Icon")
         XCTAssertEqual(editor.recordAgainButton.title, "Record Again")
         XCTAssertEqual(editor.doneButton.title, "Done")
         XCTAssertEqual(editor.doneButton.keyEquivalent, "\r")
-        // The explanation fits two lines.
+        // The explanation is one line, whole.
         let font = try XCTUnwrap(editor.noteLabel.font)
         let lineHeight = ceil(font.ascender - font.descender + font.leading)
-        XCTAssertLessThanOrEqual(editor.noteLabel.frame.height, lineHeight * 2 + 2, editor.noteLabel.stringValue)
+        XCTAssertLessThanOrEqual(editor.noteLabel.frame.height, lineHeight + 2, editor.noteLabel.stringValue)
+        XCTAssertLessThanOrEqual(
+            editor.noteLabel.attributedStringValue.size().width, editor.noteLabel.frame.width + 0.5, "not cut short"
+        )
     }
 
     func testTheNameIsWhatWasTypedCleanedAndNeverTooLong() throws {
@@ -865,96 +868,61 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         let (popover, editor) = try details(label: reload)
         XCTAssertEqual(editor.nameField.stringValue, "Reload")
         XCTAssertEqual(editor.icon, .symbol("arrow.clockwise"))
-        XCTAssertNotNil(editor.iconButton.image)
-        XCTAssertEqual(editor.iconButton.title, "")
-        XCTAssertEqual(editor.grid.chosen, "arrow.clockwise")
-        XCTAssertEqual(editor.grid.buttons.filter { $0.isChosen }.map { $0.symbolName }, ["arrow.clockwise"])
+        XCTAssertNotNil(editor.iconWell.image)
+        XCTAssertEqual(editor.iconWell.accessibilityLabel(), "Icon: arrow clockwise")
         XCTAssertEqual(popover.editedLabel, reload)
 
         let (_, typed) = try details(label: label("Reload", character: "🔄"))
-        XCTAssertEqual(typed.characterField.stringValue, "🔄")
-        XCTAssertNil(typed.grid.chosen)
-        XCTAssertNotNil(typed.iconButton.image)
+        XCTAssertEqual(typed.icon, .character("🔄"))
+        XCTAssertNotNil(typed.iconWell.image)
+        XCTAssertEqual(typed.iconWell.accessibilityLabel(), "Icon: 🔄")
     }
 
-    /// The icon: one of the chosen symbols, found by a search over their names, or one
-    /// typed character, or none.
-    func testTheIconIsASymbolFoundBySearchOrOneTypedCharacter() throws {
+    /// The icon: a symbol or one character chosen in the chooser, or none.
+    func testTheIconIsASymbolOrOneTypedCharacterChosenInTheChooser() throws {
         let (popover, editor) = try details()
-        XCTAssertFalse(editor.removeIconButton.isEnabled)
-        editor.iconButton.performClick(nil)
-        XCTAssertTrue(editor.isChoosingIcon)
-        XCTAssertEqual(editor.grid.buttons.map { $0.symbolName }, ShortcutIconSet.all.map { $0.name })
-        XCTAssertEqual(editor.grid.headers.map { $0.stringValue }, ShortcutIconSet.groups.map { $0.title })
-        XCTAssertTrue(editor.noMatchLabel.isHidden)
-
-        type("reload", into: editor.searchField, of: editor)
-        XCTAssertEqual(editor.grid.buttons.map { $0.symbolName }, ["arrow.clockwise", "arrow.triangle.2.circlepath"].filter { name in
-            ShortcutIconSet.all.first { $0.name == name }!.matches("reload")
-        })
-        XCTAssertEqual(editor.grid.headers.map { $0.stringValue }, ["Arrows"])
-        type("no such thing", into: editor.searchField, of: editor)
-        XCTAssertTrue(editor.grid.buttons.isEmpty)
-        XCTAssertTrue(editor.gridScroll.isHidden)
-        XCTAssertFalse(editor.noMatchLabel.isHidden)
-        type("", into: editor.searchField, of: editor)
-        XCTAssertEqual(editor.grid.buttons.count, ShortcutIconSet.all.count)
-
-        let clockwise = try XCTUnwrap(editor.grid.buttons.first { $0.symbolName == "arrow.clockwise" })
-        XCTAssertEqual(clockwise.toolTip, "arrow clockwise")
-        clockwise.performClick(nil)
+        editor.iconWell.performClick(nil)
+        let chooser = try XCTUnwrap(editor.chooser)
+        XCTAssertTrue(chooser.removeButton.isHidden, "nothing to remove")
+        chooser.search("reload")
+        chooser.chooseSelected()
         XCTAssertEqual(popover.editedLabel, label(nil, symbol: "arrow.clockwise"))
-        XCTAssertFalse(editor.isChoosingIcon, "chosen: the symbols close")
-        XCTAssertNotNil(editor.iconButton.image)
-        XCTAssertTrue(editor.removeIconButton.isEnabled)
+        XCTAssertFalse(editor.isChoosingIcon, "chosen: the chooser closes")
 
-        // One typed character instead: the first that can be seen.
-        type("🔄x", into: editor.characterField, of: editor)
+        editor.iconWell.performClick(nil)
+        let again = try XCTUnwrap(editor.chooser)
+        XCTAssertFalse(again.removeButton.isHidden)
+        again.search("🔄x")
+        XCTAssertNil(again.choices.indexPath(of: .character("🔄")), "two characters are a search, not an icon")
+        again.search("🔄")
+        again.chooseSelected()
         XCTAssertEqual(popover.editedLabel, label(nil, character: "🔄"))
-        XCTAssertEqual(editor.characterField.stringValue, "🔄")
-        XCTAssertNil(editor.grid.chosen)
-        type("", into: editor.characterField, of: editor)
+
+        editor.iconWell.performClick(nil)
+        try XCTUnwrap(editor.chooser).removeButton.performClick(nil)
         XCTAssertNil(popover.editedLabel)
-
-        // "No Icon" takes a chosen one away.
-        editor.chooseSymbol("star")
-        XCTAssertEqual(editor.icon, .symbol("star"))
-        editor.setChoosingIcon(true)
-        editor.removeIconButton.performClick(nil)
-        XCTAssertNil(editor.icon)
-        XCTAssertEqual(editor.iconButton.title, "None")
         XCTAssertFalse(editor.isChoosingIcon)
-    }
-
-    /// With the symbols open the popover is taller, and still lays out without a doubt.
-    func testThePopoverGrowsForTheSymbols() throws {
-        let (popover, editor) = try details(label: reload)
-        let content = try XCTUnwrap(popover.testingContentView)
-        content.layoutSubtreeIfNeeded()
-        let closed = content.fittingSize
-        var changes = 0
-        let before = editor.onLayoutChange
-        editor.onLayoutChange = {
-            changes += 1
-            before?()
-        }
-        editor.setChoosingIcon(true)
-        content.layoutSubtreeIfNeeded()
-        let open = content.fittingSize
-        XCTAssertEqual(changes, 1)
-        XCTAssertGreaterThan(open.height, closed.height + ShortcutLabelEditorView.gridHeight)
-        XCTAssertEqual(open.width, closed.width, accuracy: 0.5)
-        XCTAssertFalse(content.hasAmbiguousLayout)
-        XCTAssertLessThanOrEqual(ShortcutIconGridView.contentWidth + 16, ShortcutLabelEditorView.width, "room for a scroll bar")
     }
 
     // MARK: The set of symbols
 
+    /// About a hundred symbols in six groups, "Common" first, each group whole rows of the
+    /// chooser's eight columns. (The Mac that runs this is newer than macOS 14: that 14
+    /// has every name is not asked here.)
     func testEverySymbolOfTheSetIsThereOnceAndCanBeStored() {
         let names = ShortcutIconSet.all.map { $0.name }
         XCTAssertEqual(Set(names).count, names.count, "no symbol twice")
-        XCTAssertGreaterThanOrEqual(names.count, 100)
-        XCTAssertEqual(ShortcutIconSet.groups.count, 7)
+        XCTAssertEqual(names.count, 104)
+        XCTAssertEqual(ShortcutIconSet.groups.count, 6)
+        XCTAssertEqual(ShortcutIconSet.groups.first?.titleKey, "key-recorder-icon-group-common")
+        XCTAssertEqual(ShortcutIconSet.groups.first?.symbols.count, 16)
+        for name in ["arrow.clockwise", "arrow.uturn.backward", "square.and.arrow.up", "magnifyingglass", "xmark",
+                     "playpause", "speaker.slash", "lock", "star", "trash", "doc.on.doc", "gearshape"] {
+            XCTAssertTrue(ShortcutIconSet.groups[0].symbols.contains { $0.name == name }, name)
+        }
+        for group in ShortcutIconSet.groups {
+            XCTAssertEqual(group.symbols.count % ShortcutIconChooserLayout.columns, 0, "\(group.titleKey) ends on a full row")
+        }
         for symbol in ShortcutIconSet.all {
             XCTAssertNotNil(NSImage(systemSymbolName: symbol.name, accessibilityDescription: nil), symbol.name)
             XCTAssertEqual(ShortcutLabel.cleaned(.symbol(symbol.name)), .symbol(symbol.name), symbol.name)
@@ -980,7 +948,8 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         XCTAssertTrue(found("paste").contains("doc.on.clipboard"))
         XCTAssertTrue(found("sett").contains("gearshape"))
         XCTAssertEqual(found("qqqq"), [])
-        XCTAssertEqual(ShortcutIconSet.groups(matching: "gearshape").map { $0.titleKey }, ["key-recorder-icon-group-tools"])
+        XCTAssertEqual(ShortcutIconSet.groups(matching: "gearshape").map { $0.titleKey }, ["key-recorder-icon-group-common"])
+        XCTAssertEqual(ShortcutIconSet.groups(matching: "hammer").map { $0.titleKey }, ["key-recorder-icon-group-tools"])
     }
 
     // MARK: The pull-down: recording, then the name and the icon
@@ -1101,8 +1070,8 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         pullDown.shortcutSelected(try keyboardShortcutItem(of: pullDown))
         popover = try XCTUnwrap(pullDown.detailsPopover as? QuietPopover)
         editor = try XCTUnwrap(popover.labelEditor)
-        editor.setChoosingIcon(true)
-        editor.removeIconButton.performClick(nil)
+        editor.iconWell.performClick(nil)
+        try XCTUnwrap(editor.chooser).removeButton.performClick(nil)
         popover.closeAsTheUserDoes()
         XCTAssertEqual(stored.count, 2)
         XCTAssertNil(stored.last?.label)
@@ -1193,7 +1162,10 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         let popover = try XCTUnwrap(row.pullDown.detailsPopover as? QuietPopover)
         let editor = try XCTUnwrap(popover.labelEditor)
         type("Reload", into: editor.nameField, of: editor)
-        type("R", into: editor.characterField, of: editor)
+        editor.iconWell.performClick(nil)
+        let chooser = try XCTUnwrap(editor.chooser)
+        chooser.search("R")
+        chooser.chooseSelected()
         popover.closeAsTheUserDoes()
         let storedBinding = try XCTUnwrap(Options.shared.buttons.binding.first)
         XCTAssertEqual(storedBinding.id, back.id)

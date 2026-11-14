@@ -8,7 +8,8 @@
 //
 //  The set is a choice, not a catalogue: what a keyboard shortcut of an app usually does
 //  (go back, reload, copy, save, zoom, play, send, build, hide …). Every name in it is an
-//  SF Symbol that macOS 14 has (`ShortcutLabelIconSetTests` asks this Mac for each).
+//  SF Symbol that macOS 14 has (a test asks the Mac it runs on for each; that Mac runs a
+//  newer macOS, so 14 itself is not asked).
 //  Anything else is the one character the user types instead. A stored symbol does not
 //  have to be in the set: a file may name another, and it is shown if this Mac has it.
 //
@@ -52,65 +53,61 @@ enum ShortcutIconSet {
         return Group(titleKey: titleKey, symbols: symbols.map { Symbol(name: $0.0, words: $0.1) })
     }
 
+    /// Six groups, each a whole number of rows of the chooser's eight columns (16 or 24),
+    /// "Common" first: what a shortcut most often does. No symbol stands in two groups.
     static let groups: [Group] = [
+        group("key-recorder-icon-group-common", [
+            ("arrow.clockwise", "reload refresh redo"), ("arrow.uturn.backward", "undo back"),
+            ("arrow.uturn.forward", "redo"), ("square.and.arrow.up", "share export"),
+            ("magnifyingglass", "search find"), ("sidebar.left", "panel navigator"),
+            ("plus.rectangle.on.rectangle", "new tab window"), ("xmark", "close cancel"),
+            ("square.and.arrow.down", "save import download"), ("playpause", "play pause toggle"),
+            ("speaker.slash", "mute silence"), ("lock", "private secure"), ("star", "favourite favorite rate"),
+            ("trash", "delete remove bin"), ("doc.on.doc", "copy duplicate"), ("gearshape", "settings preferences"),
+        ]),
         group("key-recorder-icon-group-arrows", [
             ("arrow.left", "back previous"), ("arrow.right", "forward next"), ("arrow.up", "top"), ("arrow.down", "bottom"),
             ("chevron.left", "back previous"), ("chevron.right", "forward next"),
-            ("arrow.clockwise", "reload refresh redo"), ("arrow.counterclockwise", "revert undo"),
-            ("arrow.uturn.backward", "undo back"), ("arrow.uturn.forward", "redo"),
-            ("arrow.triangle.2.circlepath", "sync refresh update"), ("arrow.left.arrow.right", "swap switch"),
-            ("arrow.up.arrow.down", "sort swap"), ("arrow.up.left.and.arrow.down.right", "full screen expand enlarge"),
+            ("arrow.counterclockwise", "revert undo"), ("arrow.triangle.2.circlepath", "sync refresh update"),
+            ("arrow.left.arrow.right", "swap switch"), ("arrow.up.arrow.down", "sort swap"),
+            ("arrow.up.left.and.arrow.down.right", "full screen expand enlarge"),
             ("arrow.down.right.and.arrow.up.left", "shrink collapse exit"), ("arrowshape.turn.up.left", "reply"),
-            ("arrowshape.turn.up.right", "forward share"), ("return", "enter newline"),
+            ("arrowshape.turn.up.right", "forward share"), ("arrow.up.to.line", "top beginning start"),
+            ("return", "enter newline"),
         ]),
         group("key-recorder-icon-group-editing", [
             ("pencil", "edit rename write"), ("square.and.pencil", "compose new edit"), ("scissors", "cut"),
-            ("doc.on.doc", "copy duplicate"), ("doc.on.clipboard", "paste"), ("trash", "delete remove bin"),
-            ("plus", "add new"), ("minus", "remove"), ("checkmark", "done accept confirm"), ("xmark", "close cancel"),
-            ("textformat", "font text style"), ("bold", "strong"), ("italic", "emphasis"), ("underline", ""),
-            ("strikethrough", ""), ("list.bullet", "list"), ("text.alignleft", "align paragraph"),
-            ("highlighter", "mark highlight"), ("paintbrush", "paint format style"), ("eyedropper", "colour color pick"),
-            ("wand.and.stars", "magic auto fix"), ("crop", "trim"), ("rotate.right", "turn"),
-            ("square.dashed", "select selection marquee"), ("lasso", "select"),
+            ("doc.on.clipboard", "paste"), ("plus", "add new"), ("minus", "remove"),
+            ("checkmark", "done accept confirm"), ("square.dashed", "select selection marquee"),
+            ("bold", "strong"), ("italic", "emphasis"), ("underline", ""), ("strikethrough", ""),
+            ("list.bullet", "list"), ("text.alignleft", "align paragraph"), ("highlighter", "mark highlight"),
+            ("wand.and.stars", "magic auto fix"),
         ]),
         group("key-recorder-icon-group-files", [
-            ("doc", "file document new"), ("folder", "open directory"), ("tray.and.arrow.down", "save inbox"),
-            ("square.and.arrow.up", "share export"), ("square.and.arrow.down", "save import download"),
-            ("printer", "print"), ("magnifyingglass", "search find"), ("plus.magnifyingglass", "zoom in"),
-            ("minus.magnifyingglass", "zoom out"), ("link", "url"), ("paperclip", "attach"), ("bookmark", "favourite favorite"),
-            ("tag", "label"), ("lock", "private secure"), ("macwindow", "window"), ("sidebar.left", "panel navigator"),
+            ("doc", "file document new"), ("folder", "open directory"), ("printer", "print"),
+            ("plus.magnifyingglass", "zoom in"), ("minus.magnifyingglass", "zoom out"), ("link", "url"),
+            ("paperclip", "attach"), ("bookmark", "favourite favorite"), ("tag", "label"), ("macwindow", "window"),
             ("sidebar.right", "inspector panel"), ("rectangle.split.2x1", "split columns"),
             ("square.grid.2x2", "grid overview"), ("rectangle.on.rectangle", "windows tabs"),
-            ("plus.rectangle.on.rectangle", "new tab window"), ("square.stack.3d.up", "layers stack"),
             ("eye", "show preview view"), ("eye.slash", "hide"),
         ]),
         group("key-recorder-icon-group-media", [
-            ("play", "start run"), ("pause", ""), ("stop", ""), ("playpause", "toggle"), ("backward", "rewind previous"),
+            ("play", "start run"), ("pause", ""), ("stop", ""), ("backward", "rewind previous"),
             ("forward", "next skip"), ("record.circle", "record"), ("speaker.wave.2", "volume sound audio"),
-            ("speaker.slash", "mute silence"), ("mic", "microphone"), ("mic.slash", "mute microphone"),
+            ("music.note", "song"), ("mic", "microphone"), ("mic.slash", "mute microphone"),
             ("video", "camera call"), ("video.slash", "camera off"), ("camera", "photo screenshot capture"),
-            ("photo", "image picture"), ("music.note", "song"),
-        ]),
-        group("key-recorder-icon-group-people", [
-            ("envelope", "mail email"), ("paperplane", "send"), ("bubble.left", "message chat comment"),
-            ("phone", "call"), ("bell", "notification alert"), ("bell.slash", "mute silence do not disturb"),
-            ("person", "user account contact"), ("person.2", "people team share"), ("at", "mention"),
-            ("calendar", "date event"), ("clock", "time history recent"), ("globe", "web browser language"),
-            ("mappin", "location place"), ("hand.raised", "stop raise"),
+            ("photo", "image picture"), ("envelope", "mail email"), ("paperplane", "send"),
+            ("bubble.left", "message chat comment"), ("phone", "call"), ("bell", "notification alert"),
+            ("bell.slash", "mute silence do not disturb"), ("person", "user account contact"),
+            ("person.2", "people team share"), ("at", "mention"), ("hand.raised", "stop raise"),
         ]),
         group("key-recorder-icon-group-tools", [
-            ("gearshape", "settings preferences"), ("slider.horizontal.3", "adjust filter controls"),
-            ("terminal", "console shell command"), ("chevron.left.forwardslash.chevron.right", "code source"),
-            ("hammer", "build"), ("wrench.and.screwdriver", "tools fix"), ("ladybug", "bug debug"),
-            ("cube", "package object"), ("cpu", "processor"), ("command", "key"), ("keyboard", "keys"),
-            ("bolt", "quick action run"), ("power", "off quit"), ("moon", "dark night"), ("sun.max", "light bright"),
-            ("timer", "stopwatch"), ("lightbulb", "idea hint"), ("questionmark", "help"), ("info.circle", "information about"),
-            ("exclamationmark.triangle", "warning"),
-        ]),
-        group("key-recorder-icon-group-signs", [
-            ("star", "favourite favorite rate"), ("heart", "like love"), ("flag", "mark report"), ("pin", "keep"),
-            ("house", "home"), ("sparkles", "new ai magic"), ("circle", "dot"), ("square", "box"),
-            ("triangle", ""), ("diamond", ""), ("hexagon", ""), ("number", "hash"), ("percent", ""), ("function", "fx formula"),
+            ("slider.horizontal.3", "adjust filter controls"), ("terminal", "console shell command"),
+            ("chevron.left.forwardslash.chevron.right", "code source"), ("hammer", "build"),
+            ("wrench.and.screwdriver", "tools fix"), ("ladybug", "bug debug"), ("command", "key"), ("keyboard", "keys"),
+            ("bolt", "quick action run"), ("power", "off quit"), ("moon", "dark night"), ("lightbulb", "idea hint"),
+            ("sparkles", "new ai magic"), ("calendar", "date event"), ("clock", "time history recent"),
+            ("globe", "web browser language"),
         ]),
     ]
 
