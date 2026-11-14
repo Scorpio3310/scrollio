@@ -44,13 +44,12 @@ final class LogiIntegrationBridge: LogiExternalBridge {
 
         // Probe for logi* binding; the session executes the action so the
         // hardware action stays scoped to the originating device (no global
-        // activeBindings registration).
+        // activeBindings registration). The best binding for the press is chosen first, as
+        // InputProcessor chooses it: a Logitech action on the plain button must not win over
+        // a binding of the same button with modifier keys that the press holds.
         if let scope,
-           let binding = ButtonUtils.shared.getBestMatchingBinding(
-               for: event,
-               scope: scope,
-               where: { $0.systemShortcutName.hasPrefix("logi") }
-           ) {
+           let binding = ButtonUtils.shared.getBestMatchingBinding(for: event, scope: scope),
+           binding.systemShortcutName.hasPrefix("logi") {
             return .logiAction(name: binding.systemShortcutName)
         }
 

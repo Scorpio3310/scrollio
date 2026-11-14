@@ -346,6 +346,43 @@ final class ApplicationButtonsPressTests: XCTestCase {
         XCTAssertEqual(harness.pointerLocks, ["lock", "unlock"])
         controller.cancel()
     }
+
+    /// A Logitech action on the plain button does not win over a binding of the same button
+    /// with modifier keys that the press holds (the bridge used to look at the Logitech
+    /// bindings alone, and the plain one matched every press): Buttons gives the mode shift
+    /// button SmartShift, Figma ⌥ + mode shift the ring. In Figma ⌥ + mode shift opens the
+    /// ring and the plain press is SmartShift; in Safari ⌥ + mode shift is SmartShift. The
+    /// same with the general bindings alone: ⌥ + mode shift runs Copy.
+    func testABindingWithModifierKeysWinsOverALogitechActionOnThePlainButton() {
+        let modeShift: UInt16 = 1001
+        let option = UInt(CGEventFlags.maskAlternate.rawValue)
+        let smartShift = "logiSmartShiftToggle"
+        let bridge = LogiIntegrationBridge.shared
+        func press(_ phase: InputPhase, _ flags: CGEventFlags) -> InputEvent {
+            return InputEvent(type: .mouse, code: modeShift, modifiers: flags, phase: phase, source: .hidPP, device: nil)
+        }
+        set(general: [binding(modeShift, smartShift)], figma: figmaEntry(own: [binding(modeShift, ringAction, modifiers: option)]))
+
+        front = figma
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, .maskAlternate)), .consumed)
+        XCTAssertTrue(controller.isHeld, "Figma's ⌥ + mode shift opens the ring")
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up, .maskAlternate)), .consumed)
+        controller.cancel()
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, [])), .logiAction(name: smartShift))
+        _ = bridge.dispatchLogiButtonEvent(press(.up, []))
+
+        front = safari
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, .maskAlternate)), .logiAction(name: smartShift))
+        _ = bridge.dispatchLogiButtonEvent(press(.up, .maskAlternate))
+        XCTAssertFalse(controller.isOpen)
+
+        set(general: [binding(modeShift, smartShift), binding(modeShift, SystemShortcut.copy.identifier, modifiers: option)],
+            figma: figmaEntry(own: []))
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, .maskAlternate)), .consumed, "Copy, not SmartShift")
+        _ = bridge.dispatchLogiButtonEvent(press(.up, .maskAlternate))
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, [])), .logiAction(name: smartShift))
+        _ = bridge.dispatchLogiButtonEvent(press(.up, []))
+    }
 }
 
 // MARK: - The ring's faces
