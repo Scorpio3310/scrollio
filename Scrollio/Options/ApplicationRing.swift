@@ -90,19 +90,27 @@ extension Application {
         return ShortcutRingSettings(places: places, freezePointer: general.freezePointer)
     }
 
-    /// Off: the app's own ring, which starts as a copy of `general` as it is now when the
-    /// app never had one; one it had before comes back as it was left. On: the app's own
-    /// ring stays stored for later and is not used. As "Use settings from Scrolling" does
-    /// it (`setUsesScrollingSettings`). Nothing happens when the app is already in that
-    /// state.
-    func setUsesGeneralRing(_ uses: Bool, general: ShortcutRingSettings) {
+    /// Off: the app's own ring, which starts as the app's suggested shortcuts when
+    /// `suggested` has them (`ShortcutRingSuggestions`), else as a copy of `general` as it
+    /// is now, when the app never had one; one it had before comes back as it was left.
+    /// On: the app's own ring stays stored for later and is not used. As "Use settings from
+    /// Scrolling" does it (`setUsesScrollingSettings`). Nothing happens when the app is
+    /// already in that state.
+    func setUsesGeneralRing(_ uses: Bool, general: ShortcutRingSettings, suggested: [ShortcutRingPlace]? = nil) {
         guard usesGeneralRing != uses else { return }
         if var own = ring {
             own.inherit = uses
             ring = own
         } else {
-            ring = ApplicationRing(inherit: false, places: general.places)
+            ring = ApplicationRing(inherit: false, places: suggested ?? general.places)
         }
+    }
+
+    /// Puts `places` into the app's own ring, in use or kept for later; "Use the general
+    /// ring" stays as it is. Nothing happens for an app without a ring of its own.
+    func setOwnRingPlaces(_ places: [ShortcutRingPlace]) {
+        guard let own = ring else { return }
+        ring = ApplicationRing(inherit: own.inherit, places: places)
     }
 }
 

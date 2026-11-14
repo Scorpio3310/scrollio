@@ -8667,6 +8667,54 @@
           }
         }
       }
+    },
+    "apps-detail-ring-suggested": {
+      "comment": "An app's page, Shortcut Ring part: title of the row that offers the app's suggested shortcuts (shown while the app's own ring is in use)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggested shortcuts"
+          }
+        }
+      }
+    },
+    "apps-detail-ring-use-suggested": {
+      "comment": "An app's page, Shortcut Ring part: the button that fills the app's ring with its suggested shortcuts; also the name of its Undo (\"Undo Use Suggested Shortcuts\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Suggested Shortcuts"
+          }
+        }
+      }
+    },
+    "apps-detail-ring-suggested-in-use": {
+      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the ring holds them; %@ is the app's name; fits two lines",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The ring started from the shortcuts suggested for %@."
+          }
+        }
+      }
+    },
+    "apps-detail-ring-suggested-offer": {
+      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the ring holds something else; %@ is the app's name; fits two lines",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fills all eight places with the shortcuts suggested for %@."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

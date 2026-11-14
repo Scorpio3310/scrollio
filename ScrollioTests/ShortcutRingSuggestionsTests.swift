@@ -398,3 +398,219 @@ private struct FixedLayoutSource: KeyboardLayoutSource {
         return SystemKeyboardLayoutSource.characters(of: source, modifierKeyState: SystemKeyboardLayoutSource.commandKeyState)
     }
 }
+
+// MARK: - Filling an app's ring
+
+final class ShortcutRingSuggestionFillTests: XCTestCase {
+
+    private var savedApplications: EnhanceArray<Application>!
+    private var savedRing = ShortcutRingSettings.default
+    private var savedBindings: [ButtonBinding] = []
+
+    override func setUp() {
+        super.setUp()
+        savedApplications = Options.shared.application.applications
+        savedRing = Options.shared.ring
+        savedBindings = Options.shared.buttons.binding
+        Options.shared.application.applications = list([])
+        Options.shared.ring = .default
+        Options.shared.buttons.binding = []
+        SuggestionFixtures.install(for: self)
+    }
+
+    override func tearDown() {
+        Options.shared.application.applications = savedApplications
+        Options.shared.ring = savedRing
+        Options.shared.buttons.binding = savedBindings
+        ShortcutRingController.forgetPreparedFaces()
+        savedApplications = nil
+        super.tearDown()
+    }
+
+    private func list(_ applications: [Application]) -> EnhanceArray<Application> {
+        return EnhanceArray<Application>(
+            withArray: applications, matchKey: "path", forObserver: { Options.shared.markChanged(.application) }
+        )
+    }
+
+    private func add(_ path: String, name: String? = nil) -> Application {
+        let application = Application(path: path)
+        application.displayName = name
+        Options.shared.application.applications.append(application)
+        return application
+    }
+
+    private func part(for application: Application, undo: UndoManager? = nil) -> ApplicationRingPartViewController {
+        let part = ApplicationRingPartViewController(application: application)
+        part.paneUndoManager = undo
+        _ = part.view
+        return part
+    }
+
+    private func turn(_ part: ApplicationRingPartViewController, general on: Bool) {
+        part.generalRingRow.toggle.state = on ? .on : .off
+        part.generalRingClick(part.generalRingRow.toggle)
+    }
+
+    private var figmaSuggestion: [ShortcutRingPlace] {
+        return (try? SuggestionFixtures.app("Figma").places(on: .us)) ?? []
+    }
+
+    /// The model: off with a suggestion, the ring starts with it; without one, as a copy
+    /// of the general ring; a ring the app had comes back as it was left.
+    func testTheSwitchStartsTheRingWithTheSuggestionElseACopy() throws {
+        var general = ShortcutRingSettings.default
+        general[0] = ShortcutRingPlace(SystemShortcut.find)
+        let figma = Application(path: SuggestionFixtures.figmaPath)
+        let suggested = try XCTUnwrap(figma.suggestedRingPlaces())
+        XCTAssertEqual(suggested, figmaSuggestion)
+        figma.setUsesGeneralRing(false, general: general, suggested: suggested)
+        XCTAssertEqual(figma.ownRingPlaces, suggested)
+
+        let calculator = Application(path: SuggestionFixtures.calculatorPath)
+        XCTAssertNil(calculator.suggestedRingPlaces())
+        calculator.setUsesGeneralRing(false, general: general, suggested: calculator.suggestedRingPlaces())
+        XCTAssertEqual(calculator.ownRingPlaces, general.places)
+
+        // Kept for later and back: as left, not filled again.
+        figma.ring?[0] = ShortcutRingPlace(SystemShortcut.paste)
+        figma.setUsesGeneralRing(true, general: general, suggested: suggested)
+        figma.setUsesGeneralRing(false, general: general, suggested: suggested)
+        XCTAssertEqual(figma.ownRingPlaces?[0], ShortcutRingPlace(SystemShortcut.paste))
+    }
+
+    /// The page: turning the switch off fills the ring from the suggestion, and the row
+    /// says the ring started from it (its button off, nothing to do); after a change the
+    /// row offers it again, the button fills all eight places, Undo takes it back and
+    /// Redo puts it back. The general ring is never touched.
+    func testThePageFillsFromTheSuggestionAndUseSuggestedShortcutsHasUndo() throws {
+        let figma = add(SuggestionFixtures.figmaPath, name: "Figma")
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        let part = part(for: figma, undo: undo)
+        XCTAssertNotNil(part.suggestion)
+        XCTAssertTrue(part.suggestionRow.isHidden, "the general ring: no row")
+        XCTAssertNil(figma.ring, "showing the page fills nothing")
+
+        turn(part, general: false)
+        XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
+        XCTAssertFalse(part.suggestionRow.isHidden)
+        XCTAssertEqual(part.suggestionRow.explanation, "The ring started from the shortcuts suggested for Figma.")
+        XCTAssertFalse(part.useSuggestedButton.isEnabled)
+        XCTAssertNotNil(part.ringController)
+
+        figma.ring?[0] = ShortcutRingPlace(SystemShortcut.find)
+        figma.ring?[3] = .empty
+        part.syncViewWithOptions()
+        XCTAssertEqual(part.suggestionRow.explanation, "Fills all eight places with the shortcuts suggested for Figma.")
+        XCTAssertTrue(part.useSuggestedButton.isEnabled)
+        let edited = try XCTUnwrap(figma.ownRingPlaces)
+
+        undo.beginUndoGrouping()
+        XCTAssertTrue(part.useSuggestedButton.sendAction(part.useSuggestedButton.action, to: part.useSuggestedButton.target))
+        undo.endUndoGrouping()
+        XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
+        XCTAssertFalse(part.useSuggestedButton.isEnabled)
+        XCTAssertEqual(undo.undoActionName, "Use Suggested Shortcuts")
+
+        undo.undo()
+        XCTAssertEqual(figma.ownRingPlaces, edited)
+        XCTAssertTrue(part.useSuggestedButton.isEnabled)
+        undo.redo()
+        XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
+        XCTAssertEqual(Options.shared.ring, .default)
+
+        // Back to the general ring: the row goes, the own ring is kept for later.
+        turn(part, general: true)
+        XCTAssertTrue(part.suggestionRow.isHidden)
+        XCTAssertEqual(figma.ring?.places, figmaSuggestion)
+    }
+
+    /// Without a suggestion the part is as before: no row, and the switch copies the
+    /// general ring.
+    func testAnAppWithoutASuggestionGetsACopyOfTheGeneralRingAndNoRow() {
+        var general = ShortcutRingSettings.default
+        general[1] = ShortcutRingPlace(SystemShortcut.undo)
+        Options.shared.ring = general
+        let calculator = add(SuggestionFixtures.calculatorPath)
+        let part = part(for: calculator)
+        XCTAssertNil(part.suggestion)
+        turn(part, general: false)
+        XCTAssertEqual(calculator.ownRingPlaces, general.places)
+        XCTAssertTrue(part.suggestionRow.isHidden)
+    }
+
+    /// Nothing changes by itself: an app with a suggestion whose switch is on stays on the
+    /// general ring (its page shown, its ring chosen at a press), no app is added to the
+    /// list, and an entry from before is stored as before.
+    func testNothingIsFilledOrAddedWithoutTheUser() throws {
+        let figma = add(SuggestionFixtures.figmaPath, name: "Figma")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let before = try encoder.encode(figma)
+        let part = part(for: figma)
+        part.syncViewWithOptions()
+        part.viewWillAppear()
+        XCTAssertNil(figma.ring)
+        XCTAssertTrue(figma.usesGeneralRing)
+        XCTAssertEqual(try encoder.encode(figma), before)
+        let choice = ShortcutRingChoice.make(
+            front: ShortcutRingChoice.FrontApp(bundlePath: SuggestionFixtures.figmaPath, executablePath: nil),
+            applications: Options.shared.application.applications, general: Options.shared.ring
+        )
+        XCTAssertEqual(choice, .general(Options.shared.ring))
+        XCTAssertEqual(Options.shared.application.applications.count, 1)
+        XCTAssertNil(Options.shared.application.applications.get(by: SuggestionFixtures.safariPath))
+        // The button does nothing while the general ring is in use.
+        part.useSuggestedClick(nil)
+        XCTAssertNil(figma.ring)
+    }
+
+    /// The row's line fits two lines, also for an app with a long name.
+    func testTheSuggestionLineFitsTwoLines() throws {
+        let long = add(SuggestionFixtures.figmaPath, name: "Adobe Lightroom Classic Long Edition")
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 900), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        addTeardownBlock { window.close() }
+        let part = part(for: long)
+        window.contentView = part.view
+        turn(part, general: false)
+        part.view.layoutSubtreeIfNeeded()
+        let width = part.suggestionRow.titleColumnWidth
+        XCTAssertGreaterThan(width, 200)
+        let font = PreferencesGroupedForm.explanationFont
+        let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
+        for holdsIt in [true, false] {
+            let text = ApplicationRingPartViewController.suggestionExplanation(holdsIt: holdsIt, name: long.displayName!)
+            let height = (text as NSString).boundingRect(
+                with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
+            ).height
+            XCTAssertLessThanOrEqual(height, twoLines, text)
+        }
+    }
+
+    /// A ring filled from a suggestion is ordinary places: it travels in a settings file
+    /// and comes back the same, with nothing left out.
+    func testAFilledRingRoundTripsThroughTheSettingsFile() throws {
+        let source = Options()
+        source.defaults = TestDefaults.make(for: self)
+        let german = try SuggestionFixtures.layout("com.apple.keylayout.German")
+        let spotify = Application(path: "/Applications/Spotify.app")
+        spotify.setUsesGeneralRing(false, general: .default, suggested: try SuggestionFixtures.app("Spotify").places(on: german))
+        let figma = Application(path: SuggestionFixtures.figmaPath)
+        figma.setUsesGeneralRing(false, general: .default, suggested: figmaSuggestion)
+        source.application.applications.append(spotify)
+        source.application.applications.append(figma)
+        let data = try SettingsFile.export(from: source, now: Date(timeIntervalSinceReferenceDate: 0)).get()
+
+        let contents = try SettingsFile.read(data).get()
+        XCTAssertEqual(contents.leftOutCount, 0)
+        XCTAssertEqual(contents.applications?.map(\.ring), [spotify.ring, figma.ring])
+        let target = Options()
+        target.defaults = TestDefaults.make(for: self)
+        target.readOptions()
+        XCTAssertTrue(SettingsFile.apply(contents, to: target))
+        XCTAssertEqual(target.application.applications.get(by: SuggestionFixtures.figmaPath)?.ring, figma.ring)
+        XCTAssertEqual(target.application.applications.get(by: "/Applications/Spotify.app")?.ring, spotify.ring)
+    }
+}
