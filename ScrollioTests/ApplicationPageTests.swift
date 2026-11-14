@@ -1192,8 +1192,34 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertTrue(calculator.usesGeneralRing, "the switch was only tried")
     }
 
+    /// The box fits the line it shows (as the Gestures part's does): it keeps room only for
+    /// the longer of the two lines the switch alternates, not for a two-line line on what
+    /// opens the ring, which takes its room only while it shows.
+    func testTheRingPartsBoxFitsItsLine() throws {
+        Options.shared.buttons.binding = [binding(6, SystemShortcut.shortcutRing.identifier)]
+        addApp(Self.calculator)
+        let pane = makePane()
+        _ = makeWindow(for: pane)
+        pane.openApplication(withID: Self.calculator, part: .ring)
+        let page = try XCTUnwrap(pane.detailController)
+        let font = PreferencesGroupedForm.explanationFont
+        let oneLine = ceil(font.ascender - font.descender + font.leading) + 1
+        func height() -> CGFloat {
+            page.view.layoutSubtreeIfNeeded()
+            return page.generalRingRow.explanationLabel.frame.height
+        }
+        XCTAssertEqual(page.generalRingRow.explanation, "While Calculator is in front, the general ring opens.")
+        XCTAssertLessThanOrEqual(height(), oneLine, "no empty line kept")
+
+        Options.shared.buttons.binding = []
+        page.syncViewWithOptions()
+        XCTAssertEqual(page.generalRingRow.explanation, "Nothing opens the ring yet: set up a button or key for it in the Shortcut Ring pane.")
+        XCTAssertGreaterThan(height(), oneLine, "the longer line takes its room")
+    }
+
     /// The switch's lines fit two lines, also for an app with a long name: the box keeps
-    /// room for the longest, so switching never moves what is below.
+    /// room for the longer of the two the switch alternates, so switching never moves what
+    /// is below.
     func testTheRingSwitchsLinesFitTwoLines() throws {
         let long = addApp(Self.calculator)
         long.displayName = "An Application With A Remarkably Long Name For Its Kind"
@@ -1212,7 +1238,7 @@ final class ApplicationPageTests: XCTestCase {
                 ApplicationDetailViewController.generalRingExplanation(on: true, name: name, opens: $0)
             }
         XCTAssertEqual(Set(texts).count, 4)
-        XCTAssertEqual(Set(page.generalRingRow.reservedExplanations), Set(texts))
+        XCTAssertEqual(page.generalRingRow.reservedExplanations, Array(texts.prefix(2)), "only the two the switch alternates")
         for text in texts {
             XCTAssertTrue(text.hasSuffix("."))
             let height = (text as NSString).boundingRect(

@@ -268,10 +268,10 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             action: #selector(generalRingClick(_:))
         )
         generalRing.toggle.identifier = Identifier.generalRing
+        // Room for the longer of the two lines the switch alternates, so switching never
+        // moves what is below; a line on what opens the ring (the same in both states)
+        // takes the room it needs, and the page measures again.
         generalRing.reservedExplanations = [true, false].map { ApplicationDetailViewController.generalRingExplanation(on: $0, name: name) }
-            + [ApplicationDetailViewController.RingTrigger.noTrigger, .replacedHere].map {
-                ApplicationDetailViewController.generalRingExplanation(on: true, name: name, opens: $0)
-            }
         generalRingRow = generalRing
         // (No title: the part's segment names it.)
         let section = PreferencesGroupSection(
@@ -299,12 +299,19 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         // (What opens the ring is a binding of Buttons or of the app's Buttons part, and
         // this part has no row for it: while nothing opens it with the app in front, the
         // line says so instead of promising a ring.)
-        generalRingRow.explanation = ApplicationDetailViewController.generalRingExplanation(
+        let line = ApplicationDetailViewController.generalRingExplanation(
             on: usesGeneralRing, name: application.getName(),
             opens: .of(application, general: Options.shared.buttons.binding)
         )
+        // A line that changes while the part is on screen (an Undo in the app's Buttons)
+        // may take more or less room: the page measures again.
+        let remeasures = generalRingRow.explanation != line && view.superview != nil
+        generalRingRow.explanation = line
         showOwnRing(!usesGeneralRing)
         ringController?.reload()
+        if remeasures {
+            onHeightChange?()
+        }
     }
 
     func partWillHide() {
