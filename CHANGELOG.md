@@ -19,6 +19,9 @@ it for the people who use the app, and give the version its part before you tag 
   each gesture direction and the click: they run while the app is in front.
 - **A Shortcut Ring for each app.** On an app's page in Apps, give the app eight shortcuts
   of its own: that ring opens while the app is in front.
+- **Suggested shortcuts for 50 apps.** Turn off "Use the general ring" for Figma,
+  Photoshop, Safari, Word and many more, and the app's ring starts with its most used
+  shortcuts, on your keyboard layout.
 - **Name your shortcuts.** A key combination you record can have a name and an icon: the
   ring and Settings show them, with the keys smaller beside them.
 - **Key combinations for gestures.** A gesture direction or its click can send a key
