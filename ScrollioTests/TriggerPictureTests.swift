@@ -275,6 +275,44 @@ final class TriggerPictureTests: XCTestCase {
         XCTAssertEqual(TriggerBadge.font(height: 20).pointSize, 12, "20 pt: the Buttons card's 12 pt")
     }
 
+    /// What stands on the accent colour, the glyph of a pressed key and a badge's number or
+    /// symbol, is near black on a light accent such as Yellow (white cannot be read there),
+    /// as on the ring's lit places, and white on a dark one (F39).
+    func testWhatStandsOnTheAccentCanBeReadOnAYellowAccent() throws {
+        /// How many opaque pixels are near black, and how many near white.
+        func inks(_ picture: Picture) -> (dark: Int, white: Int) {
+            var dark = 0, white = 0
+            for x in 0..<picture.rep.pixelsWide {
+                for y in 0..<picture.rep.pixelsHigh {
+                    guard let colour = picture.rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
+                          colour.alphaComponent > 0.9 else { continue }
+                    if colour.brightnessComponent < 0.35 { dark += 1 }
+                    if colour.brightnessComponent > 0.95, colour.saturationComponent < 0.15 { white += 1 }
+                }
+            }
+            return (dark, white)
+        }
+        func key(_ accent: NSColor) throws -> Picture {
+            return try render(size: NSSize(width: 40, height: 44)) { _ in
+                ScrollPreviewKeyCap.draw(
+                    glyph: "W", depth: 1, face: NSRect(x: 3, y: 3, width: 34, height: 34), travel: 4, cornerRadius: 6,
+                    font: NSFont.systemFont(ofSize: 17, weight: .medium), accent: accent
+                )
+            }
+        }
+        func badge(_ hold: TriggerPicture.Hold, _ accent: NSColor) throws -> Picture {
+            return try render(size: NSSize(width: 20, height: 20)) { TriggerBadge.draw(hold, in: $0, accent: accent) }
+        }
+        for picture in [try key(.systemYellow), try badge(.number(6), .systemYellow), try badge(.notDrawn(.thumbPanel), .systemYellow)] {
+            let (dark, white) = inks(picture)
+            XCTAssertGreaterThan(dark, 3, "near black on yellow")
+            XCTAssertEqual(white, 0, "no white on yellow")
+        }
+        for picture in [try key(.systemBlue), try badge(.number(6), .systemBlue), try badge(.notDrawn(.thumbPanel), .systemBlue)] {
+            XCTAssertGreaterThan(inks(picture).white, 3, "white on blue")
+        }
+    }
+
     /// The keys: the Scrolling pane's at 34 pt, as wide as the label needs, never narrower
     /// than tall; a placeholder is dashed and empty.
     func testTheKeyCapsSizes() throws {

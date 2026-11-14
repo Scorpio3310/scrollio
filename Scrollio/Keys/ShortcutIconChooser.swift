@@ -138,7 +138,7 @@ final class ShortcutIconChooserHeader: NSView, NSCollectionViewElement {
 
 /// One entry: a symbol in a square cell, or the typed character as a wide row
 /// ("🔄  Use “🔄”"). The chosen (selected) one is a solid accent rounded square with the
-/// symbol in white.
+/// symbol in white (near black on a light accent such as Yellow, as the ring's lit places).
 final class ShortcutIconChooserCell: NSView {
 
     private let imageView = NSImageView()
@@ -212,10 +212,27 @@ final class ShortcutIconChooserCell: NSView {
         colour()
     }
 
+    /// What stands on the cell: the label colour, or while it is the chosen one what can be
+    /// read on the accent colour of this appearance.
+    var ink: NSColor {
+        guard isSelected else { return .labelColor }
+        var ink = NSColor.white
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            ink = ShortcutRingArtwork.litInk(on: .controlAccentColor)
+        }
+        return ink
+    }
+
     private func colour() {
-        let ink: NSColor = isSelected ? .white : .labelColor
+        let ink = self.ink
         imageView.contentTintColor = ink
         title.textColor = ink
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        // (The accent colour, and the ink on it, follow the appearance.)
+        colour()
     }
 
     override func draw(_ dirtyRect: NSRect) {
