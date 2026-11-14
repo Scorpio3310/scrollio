@@ -52,9 +52,13 @@ final class ApplicationDetailViewController: NSViewController {
     var buttonsPartShowing: ((Application) -> ApplicationButtonsViewController?)? {
         didSet { buttonsPart?.partShowing = buttonsPartShowing }
     }
-    /// The same for the Shortcut Ring part ("Use Suggested Shortcuts" has an Undo).
+    /// The same for the Shortcut Ring part and the Gestures part ("Reset to Defaults" has
+    /// an Undo; so has the Buttons part's).
     var ringPartShowing: ((Application) -> ApplicationRingPartViewController?)? {
         didSet { ringPart?.partShowing = ringPartShowing }
+    }
+    var gesturesPartShowing: ((Application) -> ApplicationGesturesPartViewController?)? {
+        didSet { gesturesPart?.partShowing = gesturesPartShowing }
     }
     /// The page's height changed: another part, the settings loaded, "Advanced" opened or
     /// closed, a row came or went.
@@ -205,6 +209,7 @@ final class ApplicationDetailViewController: NSViewController {
                 buttons.onGestureSettingsRequested = { [weak self] in self?.show(.gestures) }
             }
             (controller as? ApplicationRingPartViewController)?.partShowing = ringPartShowing
+            (controller as? ApplicationGesturesPartViewController)?.partShowing = gesturesPartShowing
             addChild(controller)
             controller.view.translatesAutoresizingMaskIntoConstraints = false
             partControllers[part.id] = controller

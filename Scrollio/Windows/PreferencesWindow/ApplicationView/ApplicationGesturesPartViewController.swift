@@ -13,6 +13,10 @@
 //  instead (in both states); while it is another one than Buttons', a line under the
 //  switch's box names it.
 //
+//  "Reset to Defaults" ends the own set, there with it: the five actions (with their
+//  names and icons) and the invert switch go back to a copy of the general ones as they
+//  are now, the switch stays; the window's Undo takes it back, also after the page closed.
+//
 
 import Cocoa
 
@@ -21,12 +25,20 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     enum Identifier {
         static let generalGestures = NSUserInterfaceItemIdentifier("apps-detail-general-gestures")
         static let buttonNote = NSUserInterfaceItemIdentifier("apps-detail-gestures-button-note")
+        static let reset = NSUserInterfaceItemIdentifier("apps-detail-gestures-reset")
     }
 
     typealias Slot = MouseGestureSettingsControls.Slot
 
     let application: Application
     var onHeightChange: (() -> Void)?
+    /// Takes Undo and Redo of "Reset to Defaults"; the window's when nil.
+    var paneUndoManager: UndoManager?
+    /// The Gestures part that shows an app's entry now, if any (the pane's answer). An Undo
+    /// or Redo of "Reset to Defaults" asks it when it runs, maybe after this page closed
+    /// and the app's page opened again: it must not hold the page. nil: this part, while
+    /// it is there.
+    var partShowing: ((Application) -> ApplicationGesturesPartViewController?)?
     /// Whether the menus offer Logitech actions: a Logitech button runs Gesture Navigation
     /// while the app is in front (`ApplicationTriggerRule`), as the Gestures pane asks of
     /// its buttons. Tests replace it.
@@ -48,6 +60,12 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     private(set) var directionsSection: PreferencesGroupSection?
     private(set) var invertRow: PreferencesGroupRow?
     private(set) var invertSection: PreferencesGroupSection?
+    /// "Reset to Defaults" under the own set, there with it.
+    private(set) var resetToDefaults: PreferencesPaneReset!
+    var resetToDefaultsButton: NSButton {
+        return resetToDefaults.button
+    }
+    private(set) var resetFooter: PreferencesGroupFooter!
     private var content: NSStackView!
 
     var generalGesturesSwitch: NSSwitch { return generalGesturesRow.toggle }
@@ -104,6 +122,17 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
             note.trailingAnchor.constraint(equalTo: holder.trailingAnchor, constant: -inset),
         ])
         PreferencesGroupedForm.add([section, holder], to: content)
+        let reset = PreferencesPaneReset(
+            undoActionNameKey: Self.resetActionNameKey,
+            hasSettingsToReset: { [weak self] in self?.hasSettingsToReset ?? false },
+            undoManager: { [weak self] in self?.undoTarget },
+            reset: { [weak self] undo in self?.resetGestures(undoManager: undo) }
+        )
+        // What is being edited (a name typed in a row's popover) goes first.
+        reset.willReset = { [weak self] in self?.controls?.endEditing() }
+        reset.button.identifier = Identifier.reset
+        resetToDefaults = reset
+        resetFooter = PreferencesGroupFooter(trailing: [reset.button])
         view = root
         syncViewWithOptions()
     }
@@ -174,6 +203,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         generalGesturesRow.explanation = line
         remeasures = syncButtonNote() || remeasures
         showOwnSet(!usesGeneral)
+        resetToDefaults.settingsDidChange()
         guard let controls else { return remeasures }
         controls.showLogiActions = showsLogiActions()
         controls.sync()
@@ -183,6 +213,65 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
 
     func partWillHide() {
         controls?.endEditing()
+        resetToDefaults.endUndoOffer()
+    }
+
+    // MARK: - Reset to Defaults
+
+    /// The undo action's name: the Gestures pane's ("Reset Gestures").
+    static let resetActionNameKey = "gestures-undo-reset"
+
+    /// Where "Reset to Defaults" registers its Undo: the window's while the page is in it.
+    var undoTarget: UndoManager? {
+        return paneUndoManager ?? view.window?.undoManager
+    }
+
+    /// The own set is in use and differs from a copy of the general one as it is now (the
+    /// five actions with their names and icons, and the invert switch).
+    var hasSettingsToReset: Bool {
+        guard let own = application.ownGestures else { return false }
+        let general = Options.shared.gesture
+        return own.actions != general.actions || own.invertHorizontal != general.invertHorizontal
+    }
+
+    /// "Reset to Defaults": the own set as the switch starts it, a copy of the general one
+    /// as it is now; the switch stays off. Edit › Undo brings back the set that was there.
+    private func resetGestures(undoManager undo: UndoManager?) {
+        guard hasSettingsToReset else { return }
+        let showing = partShowing ?? { [weak self] entry in
+            self?.application === entry ? self : nil
+        }
+        let general = Options.shared.gesture
+        Self.putGestures(
+            of: application, actions: general.actions, invertHorizontal: general.invertHorizontal,
+            undoManager: undo, showing: showing
+        )
+    }
+
+    /// As the ring's reset (`ApplicationRingPartViewController`): the undo target is the
+    /// settings, not the page; Undo and Redo find the app's entry by its path when they
+    /// run, and show the change on the part `showing` gives for it. (A set kept for later
+    /// takes them too: the switch is never touched.)
+    private static func putGestures(
+        of application: Application, actions: GestureActions, invertHorizontal: Bool, undoManager undo: UndoManager?,
+        showing: @escaping (Application) -> ApplicationGesturesPartViewController?
+    ) {
+        guard let before = application.gestures,
+              before.actions != actions || before.invertHorizontal != invertHorizontal else { return }
+        application.replaceOwnGestureSet(actions: actions, invertHorizontal: invertHorizontal)
+        showing(application)?.syncViewWithOptions()
+        guard let undo else { return }
+        let path = application.path
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            guard let entry = PreferencesApplicationViewController.existingApplication(
+                forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: path)
+            ) else { return }
+            putGestures(
+                of: entry, actions: before.actions, invertHorizontal: before.invertHorizontal,
+                undoManager: undo, showing: showing
+            )
+        }
+        undo.setActionName(NSLocalizedString(resetActionNameKey, comment: ""))
     }
 
     // MARK: - The app's own set
@@ -197,14 +286,15 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         }
     }
 
-    /// Puts the app's own set (the five rows and the invert switch) under the switch's
-    /// box, or takes it away again: it is there exactly while "Use the general gestures"
-    /// is off.
+    /// Puts the app's own set (the five rows and the invert switch) and "Reset to
+    /// Defaults" under the switch's box, or takes them away again: they are there exactly
+    /// while "Use the general gestures" is off.
     private func showOwnSet(_ shows: Bool) {
         guard shows != (controls != nil) else { return }
         if let controls {
             controls.endEditing()
-            for section in [directionsSection, invertSection].compactMap({ $0 }) {
+            resetToDefaults.endUndoOffer()
+            for section in ([directionsSection, invertSection, resetFooter] as [NSView?]).compactMap({ $0 }) {
                 content.removeArrangedSubview(section)
                 section.removeFromSuperview()
             }
@@ -220,7 +310,11 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
             edits: .application(application),
             isInteractiveAvailable: { [weak self] in self?.isInteractiveAvailable() ?? false }
         )
-        controls.onChange = { [weak self] in self?.applyModeRules() }
+        controls.onChange = { [weak self] in
+            self?.applyModeRules()
+            // (A row moved the set off the general one, or back: "Reset to Defaults" follows.)
+            self?.resetToDefaults.settingsDidChange()
+        }
         self.controls = controls
         // The rows of the Gestures pane, each with its pull-down (`popUpWidth` wide by itself).
         directionRows = Slot.allCases.map { slot in
@@ -236,7 +330,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         invertRow = invert
         let invertBox = PreferencesGroupSection(width: Self.boxWidth, rows: [invert])
         invertSection = invertBox
-        PreferencesGroupedForm.add([directions, invertBox], to: content)
+        PreferencesGroupedForm.add([directions, invertBox, resetFooter], to: content)
     }
 
     // MARK: - Actions

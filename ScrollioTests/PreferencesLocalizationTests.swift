@@ -155,10 +155,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-ring-replaced", "apps-detail-gestures-no-button", "apps-detail-gestures-button",
         "apps-buttons-undo-remove-thumb-wheel",
         "apps-trigger-only-in", "apps-buttons-note-thumb-wheel",
-        "apps-detail-ring-suggested", "apps-detail-ring-use-suggested",
-        "apps-detail-ring-suggested-in-use", "apps-detail-ring-suggested-offer",
+        "apps-detail-ring-suggested", "apps-detail-ring-suggested-in-use",
         "apps-detail-ring-suggested-in-use-empty-one", "apps-detail-ring-suggested-in-use-empty-other",
-        "apps-detail-ring-suggested-offer-empty-one", "apps-detail-ring-suggested-offer-empty-other",
+        "apps-buttons-undo-reset",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -335,9 +334,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-gestures-button": "@@",
         "apps-trigger-only-in": "@@",
         "apps-detail-ring-suggested-in-use": "@",
-        "apps-detail-ring-suggested-offer": "@",
         "apps-detail-ring-suggested-in-use-empty-other": "d",
-        "apps-detail-ring-suggested-offer-empty-other": "d",
         "apps-buttons-note-thumb-wheel": "@",
         // General pane
         "about-version": "@@",

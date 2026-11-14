@@ -531,10 +531,11 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
     }
 
     /// The page: turning the switch off fills the ring from the suggestion, and the row
-    /// says the ring started from it (its button off, nothing to do); after a change the
-    /// row offers it again, the button fills all eight places, Undo takes it back and
-    /// Redo puts it back. The general ring is never touched.
-    func testThePageFillsFromTheSuggestionAndUseSuggestedShortcutsHasUndo() throws {
+    /// says the ring started from it, with no button of its own (one button per action:
+    /// "Reset to Defaults" goes back to it); after a change the row says the same,
+    /// "Reset to Defaults" fills all eight places again, Undo takes it back and Redo puts
+    /// it back. The general ring is never touched.
+    func testThePageFillsFromTheSuggestionAndResetToDefaultsGoesBackToIt() throws {
         let figma = add(SuggestionFixtures.figmaPath, name: "Figma")
         let undo = UndoManager()
         undo.groupsByEvent = false
@@ -547,28 +548,32 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
         XCTAssertFalse(part.suggestionRow.isHidden)
         XCTAssertEqual(part.suggestionRow.explanation, "The ring started from the shortcuts suggested for Figma.")
-        XCTAssertFalse(part.useSuggestedButton.isEnabled)
+        XCTAssertNil(part.suggestionRow.accessory, "the row has no button")
+        XCTAssertFalse(part.resetToDefaultsButton.isEnabled, "the ring is where it started")
         XCTAssertNotNil(part.ringController)
 
         figma.ring?[0] = ShortcutRingPlace(SystemShortcut.find)
         figma.ring?[3] = .empty
         part.syncViewWithOptions()
-        XCTAssertEqual(part.suggestionRow.explanation, "Fills all eight places with the shortcuts suggested for Figma.")
-        XCTAssertTrue(part.useSuggestedButton.isEnabled)
+        XCTAssertEqual(part.suggestionRow.explanation, "The ring started from the shortcuts suggested for Figma.")
+        XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
         let edited = try XCTUnwrap(figma.ownRingPlaces)
 
         undo.beginUndoGrouping()
-        XCTAssertTrue(part.useSuggestedButton.sendAction(part.useSuggestedButton.action, to: part.useSuggestedButton.target))
+        XCTAssertTrue(part.resetToDefaultsButton.sendAction(part.resetToDefaultsButton.action, to: part.resetToDefaultsButton.target))
         undo.endUndoGrouping()
         XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
-        XCTAssertFalse(part.useSuggestedButton.isEnabled)
-        XCTAssertEqual(undo.undoActionName, "Use Suggested Shortcuts")
+        XCTAssertFalse(figma.usesGeneralRing, "the switch stays")
+        XCTAssertEqual(part.resetToDefaultsButton.title, "Undo Reset")
+        XCTAssertEqual(undo.undoActionName, "Reset Shortcut Ring")
 
         undo.undo()
         XCTAssertEqual(figma.ownRingPlaces, edited)
-        XCTAssertTrue(part.useSuggestedButton.isEnabled)
+        XCTAssertEqual(part.resetToDefaultsButton.title, "Reset to Defaults")
+        XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
         undo.redo()
         XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
+        XCTAssertFalse(part.resetToDefaultsButton.isEnabled)
         XCTAssertEqual(Options.shared.ring, .default)
 
         // Back to the general ring: the row goes, the own ring is kept for later.
@@ -596,11 +601,11 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         return pane
     }
 
-    /// "Use Suggested Shortcuts", then the app's page is closed and opened again (new
-    /// parts), then Edit › Undo and Redo: the page open now shows each change, in its
-    /// rows, its line and its button. (The part that registered the Undo is gone; the
-    /// pane says which part shows the app now, as for the Buttons part.)
-    func testUndoOfUseSuggestedShortcutsShowsOnThePageOpenedAgain() throws {
+    /// "Reset to Defaults", then the app's page is closed and opened again (new parts),
+    /// then Edit › Undo and Redo: the page open now shows each change, in its rows and its
+    /// button. (The part that registered the Undo is gone; the pane says which part shows
+    /// the app now, as for the Buttons part.)
+    func testUndoOfTheRingsResetShowsOnThePageOpenedAgain() throws {
         let figma = add(SuggestionFixtures.figmaPath, name: "Figma")
         figma.setUsesGeneralRing(false, general: .default, suggested: nil)
         let general = try XCTUnwrap(figma.ownRingPlaces)
@@ -611,7 +616,7 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         let first = try XCTUnwrap(pane.detailController?.ringPart)
         first.paneUndoManager = undo
         undo.beginUndoGrouping()
-        XCTAssertTrue(first.useSuggestedButton.sendAction(first.useSuggestedButton.action, to: first.useSuggestedButton.target))
+        XCTAssertTrue(first.resetToDefaultsButton.sendAction(first.resetToDefaultsButton.action, to: first.resetToDefaultsButton.target))
         undo.endUndoGrouping()
         XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
 
@@ -624,25 +629,23 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         }
         let suggestedRows = try rows()
         XCTAssertEqual(suggestedRows[0]?.hasPrefix("Zoom In"), true)
-        XCTAssertFalse(part.useSuggestedButton.isEnabled)
+        XCTAssertFalse(part.resetToDefaultsButton.isEnabled)
 
         undo.undo()
         XCTAssertEqual(figma.ownRingPlaces, general)
         XCTAssertNotEqual(try rows(), suggestedRows, "the open page shows the ring that came back")
-        XCTAssertEqual(part.suggestionRow.explanation, "Fills all eight places with the shortcuts suggested for Figma.")
-        XCTAssertTrue(part.useSuggestedButton.isEnabled)
+        XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
 
         undo.redo()
         XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
         XCTAssertEqual(try rows(), suggestedRows)
-        XCTAssertEqual(part.suggestionRow.explanation, "The ring started from the shortcuts suggested for Figma.")
-        XCTAssertFalse(part.useSuggestedButton.isEnabled)
+        XCTAssertFalse(part.resetToDefaultsButton.isEnabled)
     }
 
     /// Where the layout cannot type some suggested keys (German: "[" "]" "\" need Option)
     /// and those places stay empty, the row's line says how many, while the ring holds the
-    /// suggestion and while it offers it; on a layout that types them all it says nothing
-    /// of it.
+    /// suggestion and after a change; on a layout that types them all it says nothing of
+    /// it.
     func testTheRowSaysHowManyPlacesTheLayoutLeavesEmpty() throws {
         let german = try SuggestionFixtures.layout("com.apple.keylayout.German")
         ShortcutRingSuggestions.layout = { german }
@@ -658,7 +661,7 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         part.syncViewWithOptions()
         XCTAssertEqual(
             part.suggestionRow.explanation,
-            "Fills the ring with them. 2 places stay empty: their keys can't be typed on this keyboard layout."
+            "The ring started from them. 2 places stay empty: their keys can't be typed on this keyboard layout."
         )
 
         let lightroom = add(SuggestionFixtures.lightroomPath, name: "Adobe Lightroom Classic")
@@ -671,7 +674,7 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
 
         ShortcutRingSuggestions.layout = { .us }
         part.syncViewWithOptions()
-        XCTAssertEqual(part.suggestionRow.explanation, "Fills all eight places with the shortcuts suggested for Finder.")
+        XCTAssertEqual(part.suggestionRow.explanation, "The ring started from the shortcuts suggested for Finder.")
     }
 
     /// Without a suggestion the part is as before: no row, and the switch copies the
@@ -709,8 +712,9 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertEqual(choice, .general(Options.shared.ring))
         XCTAssertEqual(Options.shared.application.applications.count, 1)
         XCTAssertNil(Options.shared.application.applications.get(by: SuggestionFixtures.safariPath))
-        // The button does nothing while the general ring is in use.
-        part.useSuggestedClick(nil)
+        // "Reset to Defaults" does nothing while the general ring is in use.
+        XCTAssertFalse(part.resetToDefaultsButton.isEnabled)
+        part.resetToDefaults.click(nil)
         XCTAssertNil(figma.ring)
     }
 
@@ -729,16 +733,12 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertGreaterThan(width, 200)
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
-        for holdsIt in [true, false] {
-            for empty in [0, 1, 3] {
-                let text = ApplicationRingPartViewController.suggestionExplanation(
-                    holdsIt: holdsIt, name: long.displayName!, emptyPlaces: empty
-                )
-                let height = (text as NSString).boundingRect(
-                    with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
-                ).height
-                XCTAssertLessThanOrEqual(height, twoLines, text)
-            }
+        for empty in [0, 1, 3] {
+            let text = ApplicationRingPartViewController.suggestionExplanation(name: long.displayName!, emptyPlaces: empty)
+            let height = (text as NSString).boundingRect(
+                with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
+            ).height
+            XCTAssertLessThanOrEqual(height, twoLines, text)
         }
     }
 

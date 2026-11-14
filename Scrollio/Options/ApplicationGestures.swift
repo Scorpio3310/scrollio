@@ -122,6 +122,18 @@ extension Application {
         own.invertHorizontal = invertHorizontal
         gestures = own
     }
+
+    /// Puts `actions` and `invertHorizontal` into the app's own set, in use or kept for
+    /// later; "Use the general gestures" stays as it is (as `setOwnRingPlaces` for the
+    /// ring: "Reset to Defaults" of the app's page and its Undo). Nothing happens for an app
+    /// without a set of its own, or when nothing changes.
+    func replaceOwnGestureSet(actions: GestureActions, invertHorizontal: Bool) {
+        guard var own = gestures,
+              own.actions != actions || own.invertHorizontal != invertHorizontal else { return }
+        own.actions = actions
+        own.invertHorizontal = invertHorizontal
+        gestures = own
+    }
 }
 
 // MARK: - Which gestures a hold runs

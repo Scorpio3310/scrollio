@@ -4,6 +4,9 @@
 //  "Reset to Defaults" for a pane whose settings are one stored value (the Shortcut Ring's
 //  ring, the gesture settings): the button for the pane's footer, the reset with its Undo,
 //  the few seconds in which the button reads "Undo Reset", and when it can be clicked.
+//  The Buttons, Gestures and Shortcut Ring parts of an app's page use the same button
+//  with a reset of their own (`init(undoActionNameKey:…)`): theirs finds the app's entry
+//  again when its Undo runs.
 //
 //  The rules are the Scrolling pane's, which keeps its own code: its reset spans two
 //  stores and an app's page. Change a rule in both places.
@@ -57,15 +60,36 @@ final class PreferencesPaneReset: NSObject {
     ///     offers none).
     ///   - didChange: the settings were replaced (by the reset, its Undo or its Redo): the
     ///     pane shows them, and tells this object with `settingsDidChange()`.
-    init<Settings: Equatable>(
+    convenience init<Settings: Equatable>(
         store: Store<Settings>,
         undoManager: @escaping () -> UndoManager?,
         didChange: @escaping () -> Void
     ) {
+        self.init(
+            undoActionNameKey: store.undoActionNameKey,
+            hasSettingsToReset: { store.read() != store.defaults },
+            undoManager: undoManager,
+            reset: { Self.reset(store, undoManager: $0, didChange: didChange) }
+        )
+    }
+
+    /// For settings that are not one stored value (the parts of an app's page): the same
+    /// button and offer, with the reset and its Undo made by the caller.
+    /// - Parameters:
+    ///   - undoActionNameKey: the catalog key of the name `reset` gives its Undo.
+    ///   - hasSettingsToReset: something differs from where a reset leads.
+    ///   - reset: puts the defaults in place and registers its Undo, under that name, in
+    ///     the manager it is given (nil: none).
+    init(
+        undoActionNameKey: String,
+        hasSettingsToReset: @escaping () -> Bool,
+        undoManager: @escaping () -> UndoManager?,
+        reset: @escaping (UndoManager?) -> Void
+    ) {
         button = PreferencesGroupedForm.makePushButton(title: Self.resetTitle, target: nil, action: nil)
-        differsFromDefaults = { store.read() != store.defaults }
-        resetSettings = { Self.reset(store, undoManager: $0, didChange: didChange) }
-        undoActionName = store.undoActionName
+        differsFromDefaults = hasSettingsToReset
+        resetSettings = reset
+        undoActionName = NSLocalizedString(undoActionNameKey, comment: "")
         self.undoManager = undoManager
         super.init()
         button.target = self

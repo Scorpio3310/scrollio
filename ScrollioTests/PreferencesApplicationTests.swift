@@ -1143,8 +1143,13 @@ final class PreferencesApplicationTests: XCTestCase {
         page.view.layoutSubtreeIfNeeded()
         XCTAssertFalse(page.view.hasAmbiguousLayout)
         XCTAssertEqual(ring.view.frame.maxY, page.ringSection.frame.minY, accuracy: 0.5, "under the switch's box")
-        XCTAssertEqual(ring.view.frame.minY, 0, accuracy: 0.5, "the page ends with it")
-        XCTAssertEqual(page.view.fittingSize.height, shortHeight + ring.view.fittingSize.height - PreferencesGroupedForm.margin, accuracy: 0.5)
+        // Then "Reset to Defaults", and the page ends with it.
+        let footer = try XCTUnwrap(page.ringPart.resetFooter)
+        XCTAssertEqual(footer.frame.maxY, ring.view.frame.minY, accuracy: 0.5, "the ring's margin over the footer")
+        XCTAssertEqual(footer.frame.minY, PreferencesGroupedForm.margin, accuracy: 0.5, "the page ends with it")
+        XCTAssertEqual(
+            page.view.fittingSize.height, shortHeight + ring.view.fittingSize.height + footer.fittingSize.height, accuracy: 0.5
+        )
 
         // A row's pull-down: the app's ring changes, the general ring does not.
         ring.placePopUps[0].onShortcutSelected?(SystemShortcut.paste)
