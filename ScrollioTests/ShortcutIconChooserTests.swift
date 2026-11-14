@@ -236,6 +236,49 @@ final class ShortcutIconChooserTests: XCTestCase {
 
     /// Return in the search field, Return in the grid or a click (the grid's choice of a
     /// place) choose: the editor has the icon, the well shows it, the chooser is closed.
+    /// The chosen "Use “R”" row is the accent colour with its character and its title in
+    /// the ink that can be read there: the character too, which is drawn, not tinted (F26).
+    func testTheChosenTypedCharacterStandsInTheInkOfTheAccent() throws {
+        let cell = ShortcutIconChooserCell(frame: NSRect(x: 0, y: 0, width: 200, height: 30))
+        cell.appearance = NSAppearance(named: .aqua)
+        cell.entry = .character("R")
+        cell.isSelected = true
+        var expected = NSColor.white
+        cell.effectiveAppearance.performAsCurrentDrawingAppearance {
+            expected = ShortcutRingArtwork.litInk(on: .controlAccentColor)
+        }
+        XCTAssertEqual(cell.ink, expected)
+        let imageView = try XCTUnwrap(cell.subviews.compactMap { $0 as? NSImageView }.first)
+        let image = try XCTUnwrap(imageView.image)
+        let rep = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 44, pixelsHigh: 44, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
+            image.draw(in: NSRect(x: 0, y: 0, width: 44, height: 44))
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        var brightness: [CGFloat] = []
+        for x in 0..<44 {
+            for y in 0..<44 {
+                guard let colour = rep.colorAt(x: x, y: y), colour.alphaComponent > 0.8 else { continue }
+                brightness.append(colour.brightnessComponent)
+            }
+        }
+        XCTAssertFalse(brightness.isEmpty)
+        let mean = brightness.reduce(0, +) / CGFloat(brightness.count)
+        let inkIsLight = (expected.usingColorSpace(.deviceRGB)?.brightnessComponent ?? 1) > 0.5
+        if inkIsLight {
+            XCTAssertGreaterThan(mean, 0.8, "a light character on the accent, not the near-black label colour")
+        } else {
+            XCTAssertLessThan(mean, 0.3)
+        }
+        cell.isSelected = false
+        XCTAssertEqual(cell.ink, .labelColor)
+    }
+
     func testChoosingUpdatesTheLabelAndClosesTheChooser() throws {
         let (popover, editor) = try details(ShortcutLabel(name: "Reload", icon: nil))
         editor.iconWell.performClick(nil)

@@ -127,9 +127,9 @@ enum ShortcutIconSet {
     // MARK: Drawing an icon small
 
     /// `icon` as a picture `side` points high, for a row's pull-down or a button: the
-    /// symbol, or the typed character in the label colour (an emoji in its own colours).
-    /// Nil for a symbol this Mac does not have.
-    static func image(of icon: ShortcutLabel.Icon, side: CGFloat = 16) -> NSImage? {
+    /// symbol, or the typed character in `ink` (the label colour; an emoji in its own
+    /// colours). Nil for a symbol this Mac does not have.
+    static func image(of icon: ShortcutLabel.Icon, side: CGFloat = 16, ink: NSColor = .labelColor) -> NSImage? {
         switch icon {
         case .symbol(let name):
             guard ShortcutRingFace.hasSymbol(named: name) else { return nil }
@@ -141,7 +141,7 @@ enum ShortcutIconSet {
                 // (A wide character, an emoji with a long sequence, is made to fit.)
                 for _ in 0..<2 {
                     string = NSAttributedString(string: text, attributes: [
-                        .font: NSFont.systemFont(ofSize: size, weight: .medium), .foregroundColor: NSColor.labelColor,
+                        .font: NSFont.systemFont(ofSize: size, weight: .medium), .foregroundColor: ink,
                     ])
                     let width = string.size().width
                     guard width > rect.width, width > 0 else { break }

@@ -586,6 +586,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
             ("chooser", .symbol("hammer"), ""),
             ("chooser-search", nil, "arrow"),
             ("chooser-character", nil, "🔄"),
+            ("chooser-character-letter", nil, "R"),
             ("chooser-no-result", .symbol("star"), "zzz"),
         ]
         for item in choosers {

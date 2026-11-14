@@ -138,7 +138,8 @@ final class ShortcutIconChooserHeader: NSView, NSCollectionViewElement {
 
 /// One entry: a symbol in a square cell, or the typed character as a wide row
 /// ("🔄  Use “🔄”"). The chosen (selected) one is a solid accent rounded square with the
-/// symbol in white (near black on a light accent such as Yellow, as the ring's lit places).
+/// symbol, or the typed character, in white (near black on a light accent such as Yellow,
+/// as the ring's lit places).
 final class ShortcutIconChooserCell: NSView {
 
     private let imageView = NSImageView()
@@ -227,6 +228,10 @@ final class ShortcutIconChooserCell: NSView {
         let ink = self.ink
         imageView.contentTintColor = ink
         title.textColor = ink
+        // A typed character is drawn, not tinted: it is drawn again in the ink.
+        if case .character(let text)? = entry {
+            imageView.image = ShortcutIconSet.image(of: .character(text), side: 22, ink: ink)
+        }
     }
 
     override func viewDidChangeEffectiveAppearance() {
