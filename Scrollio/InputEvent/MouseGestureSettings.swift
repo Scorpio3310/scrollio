@@ -2,9 +2,13 @@
 //  MouseGestureSettings.swift
 //  Mos
 //
-//  User settings for the Gesture Navigation action: one action per direction plus click,
-//  horizontal inversion, pointer freeze, the gesture mode and what a Logitech mouse may do
-//  itself (track the movement, play haptic cues). Shared by every Gesture Navigation binding.
+//  User settings for the Gesture Navigation action: one action per direction plus click
+//  (`GestureActions`, with the name and icon of a recorded key combination), horizontal
+//  inversion, pointer freeze, the gesture mode and what a Logitech mouse may do itself
+//  (track the movement, play haptic cues). Shared by every Gesture Navigation binding.
+//
+//  Stored as one JSON entry (UserDefaults key "mouseGestureSettings"): the actions' keys
+//  ("upAction" … "clickAction", and "upLabel" … only where a label is) beside the others.
 //
 
 import Foundation
@@ -23,13 +27,33 @@ struct MouseGestureSettings: Codable, Equatable {
     static let trackingSpeedRange: ClosedRange<Double> = 0.5...3
     static let defaultTrackingSpeed: Double = 1
 
-    /// Action identifiers use the same names as button bindings (`SystemShortcut` identifiers,
-    /// Logi actions, mouse button actions). An empty string means "no action".
-    var upAction: String
-    var downAction: String
-    var leftAction: String
-    var rightAction: String
-    var clickAction: String
+    /// The action of every direction and of the click. Their names are those of button
+    /// bindings (`SystemShortcut` identifiers, Logi actions, mouse button actions, a
+    /// recorded key combination); an empty one means "no action".
+    var actions: GestureActions
+
+    /// The stored names alone. Setting another name drops the label of a recorded key
+    /// combination; the same name keeps it.
+    var upAction: String {
+        get { return actions.up.action }
+        set { actions.up = actions.up.replacingAction(with: newValue) }
+    }
+    var downAction: String {
+        get { return actions.down.action }
+        set { actions.down = actions.down.replacingAction(with: newValue) }
+    }
+    var leftAction: String {
+        get { return actions.left.action }
+        set { actions.left = actions.left.replacingAction(with: newValue) }
+    }
+    var rightAction: String {
+        get { return actions.right.action }
+        set { actions.right = actions.right.replacingAction(with: newValue) }
+    }
+    var clickAction: String {
+        get { return actions.click.action }
+        set { actions.click = actions.click.replacingAction(with: newValue) }
+    }
     /// Swaps the physical left/right movement, so moving left runs `rightAction`.
     var invertHorizontal: Bool
     /// Keeps the pointer in place while the gesture button is held.
@@ -50,11 +74,7 @@ struct MouseGestureSettings: Codable, Equatable {
     var hapticFeedback: Bool
 
     static let `default` = MouseGestureSettings(
-        upAction: SystemShortcut.missionControl.identifier,
-        downAction: SystemShortcut.appExpose.identifier,
-        leftAction: SystemShortcut.moveSpaceLeft.identifier,
-        rightAction: SystemShortcut.moveSpaceRight.identifier,
-        clickAction: SystemShortcut.missionControl.identifier,
+        actions: .default,
         invertHorizontal: false,
         freezePointer: true
     )
@@ -72,11 +92,33 @@ struct MouseGestureSettings: Codable, Equatable {
         deviceTracking: Bool = false,
         hapticFeedback: Bool = true
     ) {
-        self.upAction = upAction
-        self.downAction = downAction
-        self.leftAction = leftAction
-        self.rightAction = rightAction
-        self.clickAction = clickAction
+        self.init(
+            actions: GestureActions(
+                up: GestureAction(action: upAction),
+                down: GestureAction(action: downAction),
+                left: GestureAction(action: leftAction),
+                right: GestureAction(action: rightAction),
+                click: GestureAction(action: clickAction)
+            ),
+            invertHorizontal: invertHorizontal,
+            freezePointer: freezePointer,
+            mode: mode,
+            trackingSpeed: trackingSpeed,
+            deviceTracking: deviceTracking,
+            hapticFeedback: hapticFeedback
+        )
+    }
+
+    init(
+        actions: GestureActions,
+        invertHorizontal: Bool,
+        freezePointer: Bool,
+        mode: MouseGestureMode = .discrete,
+        trackingSpeed: Double = MouseGestureSettings.defaultTrackingSpeed,
+        deviceTracking: Bool = false,
+        hapticFeedback: Bool = true
+    ) {
+        self.actions = actions
         self.invertHorizontal = invertHorizontal
         self.freezePointer = freezePointer
         self.mode = mode
@@ -85,15 +127,16 @@ struct MouseGestureSettings: Codable, Equatable {
         self.hapticFeedback = hapticFeedback
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case invertHorizontal, freezePointer, mode, trackingSpeed, deviceTracking, hapticFeedback
+    }
+
     /// Missing keys fall back to the defaults, so older or partial data still loads.
     init(from decoder: Decoder) throws {
         let fallback = Self.default
+        // The actions are keys of this same entry (`GestureActions` reads its own).
+        actions = try GestureActions(from: decoder)
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        upAction = try c.decodeIfPresent(String.self, forKey: .upAction) ?? fallback.upAction
-        downAction = try c.decodeIfPresent(String.self, forKey: .downAction) ?? fallback.downAction
-        leftAction = try c.decodeIfPresent(String.self, forKey: .leftAction) ?? fallback.leftAction
-        rightAction = try c.decodeIfPresent(String.self, forKey: .rightAction) ?? fallback.rightAction
-        clickAction = try c.decodeIfPresent(String.self, forKey: .clickAction) ?? fallback.clickAction
         invertHorizontal = try c.decodeIfPresent(Bool.self, forKey: .invertHorizontal) ?? fallback.invertHorizontal
         freezePointer = try c.decodeIfPresent(Bool.self, forKey: .freezePointer) ?? fallback.freezePointer
         // A missing, unknown or malformed mode or speed must not throw: a failed decode would
@@ -109,23 +152,39 @@ struct MouseGestureSettings: Codable, Equatable {
         hapticFeedback = storedHaptics ?? fallback.hapticFeedback
     }
 
+    /// The actions first, in the order they were always written, then the rest: an entry
+    /// without a label is written as before.
+    func encode(to encoder: Encoder) throws {
+        try actions.encode(to: encoder)
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(invertHorizontal, forKey: .invertHorizontal)
+        try c.encode(freezePointer, forKey: .freezePointer)
+        try c.encode(mode, forKey: .mode)
+        try c.encode(trackingSpeed, forKey: .trackingSpeed)
+        try c.encode(deviceTracking, forKey: .deviceTracking)
+        try c.encode(hapticFeedback, forKey: .hapticFeedback)
+    }
+
     /// Keeps the speed inside `trackingSpeedRange`; a non-finite value becomes the default.
     static func clampedTrackingSpeed(_ value: Double) -> Double {
         guard value.isFinite else { return defaultTrackingSpeed }
         return min(max(value, trackingSpeedRange.lowerBound), trackingSpeedRange.upperBound)
     }
 
+    /// The action for a recognized physical direction, after inversion.
+    func action(for direction: MouseGestureDirection) -> GestureAction {
+        switch direction {
+        case .up, .down:
+            return actions[direction]
+        case .left:
+            return invertHorizontal ? actions.right : actions.left
+        case .right:
+            return invertHorizontal ? actions.left : actions.right
+        }
+    }
+
     /// The action identifier for a recognized physical direction, after inversion.
     func actionIdentifier(for direction: MouseGestureDirection) -> String {
-        switch direction {
-        case .up:
-            return upAction
-        case .down:
-            return downAction
-        case .left:
-            return invertHorizontal ? rightAction : leftAction
-        case .right:
-            return invertHorizontal ? leftAction : rightAction
-        }
+        return action(for: direction).action
     }
 }
