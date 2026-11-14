@@ -1065,8 +1065,11 @@ final class PreferencesApplicationTests: XCTestCase {
         page.view.layoutSubtreeIfNeeded()
         let note = try XCTUnwrap(page.allowlistNote)
         XCTAssertFalse(note.isHidden)
+        // A new app uses the Scrolling settings, its smoothing and reversing dimmed: the
+        // way to macOS starts with that switch, named as the page names it.
         XCTAssertEqual(note.stringValue, "“Change scrolling only in these apps” is on: this app scrolls as its Scrolling part says. "
-                       + "To leave its scrolling to macOS, turn off smoothing and reversing there.")
+                       + "To leave it to macOS, turn off “Use settings from Scrolling”, smoothing and reversing.")
+        XCTAssertTrue(note.stringValue.contains("“\(NSLocalizedString("apps-detail-inherit", comment: ""))”"))
         XCTAssertFalse(page.view.hasAmbiguousLayout)
         XCTAssertEqual(page.headerSection.frame.minY - note.frame.maxY, PreferencesGroupedForm.noteSpacing, accuracy: 1)
         XCTAssertEqual(note.frame.minY - page.partControl.frame.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 0.5)
