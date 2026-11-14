@@ -148,6 +148,14 @@ class OPTIONS_SCROLL_DEFAULT: Codable {
     var smoothHorizontal = true {
         didSet {Options.shared.markChanged(scrollContainer: self)}
     }
+    /// An app's own thumb wheel speed and "Swap direction" (`ApplicationThumbWheel.swift`),
+    /// stored inside the app's "scroll" as "thumbWheel" once it has them; nil: the general
+    /// ones. Always nil in the global container: the general values are
+    /// `Options.thumbWheel`, stored under a key of their own. Not part of `==`, which says
+    /// whether the scroll values were edited (`adoptScrollOptionsIfUnedited`).
+    var thumbWheel: ApplicationThumbWheelScrolling? = nil {
+        didSet {Options.shared.markChanged(scrollContainer: self)}
+    }
     // 工具
     static func generateDurationTransition(with duration: Double) -> Double {
         // 上界, 此处需要与界面的 Slider 上界保持同步, 并添加 0.2 的偏移令结果不为 0
