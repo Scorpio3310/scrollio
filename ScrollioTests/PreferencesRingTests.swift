@@ -61,7 +61,7 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(RingPreferencesViewController.tabIdentifier, "ring")
         XCTAssertEqual(controller.view.frame.width, 520)
         XCTAssertFalse(controller.view.hasAmbiguousLayout)
-        XCTAssertEqual(controller.sections.count, 4, "the drawing, what opens the ring, the places, the footer")
+        XCTAssertEqual(controller.sections.count, 4, "the two cards, what opens the ring, the places, the footer")
     }
 
     /// Eight rows, clockwise from the top, each showing what the stored ring holds there.
@@ -421,6 +421,7 @@ final class PreferencesRingTests: XCTestCase {
         addTeardownBlock { window.close() }
         controller.view.layoutSubtreeIfNeeded()
         let preview = try XCTUnwrap(controller.previewView)
+        XCTAssertEqual(preview.bounds.size, NSSize(width: 234, height: 206), "the right card of the two")
 
         // Where the drawing has its places: by the screen's geometry, drawn smaller.
         func point(ofPlace place: Int) -> NSPoint {
@@ -453,6 +454,294 @@ final class PreferencesRingTests: XCTestCase {
         other.shortcutSelected(try XCTUnwrap(item("undo", in: other)))
         XCTAssertEqual(controller.selectedPlace, 3)
         XCTAssertEqual(preview.lit, 3)
+    }
+
+    // MARK: The picture of what opens it
+
+    private static let notes = "/System/Applications/Notes.app"
+
+    private func logitech(_ role: LogiControlRole, modifiers: UInt = 0) -> RecordedEvent {
+        return RecordedEvent(type: .mouse, code: LogiCenter.shared.scrollioCode(for: role), modifiers: modifiers, deviceFilter: nil)
+    }
+
+    private func ringBinding(_ event: RecordedEvent, action: String = "shortcutRing") -> ButtonBinding {
+        return ButtonBinding(triggerEvent: event, systemShortcutName: action, isEnabled: true)
+    }
+
+    /// A pane whose picture shows `event` (nil: nothing opens the ring) on `mouse`.
+    private func makeController(
+        showing event: RecordedEvent?, on mouse: MouseArtworkModel, onlyIn app: String? = nil
+    ) throws -> (RingPreferencesViewController, ShortcutRingTriggerCard) {
+        summary = ShortcutRingBindingSummary(
+            triggerTitles: event == nil || app != nil ? [] : ["The trigger"],
+            onlyInApps: app.map { ApplicationTriggers(applicationNames: ["Notes"], triggerTitles: ["The trigger"], path: $0, trigger: event) },
+            picture: TriggerPictureSource(event: event, onlyInAppPath: app)
+        )
+        let controller = makeController()
+        let card = try XCTUnwrap(controller.triggerCard)
+        card.mouseSource = { mouse }
+        card.reloadMouse()
+        return (controller, card)
+    }
+
+    /// The faces of the card's keys, in the card.
+    private func faces(_ card: ShortcutRingTriggerCard) -> [NSRect] {
+        return card.caps.map { $0.faceRect.offsetBy(dx: $0.frame.minX, dy: $0.frame.minY) }
+    }
+
+    /// On top two cards as in Gestures: what opens the ring on the left, the ring on the
+    /// right (its own card, which keeps its identifier). The left one is a picture only.
+    /// An app's page keeps the ring across the width.
+    func testTheHeaderIsTwoCardsAsInGestures() throws {
+        let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
+        let header = try XCTUnwrap(controller.sections.first as? ShortcutRingHeaderView)
+        XCTAssertTrue(header === controller.headerView)
+        XCTAssertTrue(header.ringCard === controller.previewView)
+        XCTAssertEqual(controller.previewView.identifier, RingPreferencesViewController.Identifier.preview)
+        XCTAssertEqual(header.frame.size, NSSize(width: 480, height: 206))
+        XCTAssertEqual(header.triggerCard.frame, NSRect(x: 0, y: 0, width: 234, height: 206))
+        XCTAssertEqual(header.ringCard.frame, NSRect(x: 246, y: 0, width: 234, height: 206), "12 pt apart")
+
+        let card = header.triggerCard
+        XCTAssertNil(card.hitTest(NSPoint(x: 117, y: 103)), "it takes no click")
+        XCTAssertFalse(card.isAccessibilityElement())
+        for view in [card.artwork, card.chip, card.partBadge] as [NSView] {
+            XCTAssertFalse(view.isAccessibilityElement())
+        }
+        XCTAssertEqual(controller.previewView.accessibilityLabel(), "The ring as it opens at the pointer")
+
+        let page = RingPreferencesViewController(application: Application(path: Self.notes))
+        page.view.layoutSubtreeIfNeeded()
+        XCTAssertNil(page.headerView)
+        XCTAssertNil(page.triggerCard)
+        XCTAssertTrue(page.sections.first === page.previewView)
+        XCTAssertEqual(page.previewView.frame.width, 480, "the ring across the width")
+    }
+
+    /// The owner's case: an MX Master 4 whose thumb panel opens the ring shows the thumb
+    /// panel lit, from the side, turned at once as the pane loads; the mouse in the middle.
+    /// A numbered button is the Buttons card's badge, a part this drawing lacks the badge of
+    /// a button.
+    func testTheThumbPanelOfAMasterFourLightsFromTheSide() throws {
+        let (_, card) = try makeController(showing: logitech(.thumbPanel), on: .mxMaster4)
+        XCTAssertEqual(card.picture, TriggerPicture(hold: .part(.thumbPanel)))
+        XCTAssertEqual(card.artwork.emphasis, .thumbPanel)
+        XCTAssertEqual(card.artwork.base.viewpoint, .thumbSide)
+        XCTAssertFalse(card.artwork.base.isTurning, "turned without a turn")
+        XCTAssertFalse(card.artwork.isHidden)
+        XCTAssertTrue(card.caps.isEmpty)
+        XCTAssertEqual(card.artwork.frame.midX, card.bounds.midX, accuracy: 1)
+        XCTAssertEqual(card.artwork.frame.midY, card.bounds.midY, accuracy: 1)
+        XCTAssertEqual(card.artwork.badge.alphaValue, 0)
+        XCTAssertEqual(card.partBadge.alphaValue, 0)
+        XCTAssertTrue(card.chip.isHidden)
+
+        let (_, six) = try makeController(showing: RecordedEvent(type: .mouse, code: 6, modifiers: 0, deviceFilter: nil), on: .mxMaster4)
+        XCTAssertNil(six.artwork.emphasis)
+        XCTAssertEqual(six.artwork.badge.number, 6)
+        XCTAssertEqual(six.artwork.badge.alphaValue, 1)
+
+        let (_, panelOnThree) = try makeController(showing: logitech(.thumbPanel), on: .mxMaster3)
+        XCTAssertEqual(panelOnThree.picture.hold, .notDrawn(.thumbPanel))
+        XCTAssertNil(panelOnThree.artwork.emphasis)
+        XCTAssertEqual(panelOnThree.partBadge.alphaValue, 1)
+        XCTAssertEqual(panelOnThree.partBadge.frame.size, NSSize(width: 20, height: 20))
+        let centre = panelOnThree.artwork.badgeCentre
+        XCTAssertEqual(panelOnThree.partBadge.frame.midX, panelOnThree.artwork.frame.minX + centre.x, accuracy: 0.5)
+        XCTAssertEqual(panelOnThree.partBadge.frame.midY, panelOnThree.artwork.frame.minY + centre.y, accuracy: 0.5)
+        XCTAssertEqual(panelOnThree.artwork.badge.alphaValue, 0)
+
+        // With a modifier: the button lit, and its key pressed 8 pt under the mouse's body,
+        // the two in the middle together.
+        let (_, optionBack) = try makeController(
+            showing: RecordedEvent(type: .mouse, code: 3, modifiers: UInt(CGEventFlags.maskAlternate.rawValue), deviceFilter: nil),
+            on: .mxMaster4
+        )
+        XCTAssertEqual(optionBack.artwork.emphasis, .back)
+        XCTAssertEqual(optionBack.caps.map(\.label), ["⌥"])
+        XCTAssertEqual(optionBack.caps.first?.depth, 1)
+        XCTAssertEqual(optionBack.caps.first?.faceHeight, 24)
+        // (From the side the drawing lies across: the body is lower than from above.)
+        let extent = optionBack.bodyExtent
+        XCTAssertLessThan(extent.height, 100)
+        let body = optionBack.artwork.frame.minY + extent.minY
+        let face = try XCTUnwrap(faces(optionBack).first)
+        XCTAssertEqual(face.minY - (body + extent.height), 8, accuracy: 0.5)
+        XCTAssertEqual(face.midX, optionBack.bounds.midX, accuracy: 1)
+        let bottom = face.maxY + TriggerKeyCap.travel(faceHeight: 24)
+        XCTAssertEqual((body + bottom) / 2, optionBack.bounds.midY, accuracy: 1)
+    }
+
+    /// A key opens the ring: its keys alone, pressed, 34 pt and 6 pt apart, in the middle;
+    /// a long combination smaller, so that it fits 202 pt.
+    func testAKeyCombinationIsItsKeysAlone() throws {
+        let control = UInt(CGEventFlags.maskControl.rawValue)
+        let option = UInt(CGEventFlags.maskAlternate.rawValue)
+        let (_, card) = try makeController(
+            showing: RecordedEvent(type: .keyboard, code: 49, modifiers: control | option, deviceFilter: nil), on: .mxMaster4
+        )
+        XCTAssertEqual(card.caps.map(\.label), ["⌃", "⌥", "⎵"])
+        XCTAssertTrue(card.artwork.isHidden, "no mouse")
+        XCTAssertNil(card.artwork.emphasis)
+        XCTAssertTrue(card.caps.allSatisfy { $0.depth == 1 && !$0.isPlaceholder && $0.faceHeight == 34 })
+        let rects = faces(card)
+        for (left, right) in zip(rects, rects.dropFirst()) {
+            XCTAssertEqual(right.minX - left.maxX, 6, accuracy: 0.5)
+        }
+        let first = try XCTUnwrap(rects.first), last = try XCTUnwrap(rects.last)
+        XCTAssertEqual((first.minX + last.maxX) / 2, card.bounds.midX, accuracy: 1)
+        XCTAssertEqual(first.minY + (34 + TriggerKeyCap.travel(faceHeight: 34)) / 2, card.bounds.midY, accuracy: 1)
+
+        let shift = UInt(CGEventFlags.maskShift.rawValue), command = UInt(CGEventFlags.maskCommand.rawValue)
+        let (_, long) = try makeController(
+            showing: RecordedEvent(type: .keyboard, code: 121, modifiers: control | option | shift | command, deviceFilter: nil),
+            on: .generic
+        )
+        XCTAssertEqual(long.caps.count, 5)
+        let height = try XCTUnwrap(long.caps.first?.faceHeight)
+        XCTAssertLessThan(height, 34, "drawn smaller")
+        let row = faces(long)
+        let start = try XCTUnwrap(row.first), end = try XCTUnwrap(row.last)
+        XCTAssertLessThanOrEqual(end.maxX - start.minX, 202)
+        XCTAssertGreaterThanOrEqual(start.minX, 16)
+    }
+
+    /// Nothing opens the ring: the mouse at rest, nothing lit, and one dashed blank key under
+    /// it; nothing in the accent colour. An app's own trigger shows with the app's icon.
+    func testNothingShowsTheMouseAtRestAndABlankKey() throws {
+        let (_, card) = try makeController(showing: nil, on: .mxMaster4)
+        XCTAssertEqual(card.picture, .none)
+        XCTAssertNil(card.artwork.emphasis)
+        XCTAssertEqual(card.artwork.base.viewpoint, .above)
+        XCTAssertFalse(card.artwork.isHidden)
+        XCTAssertEqual(card.caps.count, 1)
+        XCTAssertEqual(card.caps.first?.isPlaceholder, true)
+        XCTAssertEqual(card.caps.first?.depth, 0)
+        XCTAssertEqual(card.caps.first?.faceHeight, 24)
+        XCTAssertEqual(card.artwork.badge.alphaValue, 0)
+        XCTAssertEqual(card.partBadge.alphaValue, 0)
+        XCTAssertNil(card.pressTarget(), "nothing to press")
+        // The mouse, 8 pt and the blank key, in the middle together.
+        let extent = card.bodyExtent
+        let body = card.artwork.frame.minY + extent.minY
+        let face = try XCTUnwrap(faces(card).first)
+        XCTAssertEqual(face.minY - (body + extent.height), 8, accuracy: 0.5)
+        XCTAssertEqual((body + face.maxY + TriggerKeyCap.travel(faceHeight: 24)) / 2, card.bounds.midY, accuracy: 1)
+
+        let (_, notes) = try makeController(showing: logitech(.thumbPanel), on: .mxMaster4, onlyIn: Self.notes)
+        XCTAssertEqual(notes.picture.appPath, Self.notes)
+        XCTAssertEqual(notes.chip.path, Self.notes)
+        XCTAssertFalse(notes.chip.isHidden)
+        XCTAssertNotNil(notes.chip.image)
+        XCTAssertEqual(notes.chip.frame, NSRect(x: 8, y: 8, width: 18, height: 18))
+        XCTAssertEqual(notes.artwork.emphasis, .thumbPanel)
+    }
+
+    /// The summary's picture is of the first trigger that can run, or of the first app's own
+    /// while only apps' own open the ring.
+    func testTheSummaryPicturesTheFirstTriggerThatRuns() {
+        let control = UInt(CGEventFlags.maskControl.rawValue)
+        let panel = ringBinding(logitech(.thumbPanel))
+        let bindings = [
+            ringBinding(logitech(.middle), action: "copy"),
+            ringBinding(RecordedEvent(type: .keyboard, code: 0, modifiers: 0, deviceFilter: nil)),  // a plain letter never runs
+            panel,
+            ringBinding(RecordedEvent(type: .keyboard, code: 49, modifiers: control, deviceFilter: nil)),
+        ]
+        XCTAssertEqual(ShortcutRingBindingSummary(bindings: bindings).picture, TriggerPictureSource(event: panel.triggerEvent))
+        XCTAssertEqual(ShortcutRingBindingSummary(bindings: []).picture, .none)
+
+        let notes = Application(path: Self.notes)
+        notes.setOwnButtonBindings([panel])
+        XCTAssertEqual(ShortcutRingBindingSummary(bindings: [], applications: [notes]).picture,
+                       TriggerPictureSource(event: panel.triggerEvent, onlyInAppPath: Self.notes))
+        XCTAssertEqual(ShortcutRingBindingSummary(bindings: [panel], applications: [notes]).picture,
+                       TriggerPictureSource(event: panel.triggerEvent), "Buttons' own: no app")
+    }
+
+    /// The picture presses once when the pointer enters the "Button or key" row: a ring on
+    /// the lit part's outline, then no other for 1.5 s; never under Reduce Motion, never off
+    /// screen. A trigger that changes while shown presses after the drawing has turned.
+    func testThePicturePressesWhenTheRowIsPointedAtAtMostEveryOneAndAHalfSeconds() throws {
+        let (controller, card) = try makeController(showing: logitech(.middle), on: .mxMaster4)
+        XCTAssertEqual(controller.triggerRow.trackingAreas.filter { $0.owner === controller }.count, 1)
+        card.prefersReducedMotion = { false }
+        controller.triggerRowEntered()
+        XCTAssertNil(card.pressLayer, "none off screen")
+
+        var now: TimeInterval = 100
+        card.clock = { now }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 900), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        addTeardownBlock { window.close() }
+
+        now += 2
+        controller.triggerRowEntered()
+        let first = try XCTUnwrap(card.pressLayer)
+        XCTAssertTrue(first.superlayer === card.layer)
+        let wheel = try XCTUnwrap(MouseArtworkView.shape(of: .wheel, model: .mxMaster4))
+        wheel.transform(using: AffineTransform(translationByX: card.artwork.frame.minX, byY: card.artwork.frame.minY))
+        let ringed = try XCTUnwrap(first.path?.boundingBoxOfPath)
+        XCTAssertEqual(ringed.minX, wheel.bounds.minX, accuracy: 0.5)
+        XCTAssertEqual(ringed.minY, wheel.bounds.minY, accuracy: 0.5)
+        XCTAssertEqual(ringed.width, wheel.bounds.width, accuracy: 0.5)
+        XCTAssertEqual(first.animation(forKey: "press")?.duration, 0.4)
+        XCTAssertEqual(first.lineWidth, 15)
+
+        now += 1
+        controller.triggerRowEntered()
+        XCTAssertTrue(card.pressLayer === first, "not again within 1.5 s")
+        now += 0.6
+        controller.triggerRowEntered()
+        let second = try XCTUnwrap(card.pressLayer)
+        XCTAssertFalse(second === first)
+        XCTAssertNil(first.superlayer)
+
+        now += 2
+        card.prefersReducedMotion = { true }
+        controller.triggerRowEntered()
+        XCTAssertTrue(card.pressLayer === second, "none under Reduce Motion")
+
+        // Another trigger while shown: the drawing turns to the thumb panel, the press waits.
+        now += 2
+        card.prefersReducedMotion = { false }
+        card.source = TriggerPictureSource(event: logitech(.thumbPanel))
+        XCTAssertTrue(card.artwork.base.isTurning)
+        XCTAssertTrue(card.pressLayer === second || card.pressLayer == nil, "it waits for the turn")
+        let deadline = Date().addingTimeInterval(3)
+        while (card.pressLayer == nil || card.pressLayer === second) && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        let third = try XCTUnwrap(card.pressLayer)
+        XCTAssertFalse(third === second)
+        XCTAssertEqual(card.artwork.base.viewpoint, .thumbSide)
+    }
+
+    /// A mouse that comes or goes changes the picture alone: the pane is not reloaded (that
+    /// would make the ring's face again).
+    func testAMouseChangeRedrawsThePictureAlone() throws {
+        let (controller, card) = try makeController(showing: logitech(.thumbPanel), on: .generic)
+        XCTAssertEqual(card.picture.hold, .notDrawn(.thumbPanel), "no mouse: the plain drawing")
+        var mouse = MouseArtworkModel.mxMaster4
+        card.mouseSource = { mouse }
+        var reloads = 0
+        controller.bindingSummary = { [unowned self] in
+            reloads += 1
+            return self.summary
+        }
+        ShortcutRingController.forgetPreparedFaces()
+
+        NotificationCenter.default.post(name: LogiCenter.sessionChanged, object: nil)
+        XCTAssertEqual(card.artwork.model, .mxMaster4)
+        XCTAssertEqual(card.artwork.emphasis, .thumbPanel)
+        mouse = .mxMaster3
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(card.artwork.model, .mxMaster3)
+        XCTAssertEqual(card.picture.hold, .notDrawn(.thumbPanel))
+        XCTAssertEqual(reloads, 0, "the pane is not reloaded")
+        XCTAssertNil(ShortcutRingController.preparedFace, "nor the ring's face made again")
     }
 
     // MARK: Reset to Defaults
@@ -856,6 +1145,16 @@ final class ShortcutRingButtonsTests: XCTestCase {
         XCTAssertEqual(pane.ringTriggerBinding?.id, ring.id)
         XCTAssertTrue(pane.selectRingTrigger())
         XCTAssertFalse(makePane([binding(.mouse, 3, action: "copy")]).selectRingTrigger(), "nothing opens the ring")
+    }
+
+    /// "Change" selects what the Shortcut Ring pane names first and draws: a key that never
+    /// runs (a plain letter) is passed over.
+    func testTheRingsTriggerIsTheFirstThatCanRun() {
+        let letter = binding(.keyboard, 0, action: "shortcutRing")
+        let ring = binding(.mouse, 4, action: "shortcutRing")
+        let pane = makePane([letter, ring])
+        XCTAssertEqual(pane.ringTriggerBinding?.id, ring.id)
+        XCTAssertNil(makePane([letter]).ringTriggerBinding)
     }
 
     /// Shortcut Ring › Set Up…: what is recorded gets the ring, a mouse button or a key
