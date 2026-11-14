@@ -1186,6 +1186,40 @@ final class PreferencesWindowRenderTests: XCTestCase {
         })
     }
 
+    /// The thumb wheel in an app's Buttons part (`app-buttons-thumb-wheel`), on an MX
+    /// Master 4: the app's own Zoom first, with what the wheel does everywhere under it,
+    /// then a button of the app's own; the wheel's row selected.
+    func testRenderAppButtonsThumbWheel() throws {
+        let stored = Options.shared.application.applications
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            ButtonUtils.shared.invalidateCache()
+        }
+        Options.shared.buttons.binding = [
+            binding(3, SystemShortcut.navigateBack.identifier),
+            binding(4, SystemShortcut.missionControl.identifier),
+        ]
+        let mouse = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { "MX Master 4" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        let safari = Application(path: "/Applications/Safari.app")
+        safari.setOwnThumbWheelFunction(.zoom)
+        safari.setOwnButtonBindings([binding(4, SystemShortcut.appExpose.identifier)])
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [safari], matchKey: "path")
+        let defaults = uiDefaults(advanced: false)
+        try renderPane(PANEL_IDENTIFIER.application, name: "app-buttons-thumb-wheel", prepare: { preferences in
+            (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                .uiStateDefaults = defaults
+        }, afterLoad: { controller in
+            let apps = controller as? PreferencesApplicationViewController
+            apps?.openApplication(withID: safari.path, part: .buttons)
+            let part = apps?.detailController?.buttonsPart
+            part?.deviceSource = mouse
+            part?.reloadRows()
+            part?.list.select(ButtonsListLayout.thumbWheelRowID)
+        })
+    }
+
     // MARK: - States for the final visual check
 
     /// The tallest panes at the window's minimum height: the column as the window shows it.

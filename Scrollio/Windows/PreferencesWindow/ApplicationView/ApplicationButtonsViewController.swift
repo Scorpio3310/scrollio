@@ -115,10 +115,12 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         list.rowsView.setAccessibilityLabel(text("apps-buttons-list-label"))
         list.onAdd = { [weak self] button in self?.showAddMenu(from: button) }
         list.onRemove = { [weak self] id in
+            if id == ButtonsListLayout.thumbWheelRowID { self?.removeOwnThumbWheel(); return }  // (ApplicationThumbWheelRow.swift)
             guard let id = id as? UUID else { return }
             self?.removeOwnBinding(id: id)
         }
         list.onOpen = { [weak self] id in
+            if id == ButtonsListLayout.thumbWheelRowID { self?.openThumbWheelMenu(); return }  // (ApplicationThumbWheelRow.swift)
             guard let self, let row = self.row(for: id) else { return }
             self.openActionMenu(row.pullDown)
         }
@@ -223,9 +225,12 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
             shown.append(row)
         }
         rows = shown
-        noteLabel.stringValue = Self.note(for: application.getName(), isEmpty: own.isEmpty)
-        if shown.count != list.rows.count || zip(shown, list.rows).contains(where: { $0 !== $1 }) {
-            list.setRows(shown)
+        // The thumb wheel's row, first while the app has a function of its own (ApplicationThumbWheelRow.swift).
+        let thumbWheel = makeThumbWheelRow()
+        noteLabel.stringValue = Self.note(for: application.getName(), isEmpty: own.isEmpty && thumbWheel == nil)
+        let listed: [PreferencesListRow] = (thumbWheel.map { [$0] } ?? []) + shown
+        if listed.count != list.rows.count || zip(listed, list.rows).contains(where: { $0 !== $1 }) {
+            list.setRows(listed)
             onHeightChange?()
         }
     }
@@ -381,6 +386,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
                 menu.addItem(item(title, .trigger(binding.triggerEvent)))
             }
         }
+        addThumbWheelItem(to: menu)  // "Thumb wheel" in the mouse's section (ApplicationThumbWheelRow.swift)
         return menu
     }
 

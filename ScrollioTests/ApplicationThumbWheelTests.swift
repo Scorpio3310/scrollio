@@ -157,6 +157,278 @@ final class ApplicationThumbWheelTests: XCTestCase {
     }
 }
 
+// MARK: - The app's Buttons part
+
+final class ApplicationThumbWheelPageTests: XCTestCase {
+
+    private static let calculator = "/System/Applications/Calculator.app"
+
+    private var savedApplications: EnhanceArray<Application>!
+    private var savedBindings: [ButtonBinding] = []
+    private var savedThumbWheel = ThumbWheelSettings.default
+    private var uiDefaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        savedApplications = Options.shared.application.applications
+        savedBindings = Options.shared.buttons.binding
+        savedThumbWheel = Options.shared.thumbWheel
+        Options.shared.application.applications = EnhanceArray<Application>(
+            withArray: [], matchKey: "path", forObserver: { Options.shared.markChanged(.application) }
+        )
+        Options.shared.buttons.binding = []
+        Options.shared.thumbWheel = .default
+        ButtonUtils.shared.invalidateCache()
+        uiDefaults = TestDefaults.make(for: self)
+        ApplicationPagePart.buttons.remember(in: uiDefaults)
+    }
+
+    override func tearDown() {
+        Options.shared.application.applications = savedApplications
+        Options.shared.buttons.binding = savedBindings
+        Options.shared.thumbWheel = savedThumbWheel
+        ButtonUtils.shared.invalidateCache()
+        savedApplications = nil
+        uiDefaults = nil
+        super.tearDown()
+    }
+
+    private func makePane() -> PreferencesApplicationViewController {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let controller = storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.application) as! PreferencesApplicationViewController
+        controller.uiStateDefaults = uiDefaults
+        controller.runningApplications = { [] }
+        controller.presentMenu = { _, _ in }
+        controller.chooseApplications = { _, _ in XCTFail("no open panel was expected") }
+        _ = controller.view
+        return controller
+    }
+
+    private func makeWindow(for controller: NSViewController) -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: PreferencesWindowLayout.contentWidth, height: 600),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        window.contentView?.layoutSubtreeIfNeeded()
+        addTeardownBlock { window.close() }
+        return window
+    }
+
+    @discardableResult
+    private func addCalculator() -> Application {
+        let application = Application(path: Self.calculator)
+        Options.shared.application.applications.append(application)
+        return application
+    }
+
+    private func mouse(_ name: String?) -> ButtonsDeviceSource {
+        var source = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { name }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        source.recordedTrigger = { part in
+            let codes: [ButtonsMousePart: UInt16] = [.middle: 2, .back: 3, .forward: 4, .gesture: 1000, .modeShift: 1001]
+            return RecordedEvent(type: .mouse, code: codes[part] ?? 1009, modifiers: 0, deviceFilter: nil)
+        }
+        return source
+    }
+
+    /// The Buttons part of Calculator's page on `mouseName`, with menus caught.
+    private func buttonsPart(
+        mouse mouseName: String? = "MX Master 3S", pane: PreferencesApplicationViewController? = nil,
+        menus: ((NSMenu) -> Void)? = nil, actionMenus: ((NSPopUpButton) -> Void)? = nil
+    ) throws -> ApplicationButtonsViewController {
+        let pane = pane ?? makePane()
+        pane.openApplication(withID: Self.calculator, part: .buttons)
+        let part = try XCTUnwrap(pane.detailController?.buttonsPart)
+        part.deviceSource = mouse(mouseName)
+        part.presentMenu = { menu, _ in menus?(menu) }
+        part.openActionMenu = { actionMenus?($0) }
+        part.startRecording = { _ in }
+        part.stopRecording = {}
+        part.presentOpenTarget = { _, _, _ in }
+        part.paneUndoManager = UndoManager()
+        part.reloadRows()
+        return part
+    }
+
+    private func titles(of menu: NSMenu) -> [String] {
+        return menu.items.map { $0.isSeparatorItem ? "—" : $0.title }
+    }
+
+    private func title(_ part: ButtonsMousePart, on controller: ApplicationButtonsViewController) -> String {
+        return ButtonTriggerNaming.title(for: controller.trigger(for: part))
+    }
+
+    /// "+" lists "Thumb wheel" in the mouse's section where the Buttons pane lists it (after
+    /// the mode shift button), only with a mouse that has one, and only while the app has
+    /// no function of its own for it.
+    func testThePlusMenuOffersTheThumbWheelOnlyWithAThumbWheelMouseAndOnce() throws {
+        let calculator = addCalculator()
+        let part = try buttonsPart()
+        var names = titles(of: part.makeAddMenu())
+        let modeShift = try XCTUnwrap(names.firstIndex(of: title(.modeShift, on: part)))
+        XCTAssertEqual(names[modeShift + 1], "Thumb wheel", "\(names)")
+        XCTAssertEqual(names.filter { $0 == "Thumb wheel" }.count, 1)
+
+        // The mode shift button is the app's own already: right after the middle button.
+        calculator.setOwnButtonBindings([ButtonBinding(triggerEvent: part.trigger(for: .modeShift), systemShortcutName: "copy")])
+        part.reloadRows()
+        names = titles(of: part.makeAddMenu())
+        XCTAssertEqual(names.firstIndex(of: "Thumb wheel"), try XCTUnwrap(names.firstIndex(of: title(.middle, on: part))) + 1, "\(names)")
+
+        // Every button of the mouse is the app's own: the section holds the wheel alone.
+        calculator.setOwnButtonBindings(ButtonsMousePart.listed(on: part.mouse).map {
+            ButtonBinding(triggerEvent: part.trigger(for: $0), systemShortcutName: "copy")
+        })
+        part.reloadRows()
+        names = titles(of: part.makeAddMenu())
+        XCTAssertEqual(Array(names.prefix(3)), ["Your Mouse", "Thumb wheel", "—"], "\(names)")
+        XCTAssertEqual(part.makeAddMenu().items.first?.isSectionHeader, true)
+
+        // Once the app has it: not again.
+        calculator.setOwnButtonBindings([])
+        part.addOwnThumbWheel()
+        XCTAssertFalse(titles(of: part.makeAddMenu()).contains("Thumb wheel"))
+
+        // A mouse without a thumb wheel, and no mouse: not offered.
+        calculator.setOwnThumbWheelFunction(nil)
+        for other in ["MX Anywhere 3S", "MX Vertical", nil] {
+            let without = try buttonsPart(mouse: other)
+            XCTAssertFalse(titles(of: without.makeAddMenu()).contains("Thumb wheel"), other ?? "no mouse")
+        }
+    }
+
+    /// Choosing it adds the row first in the list, with the function the wheel has
+    /// everywhere and a line that names it; the row is selected and its menu opens.
+    /// Buttons and Scrolling › Thumb wheel are not touched.
+    func testChoosingTheThumbWheelAddsItsRowWithTheGeneralFunctionAndOpensItsMenu() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs, speed: 2)
+        let calculator = addCalculator()
+        calculator.setOwnButtonBindings([ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil), systemShortcutName: "copy"
+        )])
+        var opened: [NSPopUpButton] = []
+        var shown: NSMenu?
+        let part = try buttonsPart(menus: { shown = $0 }, actionMenus: { opened.append($0) })
+        _ = makeWindow(for: part)
+        part.showAddMenu(from: part.list.addButton)
+        let item = try XCTUnwrap(shown?.items.first { $0.title == "Thumb wheel" })
+        XCTAssertTrue(item.target === part)
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
+
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .tabs)
+        XCTAssertEqual(Options.shared.thumbWheel, ThumbWheelSettings(function: .tabs, speed: 2))
+        let row = try XCTUnwrap(part.thumbWheelRow)
+        XCTAssertTrue(part.list.rows.first === row, "first in the list")
+        XCTAssertEqual(part.list.rows.count, 2)
+        XCTAssertEqual(row.title, "Thumb wheel")
+        XCTAssertEqual(row.function, .tabs)
+        XCTAssertEqual(row.explanation, "Everywhere: Switch Tabs")
+        XCTAssertEqual(row.accessibilityLabel(), "Thumb wheel, Everywhere: Switch Tabs")
+        XCTAssertTrue(row.isRemovable)
+        XCTAssertEqual(part.list.selectedID, ButtonsListLayout.thumbWheelRowID)
+        let opens = expectation(description: "the row's menu opens")
+        DispatchQueue.main.async { opens.fulfill() }
+        wait(for: [opens], timeout: 1)
+        XCTAssertTrue(opened.first === row.pullDown)
+
+        // Chosen again (from a menu made before): the row is there already.
+        part.addOwnThumbWheel()
+        XCTAssertEqual(part.list.rows.count, 2)
+        // Return on the row opens its menu too.
+        part.list.onOpen?(ButtonsListLayout.thumbWheelRowID)
+        XCTAssertTrue(opened.last === row.pullDown)
+    }
+
+    /// The row's pull-down changes the app's function only; the line under it follows the
+    /// general one; the row stays the same view. With the thumb wheel alone the note says
+    /// what the rows do, not how to add one.
+    func testTheRowsPullDownChangesTheAppsFunctionNotTheGeneralOne() throws {
+        let calculator = addCalculator()
+        calculator.setOwnThumbWheelFunction(.zoom)
+        let part = try buttonsPart()
+        let row = try XCTUnwrap(part.thumbWheelRow)
+        XCTAssertEqual(row.explanation, "Everywhere: Default")
+        XCTAssertEqual(part.noteLabel.stringValue, ApplicationButtonsViewController.note(for: "Calculator"))
+
+        let volume = try XCTUnwrap(row.pullDown.functionItems.first { ThumbWheelPresentation.function(of: $0) == .volume })
+        row.pullDown.functionChosen(volume)
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .volume)
+        XCTAssertEqual(Options.shared.thumbWheel, .default, "Buttons and Scrolling keep theirs")
+        XCTAssertTrue(part.thumbWheelRow === row)
+        XCTAssertEqual(row.function, .volume)
+
+        let scroll = try XCTUnwrap(row.pullDown.functionItems.first { ThumbWheelPresentation.function(of: $0) == .scroll })
+        row.pullDown.functionChosen(scroll)
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .scroll, "\"Default\" is the app's own: it scrolls here")
+        XCTAssertEqual(row.pullDown.menu?.items.first?.title, "Default")
+
+        Options.shared.thumbWheel.function = .desktops
+        part.syncViewWithOptions()
+        XCTAssertEqual(row.explanation, "Everywhere: Switch Desktops")
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .scroll)
+    }
+
+    /// "−" gives the wheel back to Buttons (nothing stored); Undo takes it again with its
+    /// function, selected; Redo gives it back.
+    func testRemovingTheRowGivesTheWheelBackAndUndoTakesItAgain() throws {
+        let calculator = addCalculator()
+        calculator.setOwnThumbWheelFunction(.volume)
+        let part = try buttonsPart()
+        let undo = try XCTUnwrap(part.paneUndoManager)
+        undo.groupsByEvent = false
+        part.list.select(ButtonsListLayout.thumbWheelRowID)
+        XCTAssertTrue(part.list.removeButton.isEnabled)
+        undo.beginUndoGrouping()
+        part.list.removeButton.performClick(nil)
+        undo.endUndoGrouping()
+        XCTAssertNil(calculator.thumbWheel)
+        XCTAssertNil(part.thumbWheelRow)
+        XCTAssertTrue(part.list.rows.isEmpty)
+        XCTAssertEqual(undo.undoActionName, "Remove Thumb Wheel")
+
+        undo.undo()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .volume)
+        XCTAssertNotNil(part.thumbWheelRow)
+        XCTAssertEqual(part.list.selectedID, ButtonsListLayout.thumbWheelRowID)
+        undo.redo()
+        XCTAssertNil(calculator.thumbWheel)
+        XCTAssertNil(part.thumbWheelRow)
+    }
+
+    /// "−", the page closes, then Edit › Undo: the wheel comes back to the app although the
+    /// page is gone, the list's mark follows; Redo takes it away again.
+    func testUndoOfTheRemovedRowWorksAfterThePageClosedAndTheMarkFollows() throws {
+        let calculator = addCalculator()
+        calculator.setOwnThumbWheelFunction(.zoom)
+        let pane = makePane()
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.buttons], "the Buttons mark counts the wheel")
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        weak var closedPart: ApplicationButtonsViewController?
+        try autoreleasepool {
+            let part = try buttonsPart(pane: pane)
+            part.paneUndoManager = undo
+            undo.beginUndoGrouping()
+            part.removeOwnThumbWheel()
+            undo.endUndoGrouping()
+            closedPart = part
+            pane.leaveSubpage()
+        }
+        XCTAssertNil(closedPart, "the page and its parts are gone")
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [])
+
+        undo.undo()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .zoom)
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.buttons])
+        undo.redo()
+        XCTAssertNil(calculator.thumbWheel)
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [])
+    }
+}
+
 // MARK: - Which function a turn runs, through the scroll tap
 
 final class ThumbWheelTurnTests: XCTestCase {

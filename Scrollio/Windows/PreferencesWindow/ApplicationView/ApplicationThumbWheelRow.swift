@@ -1,0 +1,278 @@
+//
+//  ApplicationThumbWheelRow.swift
+//  Scrollio
+//
+//  The thumb wheel in the Buttons part of an app's page (`ApplicationThumbWheel`): its row,
+//  first in the list while the app has a function of its own, and what the part does with
+//  it. "+" offers "Thumb wheel" in its mouse section, where the Buttons pane lists the
+//  wheel (after the mode shift button), while the connected mouse has one (an MX Master 4,
+//  3 or 3S) and the app has no function of its own; the new row starts with the function
+//  the wheel has everywhere, is selected and its menu opens. Its pull-down is the Buttons
+//  pane's ("Default" scrolls sideways) and changes only the app's function; the line under
+//  it names the general one. "−" (or Delete) gives the wheel back to Buttons, and the
+//  window's Undo takes it again, with an undo target that outlives the page, as for a
+//  button's row. Buttons and Scrolling › Thumb wheel are never touched.
+//
+
+import Cocoa
+
+// MARK: - The row
+
+final class ApplicationThumbWheelRow: PreferencesListRow {
+
+    static let identifier = NSUserInterfaceItemIdentifier("apps-buttons-thumb-wheel")
+
+    let pullDown: ThumbWheelPullDown
+    /// The mouse the picture is drawn on.
+    private(set) var mouse: MouseArtworkModel
+    private var shownPicture: (mouse: MouseArtworkModel, highlighted: Bool)?
+
+    /// - Parameters:
+    ///   - function: the app's own; `general`: the one of every other app.
+    ///   - mouse: the connected mouse.
+    init(function: ThumbWheelFunction, general: ThumbWheelFunction, mouse: MouseArtworkModel) {
+        self.mouse = Self.pictured(mouse)
+        let pullDown = ThumbWheelPullDown(function: function)
+        pullDown.identifier = Self.identifier
+        self.pullDown = pullDown
+        super.init(
+            id: ButtonsListLayout.thumbWheelRowID,
+            title: ThumbWheelPresentation.title,
+            explanation: Self.everywhere(general),
+            icon: .image(ButtonsMouseMiniature.image(lighting: .thumbWheel, mouse: Self.pictured(mouse), highlighted: false)),
+            accessory: pullDown,
+            centeredOn: pullDown,
+            controls: [pullDown]
+        )
+        applyEnabled()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("ApplicationThumbWheelRow is built in code")
+    }
+
+    /// "Everywhere: Zoom", in the names of the pull-down ("Default" for scrolling), as a
+    /// button's row names what it does in every other app.
+    static func everywhere(_ general: ThumbWheelFunction) -> String {
+        return String(
+            format: NSLocalizedString("apps-buttons-everywhere", comment: ""), ThumbWheelPresentation.buttonsTitle(for: general)
+        )
+    }
+
+    /// The picture shows where the wheel is: on the connected mouse, or on an MX Master 4
+    /// when that has none (the app's function works with any sideways wheel).
+    static func pictured(_ mouse: MouseArtworkModel) -> MouseArtworkModel {
+        return mouse.has(.thumbWheel) ? mouse : .mxMaster4
+    }
+
+    /// What the wheel does now in the app.
+    var function: ThumbWheelFunction {
+        return pullDown.function
+    }
+
+    /// Shows `function` and the general one on `mouse`; the row and its pull-down stay the
+    /// same views. Sends nothing and stores nothing.
+    func update(function: ThumbWheelFunction, general: ThumbWheelFunction, mouse: MouseArtworkModel) {
+        if pullDown.function != function {
+            pullDown.show(function)
+        }
+        let line = Self.everywhere(general)
+        if explanation != line {
+            explanation = line
+        }
+        let pictured = Self.pictured(mouse)
+        if self.mouse != pictured {
+            self.mouse = pictured
+            applyEnabled()
+        }
+    }
+
+    /// The picture in white on the accent-coloured selection.
+    override func applyEnabled() {
+        super.applyEnabled()
+        guard let iconView else { return }
+        let wanted = (mouse: mouse, highlighted: isHighlighted)
+        if let shownPicture, shownPicture == wanted { return }
+        shownPicture = wanted
+        iconView.image = ButtonsMouseMiniature.image(lighting: .thumbWheel, mouse: wanted.mouse, highlighted: wanted.highlighted)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        iconView?.needsDisplay = true
+    }
+}
+
+// MARK: - The Buttons part
+
+extension ApplicationButtonsViewController {
+
+    /// What the "+" item of the thumb wheel carries (no `AddChoice`: the item has its own
+    /// action).
+    static let thumbWheelMenuMarker = "apps-buttons-add-thumb-wheel"
+
+    /// The thumb wheel's row the list shows now, if any.
+    var thumbWheelRow: ApplicationThumbWheelRow? {
+        return list?.rows.first { $0.id == ButtonsListLayout.thumbWheelRowID } as? ApplicationThumbWheelRow
+    }
+
+    /// The row while the app has a function of its own: the one shown, brought up to date
+    /// (its pull-down keeps the keyboard focus), or a new one; nil without.
+    func makeThumbWheelRow() -> ApplicationThumbWheelRow? {
+        guard let function = application.ownThumbWheelFunction else { return nil }
+        let general = Options.shared.thumbWheel.function
+        if let row = thumbWheelRow {
+            row.update(function: function, general: general, mouse: mouse)
+            return row
+        }
+        let row = ApplicationThumbWheelRow(function: function, general: general, mouse: mouse)
+        row.pullDown.onFunctionSelected = { [weak self] chosen in
+            self?.setOwnThumbWheelFunction(chosen)
+        }
+        return row
+    }
+
+    /// "+" offers the thumb wheel: the connected mouse has one, and the app no function of
+    /// its own for it.
+    var offersThumbWheel: Bool {
+        return ButtonsListLayout.showsThumbWheel(on: mouse) && application.ownThumbWheelFunction == nil
+    }
+
+    /// Puts "Thumb wheel" into the "+" menu's section of the mouse, after the buttons the
+    /// Buttons pane lists before it (up to the mode shift button), as that pane orders its
+    /// rows (`ButtonsListLayout.rows`); with no button of the mouse offered, the section
+    /// holds the wheel alone.
+    func addThumbWheelItem(to menu: NSMenu) {
+        guard offersThumbWheel else { return }
+        let item = NSMenuItem(title: ThumbWheelPresentation.title, action: #selector(addThumbWheelChosen(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = Self.thumbWheelMenuMarker
+        let header = NSLocalizedString("apps-buttons-add-mouse", comment: "")
+        guard let headerIndex = menu.items.firstIndex(where: { $0.isSectionHeader && $0.title == header }) else {
+            menu.insertItem(NSMenuItem.sectionHeader(title: header), at: 0)
+            menu.insertItem(item, at: 1)
+            menu.insertItem(.separator(), at: 2)
+            return
+        }
+        let listed = ButtonsMousePart.listed(on: mouse)
+        let before = listed.firstIndex(of: .modeShift).map { Array(listed[...$0]) } ?? listed
+        let ahead = before.map { ButtonBindingIdentity(trigger(for: $0)) }
+        var place = headerIndex + 1
+        var index = headerIndex + 1
+        while index < menu.items.count, !menu.items[index].isSeparatorItem {
+            if case .trigger(let trigger)? = menu.items[index].representedObject as? AddChoice,
+               ahead.contains(ButtonBindingIdentity(trigger)) {
+                place = index + 1
+            }
+            index += 1
+        }
+        menu.insertItem(item, at: place)
+    }
+
+    @objc func addThumbWheelChosen(_ sender: NSMenuItem) {
+        addOwnThumbWheel()
+    }
+
+    /// Gives the app the thumb wheel with the function it has everywhere (nothing changes
+    /// until another is chosen), selects its row and opens its menu. A wheel the app has
+    /// already is selected and flashes.
+    func addOwnThumbWheel() {
+        guard application.ownThumbWheelFunction == nil else {
+            list.flash(ButtonsListLayout.thumbWheelRowID)
+            return
+        }
+        application.setOwnThumbWheelFunction(Options.shared.thumbWheel.function)
+        reloadRows()
+        onOwnButtonsChange?()
+        list.select(ButtonsListLayout.thumbWheelRowID)
+        // The row's menu opens by itself, once the "+" menu is gone.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.view.window != nil, let row = self.thumbWheelRow,
+                  self.list.selectedID == ButtonsListLayout.thumbWheelRowID else { return }
+            self.openActionMenu(row.pullDown)
+        }
+    }
+
+    /// The row's pull-down: the app's function, never the general one.
+    func setOwnThumbWheelFunction(_ function: ThumbWheelFunction) {
+        guard application.ownThumbWheelFunction != nil else { return }
+        application.setOwnThumbWheelFunction(function)
+        reloadRows()
+        onOwnButtonsChange?()
+    }
+
+    /// Return on the selected row opens its menu.
+    func openThumbWheelMenu() {
+        guard let row = thumbWheelRow else { return }
+        openActionMenu(row.pullDown)
+    }
+
+    // MARK: Removing, with Undo
+
+    /// Gives the thumb wheel back to Buttons; the window's Undo takes it again.
+    func removeOwnThumbWheel() {
+        let showing = partShowing ?? { [weak self] entry in
+            self?.application === entry ? self : nil
+        }
+        Self.removeOwnThumbWheel(of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange)
+    }
+
+    /// As a button's removal (`removeOwnBinding`): the undo target is the settings, not the
+    /// page, and Undo and Redo find the app's entry by its path when they run and show the
+    /// change on the part `showing` gives for it. Neither holds the page.
+    private static func removeOwnThumbWheel(
+        of application: Application, undoManager undo: UndoManager?,
+        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?
+    ) {
+        guard let removed = application.ownThumbWheelFunction else { return }
+        application.setOwnThumbWheelFunction(nil)
+        showing(application)?.showThumbWheelChange(selecting: false)
+        listDidChange?()
+        guard let undo else { return }
+        let path = application.path
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            guard let entry = thumbWheelEntry(storedAs: path) else { return }
+            restoreOwnThumbWheel(removed, of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange)
+        }
+        undo.setActionName(NSLocalizedString("apps-buttons-undo-remove-thumb-wheel", comment: ""))
+    }
+
+    private static func restoreOwnThumbWheel(
+        _ function: ThumbWheelFunction, of application: Application, undoManager undo: UndoManager?,
+        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?
+    ) {
+        guard application.ownThumbWheelFunction == nil else {
+            // Added again meanwhile: that one stays.
+            showing(application)?.showThumbWheelChange(selecting: true)
+            return
+        }
+        application.setOwnThumbWheelFunction(function)
+        showing(application)?.showThumbWheelChange(selecting: true)
+        listDidChange?()
+        guard let undo else { return }
+        let path = application.path
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            guard let entry = thumbWheelEntry(storedAs: path) else { return }
+            removeOwnThumbWheel(of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange)
+        }
+        undo.setActionName(NSLocalizedString("apps-buttons-undo-remove-thumb-wheel", comment: ""))
+    }
+
+    /// The entry the list holds now for the app stored as `path` (an app removed and added
+    /// again is a new entry), as a button's Undo finds it.
+    private static func thumbWheelEntry(storedAs path: String) -> Application? {
+        return PreferencesApplicationViewController.existingApplication(
+            forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: path)
+        )
+    }
+
+    /// A removal, its Undo or its Redo changed the app's thumb wheel: the rows again, with
+    /// the wheel's row selected when it came back.
+    private func showThumbWheelChange(selecting: Bool) {
+        guard isViewLoaded else { return }
+        reloadRows()
+        if selecting {
+            list.select(ButtonsListLayout.thumbWheelRowID)
+        }
+    }
+}
