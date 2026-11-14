@@ -733,6 +733,47 @@ final class GesturePreviewViewTests: XCTestCase {
         }
     }
 
+    /// The ring of a press or a release leaves the thumb wheel's roller as it is (spec
+    /// §2.4): Forward and Back light right under it on the MX Master 4 and 3, the MX Master
+    /// 4's thumb panel around it. (The roller lies inside its slot: one even-odd clip of
+    /// both put the roller back under the ring.) Each pixel well inside the roller, with
+    /// the ring at three moments of its fading, is the pixel at rest.
+    func testThePressRingLeavesTheThumbWheelAlone() throws {
+        _ = try forceAppAccent()
+        let cases: [(model: MouseArtworkModel, role: LogiControlRole)] = [
+            (.mxMaster4, .forward), (.mxMaster4, .back), (.mxMaster4, .thumbPanel), (.mxMaster3, .forward), (.mxMaster3, .back),
+        ]
+        for item in cases {
+            let what = "\(item.model) \(item.role)"
+            let mouse = makeView(mouse: item.model, picture: trigger(item.role)).deviceCard.mouse
+            XCTAssertEqual(mouse.buttonViewpoint, .thumbSide, what)
+            mouse.show(buttonDepth: 0, pressPulse: 0, turn: 1)
+            let rest = try shot(of: mouse)
+            let roller = try XCTUnwrap(MouseArtworkShapes(model: item.model, viewpoint: .thumbSide).shape(of: .thumbWheel), what)
+            roller.transform(using: mouse.placement(for: .thumbSide))
+            let margin: CGFloat = 0.75
+            var inside: [NSPoint] = []
+            for x in stride(from: roller.bounds.minX, to: roller.bounds.maxX, by: 0.5) {
+                for y in stride(from: roller.bounds.minY, to: roller.bounds.maxY, by: 0.5) {
+                    let around = [(0, 0), (margin, 0), (-margin, 0), (0, margin), (0, -margin)].map { NSPoint(x: x + $0.0, y: y + $0.1) }
+                    if around.allSatisfy(roller.contains) {
+                        inside.append(NSPoint(x: x, y: y))
+                    }
+                }
+            }
+            XCTAssertGreaterThan(inside.count, 50, what)
+            for pulse in [0.8, 0.6, 0.4] {
+                mouse.show(buttonDepth: 0, pressPulse: pulse, turn: 1)
+                let ringed = try shot(of: mouse)
+                var worst: CGFloat = 0
+                for point in inside {
+                    worst = max(worst, distance(try colour(in: ringed, x: point.x, y: point.y), try colour(in: rest, x: point.x, y: point.y)))
+                }
+                XCTAssertLessThan(worst, 0.02, "\(what), the ring at \(pulse)")
+            }
+        }
+    }
+
     /// The MX Master 3 has no thumb panel: its badge, which never turns, sits inside the
     /// mouse view and moves with the mouse; held, it is pressed in.
     func testTheMasterThreesThumbPanelIsABadgeThatMovesWithTheMouse() throws {
