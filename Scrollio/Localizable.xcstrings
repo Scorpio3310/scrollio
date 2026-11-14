@@ -8716,18 +8716,6 @@
         }
       }
     },
-    "apps-buttons-undo-reset": {
-      "comment": "Apps, an app's Buttons part: \"Reset to Defaults\" removes its own buttons; the Undo menu item reads \"Undo Reset Buttons\"",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reset Buttons"
-          }
-        }
-      }
-    },
     "apps-detail-ring-suggested-reset": {
       "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the app's own ring did not start from them (made before there were any, or by hand); %@ is the app's name; \"Reset to Defaults\" is the button under the ring; fits two lines",
       "extractionState": "manual",
@@ -8796,6 +8784,1362 @@
           "stringUnit": {
             "state": "translated",
             "value": "The action is also in this app's Buttons part and stays when “Use settings from Scrolling” is on; speed and direction then follow Scrolling."
+          }
+        }
+      }
+    },
+    "apps-trigger-own-ring": {
+      "comment": "Shortcut Ring pane: in \"Only in %@: …\" (apps-trigger-only-in) while the one app whose own button or key opens the ring uses its own ring, so nothing opens the ring of the pane; %@ is the app's name (\"Only in Figma, with its own ring: Thumb panel\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, with its own ring"
+          }
+        }
+      }
+    },
+    "apps-trigger-own-rings": {
+      "comment": "Shortcut Ring pane: in \"Only in %@: …\" (apps-trigger-only-in) while every app whose own button or key opens the ring uses its own ring, so nothing opens the ring of the pane; %@ is the apps' names joined as a list",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, each with its own ring"
+          }
+        }
+      }
+    },
+    "apps-trigger-own-gestures": {
+      "comment": "Gestures pane: in \"Only in %@: …\" (apps-trigger-only-in) while the one app whose own button runs the gestures uses its own gestures, so nothing runs the pane's; %@ is the app's name (\"Only in Figma, with its own gestures: Back button\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, with its own gestures"
+          }
+        }
+      }
+    },
+    "apps-trigger-own-gestures-each": {
+      "comment": "Gestures pane: in \"Only in %@: …\" (apps-trigger-only-in) while every app whose own button runs the gestures uses its own gestures, so nothing runs the pane's; %@ is the apps' names joined as a list",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, each with its own gestures"
+          }
+        }
+      }
+    },
+    "apps-detail-ring-suggested-empty-on-purpose-one": {
+      "comment": "An app's page, Shortcut Ring part: added to the line of \"Suggested shortcuts\" after how many places the keyboard layout leaves empty, when the suggestion itself leaves one place empty on purpose (so the places showing \"No Action\" add up); fits the line's two lines",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 more is left empty on purpose."
+          }
+        }
+      }
+    },
+    "apps-detail-ring-suggested-empty-on-purpose-other": {
+      "comment": "An app's page, Shortcut Ring part: added to the line of \"Suggested shortcuts\" after how many places the keyboard layout leaves empty, when the suggestion itself leaves several places empty on purpose; %d is how many; fits the line's two lines",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d more are left empty on purpose."
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrow.clockwise": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrow.clockwise\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reload arrow"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrow.uturn.backward": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrow.uturn.backward\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Undo arrow"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrow.uturn.forward": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrow.uturn.forward\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Redo arrow"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-square.and.arrow.up": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"square.and.arrow.up\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-magnifyingglass": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"magnifyingglass\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magnifying glass"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-sidebar.left": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"sidebar.left\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Left sidebar"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-plus.rectangle.on.rectangle": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"plus.rectangle.on.rectangle\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New tab"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-xmark": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"xmark\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cross"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-square.and.arrow.down": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"square.and.arrow.down\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-playpause": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"playpause\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play and pause"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-speaker.slash": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"speaker.slash\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muted speaker"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-lock": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"lock\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lock"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-star": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"star\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Star"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-trash": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"trash\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trash"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-doc.on.doc": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"doc.on.doc\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Two documents"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-gearshape": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"gearshape\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gear"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrow.left": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrow.left\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Left arrow"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrow.right": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrow.right\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right arrow"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrow.up": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrow.up\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up arrow"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrow.down": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrow.down\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Down arrow"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-chevron.left": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"chevron.left\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Left chevron"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-chevron.right": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"chevron.right\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right chevron"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrow.counterclockwise": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrow.counterclockwise\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Counterclockwise arrow"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrow.triangle.2.circlepath": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrow.triangle.2.circlepath\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync arrows"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrow.left.arrow.right": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrow.left.arrow.right\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Left and right arrows"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrow.up.arrow.down": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrow.up.arrow.down\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up and down arrows"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrow.up.left.and.arrow.down.right": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrow.up.left.and.arrow.down.right\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enlarge arrows"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrow.down.right.and.arrow.up.left": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrow.down.right.and.arrow.up.left\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shrink arrows"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrowshape.turn.up.left": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrowshape.turn.up.left\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reply arrow"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrowshape.turn.up.right": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrowshape.turn.up.right\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward arrow"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-arrow.up.to.line": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"arrow.up.to.line\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrow to the top"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-return": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"return\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Return"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-pencil": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"pencil\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pencil"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-square.and.pencil": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"square.and.pencil\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compose"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-scissors": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"scissors\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scissors"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-doc.on.clipboard": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"doc.on.clipboard\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clipboard"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-plus": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"plus\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-minus": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"minus\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minus"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-checkmark": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"checkmark\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checkmark"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-square.dashed": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"square.dashed\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dashed square"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-bold": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"bold\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bold"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-italic": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"italic\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Italic"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-underline": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"underline\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Underline"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-strikethrough": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"strikethrough\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Strikethrough"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-list.bullet": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"list.bullet\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bulleted list"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-text.alignleft": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"text.alignleft\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Left-aligned text"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-highlighter": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"highlighter\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Highlighter"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-wand.and.stars": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"wand.and.stars\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magic wand"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-doc": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"doc\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Document"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-folder": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"folder\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-printer": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"printer\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Printer"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-plus.magnifyingglass": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"plus.magnifyingglass\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom in"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-minus.magnifyingglass": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"minus.magnifyingglass\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom out"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-link": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"link\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Link"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-paperclip": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"paperclip\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paper clip"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-bookmark": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"bookmark\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bookmark"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-tag": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"tag\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tag"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-macwindow": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"macwindow\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Window"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-sidebar.right": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"sidebar.right\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right sidebar"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-rectangle.split.2x1": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"rectangle.split.2x1\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Split view"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-square.grid.2x2": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"square.grid.2x2\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grid"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-rectangle.on.rectangle": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"rectangle.on.rectangle\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Two windows"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-eye": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"eye\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eye"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-eye.slash": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"eye.slash\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crossed-out eye"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-play": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"play\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-pause": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"pause\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-stop": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"stop\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-backward": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"backward\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rewind"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-forward": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"forward\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast forward"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-record.circle": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"record.circle\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-speaker.wave.2": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"speaker.wave.2\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speaker"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-music.note": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"music.note\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Music note"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-mic": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"mic\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microphone"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-mic.slash": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"mic.slash\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muted microphone"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-video": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"video\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video camera"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-video.slash": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"video.slash\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video camera off"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-camera": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"camera\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Camera"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-photo": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"photo\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-envelope": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"envelope\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envelope"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-paperplane": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"paperplane\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paper plane"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-bubble.left": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"bubble.left\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech bubble"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-phone": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"phone\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phone"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-bell": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"bell\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bell"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-bell.slash": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"bell.slash\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muted bell"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-person": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"person\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Person"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-person.2": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"person.2\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Two people"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-at": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"at\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "At sign"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-hand.raised": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"hand.raised\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Raised hand"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-slider.horizontal.3": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"slider.horizontal.3\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sliders"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-terminal": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"terminal\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-chevron.left.forwardslash.chevron.right": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"chevron.left.forwardslash.chevron.right\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-hammer": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"hammer\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hammer"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-wrench.and.screwdriver": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"wrench.and.screwdriver\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wrench and screwdriver"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-ladybug": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"ladybug\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ladybug"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-command": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"command\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Command key"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-keyboard": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"keyboard\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-bolt": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"bolt\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lightning bolt"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-power": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"power\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Power"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-moon": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"moon\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moon"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-lightbulb": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"lightbulb\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Light bulb"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-sparkles": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"sparkles\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sparkles"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-calendar": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"calendar\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calendar"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-clock": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"clock\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clock"
+          }
+        }
+      }
+    },
+    "key-recorder-icon-name-globe": {
+      "comment": "The icon chooser and the icon well: what VoiceOver and the tool tip call the SF Symbol \"globe\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Globe"
+          }
+        }
+      }
+    },
+    "apps-trigger-only-in-each": {
+      "comment": "Shortcut Ring and Gestures panes: what opens the ring or runs the gestures while no binding of Buttons does, and apps' own buttons or keys do, different ones in different apps; %@ is each app with its own (\"Figma (Thumb panel) and Safari (Back button)\"); without a full stop",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only in %@"
+          }
+        }
+      }
+    },
+    "apps-trigger-app-with": {
+      "comment": "Shortcut Ring and Gestures panes: one app with what opens the ring or runs the gestures there, in \"Only in %@\" (apps-trigger-only-in-each); %1$@ is the app's name, %2$@ its buttons and keys (\"Figma (Thumb panel)\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ (%2$@)"
+          }
+        }
+      }
+    },
+    "apps-undo-reset-buttons": {
+      "comment": "Apps, an app's Buttons part: \"Reset to Defaults\" removes its own buttons; the Undo menu item reads \"Undo Reset Buttons in Calculator\"; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset Buttons in %@"
           }
         }
       }

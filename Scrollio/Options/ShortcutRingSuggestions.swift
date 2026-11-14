@@ -138,6 +138,24 @@ struct ShortcutRingSuggestion: Equatable {
         return zip(slots, places).filter { $0.place != nil && $1 == .empty }.count
     }
 
+    /// Of those (`placesLeftEmpty(in:)`), how many the ring `own` still has empty: a place
+    /// the user filled by hand is no longer one.
+    func placesStillEmpty(in places: [ShortcutRingPlace], own: [ShortcutRingPlace]) -> Int {
+        return zip(zip(slots, places), own).filter { suggested, mine in
+            suggested.0.place != nil && suggested.1 == .empty && mine == .empty
+        }.count
+    }
+
+    /// How many places this suggestion leaves empty on purpose (`Slot.empty`): of those the
+    /// ring `own` still has empty, or all of them (nil).
+    func placesEmptyOnPurpose(own: [ShortcutRingPlace]? = nil) -> Int {
+        return slots.indices.filter { index in
+            guard slots[index].place == nil else { return false }
+            guard let own else { return true }
+            return own.indices.contains(index) && own[index] == .empty
+        }.count
+    }
+
     /// A suggested shortcut as a place: the listed action it is exactly (Undo, Copy …:
     /// the same name, symbol, US key and modifiers), sent with the layout's key when it
     /// runs; else the key combination that sends it on `layout`, named and with its

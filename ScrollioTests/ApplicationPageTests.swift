@@ -603,8 +603,10 @@ final class ApplicationPageTests: XCTestCase {
 
         let second = try press(at: onSwitch, clicks: 2)
         XCTAssertTrue(hit(second) === pageView, "held back")
-        pageView.mouseDown(with: second)
-        XCTAssertEqual(toggle.state, .on, "the switch is untouched")
+        // (The page's own mouseDown does nothing: what counts is that the click never
+        // reaches the switch's row.)
+        XCTAssertFalse(hit(second)?.isDescendant(of: page.generalRingRow) ?? false, "the switch is not reached")
+        XCTAssertEqual(toggle.state, .on)
         XCTAssertTrue(hit(try press(at: onSwitch, clicks: 3)) === pageView)
         // A click of the page's own, and a double-click there, reach the switch.
         XCTAssertTrue(hit(try press(at: onSwitch, clicks: 1))?.isDescendant(of: page.generalRingRow) == true)
@@ -1355,6 +1357,51 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(part.hapticsRow?.isEnabled, true)
     }
 
+    /// As in the Gestures pane: while a mouse has its haptics off because they were switched
+    /// off under Mouse, the app's own "Logitech mouse" box has the line that says so, with
+    /// "Open Mouse", close under the box; it folds with the box (F18).
+    func testTheGesturesPartSaysWhenHapticsAreOffUnderMouse() throws {
+        let savedHaptics = Options.shared.logiMouse.hapticsOn
+        Options.shared.logiMouse.hapticsOn = false
+        addTeardownBlock { Options.shared.logiMouse.hapticsOn = savedHaptics }
+        Options.shared.buttons.binding = [binding(3, SystemShortcut.mouseGestureNavigation.identifier)]
+        let calculator = addApp(Self.calculator)
+        calculator.setUsesGeneralGestures(false, general: Options.shared.gesture)
+        let hapticsOff = MouseGestureDeviceSupport(deviceTracking: true, haptics: true, hapticsOffOnMouse: true)
+        let (pane, part) = try gesturesPart(mice: hapticsOff)
+        _ = makeWindow(for: pane)
+        let note = try XCTUnwrap(part.hapticsOffNote)
+        let fold = try XCTUnwrap(part.logitechFold)
+        XCTAssertFalse(note.isHidden)
+        XCTAssertEqual(part.hapticsOffLabel?.stringValue, "Haptic feedback is off under Mouse.")
+        XCTAssertEqual(part.openMouseButton?.title, "Open Mouse")
+        XCTAssertEqual(part.hapticsRow?.isOn, true, "the switch stays as it is")
+        var opened = 0
+        part.openMousePane = { opened += 1 }
+        try XCTUnwrap(part.openMouseButton).performClick(nil)
+        XCTAssertEqual(opened, 1)
+        pane.view.layoutSubtreeIfNeeded()
+        func frame(_ view: NSView) -> NSRect {
+            return part.view.convert(view.alignmentRect(forFrame: view.frame), from: view.superview)
+        }
+        let gap = max(frame(fold).minY - frame(note).maxY, frame(note).minY - frame(fold).maxY)
+        XCTAssertEqual(gap, PreferencesGroupedForm.noteSpacing, accuracy: 0.5, "close under the box")
+        XCTAssertFalse(part.view.hasAmbiguousLayout)
+
+        // Haptics on under Mouse: no line.
+        Options.shared.logiMouse.hapticsOn = true
+        part.syncViewWithOptions()
+        XCTAssertTrue(note.isHidden)
+        // Folded with its box while no button runs the gestures here; it opens with it.
+        Options.shared.logiMouse.hapticsOn = false
+        Options.shared.buttons.binding = []
+        part.syncViewWithOptions()
+        XCTAssertTrue(fold.isCollapsible)
+        XCTAssertTrue(note.isHidden)
+        XCTAssertTrue(fold.disclosure.accessibilityPerformPress())
+        XCTAssertFalse(note.isHidden, "opens with its box")
+    }
+
     /// One wording: while no button runs Gesture Navigation with the app in front
     /// (whatever Buttons has), the switch's own line says so, in both states, and there is
     /// no line under the box; the line under the box only names another button than
@@ -1642,7 +1689,21 @@ final class ApplicationPageTests: XCTestCase {
         textEdit.setOwnButtonBindings([binding(49, ringAction, modifiers: control, type: .keyboard)])
         let space = ButtonTriggerNaming.title(for: textEdit.ownButtonBindings[0].triggerEvent)
         ring = pane()
-        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator and TextEdit: \(panel) and \(space)." + key)
+        // (Each app with its own: the row never reads as if both worked in both, F28.)
+        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator (\(panel)) and TextEdit (\(space))." + key)
+        // The same in both: once, after the apps.
+        textEdit.setOwnButtonBindings([binding(thumbPanel, ringAction)])
+        XCTAssertEqual(pane().triggerRow.explanation, "Only in Calculator and TextEdit: \(panel)." + key)
+        // Each with its own ring too.
+        calculator.setUsesGeneralRing(false, general: Options.shared.ring)
+        textEdit.setOwnButtonBindings([binding(49, ringAction, modifiers: control, type: .keyboard)])
+        textEdit.setUsesGeneralRing(false, general: Options.shared.ring)
+        XCTAssertEqual(
+            pane().triggerRow.explanation,
+            "Only in Calculator (\(panel)) and TextEdit (\(space)), each with its own ring." + key
+        )
+        calculator.setUsesGeneralRing(true, general: Options.shared.ring)
+        textEdit.setUsesGeneralRing(true, general: Options.shared.ring)
 
         // With a binding of Buttons the row names that one alone, as before.
         Options.shared.buttons.binding.append(binding(5, ringAction))
@@ -1650,6 +1711,63 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(ring.bindingSummary().onlyInApps, nil)
         XCTAssertEqual(ring.triggerButton.title, "Change")
         XCTAssertFalse(ring.triggerRow.explanation?.hasPrefix("Only in") ?? true)
+    }
+
+    /// While the only apps whose own buttons open the ring (or run the gestures) use their
+    /// own ring (or gestures), nothing runs the general settings: the panes fold them as
+    /// when nothing opens the ring, and their rows say so; "Change" still leads to the app.
+    func testThePanesFoldTheGeneralSettingsWhileOnlyAnAppWithItsOwnUsesTheTrigger() throws {
+        let ringAction = SystemShortcut.shortcutRing.identifier
+        let gestureAction = SystemShortcut.mouseGestureNavigation.identifier
+        let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
+        Options.shared.buttons.binding = []
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(thumbPanel, ringAction), binding(3, gestureAction)])
+        let panel = ButtonTriggerNaming.title(for: calculator.ownButtonBindings[0].triggerEvent)
+        let back = ButtonTriggerNaming.title(for: calculator.ownButtonBindings[1].triggerEvent)
+
+        calculator.setUsesGeneralRing(false, general: Options.shared.ring)
+        let ring = RingPreferencesViewController()
+        _ = ring.view
+        let places = try XCTUnwrap(ring.placesSection)
+        XCTAssertTrue(places.isCollapsible, "nothing opens the general ring")
+        XCTAssertFalse(places.showsBody)
+        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator, with its own ring: \(panel). A key combination works too.")
+        XCTAssertEqual(ring.triggerButton.title, "Change")
+        var shown: [ApplicationTriggers] = []
+        ring.openApplicationButtons = { shown.append($0) }
+        ring.openButtonsPane = { _ in XCTFail("not the Buttons pane") }
+        ring.triggerButton.performClick(nil)
+        XCTAssertEqual(shown.map(\.path), [Self.calculator])
+        // With the general ring on again, it is the one that opens there.
+        calculator.setUsesGeneralRing(true, general: Options.shared.ring)
+        ring.reload()
+        XCTAssertFalse(places.isCollapsible)
+        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator: \(panel). A key combination works too.")
+
+        calculator.setUsesGeneralGestures(false, general: Options.shared.gesture)
+        let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { false })
+        gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        _ = gestures.view
+        gestures.reload()
+        XCTAssertTrue(gestures.foldingSections.allSatisfy { $0.isCollapsible && !$0.showsBody }, "nothing runs the general gestures")
+        XCTAssertEqual(gestures.gestureButtonRow.explanation, "Only in Calculator, with its own gestures: \(back).")
+        XCTAssertEqual(gestures.gestureButtonButton.title, "Change")
+        calculator.setUsesGeneralGestures(true, general: Options.shared.gesture)
+        gestures.reload()
+        XCTAssertTrue(gestures.foldingSections.allSatisfy { !$0.isCollapsible })
+
+        // Two apps, one with the general ring: the general ring opens there.
+        calculator.setUsesGeneralRing(false, general: Options.shared.ring)
+        let textEdit = addApp(Self.textEdit)
+        textEdit.setOwnButtonBindings([binding(thumbPanel, ringAction)])
+        ring.reload()
+        XCTAssertFalse(places.isCollapsible)
+        XCTAssertNil(ring.bindingSummary().onlyInApps?.ownOnly)
+        textEdit.setUsesGeneralRing(false, general: Options.shared.ring)
+        ring.reload()
+        XCTAssertTrue(places.isCollapsible)
+        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator and TextEdit, each with its own ring: \(panel). A key combination works too.")
     }
 
     /// The Gestures pane likewise: Gesture Navigation only on an app's own button. The
@@ -1722,12 +1840,12 @@ final class ApplicationPageTests: XCTestCase {
 
     // MARK: - Folded while nothing runs them here
 
-    /// The app's own ring while nothing opens the ring with the app in front: under a
-    /// "Shortcuts" title that folds it, folded (the drawing, the rows and "Reset to
-    /// Defaults" out of sight); a click opens it and all of it can be used; the page
-    /// measures again each time. Once a button opens the ring there the title goes and the
-    /// ring stands under the switch's box as before; without one again it folds again. The
-    /// switch alone (the general ring) has nothing to fold.
+    /// The app's own ring while nothing opens the ring with the app in front: its eight rows
+    /// under a "Shortcuts" title that folds them, folded; the drawing, the freeze switch and
+    /// "Reset to Defaults" in sight, as in the Shortcut Ring pane (F23). A click opens the
+    /// rows and all of it can be used; the page measures again each time. Once a button
+    /// opens the ring there, "Shortcuts" is a plain title; without one again the rows fold
+    /// again. The switch alone (the general ring) has nothing to fold.
     func testTheRingPartFoldsTheOwnRingWhileNothingOpensTheRingHere() throws {
         let calculator = addApp(Self.calculator)
         let pane = makePane()
@@ -1744,13 +1862,21 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertFalse(calculator.usesGeneralRing)
         let fold = try XCTUnwrap(part.ownRingFold)
         let body = try XCTUnwrap(part.ownRingBody)
-        XCTAssertTrue(fold.body === body)
+        let ring = try XCTUnwrap(part.ringController)
+        XCTAssertTrue(fold === ring.placesSection)
+        XCTAssertTrue(fold.isDescendant(of: body))
         XCTAssertEqual(fold.title, "Shortcuts")
         XCTAssertTrue(fold.isCollapsible)
         XCTAssertFalse(fold.isExpanded, "folded when it comes")
-        XCTAssertTrue(body.isHidden)
-        XCTAssertTrue(try XCTUnwrap(part.ringController).view.isDescendant(of: body))
+        XCTAssertTrue(fold.body.isHidden)
+        XCTAssertTrue(ring.placeRows[0].isHiddenOrHasHiddenAncestor)
+        XCTAssertTrue(ring.view.isDescendant(of: body))
         XCTAssertTrue(part.resetToDefaultsButton.isDescendant(of: body))
+        // What the pane keeps outside its fold stays in sight here too.
+        XCTAssertFalse(body.isHidden)
+        XCTAssertFalse(ring.previewView.isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(try XCTUnwrap(ring.freezeToggle).isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(part.resetToDefaultsButton.isHiddenOrHasHiddenAncestor)
         XCTAssertEqual(fold.disclosure.accessibilityRole(), .disclosureTriangle)
         XCTAssertEqual(fold.disclosure.accessibilityLabel(), "Shortcuts")
         pane.view.layoutSubtreeIfNeeded()
@@ -1760,7 +1886,7 @@ final class ApplicationPageTests: XCTestCase {
         heightChanges = 0
         XCTAssertTrue(fold.disclosure.accessibilityPerformPress())
         XCTAssertTrue(fold.isExpanded)
-        XCTAssertFalse(body.isHidden)
+        XCTAssertFalse(fold.body.isHidden)
         XCTAssertEqual(heightChanges, 1, "the page measures again")
         XCTAssertGreaterThan(page.view.fittingSize.height, folded)
         // Everything in it can be used.
@@ -1768,11 +1894,13 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(calculator.ownRingPlaces?[0].action, "paste")
         XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
 
-        // A button opens the ring: no title, the ring right under the switch's box.
+        // A button opens the ring: a plain title, the ring right under the switch's box.
         Options.shared.buttons.binding = [binding(5, SystemShortcut.shortcutRing.identifier)]
         part.syncViewWithOptions()
         XCTAssertNil(part.ownRingFold)
-        XCTAssertFalse(body.isHidden)
+        XCTAssertFalse(fold.isCollapsible)
+        XCTAssertFalse(fold.titleLabel.isHidden, "Shortcuts")
+        XCTAssertFalse(fold.body.isHidden)
         XCTAssertTrue(body.superview === part.view)
         pane.view.layoutSubtreeIfNeeded()
         let ringView = try XCTUnwrap(part.ringController).view
@@ -1783,8 +1911,9 @@ final class ApplicationPageTests: XCTestCase {
         calculator.setOwnButtonBindings([binding(5, "copy")])
         part.syncViewWithOptions()
         XCTAssertEqual(part.ownRingFold?.isExpanded, false)
-        XCTAssertTrue(body.isHidden)
-        XCTAssertTrue(part.ownRingFold?.body === body)
+        XCTAssertTrue(fold.body.isHidden)
+        XCTAssertTrue(part.ownRingFold === fold)
+        XCTAssertFalse(part.resetToDefaultsButton.isHiddenOrHasHiddenAncestor)
 
         // Back to the general ring: nothing is left below the switch.
         page.generalRingSwitch.state = .on
@@ -1807,7 +1936,14 @@ final class ApplicationPageTests: XCTestCase {
         let part = try XCTUnwrap(pane.detailController?.ringPart)
         let fold = try XCTUnwrap(part.ownRingFold)
         XCTAssertFalse(fold.isExpanded, "folded, and left so")
-        XCTAssertTrue(try XCTUnwrap(part.ringController).view.isHiddenOrHasHiddenAncestor)
+        XCTAssertTrue(try XCTUnwrap(part.ringController).placeRows[0].isHiddenOrHasHiddenAncestor)
+        // A click on a place of the drawing opens the rows, and the page measures again.
+        var heightChanges = 0
+        pane.detailController?.onHeightChange = { heightChanges += 1 }
+        try XCTUnwrap(part.ringController).selectPlace(2)
+        XCTAssertTrue(fold.isExpanded)
+        XCTAssertEqual(heightChanges, 1)
+        fold.setExpanded(false)
 
         Options.shared.buttons.binding = [binding(5, SystemShortcut.shortcutRing.identifier)]
         part.syncViewWithOptions()

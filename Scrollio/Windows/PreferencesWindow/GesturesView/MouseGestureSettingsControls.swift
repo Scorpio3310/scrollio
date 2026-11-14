@@ -586,6 +586,53 @@ enum MouseGestureRows {
         )
     }
 
+    /// "Haptic feedback is off under Mouse." at the rows' inset and "Open Mouse" (small) at
+    /// the right edge of a box `boxWidth` wide, in the column of its switches: the muted line
+    /// under the "Logitech mouse" box, of the pane and of an app's Gestures part. Hidden
+    /// until it is shown.
+    static func hapticsOffNote(
+        boxWidth: CGFloat, target: AnyObject, action: Selector
+    ) -> (holder: NSView, label: NSTextField, button: NSButton) {
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        let label = NSTextField(wrappingLabelWithString: text("gestures-haptics-off-under-mouse"))
+        label.font = PreferencesGroupedForm.explanationFont
+        label.textColor = PreferencesGroupedForm.explanationColor(enabled: true)
+        label.isSelectable = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let button = PreferencesGroupedForm.makePushButton(title: text("gestures-open-mouse"), target: target, action: action)
+        button.controlSize = .small
+        button.font = NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .small))
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        // The button says where it goes; the line next to it says why.
+        button.setAccessibilityHelp(label.stringValue)
+
+        let spacing = PreferencesGroupedForm.controlSpacing
+        label.preferredMaxLayoutWidth = max(0, boxWidth - 2 * inset - button.fittingSize.width - spacing)
+        let holder = NSView()
+        holder.translatesAutoresizingMaskIntoConstraints = false
+        holder.isHidden = true
+        holder.addSubview(label)
+        holder.addSubview(button)
+        // Both on one middle line, the line as tall as the taller of the two.
+        let middle = label.centerYAnchor.constraint(equalTo: button.centerYAnchor)
+        middle.priority = .defaultHigh
+        let hug = holder.heightAnchor.constraint(equalToConstant: 0)
+        hug.priority = .fittingSizeCompression
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: holder.leadingAnchor, constant: inset),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: button.leadingAnchor, constant: -spacing),
+            label.topAnchor.constraint(greaterThanOrEqualTo: holder.topAnchor),
+            label.bottomAnchor.constraint(lessThanOrEqualTo: holder.bottomAnchor),
+            button.trailingAnchor.constraint(equalTo: holder.trailingAnchor, constant: -inset),
+            button.centerYAnchor.constraint(equalTo: holder.centerYAnchor),
+            button.topAnchor.constraint(greaterThanOrEqualTo: holder.topAnchor),
+            button.bottomAnchor.constraint(lessThanOrEqualTo: holder.bottomAnchor),
+            middle, hug,
+        ])
+        return (holder, label, button)
+    }
+
     /// Puts the two switches of a Logitech mouse of `settings` into their rows, enabled and
     /// explained by what the connected mice can do.
     static func show(

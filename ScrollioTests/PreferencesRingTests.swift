@@ -371,6 +371,48 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(controller.view.frame.height, folded, accuracy: 0.5)
     }
 
+    /// Edit › Undo or Redo of a change made elsewhere (an app's Buttons part, the Buttons
+    /// pane) can change what opens the ring while the pane shows: the pane shows it at
+    /// once, and its button does what it says.
+    func testAnUndoThatChangesWhatOpensTheRingShowsOnThePane() throws {
+        summary = ShortcutRingBindingSummary(triggerTitles: [])
+        let controller = makeController()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 900), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        addTeardownBlock { window.close() }
+        let places = try XCTUnwrap(controller.placesSection)
+        XCTAssertEqual(controller.triggerButton.title, "Set Up…")
+        XCTAssertTrue(places.isCollapsible)
+
+        let notes = ApplicationTriggers(applicationNames: ["Notes"], triggerTitles: ["Back button"], path: "/System/Applications/Notes.app")
+        let opens = ShortcutRingBindingSummary(triggerTitles: [], onlyInApps: notes)
+        let none = ShortcutRingBindingSummary(triggerTitles: [])
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        undo.beginUndoGrouping()
+        undo.registerUndo(withTarget: self) { [weak undo] test in
+            test.summary = opens
+            undo?.registerUndo(withTarget: test) { $0.summary = none }
+        }
+        undo.endUndoGrouping()
+        undo.undo()
+        XCTAssertEqual(controller.triggerButton.title, "Change", "shown at once")
+        XCTAssertFalse(places.isCollapsible)
+        XCTAssertEqual(controller.triggerRow.explanation, "Only in Notes: Back button. A key combination works too.")
+        undo.redo()
+        XCTAssertEqual(controller.triggerButton.title, "Set Up…")
+        XCTAssertTrue(places.isCollapsible)
+
+        // The button does what the row says, also when the bindings changed unseen.
+        var added: [Bool] = []
+        controller.openButtonsPane = { added.append($0) }
+        controller.openApplicationButtons = { _ in XCTFail("the row says that nothing opens the ring") }
+        summary = opens
+        controller.triggerButton.performClick(nil)
+        XCTAssertEqual(added, [true], "Set Up…")
+    }
+
     /// A click on a place of the drawing while the places are folded opens them and
     /// selects that place's row.
     func testAClickOnThePlaceOfTheDrawingOpensFoldedPlaces() throws {
@@ -384,14 +426,18 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
     }
 
-    /// An app's page has its own switch for this (`ApplicationRingPartViewController`): the
-    /// rows of an app's own ring are no section of the pane's.
+    /// An app's page decides itself when its rows fold (`ApplicationRingPartViewController`):
+    /// the rows of an app's own ring stand under "Shortcuts", without the pane's line on how
+    /// to choose, and do not fold by what opens the general ring.
     func testAnAppsRingHasNoFoldingOfItsOwn() throws {
         let application = Application(path: "/System/Applications/Notes.app")
         let page = RingPreferencesViewController(application: application)
         page.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: []) }
         _ = page.view
-        XCTAssertNil(page.placesSection)
+        let places = try XCTUnwrap(page.placesSection)
+        XCTAssertEqual(places.title, "Shortcuts")
+        XCTAssertFalse(places.isCollapsible)
+        XCTAssertNil(page.placesHintLabel)
         XCTAssertFalse(page.placeRows[0].isHiddenOrHasHiddenAncestor)
     }
 

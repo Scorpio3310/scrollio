@@ -435,9 +435,13 @@ final class ScrollPreviewKeyCap: ScrollPreviewArtworkView {
 
     /// A key in this look, in a flipped view: `face` is its top while it is up, `travel`
     /// how far it stands up (its side shows under the face) and sinks when pressed;
-    /// `depth` 0 up, 1 pressed (the accent colour, the glyph white). The trigger pictures'
+    /// `depth` 0 up, 1 pressed (the accent colour, the glyph white, or near black on a
+    /// light accent such as Yellow, as the ring's lit places have it). The trigger pictures'
     /// keys (`TriggerKeyCap`) are drawn by it too, at other sizes.
-    static func draw(glyph: String, depth: CGFloat, face rest: NSRect, travel: CGFloat, cornerRadius: CGFloat, font: NSFont) {
+    static func draw(
+        glyph: String, depth: CGFloat, face rest: NSRect, travel: CGFloat, cornerRadius: CGFloat, font: NSFont,
+        accent: NSColor = .controlAccentColor
+    ) {
         let pressed = min(1, max(0, depth))
         let sink = travel * pressed
         let face = rest.offsetBy(dx: 0, dy: sink)
@@ -445,7 +449,6 @@ final class ScrollPreviewKeyCap: ScrollPreviewArtworkView {
             x: face.minX, y: face.minY,
             width: face.width, height: face.height + travel - sink
         )
-        let accent = NSColor.controlAccentColor
         let edge = ScrollPreviewPalette.keyEdge.mixed(pressed, with: accent.mixed(0.25, with: .black))
 
         let sidePath = NSBezierPath(roundedRect: side.insetBy(dx: 0.5, dy: 0.5), xRadius: cornerRadius, yRadius: cornerRadius)
@@ -464,7 +467,7 @@ final class ScrollPreviewKeyCap: ScrollPreviewArtworkView {
 
         let text = NSAttributedString(string: glyph, attributes: [
             .font: font,
-            .foregroundColor: ScrollPreviewPalette.keyGlyph.mixed(pressed, with: .white),
+            .foregroundColor: ScrollPreviewPalette.keyGlyph.mixed(pressed, with: ShortcutRingArtwork.litInk(on: accent)),
         ])
         let size = text.size()
         text.draw(at: NSPoint(x: face.midX - size.width / 2, y: face.midY - size.height / 2))

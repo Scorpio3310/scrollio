@@ -58,6 +58,8 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     /// What the connected mice can do: the "Logitech mouse" section shows as the Gestures
     /// pane's does. Tests replace it.
     var deviceSource: MouseGestureDeviceSource = .live
+    /// "Open Mouse": shows the Mouse pane. Tests replace it.
+    var openMousePane: (() -> Void)?
 
     private(set) var generalSection: PreferencesGroupSection!
     private(set) var generalGesturesRow: PreferencesSwitchRow!
@@ -87,6 +89,12 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     private(set) var logitechFold: PreferencesDisclosureSection?
     private(set) var deviceTrackingRow: PreferencesSwitchRow?
     private(set) var hapticsRow: PreferencesSwitchRow?
+    /// "Haptic feedback is off under Mouse." with "Open Mouse", under the "Logitech mouse"
+    /// box, as the Gestures pane has it: in sight while the box shows its rows and a mouse
+    /// has its haptics off because they were switched off under Mouse (no pulse comes).
+    private(set) var hapticsOffNote: NSView?
+    private(set) var hapticsOffLabel: NSTextField?
+    private(set) var openMouseButton: NSButton?
     /// The sections whose titles fold them while no button runs the gestures here.
     var foldingSections: [PreferencesDisclosureSection] {
         return [directionsFold, behaviourFold, logitechFold].compactMap { $0 }
@@ -273,8 +281,25 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
                 remeasures = remeasures || view.superview != nil
             }
         }
+        if syncHapticsOffNote() {
+            remeasures = remeasures || view.superview != nil
+        }
         showOwnValues()
         return remeasures
+    }
+
+    /// Shows the line under the "Logitech mouse" box, or takes it away: while the box shows
+    /// its rows and the mice say that the haptics are off under Mouse. A line sits close
+    /// under its box; without it the footer keeps a section's room. True when it came or
+    /// went.
+    @discardableResult
+    private func syncHapticsOffNote() -> Bool {
+        guard let note = hapticsOffNote, let logitechFold else { return false }
+        let shows = !logitechFold.isHidden && logitechFold.showsBody && logitechRules.showsHapticsOffNote
+        content.setCustomSpacing(shows ? PreferencesGroupedForm.noteSpacing : PreferencesGroupedForm.sectionSpacing, after: logitechFold)
+        guard note.isHidden == shows else { return false }
+        note.isHidden = !shows
+        return true
     }
 
     /// What the Gestures pane shows of a Logitech mouse's switches, by the connected mice.
@@ -376,7 +401,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         if let controls {
             controls.endEditing()
             resetToDefaults.endUndoOffer()
-            for view in [modeSection, directionsFold, behaviourFold, logitechFold, resetFooter] as [NSView?] {
+            for view in [modeSection, directionsFold, behaviourFold, logitechFold, hapticsOffNote, resetFooter] as [NSView?] {
                 guard let view else { continue }
                 content.removeArrangedSubview(view)
                 view.removeFromSuperview()
@@ -394,6 +419,9 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
             logitechFold = nil
             deviceTrackingRow = nil
             hapticsRow = nil
+            hapticsOffNote = nil
+            hapticsOffLabel = nil
+            openMouseButton = nil
             return
         }
         let controls = MouseGestureSettingsControls(
@@ -445,10 +473,19 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         let collapsible = !Self.hasButton(for: application, general: Options.shared.buttons.binding)
         for fold in folds {
             fold.isCollapsible = collapsible
-            fold.onExpandedChange = { [weak self] _ in self?.onHeightChange?() }
+            fold.onExpandedChange = { [weak self] _ in
+                // (The line under the Logitech box opens and folds with it.)
+                self?.syncHapticsOffNote()
+                self?.onHeightChange?()
+            }
         }
         folds[2].isHidden = !logitechRules.showsOptions
-        PreferencesGroupedForm.add([modeBox] + folds + [resetFooter], to: content)
+        let note = MouseGestureRows.hapticsOffNote(boxWidth: width, target: self, action: #selector(openMouseClicked(_:)))
+        hapticsOffNote = note.holder
+        hapticsOffLabel = note.label
+        openMouseButton = note.button
+        PreferencesGroupedForm.add([modeBox] + folds + [note.holder, resetFooter], to: content)
+        syncHapticsOffNote()
     }
 
     // MARK: - Actions
@@ -476,6 +513,16 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         controls?.setHapticFeedback(sender.state == .on)
         showOwnValues()
         resetToDefaults.settingsDidChange()
+    }
+
+    /// "Open Mouse", next to the line that says the haptics are off there.
+    @objc func openMouseClicked(_ sender: NSButton) {
+        if let openMousePane {
+            openMousePane()
+            return
+        }
+        PreferencesButtonsViewController.splitViewController(of: self)?
+            .selectPane(withIdentifier: MousePreferencesViewController.tabIdentifier)
     }
 
     @objc func generalGesturesClick(_ sender: NSSwitch) {

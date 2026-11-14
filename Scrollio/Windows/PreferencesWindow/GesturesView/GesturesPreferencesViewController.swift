@@ -67,6 +67,8 @@ final class GesturesPreferencesViewController: NSViewController {
     var deviceSource: MouseGestureDeviceSource = .live
     /// Which buttons use Gesture Navigation; tests and screenshots replace it with fixtures.
     var bindingSummary: () -> MouseGestureBindingSummary = { .current }
+    /// What the pane shows of it now: "Set Up…" and "Change" do what the row says.
+    private var shownSummary: MouseGestureBindingSummary?
     /// "Set Up…" or "Change": shows the Buttons pane and, with no gesture button yet
     /// (true), records one that gets Gesture Navigation; with one (false), selects its row
     /// there. Tests replace it.
@@ -231,6 +233,18 @@ final class GesturesPreferencesViewController: NSViewController {
             name: LogiCenter.mouseStateChanged,
             object: nil
         )
+        // Edit › Undo or Redo of a change in Buttons or an app's Buttons part can change
+        // which button runs the gestures while the pane shows.
+        for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+            NotificationCenter.default.addObserver(self, selector: #selector(undoDidRun(_:)), name: name, object: nil)
+        }
+    }
+
+    /// An Undo or Redo ran: the pane on screen shows which button runs the gestures now,
+    /// when that changed (an Undo of typing elsewhere changes nothing here).
+    @objc private func undoDidRun(_ notification: Notification) {
+        guard isViewLoaded, view.window != nil, bindingSummary() != shownSummary else { return }
+        reload()
     }
 
     override func viewWillAppear() {
@@ -272,6 +286,7 @@ final class GesturesPreferencesViewController: NSViewController {
     func reload() {
         guard isViewLoaded, controls != nil else { return }
         let summary = bindingSummary()
+        shownSummary = summary
         controls.showLogiActions = summary.hasLogitechGestureButton
         controls.sync()
         let gesture = Options.shared.gesture
@@ -284,9 +299,11 @@ final class GesturesPreferencesViewController: NSViewController {
         let runs = summary.hasGestureButton || summary.onlyInApps != nil
         gestureButtonButton.title = text(runs ? "gestures-gesture-button-change" : "gestures-gesture-button-set-up")
         modeRow.explanation = text(presentation.descriptionKey)
-        // No button runs the gestures: what is under the first box waits, folded.
+        // No button runs these gestures (none at all, or only in apps that run their own):
+        // what is under the first box waits, folded.
+        let runsThese = summary.hasGestureButton || summary.onlyInApps?.usesGeneralSettings == true
         for section in foldingSections {
-            section.isCollapsible = !runs
+            section.isCollapsible = !runsThese
         }
 
         for slot in Slot.allCases where slot.isHorizontal {
@@ -465,7 +482,8 @@ final class GesturesPreferencesViewController: NSViewController {
     }
 
     @objc func gestureButtonClicked(_ sender: NSButton) {
-        let summary = bindingSummary()
+        // (What the row says, which an Undo keeps up to date.)
+        let summary = shownSummary ?? bindingSummary()
         if !summary.hasGestureButton, let apps = summary.onlyInApps {
             if let openApplicationButtons {
                 openApplicationButtons(apps)
@@ -572,47 +590,12 @@ final class GesturesPreferencesViewController: NSViewController {
     /// "Haptic feedback is off under Mouse." at the rows' inset, "Open Mouse" (small) at the
     /// right edge of the box above, in the column of its switches.
     private func makeHapticsOffNote() -> NSView {
-        let label = Self.makeNote(text("gestures-haptics-off-under-mouse"), identifier: Identifier.hapticsOffNote)
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        hapticsOffLabel = label
-        let button = PreferencesGroupedForm.makePushButton(
-            title: text("gestures-open-mouse"),
-            target: self,
-            action: #selector(openMouseClicked(_:))
-        )
-        button.controlSize = .small
-        button.font = NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .small))
-        button.identifier = Identifier.openMouse
-        button.setContentCompressionResistancePriority(.required, for: .horizontal)
-        // The button says where it goes; the line next to it says why.
-        button.setAccessibilityHelp(label.stringValue)
-        openMouseButton = button
-
-        let inset = PreferencesGroupedForm.rowHorizontalInset
-        let spacing = PreferencesGroupedForm.controlSpacing
-        label.preferredMaxLayoutWidth = max(0, Self.boxWidth - 2 * inset - button.fittingSize.width - spacing)
-        let holder = NSView()
-        holder.translatesAutoresizingMaskIntoConstraints = false
-        holder.isHidden = true
-        holder.addSubview(label)
-        holder.addSubview(button)
-        // Both on one middle line, the line as tall as the taller of the two.
-        let middle = label.centerYAnchor.constraint(equalTo: button.centerYAnchor)
-        middle.priority = .defaultHigh
-        let hug = holder.heightAnchor.constraint(equalToConstant: 0)
-        hug.priority = .fittingSizeCompression
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: holder.leadingAnchor, constant: inset),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: button.leadingAnchor, constant: -spacing),
-            label.topAnchor.constraint(greaterThanOrEqualTo: holder.topAnchor),
-            label.bottomAnchor.constraint(lessThanOrEqualTo: holder.bottomAnchor),
-            button.trailingAnchor.constraint(equalTo: holder.trailingAnchor, constant: -inset),
-            button.centerYAnchor.constraint(equalTo: holder.centerYAnchor),
-            button.topAnchor.constraint(greaterThanOrEqualTo: holder.topAnchor),
-            button.bottomAnchor.constraint(lessThanOrEqualTo: holder.bottomAnchor),
-            middle, hug,
-        ])
-        return holder
+        let note = MouseGestureRows.hapticsOffNote(boxWidth: Self.boxWidth, target: self, action: #selector(openMouseClicked(_:)))
+        note.label.identifier = Identifier.hapticsOffNote
+        note.button.identifier = Identifier.openMouse
+        hapticsOffLabel = note.label
+        openMouseButton = note.button
+        return note.holder
     }
 
     private func makeHapticsRow() -> PreferencesGroupRow {

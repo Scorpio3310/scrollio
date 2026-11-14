@@ -132,8 +132,11 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         list.onAdd = { [weak self] button in self?.showAddMenu(from: button) }
         list.onRemove = { [weak self] id in
             if id == ButtonsListLayout.thumbWheelRowID { self?.removeOwnThumbWheel(); return }  // (ApplicationThumbWheelRow.swift)
-            guard let id = id as? UUID else { return }
-            self?.removeOwnBinding(id: id)
+            guard let self, let id = id as? UUID else { return }
+            // A name still typed in the row's popover goes into the binding first, so that
+            // Undo brings it back with the row.
+            self.row(for: id)?.pullDown.cancelShortcutRecording()
+            self.removeOwnBinding(id: id)
         }
         list.onOpen = { [weak self] id in
             if id == ButtonsListLayout.thumbWheelRowID { self?.openThumbWheelMenu(); return }  // (ApplicationThumbWheelRow.swift)
@@ -162,7 +165,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         ])
 
         let reset = PreferencesPaneReset(
-            undoActionNameKey: Self.resetActionNameKey,
+            undoActionName: Self.resetActionName(for: application),
             hasSettingsToReset: { [weak self] in self?.hasSettingsToReset ?? false },
             undoManager: { [weak self] in self?.undoTarget },
             reset: { [weak self] undo in self?.resetOwnButtons(undoManager: undo) }
@@ -532,8 +535,13 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     // MARK: - Reset to Defaults, with Undo
 
-    /// The undo action's name ("Reset Buttons").
-    static let resetActionNameKey = "apps-buttons-undo-reset"
+    /// The undo action's name, with the app's: "Reset Buttons in Calculator" (Edit › Undo
+    /// says which app's reset it takes back, as the Ring and Gestures parts' do).
+    static let resetActionNameKey = "apps-undo-reset-buttons"
+
+    static func resetActionName(for application: Application) -> String {
+        return String(format: NSLocalizedString(resetActionNameKey, comment: ""), application.getName())
+    }
 
     /// The app has a button or key, or the thumb wheel, of its own.
     var hasSettingsToReset: Bool {
@@ -572,7 +580,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
                 bindings, thumbWheel: thumbWheel, of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange
             )
         }
-        undo.setActionName(NSLocalizedString(resetActionNameKey, comment: ""))
+        undo.setActionName(resetActionName(for: application))
     }
 
     /// Undo of a reset: the buttons and the thumb wheel function from before it, in their
@@ -598,7 +606,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
             guard let entry = Self.entry(storedAs: path) else { return }
             Self.resetOwnButtons(of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange)
         }
-        undo.setActionName(NSLocalizedString(resetActionNameKey, comment: ""))
+        undo.setActionName(resetActionName(for: application))
     }
 
     /// The entry the list holds now for the app stored as `path`, as the Undo of an app's

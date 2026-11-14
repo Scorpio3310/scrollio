@@ -316,10 +316,11 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 /// after the page closed.
 ///
 /// While nothing opens the ring with the app in front (`ApplicationTriggerRule`), the own
-/// ring and its button are folded under a "Shortcuts" title (`PreferencesDisclosureSection`,
-/// as the Shortcut Ring pane folds its places): a click opens them, all of it editable.
-/// Once something opens the ring there, they stand under the switch's box as before, with
-/// no title.
+/// ring's eight rows are folded under their "Shortcuts" title (`PreferencesDisclosureSection`),
+/// as the Shortcut Ring pane folds its places: a click opens them, all of it editable; the
+/// drawing, the freeze switch and "Reset to Defaults" stay in sight (a click on a place of
+/// the drawing opens the rows too). Once something opens the ring there, "Shortcuts" is a
+/// plain title.
 final class ApplicationRingPartViewController: NSViewController, ApplicationPagePartController {
 
     enum Identifier {
@@ -354,15 +355,18 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         return resetToDefaults.button
     }
     private(set) var resetFooter: PreferencesGroupFooter!
-    /// The own ring's view and "Reset to Defaults", as one view: there only while "Use the
-    /// general ring" is off. Its width is the boxes'; the ring's view inside it reaches past
-    /// its edges by the margins the ring's view brings (clipped away by a view of their
-    /// own, which holds the ring's view alone: the button's focus ring is not cut), so it
-    /// can stand under the switch's box or as the body of `ownRingFold` alike.
+    /// The own ring's view and "Reset to Defaults", as one view, under the switch's box:
+    /// there only while "Use the general ring" is off. Its width is the boxes'; the ring's
+    /// view inside it reaches past its edges by the margins the ring's view brings (clipped
+    /// away by a view of their own, which holds the ring's view alone: the button's focus
+    /// ring is not cut).
     private(set) var ownRingBody: NSView?
-    /// "Shortcuts", which folds `ownRingBody`: there while the own ring is in use and
-    /// nothing opens the ring with the app in front.
-    private(set) var ownRingFold: PreferencesDisclosureSection?
+    /// "Shortcuts", which folds the own ring's eight rows: foldable while the own ring is in
+    /// use and nothing opens the ring with the app in front; nil otherwise.
+    var ownRingFold: PreferencesDisclosureSection? {
+        guard let places = ringController?.placesSection, places.isCollapsible else { return nil }
+        return places
+    }
     /// The part ends under the switch's box (no own ring), or under the own ring.
     private var endsUnderRingSection: NSLayoutConstraint!
     private var ownRingConstraints: [NSLayoutConstraint] = []
@@ -474,14 +478,21 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     /// the shortcuts suggested for Figma."; for one that did not: "Reset to Defaults fills
     /// the ring with the shortcuts suggested for Figma." When the keyboard layout leaves
     /// `emptyPlaces` places of the suggestion empty (their keys need Option there), the
-    /// line says so instead of naming the app.
-    static func suggestionExplanation(name: String, emptyPlaces: Int, startedFromIt: Bool) -> String {
+    /// line says so instead of naming the app, and then also how many more the suggestion
+    /// leaves empty on purpose (`emptyOnPurpose`), so that the places showing "No Action"
+    /// add up.
+    static func suggestionExplanation(name: String, emptyPlaces: Int, startedFromIt: Bool, emptyOnPurpose: Int = 0) -> String {
         let base = startedFromIt ? "apps-detail-ring-suggested-in-use" : "apps-detail-ring-suggested-reset"
         guard emptyPlaces > 0 else {
             return String(format: NSLocalizedString(base, comment: ""), name)
         }
         let key = base + "-empty" + (emptyPlaces == 1 ? "-one" : "-other")
-        return String(format: NSLocalizedString(key, comment: ""), emptyPlaces)
+        let line = String(format: NSLocalizedString(key, comment: ""), emptyPlaces)
+        guard emptyOnPurpose > 0 else { return line }
+        let more = emptyOnPurpose == 1
+            ? NSLocalizedString("apps-detail-ring-suggested-empty-on-purpose-one", comment: "")
+            : String(format: NSLocalizedString("apps-detail-ring-suggested-empty-on-purpose-other", comment: ""), emptyOnPurpose)
+        return line + " " + more
     }
 
     /// Whether the app's own ring started from its suggested shortcuts: it was filled from
@@ -494,16 +505,22 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
 
     /// The row of the suggested shortcuts: there while the app has a suggestion and its own
     /// ring is in use, its line saying whether the ring started from them and how many
-    /// places the layout leaves empty. True when the row came or went, or its room changed,
-    /// while the part is on screen (the page measures again).
+    /// places the layout leaves empty (of a ring that started from them, those still empty
+    /// in it: a place filled by hand is not counted; else those the reset would leave
+    /// empty). True when the row came or went, or its room changed, while the part is on
+    /// screen (the page measures again).
     private func showSuggestion() -> Bool {
         let shows = suggestion != nil && application.ownRingPlaces != nil
         var moved = suggestionRow.isHidden == shows && view.superview != nil
         suggestionRow.isHidden = !shows
         guard shows, let suggestion, let suggested = suggestedPlaces() else { return moved }
+        let started = ringStartedFromSuggestion(suggested: suggested)
+        let own = application.ownRingPlaces ?? []
         let line = Self.suggestionExplanation(
-            name: application.getName(), emptyPlaces: suggestion.placesLeftEmpty(in: suggested),
-            startedFromIt: ringStartedFromSuggestion(suggested: suggested)
+            name: application.getName(),
+            emptyPlaces: started ? suggestion.placesStillEmpty(in: suggested, own: own) : suggestion.placesLeftEmpty(in: suggested),
+            startedFromIt: started,
+            emptyOnPurpose: started ? suggestion.placesEmptyOnPurpose(own: own) : suggestion.placesEmptyOnPurpose()
         )
         if suggestionRow.explanation != line {
             suggestionRow.explanation = line
@@ -592,11 +609,11 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         resetToDefaults.endUndoOffer()
     }
 
-    /// Puts the app's own ring (the drawing and the eight rows) and "Reset to Defaults"
-    /// under the switch's box, or takes them away again: they are there exactly while "Use
-    /// the general ring" is off. While `folds`, under a "Shortcuts" title that folds them
-    /// (folded when it comes); else right under the box, as the part always had them. True
-    /// when something came, went or moved.
+    /// Puts the app's own ring (the drawing, the freeze switch and the eight rows) and
+    /// "Reset to Defaults" under the switch's box, or takes them away again: they are there
+    /// exactly while "Use the general ring" is off. While `folds`, the eight rows are folded
+    /// under their "Shortcuts" title (folded when it can fold); else the title is a plain one.
+    /// True when something came, went, folded or unfolded.
     @discardableResult
     private func showOwnRing(_ shows: Bool, folds: Bool) -> Bool {
         guard shows else {
@@ -605,8 +622,6 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             resetToDefaults.endUndoOffer()
             NSLayoutConstraint.deactivate(ownRingConstraints)
             ownRingConstraints = []
-            ownRingFold?.removeFromSuperview()
-            ownRingFold = nil
             ownRingBody?.removeFromSuperview()
             ownRingBody = nil
             resetFooter.removeFromSuperview()
@@ -616,49 +631,41 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             endsUnderRingSection.isActive = true
             return true
         }
-        let isNew = ownRingBody == nil
-        let body = ownRingBody ?? makeOwnRingBody()
-        guard isNew || folds != (ownRingFold != nil) else { return false }
-        NSLayoutConstraint.deactivate(ownRingConstraints)
-        endsUnderRingSection.isActive = false
-        let margin = PreferencesGroupedForm.margin
-        let placed: NSView
-        let gap: CGFloat
-        if folds {
-            body.removeFromSuperview()
-            let fold = PreferencesDisclosureSection(title: NSLocalizedString("ring-places-header", comment: ""), body: body)
-            fold.isCollapsible = true
-            fold.onExpandedChange = { [weak self] _ in self?.onHeightChange?() }
-            ownRingFold = fold
-            placed = fold
-            // A titled section's room above it.
-            gap = PreferencesGroupedForm.sectionSpacing
-        } else {
-            ownRingFold?.removeFromSuperview()
-            ownRingFold = nil
-            // A fold that was closed hid its body (and may have faded it): it shows here.
-            body.isHidden = false
-            body.alphaValue = 1
-            placed = body
-            // The room the ring's own top margin always made under the box.
-            gap = margin
+        var moved = false
+        if ownRingBody == nil {
+            let body = makeOwnRingBody()
+            endsUnderRingSection.isActive = false
+            view.addSubview(body)
+            let margin = PreferencesGroupedForm.margin
+            ownRingConstraints = [
+                // The room the ring's own top margin always made under the box.
+                body.topAnchor.constraint(equalTo: ringSection.bottomAnchor, constant: margin),
+                body.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
+                body.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
+                body.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -margin),
+            ]
+            NSLayoutConstraint.activate(ownRingConstraints)
+            moved = true
         }
-        view.addSubview(placed)
-        ownRingConstraints = [
-            placed.topAnchor.constraint(equalTo: ringSection.bottomAnchor, constant: gap),
-            placed.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
-            placed.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
-            placed.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -margin),
-        ]
-        NSLayoutConstraint.activate(ownRingConstraints)
-        return true
+        if let places = ringController?.placesSection, places.isCollapsible != folds {
+            places.isCollapsible = folds
+            moved = true
+        }
+        return moved
     }
 
     /// The own ring's controller and the view that holds its view and "Reset to Defaults"
     /// (`ownRingBody`).
     private func makeOwnRingBody() -> NSView {
         let ring = RingPreferencesViewController(application: application)
-        ring.onPlaceChange = { [weak self] in self?.resetToDefaults.settingsDidChange() }
+        ring.onPlaceChange = { [weak self] in
+            guard let self else { return }
+            self.resetToDefaults.settingsDidChange()
+            // (A place filled by hand: the line counts one empty place less.)
+            if self.showSuggestion() {
+                self.onHeightChange?()
+            }
+        }
         addChild(ring)
         ringController = ring
         let body = NSView()
@@ -671,6 +678,8 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         ringClip.clipsToBounds = true
         let ringView = ring.view
         ringView.translatesAutoresizingMaskIntoConstraints = false
+        // The rows opened or folded: the page measures again.
+        ring.placesSection?.onExpandedChange = { [weak self] _ in self?.onHeightChange?() }
         ringClip.addSubview(ringView)
         body.addSubview(ringClip)
         body.addSubview(resetFooter)

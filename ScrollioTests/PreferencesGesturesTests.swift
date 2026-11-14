@@ -671,6 +671,46 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(controller.view.frame.height, folded, accuracy: 0.5)
     }
 
+    /// Edit › Undo or Redo of a change made elsewhere (an app's Buttons part, the Buttons
+    /// pane) can change which button runs the gestures while the pane shows: the pane
+    /// shows it at once, and its button does what it says.
+    func testAnUndoThatChangesWhichButtonRunsTheGesturesShowsOnThePane() {
+        let none = MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false)
+        summary = none
+        let controller = makeController()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 900), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        addTeardownBlock { window.close() }
+        XCTAssertEqual(controller.gestureButtonButton.title, "Set Up…")
+
+        let notes = ApplicationTriggers(applicationNames: ["Notes"], triggerTitles: ["Back button"], path: "/System/Applications/Notes.app")
+        let runs = MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false, onlyInApps: notes)
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        undo.beginUndoGrouping()
+        undo.registerUndo(withTarget: self) { [weak undo] test in
+            test.summary = runs
+            undo?.registerUndo(withTarget: test) { $0.summary = none }
+        }
+        undo.endUndoGrouping()
+        undo.undo()
+        XCTAssertEqual(controller.gestureButtonButton.title, "Change", "shown at once")
+        XCTAssertEqual(controller.gestureButtonRow.explanation, "Only in Notes: Back button.")
+        XCTAssertTrue(controller.foldingSections.allSatisfy { !$0.isCollapsible })
+        undo.redo()
+        XCTAssertEqual(controller.gestureButtonButton.title, "Set Up…")
+        XCTAssertTrue(controller.foldingSections.allSatisfy { $0.isCollapsible })
+
+        // The button does what the row says, also when the bindings changed unseen.
+        var added: [Bool] = []
+        controller.openButtonsPane = { added.append($0) }
+        controller.openApplicationButtons = { _ in XCTFail("the row says that no button runs them") }
+        summary = runs
+        controller.gestureButtonButton.performClick(nil)
+        XCTAssertEqual(added, [true], "Set Up…")
+    }
+
     func testTheGestureButtonSummaryNamesEachButtonOnce() {
         func binding(_ code: UInt16, modifiers: UInt = 0) -> ButtonBinding {
             return ButtonBinding(

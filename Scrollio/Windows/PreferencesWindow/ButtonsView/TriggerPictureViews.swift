@@ -154,15 +154,20 @@ enum TriggerBadge {
     }
 
     /// The badge filling `rect` (in a flipped view); nothing for a hold that is no badge.
-    static func draw(_ hold: TriggerPicture.Hold, in rect: NSRect, symbolName: String = TriggerBadge.symbolName) {
+    static func draw(
+        _ hold: TriggerPicture.Hold, in rect: NSRect, symbolName: String = TriggerBadge.symbolName,
+        accent: NSColor = .controlAccentColor
+    ) {
+        let ink = ShortcutRingArtwork.litInk(on: accent)
         switch hold {
         case .number(let number):
-            ButtonsMouseMiniature.drawBadge(number, in: rect, font: font(height: rect.height), fill: .controlAccentColor, text: .white)
+            // (White, or near black on a light accent such as Yellow.)
+            ButtonsMouseMiniature.drawBadge(number, in: rect, font: font(height: rect.height), fill: accent, text: ink)
         case .notDrawn:
-            NSColor.controlAccentColor.setFill()
+            accent.setFill()
             let radius = min(rect.width, rect.height) / 2
             NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
-            guard let symbol = symbol(named: symbolName, height: rect.height) else { return }
+            guard let symbol = symbol(named: symbolName, height: rect.height, ink: ink) else { return }
             let size = symbol.size
             symbol.draw(
                 in: NSRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height),
@@ -173,10 +178,11 @@ enum TriggerBadge {
         }
     }
 
-    /// The symbol in white for a badge `height` tall; nil when the system has no such symbol.
-    static func symbol(named name: String = TriggerBadge.symbolName, height: CGFloat) -> NSImage? {
+    /// The symbol in `ink` (white on the accent colour) for a badge `height` tall; nil when
+    /// the system has no such symbol.
+    static func symbol(named name: String = TriggerBadge.symbolName, height: CGFloat, ink: NSColor = .white) -> NSImage? {
         let configuration = NSImage.SymbolConfiguration(pointSize: (height * 0.55).rounded(), weight: .semibold)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
+            .applying(NSImage.SymbolConfiguration(paletteColors: [ink]))
         return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
     }
 }

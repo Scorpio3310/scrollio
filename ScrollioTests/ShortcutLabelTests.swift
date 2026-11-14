@@ -972,12 +972,35 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         XCTAssertNil(popover.editedLabel)
     }
 
+    /// At the limit, a key typed or text pasted inside the name gives way, not the end of
+    /// the name (F22): what does not fit of it is left out, and the caret stays after what
+    /// was kept.
+    func testTypingInsideAFullNameNeverCutsItsEnd() throws {
+        let full = "Reload Page Without Cach"
+        XCTAssertEqual(full.count, ShortcutLabel.maximumNameLength)
+        let (popover, editor) = try details(label: label(full))
+        type("Reload XPage Without Cach", into: editor.nameField, of: editor)
+        XCTAssertEqual(editor.nameField.stringValue, full, "the key is refused")
+        XCTAssertEqual(popover.editedLabel?.name, full)
+
+        type("Reload Page", into: editor.nameField, of: editor)
+        type("Reload ABCDEFGHIJKLMNOPQRSTUVPage", into: editor.nameField, of: editor)
+        XCTAssertEqual(editor.nameField.stringValue, "Reload ABCDEFGHIJKLMPage", "as much of the paste as fits")
+        XCTAssertEqual(
+            ShortcutLabelEditorView.fitted("Reload ABCDEFGHIJKLMNOPQRSTUVPage", after: "Reload Page").caret,
+            "Reload ABCDEFGHIJKLM".utf16.count
+        )
+        // Typed at the end, the same as before.
+        type("Reload ABCDEFGHIJKLMPageX", into: editor.nameField, of: editor)
+        XCTAssertEqual(editor.nameField.stringValue, "Reload ABCDEFGHIJKLMPage")
+    }
+
     func testTheDetailsShowTheNameAndIconThatAreThere() throws {
         let (popover, editor) = try details(label: reload)
         XCTAssertEqual(editor.nameField.stringValue, "Reload")
         XCTAssertEqual(editor.icon, .symbol("arrow.clockwise"))
         XCTAssertNotNil(editor.iconWell.image)
-        XCTAssertEqual(editor.iconWell.accessibilityLabel(), "Icon: arrow clockwise")
+        XCTAssertEqual(editor.iconWell.accessibilityLabel(), "Icon: Reload arrow")
         XCTAssertEqual(popover.editedLabel, reload)
 
         let (_, typed) = try details(label: label("Reload", character: "🔄"))
@@ -1316,6 +1339,66 @@ final class ShortcutLabelPopoverTests: XCTestCase {
         // A listed action on the button: the name is gone from what is stored.
         pane.setAction(of: back.id, to: SystemShortcut.copy)
         XCTAssertNil(Options.shared.buttons.binding.first?.label)
+    }
+
+    /// "−" while a name is typed in the row's popover: the name goes into the binding
+    /// before the row goes, so that Undo brings the row back with it (F21). In the Buttons
+    /// pane and in an app's Buttons part.
+    func testRemovingARowWhileItsNameIsTypedKeepsTheNameForUndo() throws {
+        let back = ButtonBinding(triggerEvent: trigger, systemShortcutName: shiftCommandR, label: reload)
+        Options.shared.buttons.binding = [back]
+        let pane = PreferencesButtonsViewController()
+        pane.deviceSource = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        pane.scrollHoldKeys = { [] }
+        pane.startRecording = { _ in }
+        pane.stopRecording = {}
+        pane.presentOpenTarget = { _, _, _ in }
+        pane.openActionMenu = { _ in }
+        pane.presentPlaceMenu = { _, _ in }
+        pane.showPane = { _ in }
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        pane.paneUndoManager = undo
+        _ = pane.view
+        let row = try XCTUnwrap(pane.rows.first { $0.binding.id == back.id })
+        quiet(row.pullDown)
+        row.pullDown.shortcutSelected(try keyboardShortcutItem(of: row.pullDown))
+        let popover = try XCTUnwrap(row.pullDown.detailsPopover as? QuietPopover)
+        let editor = try XCTUnwrap(popover.labelEditor)
+        type("Reload All", into: editor.nameField, of: editor)
+        undo.beginUndoGrouping()
+        pane.list.onRemove?(back.id)
+        undo.endUndoGrouping()
+        XCTAssertTrue(Options.shared.buttons.binding.isEmpty)
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding.first?.label, label("Reload All", symbol: "arrow.clockwise"))
+
+        // An app's own button, the same way.
+        let savedApplications = Options.shared.application.applications
+        addTeardownBlock { Options.shared.application.applications = savedApplications }
+        let notes = Application(path: "/System/Applications/Notes.app")
+        notes.setOwnButtonBindings([back])
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [notes], matchKey: "path")
+        let part = ApplicationButtonsViewController(application: notes)
+        part.paneUndoManager = undo
+        part.startRecording = { _ in }
+        part.stopRecording = {}
+        part.openActionMenu = { _ in }
+        _ = part.view
+        let own = try XCTUnwrap(part.rows.first { $0.binding.id == back.id })
+        quiet(own.pullDown)
+        own.pullDown.shortcutSelected(try keyboardShortcutItem(of: own.pullDown))
+        let ownPopover = try XCTUnwrap(own.pullDown.detailsPopover as? QuietPopover)
+        let ownEditor = try XCTUnwrap(ownPopover.labelEditor)
+        type("Reload Page", into: ownEditor.nameField, of: ownEditor)
+        undo.beginUndoGrouping()
+        part.list.onRemove?(back.id)
+        undo.endUndoGrouping()
+        XCTAssertTrue(notes.ownButtonBindings.isEmpty)
+        undo.undo()
+        XCTAssertEqual(notes.ownButtonBindings.first?.label, label("Reload Page", symbol: "arrow.clockwise"))
     }
 
     // MARK: The recorder hands its popover on

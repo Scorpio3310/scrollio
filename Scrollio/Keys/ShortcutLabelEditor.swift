@@ -76,7 +76,7 @@ final class ShortcutIconWell: NSButton {
         return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
     }
 
-    /// Shows `icon`, and says it to VoiceOver: "Icon: arrow clockwise", or "Choose Icon".
+    /// Shows `icon`, and says it to VoiceOver: "Icon: Reload arrow", or "Choose Icon".
     func show(_ icon: ShortcutLabel.Icon?) {
         let text = { (key: String) in NSLocalizedString(key, comment: "") }
         let name: String
@@ -84,7 +84,7 @@ final class ShortcutIconWell: NSButton {
         case .symbol(let symbol)?:
             image = Self.symbol(symbol, size: 18, colour: .controlAccentColor)
             contentTintColor = .controlAccentColor
-            name = String(format: text("key-recorder-icon-well"), symbol.replacingOccurrences(of: ".", with: " "))
+            name = String(format: text("key-recorder-icon-well"), ShortcutIconSet.readableName(ofSymbol: symbol))
         case .character(let character)?:
             image = ShortcutIconSet.image(of: .character(character), side: 24)
             contentTintColor = nil
@@ -124,6 +124,9 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
 
     /// The icon as chosen now.
     private(set) var icon: ShortcutLabel.Icon?
+    /// The name as the field held it after the last edit it kept: an edit that would make it
+    /// too long is measured against it.
+    private var keptName = ""
 
     var onRecordAgain: (() -> Void)?
     var onDone: (() -> Void)?
@@ -185,6 +188,7 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
     func show(_ label: ShortcutLabel?) {
         closeChooser()
         nameField.stringValue = label?.name ?? ""
+        keptName = nameField.stringValue
         icon = label?.icon
         iconWell.show(icon)
     }
@@ -335,12 +339,44 @@ final class ShortcutLabelEditorView: NSView, NSTextFieldDelegate, NSPopoverDeleg
 
     func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField, field === nameField else { return }
+        let editor = field.currentEditor() as? NSTextView
+        // (A composition under way is measured once it is committed.)
+        if editor?.hasMarkedText() == true { return }
         // Never longer than a name is stored, in characters and in what they are made of.
+        // What was typed or pasted is what gives way, not the end of the name.
         let text = field.stringValue
-        let cut = ShortcutLabel.cut(text)
-        if cut.unicodeScalars.count != text.unicodeScalars.count {
-            field.stringValue = cut
+        if ShortcutLabel.cut(text).unicodeScalars.count != text.unicodeScalars.count {
+            let (kept, caret) = Self.fitted(text, after: keptName)
+            field.stringValue = kept
+            editor?.selectedRange = NSRange(location: caret, length: 0)
         }
+        keptName = field.stringValue
+    }
+
+    /// `text`, an edit of `before` that makes the name too long, made to fit by keeping
+    /// only as much of what the edit put in as there is room for (none: the name stays as
+    /// it was); and where the caret goes, in UTF-16 units: after what was kept of it.
+    static func fitted(_ text: String, after before: String) -> (text: String, caret: Int) {
+        let new = Array(text), old = Array(before)
+        var head = 0
+        while head < min(new.count, old.count), new[head] == old[head] {
+            head += 1
+        }
+        var tail = 0
+        while tail < min(new.count, old.count) - head, new[new.count - 1 - tail] == old[old.count - 1 - tail] {
+            tail += 1
+        }
+        let prefix = String(new[..<head]), suffix = String(new[(new.count - tail)...])
+        // (What was put in, each character as long as a name keeps it.)
+        let inserted = Array(ShortcutLabel.cut(String(new[head..<(new.count - tail)])))
+        for count in stride(from: inserted.count, through: 0, by: -1) {
+            let candidate = prefix + String(inserted[..<count]) + suffix
+            if ShortcutLabel.cut(candidate) == candidate {
+                return (candidate, (prefix + String(inserted[..<count])).utf16.count)
+            }
+        }
+        let cut = ShortcutLabel.cut(text)
+        return (cut, cut.utf16.count)
     }
 
     /// Return in the name field is "Done".

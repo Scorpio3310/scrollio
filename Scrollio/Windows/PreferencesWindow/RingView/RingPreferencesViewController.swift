@@ -24,7 +24,8 @@
 //  (`ButtonActionPullDown`, with the menu of what a place can hold): a listed action, a
 //  key combination recorded there ("Keyboard Shortcut…") or an app, a file or a script
 //  ("Open App or File…", the Buttons pane's popover). While nothing opens the ring (no
-//  binding of Buttons, no app's own), the places are folded under their title
+//  binding of Buttons, no app's own, or only apps that open their own ring: "Only in
+//  Figma, with its own ring: Thumb panel."), the places are folded under their title
 //  ("Shortcuts ›", `PreferencesDisclosureSection`): a click opens them and they can be
 //  edited as ever, and a click on a place of the drawing opens them too; once something
 //  opens the ring they show by themselves, with a plain title. Under the boxes "Reset to
@@ -34,7 +35,8 @@
 //  The pane only edits Options.shared.ring.
 //
 //  An app's page under Apps shows the same drawing of the ring, across the whole width, the
-//  same freeze switch and the same eight rows, in the pane's order, for the app's own ring
+//  same freeze switch and the same eight rows under "Shortcuts" (which the app's part folds
+//  while nothing opens the ring with the app in front), in the pane's order, for the app's own ring
 //  (`init(application:)`, as the Scrolling settings there get a target application): then
 //  they edit only that app's ring, and what is not the ring's is left out: what opens the
 //  ring (and its card), the line on how to choose and "Reset to Defaults" (the part has
@@ -250,6 +252,8 @@ final class RingPreferencesViewController: NSViewController {
 
     /// What opens the ring; tests and pictures replace it with fixtures.
     var bindingSummary: () -> ShortcutRingBindingSummary = { .current }
+    /// What the pane shows of it now: "Set Up…" and "Change" do what the row says.
+    private var shownSummary: ShortcutRingBindingSummary?
     /// "Set Up…" or "Change": shows the Buttons pane and, with nothing that opens the ring
     /// yet (true), records a button or key that gets the Shortcut Ring; with one (false),
     /// selects its row there. Tests replace it.
@@ -365,12 +369,13 @@ final class RingPreferencesViewController: NSViewController {
         placeRows = (0..<ShortcutRingSettings.placeCount).map { makePlaceRow($0) }
         if application != nil {
             // An app's own ring: the drawing across the width, its freeze switch and the
-            // eight rows, in the pane's order; nothing of what opens the ring.
+            // eight rows under "Shortcuts", in the pane's order; nothing of what opens the
+            // ring. (The app's part folds the rows while nothing opens the ring there.)
             preview.translatesAutoresizingMaskIntoConstraints = false
             preview.heightAnchor.constraint(equalToConstant: ShortcutRingPreviewView.preferredHeight).isActive = true
-            sections = [
-                preview, PreferencesGroupBox(width: width, rows: [makeFreezeRow()]), PreferencesGroupBox(width: width, rows: placeRows),
-            ]
+            let places = makePlacesSection(rows: placeRows, hint: false)
+            placesSection = places
+            sections = [preview, PreferencesGroupBox(width: width, rows: [makeFreezeRow()]), places]
             PreferencesGroupedForm.add(sections, to: content)
         } else {
             // What opens the ring beside the ring.
@@ -399,9 +404,30 @@ final class RingPreferencesViewController: NSViewController {
         root.setFrameSize(root.fittingSize)
     }
 
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        guard application == nil else { return }
+        // Edit › Undo or Redo of a change in Buttons or an app's Buttons part can change
+        // what opens the ring while the pane shows.
+        for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+            NotificationCenter.default.addObserver(self, selector: #selector(undoDidRun(_:)), name: name, object: nil)
+        }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     override func viewWillAppear() {
         super.viewWillAppear()
         // A button may have been bound under Buttons meanwhile, or a file imported.
+        reload()
+    }
+
+    /// An Undo or Redo ran: the pane on screen shows what opens the ring now, when that
+    /// changed (an Undo of typing elsewhere changes nothing here).
+    @objc private func undoDidRun(_ notification: Notification) {
+        guard isViewLoaded, view.window != nil, bindingSummary() != shownSummary else { return }
         reload()
     }
 
@@ -438,13 +464,16 @@ final class RingPreferencesViewController: NSViewController {
         let ring = shownRing
         if application == nil {
             let summary = bindingSummary()
+            shownSummary = summary
             triggerRow.explanation = summary.explanation
             triggerCard?.source = summary.picture
             // (Opened only by an app's own button: "Change" leads to it, not "Set Up…".)
             let opens = summary.hasTrigger || summary.onlyInApps != nil
             triggerButton.title = text(opens ? "ring-trigger-change" : "ring-trigger-set-up")
-            // Nothing opens the ring: its places wait, folded, a click away.
-            placesSection?.isCollapsible = !opens
+            // Nothing opens this ring (nothing at all, or only apps that open their own):
+            // its places wait, folded, a click away.
+            let opensThisRing = summary.hasTrigger || summary.onlyInApps?.usesGeneralSettings == true
+            placesSection?.isCollapsible = !opensThisRing
         }
         (freezeToggle as? NSSwitch)?.state = ring.freezePointer ? .on : .off
         for (place, popUp) in placePopUps.enumerated() {
@@ -500,7 +529,8 @@ final class RingPreferencesViewController: NSViewController {
         guard placePopUps.indices.contains(place) else { return }
         if let placesSection, !placesSection.showsBody {
             placesSection.setExpanded(true, animated: true)
-            PreferencesForm.fitToContent(self)
+            // (The pane refits itself; an app's page measures again.)
+            placesSection.onExpandedChange?(true)
             view.layoutSubtreeIfNeeded()
         }
         selectedPlace = place
@@ -526,7 +556,8 @@ final class RingPreferencesViewController: NSViewController {
     // MARK: - Actions
 
     @objc func triggerButtonClicked(_ sender: NSButton) {
-        let summary = bindingSummary()
+        // (What the row says, which an Undo keeps up to date.)
+        let summary = shownSummary ?? bindingSummary()
         if !summary.hasTrigger, let apps = summary.onlyInApps {
             if let openApplicationButtons {
                 openApplicationButtons(apps)
@@ -719,11 +750,18 @@ final class RingPreferencesViewController: NSViewController {
 
     /// "Shortcuts": its title, one line on the two ways to choose, and the box of rows. The
     /// title folds the line and the box while nothing opens the ring (`reload`).
-    private func makePlacesSection(rows: [PreferencesGroupRow]) -> PreferencesDisclosureSection {
+    /// - Parameter hint: the line on how to choose under the title (the pane's; an app's
+    ///   page leaves it out).
+    private func makePlacesSection(rows: [PreferencesGroupRow], hint withHint: Bool = true) -> PreferencesDisclosureSection {
+        let box = PreferencesGroupBox(width: Self.boxWidth, rows: rows)
+        guard withHint else {
+            let section = PreferencesDisclosureSection(title: text("ring-places-header"), body: box)
+            section.identifier = Identifier.places
+            return section
+        }
         let inset = PreferencesGroupedForm.rowHorizontalInset
         let hint = Self.makeNote(text("ring-places-hint"), identifier: Identifier.placesHint)
         placesHintLabel = hint
-        let box = PreferencesGroupBox(width: Self.boxWidth, rows: rows)
 
         let body = NSView()
         body.translatesAutoresizingMaskIntoConstraints = false

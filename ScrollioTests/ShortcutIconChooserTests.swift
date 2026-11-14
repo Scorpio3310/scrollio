@@ -149,7 +149,7 @@ final class ShortcutIconChooserTests: XCTestCase {
         XCTAssertEqual(well.contentTintColor, .secondaryLabelColor)
 
         well.show(.symbol("arrow.clockwise"))
-        XCTAssertEqual(well.accessibilityLabel(), "Icon: arrow clockwise")
+        XCTAssertEqual(well.accessibilityLabel(), "Icon: Reload arrow")
         XCTAssertEqual(well.contentTintColor, .controlAccentColor)
         XCTAssertEqual(well.image?.size.height ?? 0, 18, accuracy: 6, "about 18 pt")
 
@@ -236,6 +236,75 @@ final class ShortcutIconChooserTests: XCTestCase {
 
     /// Return in the search field, Return in the grid or a click (the grid's choice of a
     /// place) choose: the editor has the icon, the well shows it, the chooser is closed.
+    /// Every symbol of the set has a readable name of its own in the catalog, which
+    /// VoiceOver reads and the tool tip shows, in the chooser and on the well, not its
+    /// identifier (F38); a symbol outside the set is read by its words.
+    func testEverySymbolIsReadByAName() throws {
+        var names = Set<String>()
+        for symbol in ShortcutIconSet.all {
+            let key = ShortcutIconSet.readableNameKey(ofSymbol: symbol.name)
+            XCTAssertNotEqual(NSLocalizedString(key, comment: ""), key, "\(symbol.name) has a name in the catalog")
+            XCTAssertFalse(symbol.readableName.contains("."), symbol.name)
+            names.insert(symbol.readableName)
+        }
+        XCTAssertEqual(names.count, ShortcutIconSet.all.count, "no two read the same")
+        let code = try XCTUnwrap(ShortcutIconSet.all.first { $0.name == "chevron.left.forwardslash.chevron.right" })
+        XCTAssertEqual(code.readableName, "Code")
+        let cell = ShortcutIconChooserCell(frame: NSRect(x: 0, y: 0, width: 36, height: 36))
+        cell.entry = .symbol(code)
+        XCTAssertEqual(cell.accessibilityLabel(), "Code")
+        XCTAssertEqual(cell.toolTip, "Code")
+        let well = ShortcutIconWell()
+        well.show(.symbol("doc.on.doc"))
+        XCTAssertEqual(well.accessibilityLabel(), "Icon: Two documents")
+        XCTAssertEqual(ShortcutIconSet.readableName(ofSymbol: "car.side"), "car side", "outside the set")
+        XCTAssertTrue(ShortcutIconSet.groups(matching: "glass").flatMap { $0.symbols }.contains { $0.name == "magnifyingglass" },
+                      "found by its readable name too")
+    }
+
+    /// The chosen "Use “R”" row is the accent colour with its character and its title in
+    /// the ink that can be read there: the character too, which is drawn, not tinted (F26).
+    func testTheChosenTypedCharacterStandsInTheInkOfTheAccent() throws {
+        let cell = ShortcutIconChooserCell(frame: NSRect(x: 0, y: 0, width: 200, height: 30))
+        cell.appearance = NSAppearance(named: .aqua)
+        cell.entry = .character("R")
+        cell.isSelected = true
+        var expected = NSColor.white
+        cell.effectiveAppearance.performAsCurrentDrawingAppearance {
+            expected = ShortcutRingArtwork.litInk(on: .controlAccentColor)
+        }
+        XCTAssertEqual(cell.ink, expected)
+        let imageView = try XCTUnwrap(cell.subviews.compactMap { $0 as? NSImageView }.first)
+        let image = try XCTUnwrap(imageView.image)
+        let rep = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 44, pixelsHigh: 44, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
+            image.draw(in: NSRect(x: 0, y: 0, width: 44, height: 44))
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        var brightness: [CGFloat] = []
+        for x in 0..<44 {
+            for y in 0..<44 {
+                guard let colour = rep.colorAt(x: x, y: y), colour.alphaComponent > 0.8 else { continue }
+                brightness.append(colour.brightnessComponent)
+            }
+        }
+        XCTAssertFalse(brightness.isEmpty)
+        let mean = brightness.reduce(0, +) / CGFloat(brightness.count)
+        let inkIsLight = (expected.usingColorSpace(.deviceRGB)?.brightnessComponent ?? 1) > 0.5
+        if inkIsLight {
+            XCTAssertGreaterThan(mean, 0.8, "a light character on the accent, not the near-black label colour")
+        } else {
+            XCTAssertLessThan(mean, 0.3)
+        }
+        cell.isSelected = false
+        XCTAssertEqual(cell.ink, .labelColor)
+    }
+
     func testChoosingUpdatesTheLabelAndClosesTheChooser() throws {
         let (popover, editor) = try details(ShortcutLabel(name: "Reload", icon: nil))
         editor.iconWell.performClick(nil)
@@ -245,7 +314,7 @@ final class ShortcutIconChooserTests: XCTestCase {
         XCTAssertTrue(chooser.control(chooser.searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
         XCTAssertEqual(popover.editedLabel, ShortcutLabel(name: "Reload", icon: .symbol("square.and.arrow.up")))
         XCTAssertFalse(editor.isChoosingIcon)
-        XCTAssertEqual(editor.iconWell.accessibilityLabel(), "Icon: square and arrow up")
+        XCTAssertEqual(editor.iconWell.accessibilityLabel(), "Icon: Share")
 
         editor.iconWell.performClick(nil)
         chooser = try XCTUnwrap(editor.chooser)

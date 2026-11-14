@@ -470,6 +470,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
             ("key-long", .mxMaster4, [key(121, modifiers: [.maskControl, .maskAlternate, .maskShift, .maskCommand])], false),
             ("thumb-panel-and-key", .mxMaster4, [logitech(.thumbPanel), key(49, modifiers: controlOption)], false),
             ("only-in-notes", .mxMaster4, [logitech(.thumbPanel)], true),
+            // (Notes opens its own ring there: this one's places fold.)
+            ("only-in-notes-own-ring", .mxMaster4, [logitech(.thumbPanel)], true),
             ("none-mx4", .mxMaster4, [], false),
             ("none-generic", .generic, [], false),
         ]
@@ -478,6 +480,9 @@ final class PreferencesWindowRenderTests: XCTestCase {
             if item.onlyInNotes {
                 let app = Application(path: notes)
                 app.setOwnButtonBindings(item.bindings.map(ring))
+                if item.name.hasSuffix("own-ring") {
+                    app.setUsesGeneralRing(false, general: .default)
+                }
                 summary = ShortcutRingBindingSummary(bindings: [], applications: [app])
             } else {
                 summary = ShortcutRingBindingSummary(bindings: item.bindings.map(ring))
@@ -581,6 +586,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
             ("chooser", .symbol("hammer"), ""),
             ("chooser-search", nil, "arrow"),
             ("chooser-character", nil, "🔄"),
+            ("chooser-character-letter", nil, "R"),
             ("chooser-no-result", .symbol("star"), "zzz"),
         ]
         for item in choosers {
@@ -1741,7 +1747,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
         calculator.ring?[0] = ShortcutRingPlace(SystemShortcut.copy)
         calculator.setOwnRingFreezePointer(true)
         Options.shared.application.applications = EnhanceArray<Application>(withArray: [calculator], matchKey: "path")
-        let mice = MouseGestureDeviceSource(support: { MouseGestureDeviceSupport(deviceTracking: true, haptics: true) }, refresh: {})
+        var hapticsOffOnMouse = false
+        let mice = MouseGestureDeviceSource(support: {
+            MouseGestureDeviceSupport(deviceTracking: true, haptics: true, hapticsOffOnMouse: hapticsOffOnMouse)
+        }, refresh: {})
 
         func page(_ name: String, part: ApplicationPagePart) throws {
             let defaults = uiDefaults(advanced: false)
@@ -1765,6 +1774,12 @@ final class PreferencesWindowRenderTests: XCTestCase {
         ButtonUtils.shared.invalidateCache()
         try page("app-parity-gestures", part: .gestures)
         try page("app-parity-ring", part: .ring)
+        // Haptics switched off under Mouse: the line under the Logitech box.
+        hapticsOffOnMouse = true
+        Options.shared.logiMouse.hapticsOn = false
+        try page("app-parity-gestures-haptics-off", part: .gestures)
+        hapticsOffOnMouse = false
+        Options.shared.logiMouse = savedMouse
         Options.shared.buttons.binding = []
         ButtonUtils.shared.invalidateCache()
         try page("app-parity-gestures-folded", part: .gestures)
