@@ -328,10 +328,17 @@ final class ShortcutLabelRingTests: XCTestCase {
     }
 
     /// The middle: the name on one or two lines, the keys on one line under it and
-    /// smaller, the two together inside the round drop, on screen and in the pane.
+    /// smaller, the two together inside the round drop, on screen and in the pane. A name
+    /// of words is shown whole, smaller when it needs to be; only a run of the widest
+    /// letters may still be cut.
     func testTheMiddleShowsTheNameOverSmallerKeysWithinItsRoom() {
         let widest = String(repeating: "W", count: ShortcutLabel.maximumNameLength)
-        let names = ["Reload", "Reload Without Cache", "Paste and Match Style", widest, "Wwwwwwwwwwww Wwwwwwwwwww"]
+        let artificial = [widest, "Wwwwwwwwwwww Wwwwwwwwwww"]
+        let words = [
+            "Reload", "Reload Without Cache", "Show Developer Tools", "Show Keyboard Shortcuts",
+            "Close All Other Windows", "Paste and Match Style", "Find and Replace In File",
+        ]
+        let names = words + artificial
         let combinations = [keys, "Fn⌃⌥⇧⌘Space", "⌃⌥⇧⌘F19"]
         let paneScale = ShortcutRingPreviewView.ringScale
         for (what, scale) in [("on screen", CGFloat(1)), ("in the pane", paneScale)] {
@@ -344,6 +351,12 @@ final class ShortcutLabelRingTests: XCTestCase {
                     let about = "\(name) / \(combination) \(what)"
                     XCTAssertLessThanOrEqual(layout.nameLines, 2, about)
                     XCTAssertGreaterThanOrEqual(layout.nameLines, 1, about)
+                    if words.contains(name) {
+                        // The whole name: at its size it needs no more lines than it gets.
+                        let whole = ShortcutRingArtwork.titleLayout(name, width: width, pointSize: layout.namePointSize)
+                        XCTAssertEqual(whole.pointSize, layout.namePointSize, "\(about): it fits two lines at that size")
+                        XCTAssertLessThanOrEqual(whole.lines, layout.nameLines, "\(about): nothing is cut")
+                    }
                     XCTAssertLessThan(layout.keysPointSize, layout.namePointSize, about)
                     XCTAssertGreaterThanOrEqual(layout.keysPointSize, 6 * scale, about)
                     let keysFont = NSFont.systemFont(ofSize: layout.keysPointSize, weight: .medium)

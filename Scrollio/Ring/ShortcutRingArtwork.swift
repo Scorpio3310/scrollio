@@ -565,20 +565,35 @@ enum ShortcutRingArtwork {
         keysText.draw(at: CGPoint(x: centre.x - keysWidth / 2, y: keysY))
     }
 
+    /// A key combination's name too long for two lines of the hub gets smaller, a step of
+    /// this part of the size at a time, until it fits two lines; at most down to
+    /// `namedTitleSmallest` of the size.
+    static let namedTitleStep: CGFloat = 0.04
+    static let namedTitleSmallest: CGFloat = 0.72
+
     /// How a key combination's name stands in a hub with `width` of room when its keys
-    /// stand under it: the name at `pointSize` on one or two lines, or smaller when it
-    /// needs more (still two lines at most, the rest cut with an ellipsis); the keys on
-    /// one line, `titleKeysShrink` of the size and smaller still when they are wider
-    /// than the room. Never taller than three lines of a long name are today.
+    /// stand under it: the name at `pointSize` on one or two lines, or as much smaller as
+    /// it needs to be whole on two (only what is longer still at `namedTitleSmallest` is
+    /// cut with an ellipsis); the keys on one line, `titleKeysShrink` of the name's size
+    /// and smaller still when they are wider than the room. Never taller than three lines
+    /// of a long name are today.
     static func namedTitleLayout(
         _ name: String, keys: String, width: CGFloat, pointSize: CGFloat
     ) -> (namePointSize: CGFloat, nameLines: Int, nameHeight: CGFloat, keysPointSize: CGFloat, gap: CGFloat, height: CGFloat) {
-        let usual = titleLayout(name, width: width, pointSize: pointSize)
-        let nameLines = min(2, usual.lines)
-        // (`titleLayout` gives `lineHeight × lines + 1`.)
-        let lineHeight = (usual.height - 1) / CGFloat(usual.lines)
+        let smallest = pointSize * namedTitleSmallest
+        var size = pointSize
+        // (`titleLayout` keeps the size it is given when the name fits two lines at it.)
+        var fit = titleLayout(name, width: width, pointSize: size)
+        while fit.pointSize != size, size > smallest {
+            size = max(smallest, size - pointSize * namedTitleStep)
+            fit = titleLayout(name, width: width, pointSize: size)
+        }
+        let nameLines = fit.pointSize == size ? fit.lines : 2
+        // (As `titleLayout` measures a line.)
+        let nameFont = NSFont.systemFont(ofSize: size, weight: .semibold)
+        let lineHeight = ceil(nameFont.ascender - nameFont.descender + nameFont.leading)
         let nameHeight = lineHeight * CGFloat(nameLines) + 1
-        var keysSize = pointSize * titleKeysShrink
+        var keysSize = size * titleKeysShrink
         let keysWidth = (keys as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: keysSize, weight: .medium)]).width
         if keysWidth > width {
             keysSize = max(pointSize * 0.5, keysSize * width / keysWidth)
@@ -586,7 +601,7 @@ enum ShortcutRingArtwork {
         let keysFont = NSFont.systemFont(ofSize: keysSize, weight: .medium)
         let keysHeight = ceil(keysFont.ascender - keysFont.descender + keysFont.leading)
         let gap: CGFloat = 0
-        return (usual.pointSize, nameLines, nameHeight, keysSize, gap, nameHeight + gap + keysHeight)
+        return (size, nameLines, nameHeight, keysSize, gap, nameHeight + gap + keysHeight)
     }
 
     /// How a name stands in a hub with `width` of room: at `pointSize` on up to two lines, else
