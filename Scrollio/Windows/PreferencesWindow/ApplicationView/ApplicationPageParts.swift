@@ -535,6 +535,9 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         } else {
             ownRingFold?.removeFromSuperview()
             ownRingFold = nil
+            // A fold that was closed hid its body (and may have faded it): it shows here.
+            body.isHidden = false
+            body.alphaValue = 1
             placed = body
             // The room the ring's own top margin always made under the box.
             gap = margin

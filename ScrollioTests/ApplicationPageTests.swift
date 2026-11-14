@@ -1621,6 +1621,35 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertNil(part.ringController)
     }
 
+    /// The own ring folded under "Shortcuts", never opened, and then something starts to
+    /// open the ring with the app in front (a binding added in Buttons, or in the app's
+    /// Buttons part): the ring and "Reset to Defaults" stand right under the switch's box,
+    /// in sight and reachable, not a blank of their height (R3-1 F1).
+    func testTheFoldedOwnRingShowsWhenSomethingStartsToOpenTheRing() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.setUsesGeneralRing(false, general: .default)
+        let pane = makePane()
+        _ = makeWindow(for: pane)
+        pane.openApplication(withID: Self.calculator, part: .ring)
+        let part = try XCTUnwrap(pane.detailController?.ringPart)
+        let fold = try XCTUnwrap(part.ownRingFold)
+        XCTAssertFalse(fold.isExpanded, "folded, and left so")
+        XCTAssertTrue(try XCTUnwrap(part.ringController).view.isHiddenOrHasHiddenAncestor)
+
+        Options.shared.buttons.binding = [binding(5, SystemShortcut.shortcutRing.identifier)]
+        part.syncViewWithOptions()
+        XCTAssertNil(part.ownRingFold)
+        let body = try XCTUnwrap(part.ownRingBody)
+        XCTAssertFalse(body.isHidden)
+        XCTAssertEqual(body.alphaValue, 1)
+        XCTAssertFalse(try XCTUnwrap(part.ringController).view.isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(part.resetToDefaultsButton.isHiddenOrHasHiddenAncestor)
+        pane.view.layoutSubtreeIfNeeded()
+        let ringView = try XCTUnwrap(part.ringController).view
+        XCTAssertEqual(ringView.convert(ringView.bounds, to: part.view).maxY, part.ringSection.frame.minY, accuracy: 0.5)
+        XCTAssertFalse(part.view.hasAmbiguousLayout)
+    }
+
     /// The app's own gestures while no button runs Gesture Navigation with the app in
     /// front: "Directions" folds the five rows, the invert switch and "Reset to Defaults";
     /// a click opens them, and the page measures again. Once a button runs the gestures
