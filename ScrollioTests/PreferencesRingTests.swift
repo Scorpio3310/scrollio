@@ -858,6 +858,16 @@ final class ShortcutRingButtonsTests: XCTestCase {
         XCTAssertFalse(makePane([binding(.mouse, 3, action: "copy")]).selectRingTrigger(), "nothing opens the ring")
     }
 
+    /// "Change" selects what the Shortcut Ring pane names first and draws: a key that never
+    /// runs (a plain letter) is passed over.
+    func testTheRingsTriggerIsTheFirstThatCanRun() {
+        let letter = binding(.keyboard, 0, action: "shortcutRing")
+        let ring = binding(.mouse, 4, action: "shortcutRing")
+        let pane = makePane([letter, ring])
+        XCTAssertEqual(pane.ringTriggerBinding?.id, ring.id)
+        XCTAssertNil(makePane([letter]).ringTriggerBinding)
+    }
+
     /// Shortcut Ring › Set Up…: what is recorded gets the ring, a mouse button or a key
     /// (Gesture Navigation refuses a key; the ring does not).
     func testSetUpGivesTheRecordedButtonOrKeyTheRing() throws {

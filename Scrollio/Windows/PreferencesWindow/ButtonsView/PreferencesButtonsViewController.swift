@@ -886,12 +886,10 @@ class PreferencesButtonsViewController: NSViewController {
 
     // MARK: - The Shortcut Ring
 
-    /// The button or key that opens the Shortcut Ring (an enabled binding of any kind of
-    /// trigger): the first of several.
+    /// The button or key that opens the Shortcut Ring: the first of several that can run
+    /// (`ApplicationTriggerRule`), the one the Shortcut Ring pane names first and draws.
     var ringTriggerBinding: ButtonBinding? {
-        return buttonBindings.first {
-            $0.isEnabled && $0.systemShortcutName == SystemShortcut.shortcutRing.identifier
-        }
+        return buttonBindings.first(where: ApplicationTriggerRule.shortcutRing.takes)
     }
 
     /// Shortcut Ring › Change: selects the row of what opens the ring, as
