@@ -265,6 +265,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-ring-line-app", "general-settings-import-ring-trigger-app",
         "general-settings-import-app-rings-one", "general-settings-import-app-rings-other",
         "general-settings-import-app-buttons-one", "general-settings-import-app-buttons-other",
+        "general-settings-import-app-gestures-one", "general-settings-import-app-gestures-other",
+        "general-settings-import-gesture-line-app",
         "ring-undo-reset",
     ]
 
@@ -348,6 +350,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-ring-trigger-app": "@@",
         "general-settings-import-app-rings-other": "d",
         "general-settings-import-app-buttons-other": "d",
+        "general-settings-import-app-gestures-other": "d",
+        "general-settings-import-gesture-line-app": "@@@",
         // An app's page
         "apps-buttons-note": "@",
         "apps-buttons-note-empty": "@",

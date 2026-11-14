@@ -53,7 +53,7 @@
 //  (`launchActions`: every app, file and script a button, a key or a place of the
 //  Shortcut Ring would open or run). An app's own Shortcut Ring, stored inside the app's
 //  entry, is checked and shown as the general ring is (`applicationRing`,
-//  `applicationRings`).
+//  `applicationRings`), and so are an app's own gestures (`applicationGestures`).
 //
 //  Importing (`apply`): the settings come in group by group (OptionsGroup). A group the
 //  file holds replaces that group as a whole: a name of the group that the file does not
@@ -321,6 +321,14 @@ enum SettingsFile {
             }
         }
 
+        /// The apps of the file that have gestures of their own stored, in use or kept for
+        /// later ("Use the general gestures" on), each with its set.
+        var applicationGestures: [(application: Application, gestures: ApplicationGestures)] {
+            return (applications ?? []).compactMap { application in
+                application.gestures.map { (application, $0) }
+            }
+        }
+
         /// Every action of the file that opens an app or a file, or runs a script: of the
         /// buttons and keys, switched on or off, of each app's own buttons, of the
         /// places of the Shortcut Ring, and of the places of each app's own ring (one
@@ -345,13 +353,14 @@ enum SettingsFile {
         }
 
         /// The file gives a button or a key an action, or a direction of Gesture
-        /// Navigation (or its click) or a place of the Shortcut Ring, or of an app's own
-        /// ring, another action than the default one. The sheet then lists them, and
-        /// Return does not import.
+        /// Navigation (or its click), of every app's or of an app's own, or a place of the
+        /// Shortcut Ring, or of an app's own ring, another action than the default one. The
+        /// sheet then lists them, and Return does not import.
         var bringsActions: Bool {
             guard allBindings.isEmpty else { return true }
             if let ring, ring.places != ShortcutRingSettings.default.places { return true }
             if applicationRings.contains(where: { $0.places != ShortcutRingSettings.default.places }) { return true }
+            if applicationGestures.contains(where: { $0.gestures.actions != GestureActions.default }) { return true }
             guard let gesture else { return false }
             return gesture.actions != GestureActions.default
         }
@@ -575,7 +584,8 @@ enum SettingsFile {
     /// - the numbers of its own scroll settings are brought into range;
     /// - of its own buttons, those that cannot be read or whose action this version does
     ///   not run are left out, one by one (as a whole they would take the app with them);
-    /// - its own Shortcut Ring is checked as the ring of every app is (`applicationRing`).
+    /// - its own Shortcut Ring is checked as the ring of every app is (`applicationRing`);
+    /// - its own gestures are checked as those of every app are (`applicationGestures`).
     /// Anything else is left for the decoder to judge. `counts` says what was changed.
     private static func applicationEntry(_ entry: Any, counts: inout EntryCounts) -> Any {
         guard var object = entry as? [String: Any] else { return entry }
@@ -608,6 +618,31 @@ enum SettingsFile {
         }
         if let ring = object["ring"] {
             object["ring"] = applicationRing(ring, counts: &counts)
+        }
+        if let gestures = object["gestures"] {
+            object["gestures"] = applicationGestures(gestures, counts: &counts)
+        }
+        return object
+    }
+
+    /// An app's own gestures as they go to the decoder, checked as the general gestures
+    /// are: a direction (or the click) whose action this version does not run gets none,
+    /// and its label goes with it; each is counted. What is no set (no object, or one the
+    /// decoder cannot read) is left out and counted as an entry that cannot be read: the app
+    /// then uses the general gestures.
+    private static func applicationGestures(_ value: Any, counts: inout EntryCounts) -> Any? {
+        guard var object = value as? [String: Any], let gestures: ApplicationGestures = decoded(object) else {
+            counts.unreadable += 1
+            return nil
+        }
+        let keys: [(action: String, label: String, path: KeyPath<GestureActions, GestureAction>)] = [
+            ("upAction", "upLabel", \.up), ("downAction", "downLabel", \.down), ("leftAction", "leftLabel", \.left),
+            ("rightAction", "rightLabel", \.right), ("clickAction", "clickLabel", \.click),
+        ]
+        for key in keys where !StoredAction.isKnown(gestureAction: gestures.actions[keyPath: key.path].action) {
+            object[key.action] = ""
+            object.removeValue(forKey: key.label)
+            counts.unknownActions += 1
         }
         return object
     }

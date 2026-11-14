@@ -729,6 +729,77 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertFalse(older.bringsActions)
     }
 
+    /// An app's own gestures travel with the app's entry, in use or kept for later, and an
+    /// import puts them in effect. They are checked as the general gestures are, and each
+    /// direction (or click) whose action is not the default one is listed in the sheet with
+    /// its app; the sheet counts the apps whose own gestures are in use.
+    func testAnAppsOwnGesturesAreInTheFileAndListedBeforeTheImport() throws {
+        let source = makeSource()
+        let notes = try XCTUnwrap(source.options.application.applications.get(by: "/Applications/Notes.app"))
+        notes.setUsesGeneralGestures(false, general: .default)
+        var actions = GestureActions.default
+        actions.up = GestureAction(action: "custom::15:1179648", label: ShortcutLabel(name: "Reload", icon: .symbol("arrow.clockwise")))
+        actions.click = .none
+        notes.setOwnGestures(actions: actions, invertHorizontal: true)
+        // A second app whose own set is kept for later ("Use the general gestures" on again).
+        let mail = Application(path: "/Applications/Mail.app")
+        mail.setUsesGeneralGestures(false, general: .default)
+        var mails = GestureActions.default
+        mails.down = GestureAction(SystemShortcut.paste)
+        mail.setOwnGestures(actions: mails, invertHorizontal: false)
+        mail.setUsesGeneralGestures(true, general: .default)
+        source.options.application.applications.append(mail)
+        let data = try SettingsFile.export(from: source.options, now: Self.moment).get()
+
+        let contents = try SettingsFile.read(data).get()
+        XCTAssertEqual(contents.applications?.map(\.gestures), [notes.gestures, mail.gestures], "what was exported comes back")
+        XCTAssertEqual(contents.leftOutCount, 0)
+        let lines = SettingsFileText.gestureLines(of: contents)
+        XCTAssertEqual(lines.count, 3, "\(lines)")
+        XCTAssertTrue(lines[0].hasPrefix("Gesture in Notes, Up: ⇧⌘") && lines[0].hasSuffix("(named “Reload”)"), lines[0])
+        XCTAssertEqual(Array(lines.dropFirst()), ["Gesture in Notes, Click: No Action", "Gesture in Mail, Down: Paste"])
+        let items = SettingsFileText.items(of: contents).map(\.text)
+        XCTAssertTrue(items.contains("1 app with gestures of its own"), "the one in use: \(items)")
+
+        let target = OwnSettings(for: self)
+        target.options.readOptions()
+        XCTAssertTrue(SettingsFile.apply(contents, to: target.options))
+        let imported = try XCTUnwrap(target.options.application.applications.get(by: "/Applications/Notes.app"))
+        XCTAssertEqual(imported.gestures, notes.gestures)
+        XCTAssertFalse(imported.usesGeneralGestures)
+        XCTAssertEqual(imported.ownGestures?.actions.up.keys, GestureAction.Keys(code: 15, modifiers: 1179648), "prepared when read")
+        XCTAssertEqual(target.options.application.applications.get(by: "/Applications/Mail.app")?.gestures, mail.gestures)
+        XCTAssertEqual(target.options.gesture, .default, "the general gestures are another setting")
+
+        // A file from elsewhere: a direction whose action this version does not run, or
+        // that a gesture cannot run, gets none (and its name goes with it) and is counted;
+        // what is no set is left out and counted while the app stays.
+        func app(_ name: String, gestures: String) -> String {
+            return #"{"path":"/Applications/"# + name + #".app","gestures":"# + gestures + "}"
+        }
+        let foreign = try Fixture.contents(
+            #""applications":["#
+                + app("A", gestures: #"{"inherit":false,"upAction":"custom::56:0","upLabel":{"name":"Shift"},"#
+                    + #""downAction":"somethingNewer","leftAction":"custom::mouse:5:0","rightAction":"copy"}"#)
+                + "," + app("B", gestures: #"{"inherit":false,"upAction":7}"#) + "," + app("C", gestures: #""up""#) + "]"
+        )
+        XCTAssertEqual(foreign.applications?.map(\.path), ["/Applications/A.app", "/Applications/B.app", "/Applications/C.app"])
+        let own = try XCTUnwrap(foreign.applications?.first?.ownGestures)
+        XCTAssertEqual(own.actions.up, .none, "a modifier key by itself runs nothing")
+        XCTAssertEqual(own.actions.down, .none, "a name this version does not run")
+        XCTAssertEqual(own.actions.left, .none, "a recorded mouse button is not a gesture's")
+        XCTAssertEqual(own.actions.right, GestureAction(SystemShortcut.copy))
+        XCTAssertEqual(own.actions.click, GestureActions.default.click, "a missing action is the default one")
+        XCTAssertEqual(foreign.unknownActions, 3)
+        XCTAssertEqual(foreign.unreadableEntries, 2, "two things that are no set")
+        XCTAssertEqual(foreign.applications?.dropFirst().map(\.usesGeneralGestures), [true, true])
+        XCTAssertTrue(foreign.bringsActions, "the app's set gives a direction another action")
+        // A file without gestures for an app (one from 1.0.5): the app uses the general ones.
+        let older = try Fixture.contents(#""applications":["# + StoredDataCanaryTests.readableApp + "]")
+        XCTAssertNil(older.applications?.first?.gestures)
+        XCTAssertFalse(older.bringsActions)
+    }
+
     /// A ring as a file from elsewhere can spell it, read through the whole import: a name
     /// together with a target, the old spelling of an app, a file with arguments, and a
     /// ninth place that runs a script. Every place that is stored with something to open
