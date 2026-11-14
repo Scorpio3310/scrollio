@@ -6,11 +6,14 @@
 //  a time under the app's box and chosen with a segmented control (as Apple's detail pages
 //  do for a few peer views), so that the page stays short. The table of parts says, per
 //  part, its name, its mark in the list of apps, whether the app has settings of that kind
-//  of its own, and how its controller is made. Another kind (Gestures) is one more entry.
+//  of its own, and how its controller is made. Another kind is one more entry.
 //
 //  Scrolling: "Use settings from Scrolling" and the Scrolling settings for the app.
 //  Buttons: the app's own buttons (`ApplicationButtonsViewController`).
+//  Gestures: "Use the general gestures" and, while it is off, the app's own gestures
+//  (`ApplicationGesturesPartViewController`).
 //  Shortcut Ring: "Use the general ring" and, while it is off, the app's own ring.
+//  The order is the sidebar's.
 //
 
 import Cocoa
@@ -73,6 +76,15 @@ struct ApplicationPagePart: Equatable {
         makeController: { application, _ in ApplicationButtonsViewController(application: application) }
     )
 
+    static let gestures = ApplicationPagePart(
+        id: "gestures",
+        titleKey: "apps-detail-part-gestures",
+        markSymbol: "hand.draw",
+        markLabelKey: "apps-mark-gestures",
+        hasOwnSettings: { $0.ownGestures != nil },
+        makeController: { application, _ in ApplicationGesturesPartViewController(application: application) }
+    )
+
     static let ring = ApplicationPagePart(
         id: "ring",
         titleKey: "apps-detail-part-ring",
@@ -82,8 +94,8 @@ struct ApplicationPagePart: Equatable {
         makeController: { application, _ in ApplicationRingPartViewController(application: application) }
     )
 
-    /// The parts in the order of the control and of the marks.
-    static let all: [ApplicationPagePart] = [.scrolling, .buttons, .ring]
+    /// The parts in the order of the control and of the marks (the sidebar's order).
+    static let all: [ApplicationPagePart] = [.scrolling, .buttons, .gestures, .ring]
 
     /// The part with `id`; Scrolling for one that does not exist (any more).
     static func part(withID id: String?) -> ApplicationPagePart {

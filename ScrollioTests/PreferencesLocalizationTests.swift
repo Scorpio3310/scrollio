@@ -147,6 +147,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-ring-general", "apps-detail-ring-general-on", "apps-detail-ring-general-off",
         "apps-detail-part-scrolling", "apps-detail-part-buttons", "apps-detail-part-ring", "apps-detail-parts",
         "apps-mark-scrolling", "apps-mark-buttons", "apps-mark-ring",
+        "apps-detail-part-gestures", "apps-mark-gestures",
+        "apps-detail-gestures-general", "apps-detail-gestures-general-on", "apps-detail-gestures-general-off",
         "apps-buttons-empty", "apps-buttons-list-label", "apps-buttons-note", "apps-buttons-note-empty", "apps-buttons-everywhere",
         "apps-buttons-add-mouse", "apps-buttons-add-record", "apps-buttons-add-general", "apps-buttons-add-general-item",
         "apps-buttons-recorder-general",
@@ -317,6 +319,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-inherit-off": "@",
         "apps-detail-ring-general-on": "@",
         "apps-detail-ring-general-off": "@",
+        "apps-detail-gestures-general-on": "@",
+        "apps-detail-gestures-general-off": "@",
         // General pane
         "about-version": "@@",
         "about-version-commit": "@@@",

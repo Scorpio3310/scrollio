@@ -6,12 +6,12 @@
 //  the app's name (PreferencesWindowController), as in System Settings; Esc and ⌘[ go back
 //  too. A box shows the app (icon, name, where it is); under it a segmented control
 //  chooses the part of the page that shows (`ApplicationPagePart`: Scrolling, Buttons,
-//  Shortcut Ring), one at a time, so the page stays short. The part shown last is shown
+//  Gestures, Shortcut Ring), one at a time, so the page stays short. The part shown last is shown
 //  again, for every app alike (the UI state, beside Advanced of Scrolling); a part that
 //  does not exist falls back to Scrolling, and a mark of the list opens its own part.
 //
 //  The page only edits the app it was opened for: `inherit` and its scroll options, its
-//  own buttons and its `ring`. The Apps pane puts the page in place of the list and takes
+//  own buttons, its `gestures` and its `ring`. The Apps pane puts the page in place of the list and takes
 //  it away again; the page tells it when its height changed (the part, or the part's
 //  content).
 //
@@ -26,6 +26,7 @@ final class ApplicationDetailViewController: NSViewController {
         static let parts = NSUserInterfaceItemIdentifier("apps-detail-parts")
         static let inherit = ApplicationScrollingPartViewController.Identifier.inherit
         static let generalRing = ApplicationRingPartViewController.Identifier.generalRing
+        static let generalGestures = ApplicationGesturesPartViewController.Identifier.generalGestures
     }
 
     /// As wide as the Scrolling settings under the header.
@@ -63,6 +64,9 @@ final class ApplicationDetailViewController: NSViewController {
     }
     var ringPart: ApplicationRingPartViewController! {
         return partControllers[ApplicationPagePart.ring.id] as? ApplicationRingPartViewController
+    }
+    var gesturesPart: ApplicationGesturesPartViewController! {
+        return partControllers[ApplicationPagePart.gestures.id] as? ApplicationGesturesPartViewController
     }
     var inheritRow: PreferencesSwitchRow! { return scrollingPart.inheritRow }
     var inheritSwitch: NSSwitch { return inheritRow.toggle }
@@ -162,8 +166,13 @@ final class ApplicationDetailViewController: NSViewController {
             controller.view.translatesAutoresizingMaskIntoConstraints = false
             partControllers[part.id] = controller
         }
-        // "Use the general ring" changes the app's mark in the list too.
+        // "Use the general ring" and "Use the general gestures" change the app's mark in
+        // the list too.
         ringPart?.onHeightChange = { [weak self] in
+            self?.onHeightChange?()
+            self?.onInheritChange?()
+        }
+        gesturesPart?.onHeightChange = { [weak self] in
             self?.onHeightChange?()
             self?.onInheritChange?()
         }
@@ -246,6 +255,13 @@ final class ApplicationDetailViewController: NSViewController {
     /// the ring below opens." (The app in front decides, not the one under the pointer.)
     static func generalRingExplanation(on: Bool, name: String) -> String {
         let format = NSLocalizedString(on ? "apps-detail-ring-general-on" : "apps-detail-ring-general-off", comment: "")
+        return String(format: format, name)
+    }
+
+    /// "While Safari is in front, the general gestures run." / "While Safari is in front,
+    /// the gestures below run." (The app in front decides, not the one under the pointer.)
+    static func generalGesturesExplanation(on: Bool, name: String) -> String {
+        let format = NSLocalizedString(on ? "apps-detail-gestures-general-on" : "apps-detail-gestures-general-off", comment: "")
         return String(format: format, name)
     }
 

@@ -8451,6 +8451,66 @@
           }
         }
       }
+    },
+    "apps-detail-part-gestures": {
+      "comment": "An app's page: the segment that shows the app's gestures",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gestures"
+          }
+        }
+      }
+    },
+    "apps-mark-gestures": {
+      "comment": "Apps list: tooltip and VoiceOver of the mark of an app with gestures of its own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Own gestures"
+          }
+        }
+      }
+    },
+    "apps-detail-gestures-general": {
+      "comment": "App page, part \"Gestures\": the switch; on, the app has no gestures of its own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the general gestures"
+          }
+        }
+      }
+    },
+    "apps-detail-gestures-general-on": {
+      "comment": "App page: explanation while \"Use the general gestures\" is on; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "While %@ is in front, the general gestures run."
+          }
+        }
+      }
+    },
+    "apps-detail-gestures-general-off": {
+      "comment": "App page: explanation while \"Use the general gestures\" is off; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "While %@ is in front, the gestures below run."
+          }
+        }
+      }
     }
   },
   "version": "1.1"
