@@ -248,11 +248,14 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
     /// request); Excel's Delete Cells (where every other app zooms out) gave way to the
     /// font size pair, and Outlook's Delete left that place empty, as Mail's is: a flick
     /// down from habit would delete a message. The deletes left are each taken back by the
-    /// app's Undo or a bin, or asked about first, and none is on the bottom place.
+    /// app's Undo or a bin, or asked about first, and none is on the bottom place. No
+    /// terminal clears its scrollback (⌘K in Terminal, iTerm2 and Warp, which no Undo
+    /// brings back): their top right place splits the pane instead.
     func testNoPlaceIsDestructive() throws {
         let never: Set<String> = [
             "Delete Cells", "Insert Cells", "Leave Call", "Leave Meeting", "Delete Now", "Empty Trash", "Quit", "Force Quit",
             "Close Window", "Push", "Force Push", "Commit & Push", "Send Request", "Delete Chat",
+            "Clear", "Clear Buffer", "Clear to Start", "Clear Blocks", "Clear Scrollback",
         ]
         let recoverable: Set<String> = [
             "Finder: Move to Trash", "Photos: Delete",
@@ -273,6 +276,12 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
         let excel = try SuggestionFixtures.app("Microsoft Excel")
         XCTAssertEqual(excel.slots[0].place?.name, "Increase Font Size")
         XCTAssertEqual(excel.slots[4].place?.name, "Decrease Font Size")
+        for name in ["Terminal", "iTerm2", "Warp"] {
+            let terminal = try SuggestionFixtures.app(name)
+            XCTAssertFalse(terminal.slots.compactMap(\.place).contains { $0.keys == ShortcutRingSuggestion.Keys(character: "k", modifiers: .maskCommand) }, name)
+            XCTAssertEqual(terminal.slots[1].place?.keys, ShortcutRingSuggestion.Keys(character: "d", modifiers: .maskCommand), name)
+            XCTAssertNotEqual(terminal.slots[1].place?.symbol, "eraser", name)
+        }
     }
 
     /// A key without modifiers only in apps whose canvas, timeline or player takes it

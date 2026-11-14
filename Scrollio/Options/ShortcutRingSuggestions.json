@@ -625,7 +625,7 @@
       "bundleIdentifiers": ["com.googlecode.iterm2"],
       "places": [
         {"name": "Bigger Text", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
-        {"name": "Clear Buffer", "symbol": "eraser", "character": "k", "modifiers": ["command"], "modifierless": false},
+        {"name": "Split Vertically", "symbol": "rectangle.split.2x1", "character": "d", "modifiers": ["command"], "modifierless": false},
         {"name": "Next Tab", "symbol": "arrow.right", "character": "right", "modifiers": ["command"], "modifierless": false},
         {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
         {"name": "Smaller Text", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
@@ -1186,7 +1186,7 @@
       "bundleIdentifiers": ["com.apple.Terminal"],
       "places": [
         {"name": "Bigger Text", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
-        {"name": "Clear to Start", "symbol": "eraser", "character": "k", "modifiers": ["command"], "modifierless": false},
+        {"name": "Split Pane", "symbol": "rectangle.split.1x2", "character": "d", "modifiers": ["command"], "modifierless": false},
         {"name": "Next Tab", "symbol": "arrow.right", "character": "tab", "modifiers": ["control"], "modifierless": false},
         {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
         {"name": "Smaller Text", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
@@ -1312,7 +1312,7 @@
       "bundleIdentifiers": ["dev.warp.Warp-Stable"],
       "places": [
         {"name": "Bigger Text", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
-        {"name": "Clear Blocks", "symbol": "eraser", "character": "k", "modifiers": ["command"], "modifierless": false},
+        {"name": "Split Pane", "symbol": "rectangle.split.2x1", "character": "d", "modifiers": ["command"], "modifierless": false},
         {"name": "Next Tab", "symbol": "arrow.right", "character": "tab", "modifiers": ["control"], "modifierless": false},
         {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
         {"name": "Smaller Text", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
