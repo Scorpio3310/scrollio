@@ -40,7 +40,8 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     let application: Application
     var onHeightChange: (() -> Void)?
-    /// The app's own buttons changed (the list of apps shows a mark for them).
+    /// The app's own buttons changed (the list of apps shows a mark for them). An Undo of a
+    /// removal keeps it and may run after the page is gone: it must not hold the page.
     var onOwnButtonsChange: (() -> Void)?
 
     // MARK: - Seams (tests and screenshots replace them)
@@ -449,36 +450,61 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     /// Gives the button back to Buttons; the window's Undo takes it again.
     func removeOwnBinding(id: UUID) {
-        removeOwnBinding(id: id, undoManager: undoTarget)
+        Self.removeOwnBinding(
+            id: id, of: application, undoManager: undoTarget, part: self, listDidChange: onOwnButtonsChange
+        )
     }
 
-    private func removeOwnBinding(id: UUID, undoManager undo: UndoManager?) {
-        var own = ownBindings
+    /// The undo target is the settings, not this controller (as the Scrolling reset's): the
+    /// page and its parts are gone once the list shows again, and its Undo still works.
+    /// `part` shows the change while it is there; `listDidChange` tells the list of apps
+    /// (its marks), and must not hold the page.
+    private static func removeOwnBinding(
+        id: UUID, of application: Application, undoManager undo: UndoManager?,
+        part: ApplicationButtonsViewController?, listDidChange: (() -> Void)?
+    ) {
+        var own = application.ownButtonBindings
         guard let index = own.firstIndex(where: { $0.id == id }) else { return }
         let removed = own.remove(at: index)
-        store(own)
+        application.setOwnButtonBindings(own)
+        part?.showUndoableChange(selecting: nil)
+        listDidChange?()
         guard let undo else { return }
-        undo.registerUndo(withTarget: self) { [weak undo] controller in
-            controller.restoreOwnBinding(removed, at: index, undoManager: undo)
+        undo.registerUndo(withTarget: Options.shared) { [weak undo, weak part] _ in
+            Self.restoreOwnBinding(removed, at: index, of: application, undoManager: undo, part: part, listDidChange: listDidChange)
         }
-        undo.setActionName(text("buttons-undo-remove"))
+        undo.setActionName(NSLocalizedString("buttons-undo-remove", comment: ""))
     }
 
-    private func restoreOwnBinding(_ binding: ButtonBinding, at index: Int, undoManager undo: UndoManager?) {
-        var own = ownBindings
+    private static func restoreOwnBinding(
+        _ binding: ButtonBinding, at index: Int, of application: Application, undoManager undo: UndoManager?,
+        part: ApplicationButtonsViewController?, listDidChange: (() -> Void)?
+    ) {
+        var own = application.ownButtonBindings
         if let existing = own.first(where: { $0.identity == binding.identity }) {
             // Added again meanwhile: that one stays.
-            list.select(AnyHashable(existing.id))
+            part?.showUndoableChange(selecting: existing.id)
             return
         }
         own.insert(binding, at: min(max(0, index), own.count))
-        store(own)
-        list.select(AnyHashable(binding.id))
+        application.setOwnButtonBindings(own)
+        part?.showUndoableChange(selecting: binding.id)
+        listDidChange?()
         guard let undo else { return }
-        undo.registerUndo(withTarget: self) { [weak undo] controller in
-            controller.removeOwnBinding(id: binding.id, undoManager: undo)
+        undo.registerUndo(withTarget: Options.shared) { [weak undo, weak part] _ in
+            Self.removeOwnBinding(id: binding.id, of: application, undoManager: undo, part: part, listDidChange: listDidChange)
         }
-        undo.setActionName(text("buttons-undo-remove"))
+        undo.setActionName(NSLocalizedString("buttons-undo-remove", comment: ""))
+    }
+
+    /// A removal, its Undo or its Redo changed the app's list: the rows again, with `id`
+    /// selected.
+    private func showUndoableChange(selecting id: UUID?) {
+        guard isViewLoaded else { return }
+        reloadRows()
+        if let id {
+            list.select(AnyHashable(id))
+        }
     }
 
     // MARK: - Recording

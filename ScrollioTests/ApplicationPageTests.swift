@@ -503,6 +503,37 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertFalse(calculator.hasOwnButtons)
     }
 
+    /// "−" on the page, then the page closes (Esc, the back button, another pane), then
+    /// Edit › Undo: the button comes back to the app although the page's part is gone, the
+    /// list's mark follows, and Redo takes the button away again.
+    func testUndoOfARemovedRowWorksAfterThePageClosed() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(3, "appExpose")])
+        let pane = makePane()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        weak var closedPart: ApplicationButtonsViewController?
+        try autoreleasepool {
+            pane.openApplication(withID: Self.calculator, part: .buttons)
+            let part = try XCTUnwrap(pane.detailController?.buttonsPart)
+            part.paneUndoManager = undo
+            undo.beginUndoGrouping()
+            part.removeOwnBinding(id: calculator.ownButtonBindings[0].id)
+            undo.endUndoGrouping()
+            closedPart = part
+            pane.leaveSubpage()
+        }
+        XCTAssertNil(closedPart, "the page and its parts are gone")
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [])
+
+        undo.undo()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), ["appExpose"])
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.buttons], "the list's mark follows")
+        undo.redo()
+        XCTAssertFalse(calculator.hasOwnButtons)
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [])
+    }
+
     /// "Record a Button or Key…": the Buttons pane's recorder; what it caught is added when
     /// it closes. A button the app has already is a duplicate; what opens the ring is
     /// refused, and the recorder says why.

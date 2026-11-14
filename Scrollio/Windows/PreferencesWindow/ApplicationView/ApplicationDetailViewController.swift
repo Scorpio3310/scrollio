@@ -39,8 +39,11 @@ final class ApplicationDetailViewController: NSViewController {
 
     /// Esc or ⌘[ asked to go back to the list.
     var onBack: (() -> Void)?
-    /// The app's own settings changed in a way the list shows (its line, its marks).
-    var onInheritChange: (() -> Void)?
+    /// The app's own settings changed in a way the list shows (its line, its marks). The
+    /// Buttons part gets it as it is (an Undo there outlives the page).
+    var onInheritChange: (() -> Void)? {
+        didSet { buttonsPart?.onOwnButtonsChange = onInheritChange }
+    }
     /// The page's height changed: another part, the settings loaded, "Advanced" opened or
     /// closed, a row came or went.
     var onHeightChange: (() -> Void)?
@@ -160,7 +163,7 @@ final class ApplicationDetailViewController: NSViewController {
                 scrolling.onInheritChange = { [weak self] in self?.onInheritChange?() }
             }
             if let buttons = controller as? ApplicationButtonsViewController {
-                buttons.onOwnButtonsChange = { [weak self] in self?.onInheritChange?() }
+                buttons.onOwnButtonsChange = onInheritChange
             }
             addChild(controller)
             controller.view.translatesAutoresizingMaskIntoConstraints = false
