@@ -277,6 +277,124 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(requests, [false])
     }
 
+    // MARK: Folded while nothing opens the ring
+
+    private func rect(_ view: NSView, in controller: NSViewController) -> NSRect {
+        return controller.view.convert(view.alignmentRect(forFrame: view.frame), from: view.superview)
+    }
+
+    /// Nothing opens the ring: the places are folded under "Shortcuts ›"; the cards, what
+    /// opens the ring with the freeze switch, and "Reset to Defaults" stay.
+    func testWithNothingThatOpensTheRingThePlacesAreFoldedUnderTheirTitle() throws {
+        let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
+        let places = try XCTUnwrap(controller.placesSection)
+        XCTAssertTrue(controller.sections[2] === places)
+        XCTAssertTrue(places.isCollapsible)
+        XCTAssertFalse(places.showsBody)
+        XCTAssertFalse(places.disclosure.isHidden)
+        XCTAssertEqual(places.disclosure.label.stringValue, "Shortcuts")
+        XCTAssertEqual(places.disclosure.accessibilityRole(), .disclosureTriangle)
+        XCTAssertEqual(places.disclosure.accessibilityValue() as? NSNumber, 0, "collapsed")
+        for row in controller.placeRows {
+            XCTAssertTrue(row.isHiddenOrHasHiddenAncestor)
+        }
+        XCTAssertTrue(controller.placesHintLabel.isHiddenOrHasHiddenAncestor)
+        for view in [controller.headerView!, controller.triggerRow!, controller.freezeRow!, controller.resetToDefaultsButton] as [NSView] {
+            XCTAssertFalse(view.isHiddenOrHasHiddenAncestor)
+        }
+        // The title line alone, a section's room above it and the footer's under it.
+        XCTAssertEqual(rect(places, in: controller).height, places.disclosure.label.fittingSize.height, accuracy: 0.5)
+        let trigger = controller.sections[1]
+        XCTAssertEqual(rect(trigger, in: controller).minY - rect(places, in: controller).maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
+        let footer = try XCTUnwrap(controller.sections.last)
+        XCTAssertEqual(rect(places, in: controller).minY - rect(footer, in: controller).maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+        XCTAssertFalse(controller.view.hasAmbiguousLayout)
+    }
+
+    /// A click on the title opens the places, the pane grows to them, and they are edited
+    /// as ever; another folds them again.
+    func testAClickOpensThePlacesAndTheyCanBeEdited() throws {
+        let controller = makeController()
+        let places = try XCTUnwrap(controller.placesSection)
+        places.prefersReducedMotion = { true }
+        let folded = controller.view.frame.height
+
+        XCTAssertTrue(places.disclosure.accessibilityPerformPress())
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertTrue(places.showsBody)
+        XCTAssertFalse(places.disclosure.isHidden, "still a disclosure: nothing opens the ring")
+        XCTAssertEqual(places.disclosure.chevron.turn, 1)
+        for row in controller.placeRows {
+            XCTAssertFalse(row.isHiddenOrHasHiddenAncestor)
+        }
+        XCTAssertGreaterThan(controller.view.frame.height, folded + 300, "the pane fits the rows")
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+
+        let popUp = controller.placePopUps[1]
+        popUp.shortcutSelected(try XCTUnwrap(item("undo", in: popUp)))
+        XCTAssertEqual(Options.shared.ring[1].action, "undo")
+        XCTAssertTrue(places.showsBody, "editing keeps them open")
+
+        XCTAssertTrue(places.disclosure.accessibilityPerformPress())
+        XCTAssertFalse(places.showsBody)
+        XCTAssertEqual(controller.view.frame.height, folded, accuracy: 0.5)
+    }
+
+    /// Once a binding of Buttons opens the ring, or only an app's own one, the places show
+    /// by themselves under a plain title; without one again they are folded.
+    func testOnceSomethingOpensTheRingThePlacesShowUnderAPlainTitle() throws {
+        let controller = makeController()
+        let places = try XCTUnwrap(controller.placesSection)
+        let folded = controller.view.frame.height
+        let notes = ApplicationTriggers(applicationNames: ["Notes"], triggerTitles: ["Back button"], path: "/System/Applications/Notes.app")
+        for opens in [
+            ShortcutRingBindingSummary(triggerTitles: ["Thumb panel"]),
+            ShortcutRingBindingSummary(triggerTitles: [], onlyInApps: notes),
+        ] {
+            summary = opens
+            controller.reload()
+            XCTAssertFalse(places.isCollapsible)
+            XCTAssertTrue(places.showsBody)
+            XCTAssertFalse(places.titleLabel.isHidden)
+            XCTAssertEqual(places.titleLabel.stringValue, "Shortcuts")
+            XCTAssertTrue(places.disclosure.isHidden, "no chevron")
+            XCTAssertFalse(controller.placeRows[0].isHiddenOrHasHiddenAncestor)
+            XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+        }
+
+        summary = ShortcutRingBindingSummary(triggerTitles: [])
+        controller.reload()
+        XCTAssertTrue(places.isCollapsible)
+        XCTAssertFalse(places.showsBody)
+        XCTAssertEqual(controller.view.frame.height, folded, accuracy: 0.5)
+    }
+
+    /// A click on a place of the drawing while the places are folded opens them and
+    /// selects that place's row.
+    func testAClickOnThePlaceOfTheDrawingOpensFoldedPlaces() throws {
+        let controller = makeController()
+        let places = try XCTUnwrap(controller.placesSection)
+        places.prefersReducedMotion = { true }
+        controller.previewView.onPlaceClicked?(4)
+        XCTAssertTrue(places.showsBody)
+        XCTAssertEqual(controller.selectedPlace, 4)
+        XCTAssertFalse(controller.placePopUps[4].isHiddenOrHasHiddenAncestor)
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+    }
+
+    /// An app's page has its own switch for this (`ApplicationRingPartViewController`): the
+    /// rows of an app's own ring are no section of the pane's.
+    func testAnAppsRingHasNoFoldingOfItsOwn() throws {
+        let application = Application(path: "/System/Applications/Notes.app")
+        let page = RingPreferencesViewController(application: application)
+        page.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: []) }
+        _ = page.view
+        XCTAssertNil(page.placesSection)
+        XCTAssertFalse(page.placeRows[0].isHiddenOrHasHiddenAncestor)
+    }
+
     /// The row answers "can a key open it?" whether or not something opens the ring yet:
     /// yes, also a keystroke that Logi Options+ sends for a button.
     func testTheRowSaysThatAKeyCombinationWorks() {

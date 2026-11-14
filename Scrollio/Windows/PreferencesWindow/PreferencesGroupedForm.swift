@@ -166,8 +166,9 @@ enum PreferencesGroupedForm {
         return content
     }
 
-    /// Adds views to the content stack, each as wide as the stack. A titled section and the
-    /// footer get `sectionSpacing` above them, everything else `boxSpacing`.
+    /// Adds views to the content stack, each as wide as the stack. A titled section (one
+    /// whose title folds it too, `PreferencesDisclosureSection`) and the footer get
+    /// `sectionSpacing` above them, everything else `boxSpacing`.
     static func add(_ views: [NSView], to content: NSStackView) {
         for view in views {
             content.addArrangedSubview(view)
@@ -186,7 +187,7 @@ enum PreferencesGroupedForm {
         if let section = view as? PreferencesListSection {
             return section.titleLabel != nil
         }
-        return view is PreferencesGroupFooter
+        return view is PreferencesDisclosureSection || view is PreferencesGroupFooter
     }
 
     /// The small title above a box, as System Settings puts it over a group.
