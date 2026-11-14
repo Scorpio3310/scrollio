@@ -506,12 +506,16 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     }
 
     /// A removal, its Undo or its Redo changed the app's list: the rows again, with `id`
-    /// selected.
+    /// selected; and the part of the page shown now, if another one: the Gestures and
+    /// Shortcut Ring parts say what this app's buttons make of the gestures and the ring.
     private func showUndoableChange(selecting id: UUID?) {
         guard isViewLoaded else { return }
         reloadRows()
         if let id {
             list.select(AnyHashable(id))
+        }
+        if let shown = (parent as? ApplicationDetailViewController)?.shownController, shown !== self {
+            shown.syncViewWithOptions()
         }
     }
 

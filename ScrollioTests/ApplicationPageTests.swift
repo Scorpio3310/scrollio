@@ -750,6 +750,50 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [])
     }
 
+    /// "−" in the Buttons part, then the Gestures or Shortcut Ring part, then Edit › Undo
+    /// or Redo: the part shown now says what the app's buttons make of the gestures or the
+    /// ring after the change, not what they made before.
+    func testUndoOfARemovedRowShowsOnTheGesturesAndRingPartsShownNow() throws {
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        let ringAction = SystemShortcut.shortcutRing.identifier
+        let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
+        Options.shared.buttons.binding = [binding(thumbPanel, gestures), binding(5, ringAction)]
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(thumbPanel, ringAction), binding(5, "copy")])
+        let (page, part) = try buttonsPart()
+        let undo = try XCTUnwrap(part.paneUndoManager)
+        undo.groupsByEvent = false
+        func remove(_ index: Int) {
+            undo.beginUndoGrouping()
+            part.removeOwnBinding(id: calculator.ownButtonBindings[index].id)
+            undo.endUndoGrouping()
+        }
+
+        // The Gestures part: the thumb panel runs the gestures again once its row is gone.
+        let noButton = "While Calculator is in front, no button runs the gestures: see its Buttons part."
+        let generalGestures = "While Calculator is in front, the general gestures run."
+        remove(0)
+        choose(ApplicationPagePart.all.firstIndex(of: .gestures)!, on: page)
+        XCTAssertEqual(page.gesturesPart.generalGesturesRow.explanation, generalGestures)
+        undo.undo()
+        XCTAssertEqual(page.gesturesPart.generalGesturesRow.explanation, noButton, "Undo shows on the part shown now")
+        undo.redo()
+        XCTAssertEqual(page.gesturesPart.generalGesturesRow.explanation, generalGestures, "and Redo")
+
+        // The Shortcut Ring part: Buttons' ring button does something else here, and back.
+        choose(ApplicationPagePart.all.firstIndex(of: .buttons)!, on: page)
+        let copyRow = try XCTUnwrap(calculator.ownButtonBindings.firstIndex { $0.systemShortcutName == "copy" })
+        remove(copyRow)
+        choose(ApplicationPagePart.all.firstIndex(of: .ring)!, on: page)
+        let generalRing = "While Calculator is in front, the general ring opens."
+        let nothing = "While Calculator is in front, nothing opens the ring: see its Buttons part."
+        XCTAssertEqual(page.generalRingRow.explanation, generalRing)
+        undo.undo()
+        XCTAssertEqual(page.generalRingRow.explanation, nothing)
+        undo.redo()
+        XCTAssertEqual(page.generalRingRow.explanation, generalRing)
+    }
+
     /// "−" on the page, the page closes and the app's page opens again, then Edit › Undo:
     /// the row shows on the page that is open now, selected, and the pane takes the page's
     /// new height; Redo takes the row off that page again.
