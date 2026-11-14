@@ -212,6 +212,38 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
+    /// Gestures that send a recorded key combination (`gestures-pane-keys-<appearance>.png`):
+    /// Up with a name and an icon, the click with its keys only, and the pointer over Up, so
+    /// that the preview shows Up's icon; `gestures-pane-keys-click-…`: over Click, whose
+    /// keys the preview shows.
+    func testRenderGestureKeys() throws {
+        let savedGesture = Options.shared.gesture
+        defer { Options.shared.gesture = savedGesture }
+        let shiftCommand = UInt64(CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue)
+        let optionCommand = UInt64(CGEventFlags.maskCommand.rawValue | CGEventFlags.maskAlternate.rawValue)
+        var gesture = MouseGestureSettings.default
+        gesture.actions.up = GestureAction(
+            action: "custom::15:\(shiftCommand)", label: ShortcutLabel(name: "Reload", icon: .symbol("arrow.clockwise"))
+        )
+        gesture.actions.click = GestureAction(action: "custom::40:\(optionCommand)")
+        Options.shared.gesture = gesture
+        for (name, slot) in [("gestures-pane-keys", MouseGestureSettingsControls.Slot.up), ("gestures-pane-keys-click", .click)] {
+            try renderPane(GesturesPreferencesViewController.tabIdentifier, name: name, replacement: {
+                let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+                gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+                gestures.bindingSummary = {
+                    MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"])
+                }
+                return gestures
+            }, afterLoad: { controller in
+                guard let gestures = controller as? GesturesPreferencesViewController else { return }
+                gestures.previewView.prefersReducedMotion = { true }
+                gestures.previewView.reduceMotionDidChange()
+                gestures.slotHoverChanged(slot, inside: true)
+            })
+        }
+    }
+
     /// The Shortcut Ring pane: a button and a key open the ring, the default ring, and the
     /// pointer over the row of "Bottom left" (its place is lit in the drawing).
     func testRenderRing() throws {
