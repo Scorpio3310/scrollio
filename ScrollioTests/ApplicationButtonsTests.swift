@@ -134,6 +134,28 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertEqual(action(3, in: byProgram), "undo")
     }
 
+    /// Two entries of one path (a settings file written by hand): the press goes by the
+    /// entry every other reader finds (`get(by:)`, the last), as the Logitech divert does,
+    /// never by the other one's buttons.
+    func testOfTwoEntriesOfOnePathThePressGoesByTheOneEveryReaderFinds() {
+        let first = Application(path: Self.safari.bundlePath!)
+        first.setOwnButtonBindings([binding(3, "undo"), binding(4, "redo")])
+        let last = Application(path: Self.safari.bundlePath!)
+        last.setOwnButtonBindings([binding(3, "cut")])
+        Options.shared.buttons.binding = [binding(3, "copy")]
+        Options.shared.application.applications = Self.makeStore([first, last])
+        ButtonUtils.shared.invalidateCache()
+        XCTAssertTrue(ApplicationButtons.entry(front: Self.safari, applications: Options.shared.application.applications) === last)
+
+        XCTAssertEqual(action(3, in: Self.safari), "cut")
+        XCTAssertNil(action(4, in: Self.safari), "the first entry's button is no binding of the app's")
+        let isLogi: (UInt16) -> Bool = { _ in true }
+        XCTAssertEqual(
+            LogiUsageBootstrap.buttonBindingCodes(general: Options.shared.buttons.binding, frontAppOwn: last.ownButtonBindings, isLogiCode: isLogi),
+            [3], "the divert goes by the same entry"
+        )
+    }
+
     /// The merge, pure: the general order, each replaced in its place, the new ones after;
     /// one binding per trigger; the trigger includes the modifier keys and the mouse.
     func testTheMergeReplacesInPlaceAndAddsAfter() {

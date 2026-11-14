@@ -46,8 +46,9 @@ class ButtonUtils {
     /// 缓存的绑定列表 (已预解析 custom:: 字段)
     private var cachedBindings: [ButtonBinding] = []
     private var cachedBindingsByTriggerKey: [ButtonBindingTriggerKey: [ButtonBinding]] = [:]
-    /// For each app with buttons of its own (by its entry's path, the first entry of a
-    /// path): the general bindings with the app's own merged over them, by trigger. Built
+    /// For each app with buttons of its own (by its entry's path; of two entries of one
+    /// path, the one `get(by:)` returns, as for every other reader): the general bindings
+    /// with the app's own merged over them, by trigger. Built
     /// with the general table; an app without buttons of its own has none and costs nothing.
     private var cachedAppBindingsByTriggerKey: [String: [ButtonBindingTriggerKey: [ButtonBinding]]] = [:]
     /// The buttons and keys some app has a binding of its own on: only a press of one of
@@ -179,7 +180,11 @@ class ButtonUtils {
         var appTriggerKeys: Set<ButtonBindingTriggerKey> = []
         let applications = Options.shared.application.applications
         for index in 0..<applications.count {
-            guard let application = applications.get(by: index), appTables[application.path] == nil else { continue }
+            // Two entries of one path (a settings file written by hand, or merged): the one
+            // `get(by:)` returns counts, the entry the divert, the ring, the gestures and the
+            // scroll engine go by (the last).
+            guard let application = applications.get(by: index),
+                  applications.get(by: application.path) === application else { continue }
             let own = ApplicationButtons.usable(application.ownButtonBindings, general: Options.shared.buttons.binding)
             guard !own.isEmpty else { continue }
             let merged = ApplicationButtons.merged(general: cachedBindings, own: Self.prepared(own))
