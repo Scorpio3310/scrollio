@@ -14,6 +14,9 @@
 //  - A hold is tracked by the device only when the mouse acknowledged the arm request
 //    before the button went down. No acknowledgement within `acknowledgeTimeout`, or an
 //    HID++ error, drops the control back to the pointer path until the request changes.
+//  - The writes that only follow the request (and their echo) are routine: they go to the
+//    Logitech Diagnostics window (`trace`), as the divert's own writes do, not to the
+//    system log, which would get a line per switch of apps. A refusal is logged (`log`).
 //  - Controls Scrollio never armed keep getting the exact bytes they always got (0x03 / 0x02).
 //  - The first movement sample of every hold is dropped (OpenLogi saw a large jump there).
 //
@@ -52,6 +55,7 @@ final class LogiGestureController {
     private let schedule: Schedule
     private let onChange: () -> Void
     private let log: (String) -> Void
+    private let trace: (String) -> Void
     /// False once the user switched haptics off in the mouse settings: a cue may then not
     /// switch the mouse's haptics on. Asked at the moment a cue finds them off.
     private let mayEnableHaptics: () -> Bool
@@ -63,6 +67,7 @@ final class LogiGestureController {
         schedule: @escaping Schedule,
         onChange: @escaping () -> Void = {},
         log: @escaping (String) -> Void = { _ in },
+        trace: @escaping (String) -> Void = { LogiDebugPanel.log(device: "Gesture", type: .info, message: $0) },
         mayEnableHaptics: @escaping () -> Bool = { true }
     ) {
         self.sendReporting = sendReporting
@@ -71,6 +76,7 @@ final class LogiGestureController {
         self.schedule = schedule
         self.onChange = onChange
         self.log = log
+        self.trace = trace
         self.mayEnableHaptics = mayEnableHaptics
     }
 
@@ -168,7 +174,7 @@ final class LogiGestureController {
             rawXYPhases[cid] = nil
         }
         if change != .divert && change != .undivert {
-            log(String(format: "raw XY: CID 0x%04X <- flags 0x%02X", cid, change.flags))
+            trace(String(format: "raw XY: CID 0x%04X <- flags 0x%02X", cid, change.flags))
         }
         return change.flags
     }
@@ -201,7 +207,7 @@ final class LogiGestureController {
     func handleReportingAcknowledgement(cid: UInt16, flags: UInt8) {
         guard case .arming? = rawXYPhases[cid], LogiGestureProtocol.acknowledgesRawXY(flags: flags) else { return }
         rawXYPhases[cid] = .armed
-        log(String(format: "raw XY: CID 0x%04X armed", cid))
+        trace(String(format: "raw XY: CID 0x%04X armed", cid))
     }
 
     /// An HID++ error for setCidReporting. It does not name the control, so every arm

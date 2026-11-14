@@ -38,6 +38,8 @@ final class LogiGestureControllerTests: XCTestCase {
     private var movements: [Movement] = []
     private var timers: [(delay: TimeInterval, work: () -> Void)] = []
     private var changes = 0
+    /// What the controller wrote to the system log (the session's `log`).
+    private var logLines: [String] = []
     /// What the session remembers as diverted (`lastApplied`).
     private var diverted: Set<UInt16> = []
 
@@ -48,6 +50,7 @@ final class LogiGestureControllerTests: XCTestCase {
         movements = []
         timers = []
         changes = 0
+        logLines = []
         diverted = []
     }
 
@@ -65,6 +68,7 @@ final class LogiGestureControllerTests: XCTestCase {
             },
             schedule: { [unowned self] delay, work in self.timers.append((delay, work)) },
             onChange: { [unowned self] in self.changes += 1 },
+            log: { [unowned self] in self.logLines.append($0) },
             mayEnableHaptics: mayEnableHaptics
         )
         controller.setRawXYCapableControls(capable)
@@ -303,6 +307,26 @@ final class LogiGestureControllerTests: XCTestCase {
 
         applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
         XCTAssertEqual(writes, [Self.arm])
+    }
+
+    /// Writes that only follow the request (the app in front changes what is tracked) put
+    /// no line in the system log: the divert's own writes never did, and a line per switch
+    /// of apps kept a trail of them. A refusal is still written there.
+    func testFollowingTheRequestWritesNoLineButARefusalDoes() {
+        let controller = armedController()
+        logLines = []
+        for _ in 0..<3 {
+            applyUsage(controller, bound: [Self.gesture], tracking: [])
+            applyUsage(controller, bound: [Self.gesture], tracking: [Self.gesture])
+            acknowledge(controller, Self.arm)
+        }
+        XCTAssertEqual(writes.count, 6)
+        XCTAssertEqual(controller.armedCIDs, [Self.gesture])
+        XCTAssertEqual(logLines, [])
+
+        applyUsage(controller, bound: [Self.gesture, Self.modeShift], tracking: [Self.gesture, Self.modeShift])
+        controller.handleReportingError()
+        XCTAssertEqual(logLines, ["raw XY: CID 0x00C4 refused by the device, using pointer movement"])
     }
 
     // MARK: - Teardown
