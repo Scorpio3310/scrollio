@@ -6,7 +6,7 @@
       "name": "Ableton Live",
       "bundleIdentifiers": ["com.ableton.live"],
       "places": [
-        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": [], "modifierless": true},
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["shift"], "modifierless": true},
         {"name": "Play/Stop", "symbol": "playpause", "character": "space", "modifiers": [], "modifierless": true},
         {"name": "Redo", "symbol": "arrow.uturn.forward", "character": "z", "modifiers": ["shift", "command"], "modifierless": false},
         {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},

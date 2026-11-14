@@ -626,7 +626,7 @@ final class ShortcutRingSuggestionKeysTests: XCTestCase {
     /// The cases of the second fifty's report, through the same resolution: Telegram's ⌘0
     /// is the 0 key with Command alone (also on AZERTY, which types "0" with Shift);
     /// GIMP's "+" without a modifier is Shift and "=" on US and the "+" key without Shift
-    /// on German; Opera's bottom corners are Copy and Paste (its ⌃⇥ cycler switches when
+    /// on German, and so is Ableton Live's (it was "=", Shift-0 on German); Opera's bottom corners are Copy and Paste (its ⌃⇥ cycler switches when
     /// Control is let go, which a sent shortcut does not do as a key of its own); the new
     /// browsers' ⌘[ / ⌘] take Scrollio's Back and Forward where "[" needs Option, and
     /// BBEdit's four bracket places stay empty there.
@@ -652,6 +652,11 @@ final class ShortcutRingSuggestionKeysTests: XCTestCase {
         XCTAssertEqual(gimpGerman[0].action, custom(30, []), "Zoom In: the + key, without Shift")
         XCTAssertEqual(german.plain[30], "+")
         XCTAssertEqual(gimpGerman[2].action, custom(6, .maskCommand), "Redo ⌘Y: the key that types Y")
+        // Ableton Live zooms with "+" as GIMP does: stored as GIMP's, never Shift-0 ("=").
+        XCTAssertEqual(try SuggestionFixtures.place("Zoom In", of: "Ableton Live"), try SuggestionFixtures.place("Zoom In", of: "GIMP"))
+        XCTAssertEqual(try SuggestionFixtures.app("Ableton Live").places(on: german)[0].action, custom(30, []), "Zoom In: the + key")
+        XCTAssertEqual(try SuggestionFixtures.app("Ableton Live").places(on: .us)[0].action, custom(24, .maskShift), "Zoom In: +")
+        XCTAssertEqual(try SuggestionFixtures.app("Ableton Live").places(on: german)[4].action, custom(44, []), "Zoom Out: the - key")
         for name in ["Brave Browser", "ChatGPT Atlas", "Dia", "Orion", "Zen Browser"] {
             let places = try SuggestionFixtures.app(name).places(on: german)
             XCTAssertEqual(places[6], ShortcutRingPlace(SystemShortcut.navigateBack), name)
