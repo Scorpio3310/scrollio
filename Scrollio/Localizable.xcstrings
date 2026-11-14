@@ -8775,6 +8775,30 @@
           }
         }
       }
+    },
+    "apps-undo-reset-ring": {
+      "comment": "Apps, an app's Shortcut Ring part: \"Reset to Defaults\" puts its own ring back; the Undo menu item reads \"Undo Reset Shortcut Ring in Calculator\"; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset Shortcut Ring in %@"
+          }
+        }
+      }
+    },
+    "apps-undo-reset-gestures": {
+      "comment": "Apps, an app's Gestures part: \"Reset to Defaults\" puts its own gestures back; the Undo menu item reads \"Undo Reset Gestures in Calculator\"; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset Gestures in %@"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

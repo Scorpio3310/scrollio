@@ -328,7 +328,7 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         suggested.isHidden = true
         suggestionRow = suggested
         let reset = PreferencesPaneReset(
-            undoActionNameKey: Self.resetActionNameKey,
+            undoActionName: Self.resetActionName(for: application),
             hasSettingsToReset: { [weak self] in self?.hasSettingsToReset ?? false },
             undoManager: { [weak self] in self?.undoTarget },
             reset: { [weak self] undo in self?.resetRing(undoManager: undo) }
@@ -429,8 +429,14 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
 
     // MARK: - Reset to Defaults
 
-    /// The undo action's name: the Shortcut Ring pane's ("Reset Shortcut Ring").
-    static let resetActionNameKey = "ring-undo-reset"
+    /// The undo action's name, its own, not the Shortcut Ring pane's: "Reset Shortcut Ring
+    /// in Calculator" (Edit › Undo says which reset it takes back, and "Undo Reset" never
+    /// takes back the pane's or another app's).
+    static let resetActionNameKey = "apps-undo-reset-ring"
+
+    static func resetActionName(for application: Application) -> String {
+        return String(format: NSLocalizedString(resetActionNameKey, comment: ""), application.getName())
+    }
 
     /// Where "Reset to Defaults" registers its Undo: the window's while the page is in it.
     var undoTarget: UndoManager? {
@@ -484,7 +490,7 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             ) else { return }
             fillRing(of: entry, with: before.places, freezePointer: before.freezePointer, undoManager: undo, showing: showing)
         }
-        undo.setActionName(NSLocalizedString(resetActionNameKey, comment: ""))
+        undo.setActionName(resetActionName(for: application))
     }
 
     func partWillHide() {

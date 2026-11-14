@@ -160,7 +160,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         // A titled section's room above "Directions", under the line too.
         content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: holder)
         let reset = PreferencesPaneReset(
-            undoActionNameKey: Self.resetActionNameKey,
+            undoActionName: Self.resetActionName(for: application),
             hasSettingsToReset: { [weak self] in self?.hasSettingsToReset ?? false },
             undoManager: { [weak self] in self?.undoTarget },
             reset: { [weak self] undo in self?.resetGestures(undoManager: undo) }
@@ -289,8 +289,14 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
 
     // MARK: - Reset to Defaults
 
-    /// The undo action's name: the Gestures pane's ("Reset Gestures").
-    static let resetActionNameKey = "gestures-undo-reset"
+    /// The undo action's name, its own, not the Gestures pane's: "Reset Gestures in
+    /// Calculator" (Edit › Undo says which reset it takes back, and "Undo Reset" never takes
+    /// back the pane's or another app's).
+    static let resetActionNameKey = "apps-undo-reset-gestures"
+
+    static func resetActionName(for application: Application) -> String {
+        return String(format: NSLocalizedString(resetActionNameKey, comment: ""), application.getName())
+    }
 
     /// Where "Reset to Defaults" registers its Undo: the window's while the page is in it.
     var undoTarget: UndoManager? {
@@ -337,7 +343,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
             ) else { return }
             putGestures(of: entry, set: before, undoManager: undo, showing: showing)
         }
-        undo.setActionName(NSLocalizedString(resetActionNameKey, comment: ""))
+        undo.setActionName(resetActionName(for: application))
     }
 
     // MARK: - The app's own set

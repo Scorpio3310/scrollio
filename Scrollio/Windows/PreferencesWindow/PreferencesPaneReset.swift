@@ -5,8 +5,8 @@
 //  ring, the gesture settings): the button for the pane's footer, the reset with its Undo,
 //  the few seconds in which the button reads "Undo Reset", and when it can be clicked.
 //  The Buttons, Gestures and Shortcut Ring parts of an app's page use the same button
-//  with a reset of their own (`init(undoActionNameKey:…)`): theirs finds the app's entry
-//  again when its Undo runs.
+//  with a reset of their own (`init(undoActionNameKey:…)`, `init(undoActionName:…)`):
+//  theirs finds the app's entry again when its Undo runs, under a name of its own.
 //
 //  The rules are the Scrolling pane's, which keeps its own code: its reset spans two
 //  stores and an app's page. Change a rule in both places.
@@ -80,8 +80,21 @@ final class PreferencesPaneReset: NSObject {
     ///   - hasSettingsToReset: something differs from where a reset leads.
     ///   - reset: puts the defaults in place and registers its Undo, under that name, in
     ///     the manager it is given (nil: none).
-    init(
+    convenience init(
         undoActionNameKey: String,
+        hasSettingsToReset: @escaping () -> Bool,
+        undoManager: @escaping () -> UndoManager?,
+        reset: @escaping (UndoManager?) -> Void
+    ) {
+        self.init(
+            undoActionName: NSLocalizedString(undoActionNameKey, comment: ""),
+            hasSettingsToReset: hasSettingsToReset, undoManager: undoManager, reset: reset
+        )
+    }
+
+    /// The same, with the name itself (one made with the app's name).
+    init(
+        undoActionName: String,
         hasSettingsToReset: @escaping () -> Bool,
         undoManager: @escaping () -> UndoManager?,
         reset: @escaping (UndoManager?) -> Void
@@ -89,7 +102,7 @@ final class PreferencesPaneReset: NSObject {
         button = PreferencesGroupedForm.makePushButton(title: Self.resetTitle, target: nil, action: nil)
         differsFromDefaults = hasSettingsToReset
         resetSettings = reset
-        undoActionName = NSLocalizedString(undoActionNameKey, comment: "")
+        self.undoActionName = undoActionName
         self.undoManager = undoManager
         super.init()
         button.target = self
@@ -108,11 +121,17 @@ final class PreferencesPaneReset: NSObject {
 
     /// One click, no question: the defaults, and Edit › Undo brings back every value. While
     /// the button reads "Undo Reset" and the settings are still the defaults, the click
-    /// takes the reset back instead.
+    /// takes the reset back instead. A click while nothing differs (the button was not told
+    /// yet that the settings came back by themselves, an Undo elsewhere) resets nothing and
+    /// offers no "Undo Reset": the button only shows what is so.
     @objc func click(_ sender: Any?) {
         willReset()
         if offersUndo, !hasSettingsToReset {
             undoReset()
+            return
+        }
+        guard hasSettingsToReset else {
+            updateButton()
             return
         }
         resetSettings(undoManager())
