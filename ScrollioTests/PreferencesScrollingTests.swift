@@ -1162,8 +1162,13 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertNil(application.thumbWheel)
         XCTAssertEqual(application.scroll.thumbWheel?.speed, 1)
 
-        // A change from elsewhere shows on the page; the section stays.
+        // A change from elsewhere shows on the page at once (the app has no action of its
+        // own: the general one runs there); the section stays.
+        XCTAssertEqual(ThumbWheelPresentation.function(of: controller.thumbWheelFunctionPopUp.selectedItem), .zoom)
+        XCTAssertEqual(controller.thumbWheelFunctionRow.explanation, ThumbWheelFunction.zoom.localizedHint)
         Options.shared.thumbWheel = .default
+        XCTAssertEqual(ThumbWheelPresentation.function(of: controller.thumbWheelFunctionPopUp.selectedItem), .scroll)
+        XCTAssertEqual(controller.thumbWheelFunctionRow.explanation, ThumbWheelFunction.scroll.localizedHint)
         XCTAssertFalse(controller.thumbWheelSection.isHidden)
     }
 
