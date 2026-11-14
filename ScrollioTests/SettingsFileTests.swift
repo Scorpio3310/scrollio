@@ -2572,8 +2572,11 @@ final class SettingsImportSheetTests: XCTestCase {
         sheet.view.layoutSubtreeIfNeeded()
         let document = try XCTUnwrap(sheet.middleScrollView?.documentView)
         XCTAssertLessThan(document.convert(launch.bounds, from: launch).minY, document.convert(list.bounds, from: list).minY)
-        // What the sheet counts above is still there.
-        XCTAssertEqual(sheet.itemLabels.map(\.stringValue), ["5 button and key actions", "Gestures", "2 apps with their own settings"])
+        // What the sheet counts above is still there, with the apps that bring buttons of
+        // their own.
+        XCTAssertEqual(sheet.itemLabels.map(\.stringValue), [
+            "5 button and key actions", "Gestures", "2 apps with their own settings", "2 apps with buttons of their own",
+        ])
 
         // Return does not import: it is Cancel, and so is Esc.
         XCTAssertEqual(sheet.importButton?.keyEquivalent, "")
