@@ -272,8 +272,8 @@ final class ApplicationPageTests: XCTestCase {
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
         XCTAssertGreaterThan(label.frame.width, 300)
-        for isEmpty in [true, false] {
-            let text = ApplicationButtonsViewController.note(for: long.displayName!, isEmpty: isEmpty)
+        for (isEmpty, listsThumbWheel) in [(true, false), (false, false), (false, true)] {
+            let text = ApplicationButtonsViewController.note(for: long.displayName!, isEmpty: isEmpty, listsThumbWheel: listsThumbWheel)
             XCTAssertTrue(text.contains(long.displayName!))
             XCTAssertTrue(text.hasSuffix("."))
             let height = (text as NSString).boundingRect(

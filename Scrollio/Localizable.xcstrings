@@ -8631,6 +8631,18 @@
           }
         }
       }
+    },
+    "apps-buttons-note-thumb-wheel": {
+      "comment": "An app's page, Buttons: the line under the list while it holds the thumb wheel's row (the wheel is no button); %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These do this while %@ is in front; everything else does what Buttons says."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

@@ -9,9 +9,10 @@
 //  3 or 3S) and the app has no function of its own; the new row starts with the function
 //  the wheel has everywhere, is selected and its menu opens. Its pull-down is the Buttons
 //  pane's ("Default" scrolls sideways) and changes only the app's function; the line under
-//  it names the general one. "−" (or Delete) gives the wheel back to Buttons, and the
-//  window's Undo takes it again, with an undo target that outlives the page, as for a
-//  button's row. Buttons and Scrolling › Thumb wheel are never touched.
+//  it names the general one by its name in Scrolling › Thumb wheel ("Scroll Sideways").
+//  "−" (or Delete) gives the wheel back to Buttons, and the window's Undo takes it again,
+//  with an undo target that outlives the page, as for a button's row. Buttons and
+//  Scrolling › Thumb wheel are never touched.
 //
 
 import Cocoa
@@ -51,12 +52,11 @@ final class ApplicationThumbWheelRow: PreferencesListRow {
         fatalError("ApplicationThumbWheelRow is built in code")
     }
 
-    /// "Everywhere: Zoom", in the names of the pull-down ("Default" for scrolling), as a
-    /// button's row names what it does in every other app.
+    /// "Everywhere: Zoom", "Everywhere: Scroll Sideways": what the wheel does in every other
+    /// app, as a button's row names what it does there, by the name Scrolling › Thumb wheel
+    /// gives it (the wheel's default does something known; "Default" would not say what).
     static func everywhere(_ general: ThumbWheelFunction) -> String {
-        return String(
-            format: NSLocalizedString("apps-buttons-everywhere", comment: ""), ThumbWheelPresentation.buttonsTitle(for: general)
-        )
+        return String(format: NSLocalizedString("apps-buttons-everywhere", comment: ""), general.localizedName)
     }
 
     /// The picture shows where the wheel is: on the connected mouse, or on an MX Master 4

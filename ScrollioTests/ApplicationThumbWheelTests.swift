@@ -186,7 +186,7 @@ final class ApplicationThumbWheelTests: XCTestCase {
         let contents = try SettingsFile.read(data).get()
         XCTAssertEqual(contents.applications?.map(\.ownThumbWheelFunction), [.zoom, .scroll, nil])
         XCTAssertEqual(contents.leftOutCount, 0)
-        XCTAssertEqual(SettingsFileText.thumbWheelLines(of: contents), ["Thumb wheel in Figma: Zoom", "Thumb wheel in Notes: Default"])
+        XCTAssertEqual(SettingsFileText.thumbWheelLines(of: contents), ["Thumb wheel in Figma: Zoom", "Thumb wheel in Notes: Scroll Sideways"])
         let items = SettingsFileText.items(of: contents).map(\.text)
         XCTAssertTrue(items.contains("2 apps with buttons of their own"), "\(items)")
 
@@ -405,8 +405,9 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         calculator.setOwnThumbWheelFunction(.zoom)
         let part = try buttonsPart()
         let row = try XCTUnwrap(part.thumbWheelRow)
-        XCTAssertEqual(row.explanation, "Everywhere: Default")
-        XCTAssertEqual(part.noteLabel.stringValue, ApplicationButtonsViewController.note(for: "Calculator"))
+        XCTAssertEqual(row.explanation, "Everywhere: Scroll Sideways", "what the wheel does there, by its name")
+        XCTAssertEqual(part.noteLabel.stringValue, "These do this while Calculator is in front; everything else does what Buttons says.",
+                       "the wheel is no button")
 
         let volume = try XCTUnwrap(row.pullDown.functionItems.first { ThumbWheelPresentation.function(of: $0) == .volume })
         row.pullDown.functionChosen(volume)
