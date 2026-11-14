@@ -61,6 +61,150 @@ private func figmaEntry(own: [ButtonBinding], ring: Bool = false, gestures: Bool
     return application
 }
 
+// MARK: - The ring's faces
+
+final class ApplicationButtonsRingFacesTests: XCTestCase {
+
+    private let textEditPath = "/System/Applications/TextEdit.app"
+    private var options: Options!
+    private var harness: RingHarness?
+
+    override func setUp() {
+        super.setUp()
+        ShortcutRingController.forgetPreparedFaces()
+        options = Options()
+        options.defaults = TestDefaults.make(for: self)
+    }
+
+    override func tearDown() {
+        ShortcutRingController.setTestingController(nil)
+        harness = nil
+        ShortcutRingController.forgetPreparedFaces()
+        options = nil
+        super.tearDown()
+    }
+
+    private func list(_ applications: [Application]) -> EnhanceArray<Application> {
+        return EnhanceArray<Application>(withArray: applications, matchKey: "path")
+    }
+
+    /// The faces made at launch when no binding of Buttons opens the ring: the ring of an
+    /// app whose own binding opens it (its own ring, or the general one when it has none);
+    /// not the ring of an app nothing opens it in, nor of an app whose own binding takes
+    /// the ring's button of Buttons away.
+    func testTheFacesAtLaunchCountTheAppsOwnBindings() {
+        var general = ShortcutRingSettings.default
+        general[5] = opens(textEditPath)
+        options.ring = general
+        let figma = figmaEntry(own: [binding(thumbPanel, ringAction)], ring: true)
+        figma.ring?[2] = opens(textEditPath)
+        let notes = Application(path: "/Applications/Notes.app")
+        notes.setUsesGeneralRing(false, general: .default)
+        notes.ring?[3] = opens(textEditPath)
+        options.application.applications = list([figma, notes])
+        XCTAssertEqual(ShortcutRingController.ringsToPrepareAtLaunch(options: options), [figma.ringThatOpens(general: general)],
+                       "only Figma's binding opens a ring: Figma's")
+
+        figma.setUsesGeneralRing(true, general: general)
+        XCTAssertEqual(ShortcutRingController.ringsToPrepareAtLaunch(options: options), [general],
+                       "Figma without a ring of its own opens the general one")
+
+        // Buttons opens the ring with the thumb panel; Figma gives it Copy.
+        figma.setUsesGeneralRing(false, general: general)
+        figma.setOwnButtonBindings([binding(thumbPanel, SystemShortcut.copy.identifier)])
+        options.buttons.binding = [binding(thumbPanel, ringAction)]
+        XCTAssertEqual(
+            ShortcutRingController.ringsToPrepareAtLaunch(options: options),
+            [general, notes.ringThatOpens(general: general)],
+            "Figma's ring cannot open"
+        )
+        // Of two entries of one path, the one a press finds counts.
+        let older = figmaEntry(own: [], ring: true)
+        older.ring?[6] = opens(textEditPath)
+        options.application.applications = list([older, figma, notes])
+        XCTAssertFalse(ShortcutRingController.ringsToPrepareAtLaunch(options: options).contains(older.ringThatOpens(general: general)))
+    }
+
+    /// After a change of the settings that makes a ring able to open (here: Figma's own
+    /// key), its face is made as at launch: decided on a later turn (a burst of changes
+    /// asks once), one place per turn, never while a ring is open, and not again once it
+    /// is there.
+    func testAfterAChangeTheFaceOfARingOnlyAnAppsBindingOpensIsMade() throws {
+        let figma = figmaEntry(own: [], ring: true)
+        figma.ring?[2] = opens(textEditPath)
+        figma.ring?[4] = opens("/System/Applications/Preview.app")
+        options.application.applications = list([figma])
+
+        var turns: [(delay: TimeInterval, block: () -> Void)] = []
+        var lookedUp = 0
+        func prepare() {
+            ShortcutRingController.prepareMissingFaces(options: options, after: { turns.append(($0, $1)) }, makePlace: {
+                lookedUp += 1
+                return ShortcutRingFace.place($0)
+            })
+        }
+        func nextTurn() {
+            guard !turns.isEmpty else { return XCTFail("no turn is due") }
+            turns.removeFirst().block()
+        }
+
+        prepare()
+        nextTurn()
+        XCTAssertTrue(turns.isEmpty, "nothing opens a ring yet")
+
+        figma.setOwnButtonBindings([binding(49, ringAction, type: .keyboard, modifiers: UInt(CGEventFlags.maskControl.rawValue))])
+        prepare()
+        prepare()
+        XCTAssertEqual(turns.count, 1, "a burst of changes asks once")
+        nextTurn()
+        XCTAssertEqual(lookedUp, 0, "nothing in the turn that decides")
+
+        let harness = RingHarness()
+        self.harness = harness
+        ShortcutRingController.setTestingController(harness.controller)
+        harness.controller.triggerPressed(by: RingHarness.button(.down))
+        nextTurn()
+        XCTAssertEqual(lookedUp, 0, "nothing is looked up while a ring is held")
+        XCTAssertEqual(turns.map(\.delay), [ShortcutRingController.launchFaceWait])
+        harness.controller.cancel()
+
+        while !turns.isEmpty {
+            let before = lookedUp
+            nextTurn()
+            XCTAssertLessThanOrEqual(lookedUp - before, 1, "one place in a turn")
+        }
+        XCTAssertEqual(lookedUp, 2)
+        let ring = figma.ringThatOpens(general: options.ring)
+        XCTAssertNotNil(try XCTUnwrap(ShortcutRingController.preparedFace(for: ring)).places[2].image)
+
+        prepare()
+        nextTurn()
+        XCTAssertTrue(turns.isEmpty)
+        XCTAssertEqual(lookedUp, 2, "a face that is there is not made again")
+    }
+
+    /// The observer the launch installs hands a change of an app's own buttons to the pass.
+    func testAChangeOfAnAppsButtonsReachesThePass() {
+        let figma = figmaEntry(own: [], ring: true)
+        figma.ring?[2] = opens(textEditPath)
+        options.application.applications = list([figma])
+        ShortcutRingController.prepareFacesAfterChanges(options: options)
+        let ring = figma.ringThatOpens(general: options.ring)
+
+        figma.setOwnButtonBindings([binding(thumbPanel, ringAction)])
+        options.markChanged(.application)
+        XCTAssertNil(ShortcutRingController.preparedFace(for: ring), "not in the change's own turn")
+        let made = expectation(description: "the face is made on later turns")
+        func look(_ left: Int) {
+            if ShortcutRingController.preparedFace(for: ring) != nil { return made.fulfill() }
+            guard left > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { look(left - 1) }
+        }
+        look(150)
+        wait(for: [made], timeout: 5)
+    }
+}
+
 // MARK: - The Logitech divert and the buttons the mouse tracks
 
 final class ApplicationButtonsLogitechTests: XCTestCase {

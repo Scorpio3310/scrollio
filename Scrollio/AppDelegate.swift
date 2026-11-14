@@ -280,8 +280,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Self.connectParts()
         LogiUsageBootstrap.installOptionsObservers()
         LogiUsageBootstrap.refreshAll()
-        // A Shortcut Ring that opens an app shows its icon from the first ring on.
+        // A Shortcut Ring that opens an app shows its icon from the first ring on, also
+        // after a change of the settings made it a ring that can open.
         ShortcutRingController.prepareFaceAtLaunch()
+        ShortcutRingController.prepareFacesAfterChanges()
         BatteryWatcher.shared.start()
         AppRunController.shared.start()
         // New versions: only a released copy has an update feed and starts the updater.
