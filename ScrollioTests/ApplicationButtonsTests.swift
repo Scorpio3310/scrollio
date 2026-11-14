@@ -529,7 +529,7 @@ final class ApplicationButtonsTests: XCTestCase {
                 general: general + [binding(gestureButton, SystemShortcut.mouseGestureNavigation.identifier)],
                 frontAppOwn: [binding(gestureButton, "")], isLogiCode: isLogi
             ),
-            [modeShift, gestureButton], "Gesture Navigation's button stays as Buttons has it"
+            [modeShift], "Gesture Navigation's button is given back too: nothing stays general"
         )
     }
 
