@@ -244,6 +244,28 @@ final class PreferencesDisclosureSectionTests: XCTestCase {
 
     // MARK: - Keyboard and VoiceOver
 
+    func testAControlThatFoldsAwayGivesUpTheKeyboard() throws {
+        let field = NSTextField(string: "Name")
+        field.translatesAutoresizingMaskIntoConstraints = false
+        let section = PreferencesDisclosureSection(title: "Directions", body: field)
+        section.prefersReducedMotion = { true }
+        install(section)
+        section.isCollapsible = true
+        section.setExpanded(true)
+        relayout(section)
+        let window = try XCTUnwrap(self.window)
+        XCTAssertTrue(window.makeFirstResponder(field))
+        XCTAssertTrue((window.firstResponder as? NSView)?.isDescendant(of: field) ?? false)
+
+        section.toggle()
+        XCTAssertFalse(section.isExpanded)
+        let responder = window.firstResponder as? NSView
+        XCTAssertFalse(responder?.isDescendant(of: field) ?? false, "nothing hidden keeps the keyboard")
+        if NSApp.isFullKeyboardAccessEnabled {
+            XCTAssertTrue(responder === section.disclosure, "the title takes it")
+        }
+    }
+
     func testSpaceOpensAndFoldsItAndTabReachesItAsItReachesAButton() {
         let section = makeSection(collapsible: true)
         install(section)

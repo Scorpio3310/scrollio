@@ -19,7 +19,8 @@
 //  opens fades in over the same time; with Reduce Motion both happen at once. To VoiceOver
 //  the title is a disclosure triangle with the section's name that says "collapsed" or
 //  "expanded"; with keyboard navigation on (System Settings › Keyboard) Tab reaches it as
-//  it reaches a button, and Space opens or folds it.
+//  it reaches a button, and Space opens or folds it. A control that folds away gives up the
+//  keyboard.
 //
 
 import Cocoa
@@ -121,9 +122,12 @@ final class PreferencesDisclosureSection: NSView {
     }
 
     private func apply(fading: Bool) {
+        let shows = showsBody
+        if !shows {
+            giveUpKeyboard()
+        }
         titleLabel.isHidden = isCollapsible
         disclosure.isHidden = !isCollapsible
-        let shows = showsBody
         body.isHidden = !shows
         NSLayoutConstraint.deactivate([bottomOnBody, bottomOnTitle])
         NSLayoutConstraint.activate([shows ? bottomOnBody : bottomOnTitle])
@@ -136,6 +140,16 @@ final class PreferencesDisclosureSection: NSView {
             context.duration = Self.animationDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             body.animator().alphaValue = 1
+        }
+    }
+
+    /// A control that folds away does not keep the keyboard: the title takes it while it
+    /// can (keyboard navigation on), else the window.
+    private func giveUpKeyboard() {
+        guard let window, let responder = window.firstResponder as? NSView,
+              responder.isDescendant(of: body) else { return }
+        if !window.makeFirstResponder(disclosure) {
+            window.makeFirstResponder(nil)
         }
     }
 }
