@@ -904,6 +904,7 @@ final class ApplicationPageTests: XCTestCase {
 
     /// While the app uses the general gestures the part is the switch alone, which says so.
     func testTheGesturesPartIsTheSwitchAloneWhileTheAppUsesTheGeneralGestures() throws {
+        Options.shared.buttons.binding = [binding(3, SystemShortcut.mouseGestureNavigation.identifier)]
         let calculator = addApp(Self.calculator)
         let (_, part) = try gesturesPart()
         XCTAssertTrue(part.generalGesturesRow.isOn)
@@ -920,6 +921,7 @@ final class ApplicationPageTests: XCTestCase {
     /// then, in the five rows of the Gestures pane and the invert switch; the list marks
     /// it. On again: the rows go, the set is kept for later and comes back as it was left.
     func testTurningTheSwitchOffShowsACopyOfTheGeneralGestures() throws {
+        Options.shared.buttons.binding = [binding(3, SystemShortcut.mouseGestureNavigation.identifier)]
         let calculator = addApp(Self.calculator)
         Options.shared.gesture.actions.up = GestureAction(SystemShortcut.copy)
         Options.shared.gesture.invertHorizontal = true
@@ -1033,42 +1035,61 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(controls.actionPopUp(for: .left).menu?.items.first?.title, SystemShortcut.moveSpaceLeft.localizedName)
     }
 
-    /// The line under the switch's box says when the button that runs Gesture Navigation
-    /// with the app in front is not the one of Buttons: none (the app's own buttons gave it
-    /// something else), or another one; with the same button as in Buttons there is none.
+    /// One wording: while no button runs Gesture Navigation with the app in front
+    /// (whatever Buttons has), the switch's own line says so, in both states, and there is
+    /// no line under the box; the line under the box only names another button than
+    /// Buttons' ("Button to hold while … is in front: …"). With the same button as in
+    /// Buttons there is neither.
     func testTheGesturesPartSaysWhenTheButtonToHoldIsAnotherHere() throws {
         let gestures = SystemShortcut.mouseGestureNavigation.identifier
         let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
         Options.shared.buttons.binding = [binding(thumbPanel, gestures), binding(3, "copy")]
         let calculator = addApp(Self.calculator)
-        func note() throws -> String? {
+        let general = ["While Calculator is in front, the general gestures run.", "While Calculator is in front, the gestures below run."]
+        let none = "While Calculator is in front, no button runs the gestures: see its Buttons part."
+        /// The switch's line in both states, and the line under the box (nil: none).
+        func lines() throws -> (switchLines: [String], note: String?) {
             let (_, part) = try gesturesPart()
             let holder = try XCTUnwrap(part.buttonNoteLabel.superview)
             XCTAssertEqual(holder.isHidden, part.buttonNoteLabel.stringValue.isEmpty, "in sight exactly with a line")
-            return holder.isHidden ? nil : part.buttonNoteLabel.stringValue
+            var switchLines = [part.generalGesturesRow.explanation ?? ""]
+            part.generalGesturesSwitch.state = part.generalGesturesSwitch.state == .on ? .off : .on
+            send(part.generalGesturesSwitch)
+            switchLines.append(part.generalGesturesRow.explanation ?? "")
+            part.generalGesturesSwitch.state = part.generalGesturesSwitch.state == .on ? .off : .on
+            send(part.generalGesturesSwitch)
+            return (switchLines, holder.isHidden ? nil : part.buttonNoteLabel.stringValue)
         }
-        XCTAssertNil(try note(), "the button of Buttons")
+        func check(_ switchLines: [String], _ note: String?, _ message: String, line: UInt = #line) throws {
+            let shown = try lines()
+            XCTAssertEqual(shown.switchLines, switchLines, message, line: line)
+            XCTAssertEqual(shown.note, note, message, line: line)
+        }
+        try check(general, nil, "the button of Buttons")
         calculator.setOwnButtonBindings([binding(3, "paste")])
-        XCTAssertNil(try note(), "another button changed, not the one that runs the gestures")
+        try check(general, nil, "another button changed, not the one that runs the gestures")
         calculator.setOwnButtonBindings([binding(thumbPanel, gestures)])
-        XCTAssertNil(try note(), "the same button, also the app's own")
+        try check(general, nil, "the same button, also the app's own")
 
         calculator.setOwnButtonBindings([binding(thumbPanel, SystemShortcut.shortcutRing.identifier)])
-        XCTAssertEqual(try note(), "While Calculator is in front, no button runs Gesture Navigation: see its Buttons part.")
+        try check([none, none], nil, "the app's own buttons took it: the switch's line says so, nothing under the box")
         calculator.setOwnButtonBindings([binding(thumbPanel, SystemShortcut.shortcutRing.identifier), binding(3, gestures)])
         let back = ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil))
-        XCTAssertEqual(try note(), "Button to hold while Calculator is in front: \(back).")
+        try check(general, "Button to hold while Calculator is in front: \(back).", "another button")
         // Without a button in Buttons, one of the app's own is another one too.
         Options.shared.buttons.binding = []
         calculator.setOwnButtonBindings([binding(3, gestures)])
-        XCTAssertEqual(try note(), "Button to hold while Calculator is in front: \(back).")
-        // A key never runs the gestures.
+        try check(general, "Button to hold while Calculator is in front: \(back).", "only the app's own")
+        // A key never runs the gestures; nor does anything, with none anywhere.
         calculator.setOwnButtonBindings([binding(40, gestures, modifiers: UInt(CGEventFlags.maskCommand.rawValue), type: .keyboard)])
-        XCTAssertNil(try note())
+        try check([none, none], nil, "a key")
+        calculator.setOwnButtonBindings([])
+        try check([none, none], nil, "none anywhere")
+        XCTAssertTrue(calculator.usesGeneralGestures, "the switch was only tried")
 
         // The line sits close under the switch's box, and the app's own set keeps its gap.
         Options.shared.buttons.binding = [binding(thumbPanel, gestures)]
-        calculator.setOwnButtonBindings([binding(thumbPanel, "copy")])
+        calculator.setOwnButtonBindings([binding(thumbPanel, "copy"), binding(3, gestures)])
         calculator.setUsesGeneralGestures(false, general: Options.shared.gesture)
         let (pane, part) = try gesturesPart()
         _ = makeWindow(for: pane)
@@ -1107,7 +1128,9 @@ final class ApplicationPageTests: XCTestCase {
             ApplicationGesturesPartViewController.buttonNote(for: ownBack, general: []) ?? "",
         ]
         long.setOwnButtonBindings([binding(3, "copy")])
-        let none = ApplicationGesturesPartViewController.buttonNote(for: long, general: [back]) ?? ""
+        XCTAssertNil(ApplicationGesturesPartViewController.buttonNote(for: long, general: [back]), "none: the switch's line says it")
+        let none = ApplicationDetailViewController.generalGesturesExplanation(on: true, name: long.displayName!, hasButton: false)
+        XCTAssertEqual(none, ApplicationDetailViewController.generalGesturesExplanation(on: false, name: long.displayName!, hasButton: false))
         let texts = [true, false].map { ApplicationDetailViewController.generalGesturesExplanation(on: $0, name: long.displayName!) }
             + notes + [none]
         XCTAssertEqual(notes[0], "", "the same button as in Buttons: no line")

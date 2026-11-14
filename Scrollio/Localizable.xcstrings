@@ -8585,13 +8585,13 @@
       }
     },
     "apps-detail-gestures-no-button": {
-      "comment": "App page, Gestures part: line under the switch while no button runs Gesture Navigation in this app because its own buttons gave that button another action; %@ is the app's name",
+      "comment": "App page, Gestures part: explanation of \"Use the general gestures\", in both states, while no button runs Gesture Navigation with this app in front (whatever Buttons has); %@ is the app's name",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "While %@ is in front, no button runs Gesture Navigation: see its Buttons part."
+            "value": "While %@ is in front, no button runs the gestures: see its Buttons part."
           }
         }
       }

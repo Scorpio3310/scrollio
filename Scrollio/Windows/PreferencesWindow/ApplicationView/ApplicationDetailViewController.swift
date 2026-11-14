@@ -356,7 +356,12 @@ final class ApplicationDetailViewController: NSViewController {
 
     /// "While Safari is in front, the general gestures run." / "While Safari is in front,
     /// the gestures below run." (The app in front decides, not the one under the pointer.)
-    static func generalGesturesExplanation(on: Bool, name: String) -> String {
+    /// While no button runs Gesture Navigation with the app in front (`hasButton` false),
+    /// either way: that none does there, and where that is set (its Buttons part).
+    static func generalGesturesExplanation(on: Bool, name: String, hasButton: Bool = true) -> String {
+        guard hasButton else {
+            return String(format: NSLocalizedString("apps-detail-gestures-no-button", comment: ""), name)
+        }
         let format = NSLocalizedString(on ? "apps-detail-gestures-general-on" : "apps-detail-gestures-general-off", comment: "")
         return String(format: format, name)
     }

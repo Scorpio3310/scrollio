@@ -9,8 +9,9 @@
 //  the swipe speed, the freeze switch and what a Logitech mouse does are the same for every
 //  app and stay in the Gestures pane; in "Follow the hand" the Left and Right rows say so,
 //  as the pane's do. The button to hold is a binding of Buttons, or of the app's Buttons
-//  part: while it is another one with the app in front (or none), a line under the
-//  switch's box says so.
+//  part: while none runs the gestures with the app in front, the switch's line says so
+//  instead (in both states); while it is another one than Buttons', a line under the
+//  switch's box names it.
 //
 
 import Cocoa
@@ -36,8 +37,8 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
 
     private(set) var generalSection: PreferencesGroupSection!
     private(set) var generalGesturesRow: PreferencesSwitchRow!
-    /// The line under the switch's box: in sight only while the button to hold differs
-    /// with the app in front from the one of Buttons (`buttonNote(for:general:)`).
+    /// The line under the switch's box: in sight only while another button than Buttons'
+    /// runs the gestures with the app in front (`buttonNote(for:general:)`).
     private(set) var buttonNoteLabel: NSTextField!
     /// The app's own set: there only while "Use the general gestures" is off.
     private(set) var controls: MouseGestureSettingsControls?
@@ -107,26 +108,23 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         syncViewWithOptions()
     }
 
-    /// The line under the switch's box while the button that runs Gesture Navigation with
-    /// the app in front is not the one of Buttons: the app's own buttons gave that button
-    /// another action ("…no button runs Gesture Navigation…"), or gave another one Gesture
+    /// The line under the switch's box while another button than the one of Buttons runs
+    /// Gesture Navigation with the app in front: the app's own buttons gave one Gesture
     /// Navigation ("Button to hold while Figma is in front: Back button."). nil: the same
-    /// button as in Buttons. The bindings counted are what a press goes by
-    /// (`ApplicationButtons.merged`), with the Gestures pane's rule of what runs gestures.
+    /// button as in Buttons, or none at all (the switch's own line says that one). Counted
+    /// by the rule the Gestures pane counts by (`ApplicationTriggerRule`).
     static func buttonNote(for application: Application, general: [ButtonBinding]) -> String? {
-        let merged = ApplicationButtons.merged(general: general, own: application.ownButtonBindings)
-        let runs: (ButtonBinding) -> Bool = {
-            $0.isEnabled && $0.triggerEvent.type == .mouse
-                && $0.systemShortcutName == SystemShortcut.mouseGestureNavigation.identifier
-        }
-        guard merged.filter(runs).map(\.identity) != general.filter(runs).map(\.identity) else { return nil }
-        let name = application.getName()
-        let titles = MouseGestureBindingSummary(bindings: merged, isLogitechCode: { _ in false }).buttonTitles
-        guard !titles.isEmpty else {
-            return String(format: NSLocalizedString("apps-detail-gestures-no-button", comment: ""), name)
-        }
+        let rule = ApplicationTriggerRule.gestureNavigation
+        let here = rule.bindings(general: general, own: application.ownButtonBindings)
+        guard !here.isEmpty, here.map(\.identity) != rule.bindings(general: general).map(\.identity) else { return nil }
+        let titles = MouseGestureBindingSummary(bindings: here, isLogitechCode: { _ in false }).buttonTitles
         let buttons = ListFormatter.localizedString(byJoining: titles)
-        return String(format: NSLocalizedString("apps-detail-gestures-button", comment: ""), name, buttons)
+        return String(format: NSLocalizedString("apps-detail-gestures-button", comment: ""), application.getName(), buttons)
+    }
+
+    /// Whether a button runs Gesture Navigation while the app is in front.
+    static func hasButton(for application: Application, general: [ButtonBinding]) -> Bool {
+        return !ApplicationTriggerRule.gestureNavigation.bindings(general: general, own: application.ownButtonBindings).isEmpty
     }
 
     /// Shows the line, or takes it away: a line sits close under its box; without it the
@@ -159,9 +157,17 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         guard isViewLoaded else { return }
         let usesGeneral = application.usesGeneralGestures
         generalGesturesRow.isOn = usesGeneral
-        generalGesturesRow.explanation = ApplicationDetailViewController.generalGesturesExplanation(
-            on: usesGeneral, name: application.getName()
+        let line = ApplicationDetailViewController.generalGesturesExplanation(
+            on: usesGeneral, name: application.getName(),
+            hasButton: Self.hasButton(for: application, general: Options.shared.buttons.binding)
         )
+        if generalGesturesRow.explanation != line {
+            generalGesturesRow.explanation = line
+            // (The no-button line may take another line's room: the page measures again.)
+            if view.superview != nil {
+                onHeightChange?()
+            }
+        }
         syncButtonNote()
         showOwnSet(!usesGeneral)
         guard let controls else { return }
