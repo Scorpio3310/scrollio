@@ -218,8 +218,8 @@ the eight places hold.
   that back); the page says whether the ring started from them. They are ordinary
   places afterwards: change any of them. No suggested place deletes what cannot be
   brought back or changes something outside the Mac at one flick (a git app fetches
-  rather than pushes, a terminal splits its pane rather than clearing what it showed),
-  and a place whose key the app does not document stays empty. The keys are those of your keyboard layout at
+  rather than pushes, a terminal splits its pane rather than clearing what it showed,
+  and a call app never turns your microphone or camera on), and a place whose key the app does not document stays empty. The keys are those of your keyboard layout at
   that moment (on a German or Slovenian keyboard ⌘Z is still Undo and zoom is the + and
   − keys); a shortcut whose key your layout types only with Option ("[" on those
   layouts) takes Scrollio's own Back or Forward in a browser, or other keys the app has

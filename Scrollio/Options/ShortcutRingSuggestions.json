@@ -401,7 +401,7 @@
       "bundleIdentifiers": ["com.hnc.Discord", "com.hnc.DiscordPTB"],
       "places": [
         {"name": "Previous Unread", "symbol": "arrow.up", "character": "up", "modifiers": ["option", "shift"], "modifierless": false},
-        {"name": "Mute/Unmute", "symbol": "mic.slash", "character": "m", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Member List", "symbol": "person.2", "character": "u", "modifiers": ["command"], "modifierless": false},
         {"name": "Next Channel", "symbol": "chevron.right", "character": "down", "modifiers": ["option"], "modifierless": false},
         {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
         {"name": "Next Unread", "symbol": "arrow.down", "character": "down", "modifiers": ["option", "shift"], "modifierless": false},
@@ -806,11 +806,11 @@
       "name": "Microsoft Teams",
       "bundleIdentifiers": ["com.microsoft.teams2", "com.microsoft.teams"],
       "places": [
-        {"name": "Mute/Unmute", "symbol": "mic.slash", "character": "m", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Zoom In", "symbol": "plus.magnifyingglass", "character": "=", "modifiers": ["command"], "modifierless": false},
         {"name": "Raise Hand", "symbol": "hand.raised", "character": "k", "modifiers": ["shift", "command"], "modifierless": false},
         {"name": "Forward", "symbol": "chevron.right", "character": "]", "modifiers": ["command"], "modifierless": false},
         {"name": "Paste", "symbol": "doc.on.clipboard", "character": "v", "modifiers": ["command"], "modifierless": false},
-        {"name": "Camera On/Off", "symbol": "video.slash", "character": "o", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Zoom Out", "symbol": "minus.magnifyingglass", "character": "-", "modifiers": ["command"], "modifierless": false},
         {"name": "Copy", "symbol": "doc.on.doc", "character": "c", "modifiers": ["command"], "modifierless": false},
         {"name": "Back", "symbol": "chevron.left", "character": "[", "modifiers": ["command"], "modifierless": false},
         {"name": "Share Screen", "symbol": "square.and.arrow.up", "character": "e", "modifiers": ["shift", "command"], "modifierless": false}
@@ -1395,11 +1395,11 @@
       "name": "Zoom Workplace",
       "bundleIdentifiers": ["us.zoom.xos"],
       "places": [
-        {"name": "Mute/Unmute", "symbol": "mic.slash", "character": "a", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Full Screen", "symbol": "arrow.up.left.and.arrow.down.right", "character": "f", "modifiers": ["shift", "command"], "modifierless": false},
         {"name": "Raise Hand", "symbol": "hand.raised", "character": "y", "modifiers": ["option"], "modifierless": false},
         {"name": "Next Page", "symbol": "chevron.right", "character": "n", "modifiers": ["control"], "modifierless": false},
         {"name": "Participants", "symbol": "person.2", "character": "u", "modifiers": ["command"], "modifierless": false},
-        {"name": "Camera On/Off", "symbol": "video.slash", "character": "v", "modifiers": ["shift", "command"], "modifierless": false},
+        {"name": "Speaker / Gallery View", "symbol": "square.grid.2x2", "character": "w", "modifiers": ["shift", "command"], "modifierless": false},
         {"name": "Chat", "symbol": "bubble.left", "character": "h", "modifiers": ["shift", "command"], "modifierless": false},
         {"name": "Previous Page", "symbol": "chevron.left", "character": "p", "modifiers": ["control"], "modifierless": false},
         {"name": "Share Screen", "symbol": "square.and.arrow.up", "character": "s", "modifiers": ["shift", "command"], "modifierless": false}

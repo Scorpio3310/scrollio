@@ -354,6 +354,43 @@ final class ShortcutRingSuggestionsFileTests: XCTestCase {
         }
     }
 
+    /// No place turns a call's microphone or camera on: a flick up or down from the zoom
+    /// habit of the other rings opened the mic or the camera in Zoom and Teams, and
+    /// Discord's top right unmuted its voice. Teams zooms there as the other apps do; Zoom,
+    /// which has no zoom keys in a meeting, goes full screen and switches between speaker
+    /// and gallery view (both only on this Mac); Discord shows or hides its member list.
+    func testNoPlaceTurnsTheMicrophoneOrTheCameraOn() throws {
+        let never: Set<String> = [
+            "Mute/Unmute", "Mute / Unmute", "Camera On/Off", "Camera On / Off", "Start / Stop Video", "Deafen/Undeafen",
+        ]
+        for app in catalog.apps {
+            for place in app.slots.compactMap(\.place) {
+                XCTAssertFalse(never.contains(place.name), "\(app.appName): \(place.name)")
+            }
+        }
+        let teams = try SuggestionFixtures.app("Microsoft Teams")
+        XCTAssertEqual(teams.slots[0].place?.name, "Zoom In")
+        XCTAssertEqual(teams.slots[0].place?.keys, keys("=", .maskCommand))
+        XCTAssertEqual(teams.slots[4].place?.name, "Zoom Out")
+        XCTAssertEqual(teams.slots[4].place?.keys, keys("-", .maskCommand))
+        let zoom = try SuggestionFixtures.app("Zoom Workplace")
+        XCTAssertEqual(zoom.slots[0].place?.name, "Full Screen")
+        XCTAssertEqual(zoom.slots[0].place?.keys, keys("f", [.maskShift, .maskCommand]))
+        XCTAssertEqual(zoom.slots[4].place?.name, "Speaker / Gallery View")
+        XCTAssertEqual(zoom.slots[4].place?.keys, keys("w", [.maskShift, .maskCommand]))
+        let discord = try SuggestionFixtures.app("Discord")
+        XCTAssertEqual(discord.slots[1].place?.name, "Member List")
+        XCTAssertEqual(discord.slots[1].place?.keys, keys("u", .maskCommand))
+        let switches: [(app: ShortcutRingSuggestion, keys: ShortcutRingSuggestion.Keys)] = [
+            (teams, keys("m", [.maskShift, .maskCommand])), (teams, keys("o", [.maskShift, .maskCommand])),
+            (zoom, keys("a", [.maskShift, .maskCommand])), (zoom, keys("v", [.maskShift, .maskCommand])),
+            (discord, keys("m", [.maskShift, .maskCommand])), (discord, keys("d", [.maskShift, .maskCommand])),
+        ]
+        for that in switches {
+            XCTAssertFalse(that.app.slots.compactMap(\.place).contains { $0.keys == that.keys }, that.app.appName)
+        }
+    }
+
     /// The low-confidence apps keep only the places whose keys are confirmed (Copy, Paste,
     /// Undo, Redo; WhatsApp's New Chat and Mark Read/Unread); a guessed place stays empty
     /// with its reason, in every app (iMovie's zoom).
