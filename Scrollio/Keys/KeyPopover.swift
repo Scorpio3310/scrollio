@@ -183,10 +183,15 @@ class KeyPopover: NSObject, NSPopoverDelegate {
         updatePopoverContentSize()
     }
 
-    /// The name field takes the keyboard, once the popover has its window.
+    /// The name field takes the keyboard, once the popover has its window. (While keys
+    /// were recorded nothing in the popover could take it, so its window may not be the
+    /// key window yet.)
     private func focusNameField() {
         guard let editor = labelEditor, let window = editor.window else { return }
         window.makeFirstResponder(editor.nameField)
+        if !window.isKeyWindow, window.canBecomeKey {
+            window.makeKey()
+        }
     }
 
     // MARK: - Public Methods

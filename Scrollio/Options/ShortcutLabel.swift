@@ -112,9 +112,11 @@ struct ShortcutLabel: Codable, Equatable {
         return ButtonBinding.normalizedCustomBindingDescriptor(from: action)?.type == .keyboard
     }
 
-    /// `label` as far as `action` may carry it.
+    /// `label` as far as `action` may carry it. (Without a label nothing is looked at:
+    /// a binding is built from a place each time the place runs.)
     static func kept(_ label: ShortcutLabel?, for action: String) -> ShortcutLabel? {
-        return takes(action: action) ? label : nil
+        guard let label, takes(action: action) else { return nil }
+        return label
     }
 
     // MARK: Codable
