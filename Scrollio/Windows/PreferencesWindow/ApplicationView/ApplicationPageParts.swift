@@ -72,7 +72,8 @@ struct ApplicationPagePart: Equatable {
         titleKey: "apps-detail-part-buttons",
         markSymbol: "button.horizontal.top.press",
         markLabelKey: "apps-mark-buttons",
-        hasOwnSettings: { $0.hasOwnButtons },
+        // A button or key of its own, or the thumb wheel (`ApplicationThumbWheel`).
+        hasOwnSettings: { $0.hasOwnButtonsPart },
         makeController: { application, _ in ApplicationButtonsViewController(application: application) }
     )
 
