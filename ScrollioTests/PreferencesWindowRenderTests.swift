@@ -281,6 +281,30 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
+    /// The ring of a press in the Gestures pane's picture on the MX Master 4, the mouse view
+    /// alone at four times its size (`gestures-press-mx4-<part>-<ring>-<appearance>.png`):
+    /// Forward and the thumb panel held, the button up as at a release, the ring at rest
+    /// (00) and at three moments of its fading (80, 60, 40). It never covers the thumb
+    /// wheel.
+    func testRenderGesturesPressRing() throws {
+        for (name, role) in [("forward", LogiControlRole.forward), ("thumb-panel", .thumbPanel)] {
+            for ring in [0.0, 0.8, 0.6, 0.4] {
+                let view = GesturePreviewView(frame: NSRect(x: 0, y: 0, width: 480, height: GesturePreviewView.preferredHeight))
+                view.mouseSource = { .mxMaster4 }
+                view.reloadMouse()
+                let code = LogiCenter.shared.scrollioCode(for: role)
+                view.picture = TriggerPictureSource(event: RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil))
+                view.prefersReducedMotion = { true }
+                view.reduceMotionDidChange()
+                let mouse = view.deviceCard.mouse
+                mouse.removeFromSuperview()
+                mouse.setFrameOrigin(.zero)
+                mouse.show(buttonDepth: 0, pressPulse: ring, turn: 1)
+                try renderDrawing(mouse, name: String(format: "gestures-press-mx4-%@-%02d", name, Int(ring * 100)), scale: 4)
+            }
+        }
+    }
+
     /// Gestures that send a recorded key combination (`gestures-pane-keys-<appearance>.png`):
     /// Up with a name and an icon, the click with its keys only, and the pointer over Up, so
     /// that the preview shows Up's icon; `gestures-pane-keys-click-…`: over Click, whose
@@ -1280,11 +1304,13 @@ final class PreferencesWindowRenderTests: XCTestCase {
 
     /// The Shortcut Ring part of apps with suggested shortcuts, right after "Use the
     /// general ring" was turned off (`app-ring-suggested-<app>-<appearance>.png`): the
-    /// ring holds the suggestion, on the US layout, and the row says so. Then Safari's on
-    /// German QWERTZ (`-safari-qwertz`, Back and Forward are Scrollio's own there) and
-    /// Figma's after one place was changed (`-figma-changed`, the row offers the
-    /// suggestion again). The apps need not be on this Mac: the entries get their bundle
-    /// identifiers through the seam.
+    /// ring holds the suggestion, on the US layout, and the row says so (Outlook's bottom
+    /// place is empty on purpose). Then Safari's, Finder's and Outlook's on German QWERTZ
+    /// (`-<app>-qwertz`: Back and Forward are Scrollio's own in Safari; Finder's and
+    /// Outlook's "[" and "]" places stay empty, and the row says how many) and Figma's
+    /// after one place was changed (`-figma-changed`, the row offers the suggestion
+    /// again). The apps need not be on this Mac: the entries get their bundle identifiers
+    /// through the seam.
     func testRenderAppPageRingSuggested() throws {
         let stored = Options.shared.application.applications
         let savedRing = Options.shared.ring
@@ -1308,6 +1334,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
             ("safari", "Safari", "/Applications/Safari.app", "com.apple.Safari"),
             ("word", "Microsoft Word", "/Applications/Microsoft Word.app", "com.microsoft.Word"),
             ("final-cut-pro", "Final Cut Pro", "/Applications/Final Cut Pro.app", "com.apple.FinalCut"),
+            ("finder", "Finder", "/System/Library/CoreServices/Finder.app", "com.apple.finder"),
+            ("outlook", "Microsoft Outlook", "/Applications/Microsoft Outlook.app", "com.microsoft.Outlook"),
         ]
         let identifiers = Dictionary(uniqueKeysWithValues: apps.map { ($0.path, $0.identifier) })
         ShortcutRingSuggestions.bundleIdentifierOfApplication = { identifiers[$0] }
@@ -1346,7 +1374,9 @@ final class PreferencesWindowRenderTests: XCTestCase {
             [kTISPropertyInputSourceID as String: "com.apple.keylayout.German"] as CFDictionary, true
         )?.takeRetainedValue() as? [TISInputSource], let source = german.first, let layers = KeyboardLayoutLayers.of(source) {
             ShortcutRingSuggestions.layout = { layers }
-            try render(apps[2], suffix: "-qwertz")
+            for app in apps where ["safari", "finder", "outlook"].contains(app.file) {
+                try render(app, suffix: "-qwertz")
+            }
         }
     }
 
