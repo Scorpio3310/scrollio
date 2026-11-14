@@ -1501,7 +1501,7 @@ final class ShortcutRingPanelTests: XCTestCase {
         XCTAssertTrue(panel.collectionBehavior.isSuperset(of: [.canJoinAllSpaces, .fullScreenAuxiliary]))
         XCTAssertFalse(panel.isOpaque)
         XCTAssertFalse(panel.hasShadow)
-        XCTAssertTrue(panel.ignoresMouseEvents, "until the ring stands open")
+        XCTAssertTrue(panel.ignoresMouseEvents, "until a ring is shown")
         XCTAssertFalse(panel.isVisible)
     }
 
@@ -1535,9 +1535,10 @@ final class ShortcutRingPanelTests: XCTestCase {
         presenter.hide()
     }
 
+    /// A ring shown as the controller shows every ring, held or left open: taking clicks.
     private func shown(
         appearance: ShortcutRingAppearance = ShortcutRingAppearance(),
-        takesClicks: Bool = false,
+        takesClicks: Bool = true,
         otherScreens: [CGRect] = []
     ) -> (ShortcutRingPanelPresenter, [NSPanel]) {
         let presenter = ShortcutRingPanelPresenter()
@@ -1569,13 +1570,13 @@ final class ShortcutRingPanelTests: XCTestCase {
         XCTAssertEqual(drops.frame.width, ShortcutRingGeometry.canvasSide)
         XCTAssertEqual(drops.blurView?.state, .active, "a window that is never key would show the inactive grey")
         XCTAssertEqual(stage.eventLocation(of: NSPoint(x: 400, y: 682)), CGPoint(x: 400, y: 300))
-        XCTAssertTrue(panel.ignoresMouseEvents, "held: the mouse goes to what is underneath")
-        XCTAssertFalse(stage.takesClicks)
+        XCTAssertFalse(panel.ignoresMouseEvents, "held or open: the click is the ring's")
+        XCTAssertTrue(stage.takesClicks)
     }
 
-    /// Once the ring stands open the panel takes the mouse; when it goes, it lets go.
+    /// While a ring is shown the panel takes the mouse; when it goes, it lets go.
     func testAnOpenRingTakesTheMouseAndAHiddenOneLetsGo() throws {
-        let (presenter, _) = shown(takesClicks: true)
+        let (presenter, _) = shown()
         let panel = try XCTUnwrap(presenter.panel)
         let stage = try XCTUnwrap(presenter.stage)
         XCTAssertFalse(panel.ignoresMouseEvents)
@@ -1595,7 +1596,7 @@ final class ShortcutRingPanelTests: XCTestCase {
 
     /// A click on the panel reaches the ring in event coordinates, down and up.
     func testAClickOnThePanelIsReportedWhereItWas() throws {
-        let (presenter, _) = shown(takesClicks: true)
+        let (presenter, _) = shown()
         let panel = try XCTUnwrap(presenter.panel)
         let stage = try XCTUnwrap(presenter.stage)
         var reported: [(Int, Bool, CGPoint)] = []
@@ -1629,7 +1630,7 @@ final class ShortcutRingPanelTests: XCTestCase {
     /// screen alone takes it away.
     func testEveryOtherScreenHasAPanelThatTakesTheClickAndShowsNoRing() throws {
         let right = CGRect(x: 1512, y: -100, width: 1920, height: 1080)
-        let (presenter, ordered) = shown(takesClicks: true, otherScreens: [right])
+        let (presenter, ordered) = shown(otherScreens: [right])
         let panel = try XCTUnwrap(presenter.panel)
         XCTAssertEqual(presenter.covers.count, 1)
         let cover = try XCTUnwrap(presenter.covers.first)
@@ -1682,7 +1683,7 @@ final class ShortcutRingPanelTests: XCTestCase {
     /// move, and the hub is there, opaque, from the first moment.
     func testThePanelIsNeverFadedAsAWindow() throws {
         for appearance in [ShortcutRingAppearance(), ShortcutRingAppearance(reducesMotion: true)] {
-            let (presenter, ordered) = shown(appearance: appearance, takesClicks: true)
+            let (presenter, ordered) = shown(appearance: appearance)
             let panel = try XCTUnwrap(presenter.panel)
             let drops = try XCTUnwrap(presenter.stage?.dropsView)
             XCTAssertEqual(ordered.count, 1)
