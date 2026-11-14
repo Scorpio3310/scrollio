@@ -16,9 +16,11 @@ enum LogiUsageBootstrap {
     /// The app in front, whose own buttons count for what the mouse gives to Scrollio.
     /// Tests give one of their own.
     static var frontApplication: () -> ShortcutRingChoice.FrontApp? = { .current() }
-    /// What the buttons of the app in front changed in the divert the last time (for the
-    /// log: a line only when that changes).
+    /// What the buttons of the app in front changed in the divert at the last line of the
+    /// log (a line only after a change of the settings, and only when that changes).
     private static var lastFrontAppDifference: (taken: Int, givenBack: Int) = (0, 0)
+    /// Writes the line about the buttons of the app in front. Tests give their own.
+    static var log: (String) -> Void = { AppSystemLog.note($0) }
     /// The Logitech buttons that are down now (`LogiIntegrationBridge`). Tests give their own.
     static var heldButtonCodes: () -> Set<UInt16> = { LogiIntegrationBridge.shared.heldButtonCodes }
     /// The buttons the bindings had of the mouse at the last refresh.
@@ -55,7 +57,7 @@ enum LogiUsageBootstrap {
     static func refreshAll() {
         // 1. Button bindings (直读 Options, 不依赖 ButtonUtils 缓存失效的订阅顺序): those
         //    that count while the app in front is.
-        refreshButtonUsage(front: frontApplication())
+        refreshButtonUsage(front: frontApplication(), afterASettingsChange: true)
 
         // 2. Global scroll
         for role in ScrollRole.allCases {
@@ -101,7 +103,10 @@ enum LogiUsageBootstrap {
     /// that count no longer need it: an app's own "Open App" on a button brings another
     /// app forward while the button is still pressed, and a button given back in the middle
     /// of its press could reach that app as half a press. Its release refreshes again.
-    static func refreshButtonUsage(front: ShortcutRingChoice.FrontApp?) {
+    ///
+    /// `afterASettingsChange`: the settings changed (the `Options` path), not the app in
+    /// front; only then a line in the log.
+    static func refreshButtonUsage(front: ShortcutRingChoice.FrontApp?, afterASettingsChange: Bool = false) {
         let general = Options.shared.buttons.binding
         let isLogiCode: (UInt16) -> Bool = { LogiCenter.shared.isLogiCode($0) }
         let entry = ApplicationButtons.entry(front: front, applications: Options.shared.application.applications)
@@ -112,15 +117,18 @@ enum LogiUsageBootstrap {
         lastButtonBindingCodes = codes
         LogiCenter.shared.setUsage(source: .buttonBinding, codes: codes)
 
-        // One line when what the app in front changes is not what it was (never which app).
+        // One line when what the app in front changes is not what the last line said
+        // (never which app), and only after a change of the settings: a line per switch of
+        // apps filled the log and kept a trail of the user's switches.
+        guard afterASettingsChange else { return }
         let generalCodes = buttonBindingCodes(general: general, frontAppOwn: [], isLogiCode: isLogiCode)
         let difference = (taken: wanted.subtracting(generalCodes).count, givenBack: generalCodes.subtracting(wanted).count)
         guard difference != lastFrontAppDifference else { return }
         lastFrontAppDifference = difference
         if difference == (0, 0) {
-            AppSystemLog.note("Buttons: the Logitech buttons are as Buttons sets them (the app in front has no binding of its own for one)")
+            log("Buttons: the Logitech buttons are as Buttons sets them (the app in front has no binding of its own for one)")
         } else {
-            AppSystemLog.note(
+            log(
                 "Buttons: the app in front has its own binding: \(difference.taken) Logitech button(s) taken from the mouse "
                     + "and \(difference.givenBack) given back while it is in front"
             )

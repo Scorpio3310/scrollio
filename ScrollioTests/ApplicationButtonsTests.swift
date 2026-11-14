@@ -584,4 +584,32 @@ final class ApplicationButtonsTests: XCTestCase {
         wait(for: [drained], timeout: 1)
         XCTAssertFalse(LogiCenter.shared.usages(of: gestureButton).contains(.buttonBinding), "up: given back to the mouse")
     }
+
+    /// Switching apps writes no line about the Logitech buttons, however often (it was a
+    /// line per switch, a trail of them); a change of the settings writes one when what the
+    /// app in front changes is not what the last line said.
+    func testOnlyAChangeOfTheSettingsWritesALineAboutTheLogitechButtons() {
+        let gestureButton: UInt16 = 1000
+        var lines: [String] = []
+        set(general: [], safari: [binding(gestureButton, "undo")])
+        LogiUsageBootstrap.log = { lines.append($0) }
+        defer {
+            LogiUsageBootstrap.log = { AppSystemLog.note($0) }
+            Options.shared.application.applications = Self.makeStore([])
+            LogiUsageBootstrap.refreshButtonUsage(front: nil)
+        }
+        for _ in 0..<3 {
+            LogiUsageBootstrap.refreshButtonUsage(front: Self.safari)
+            LogiUsageBootstrap.refreshButtonUsage(front: Self.textEdit)
+        }
+        XCTAssertEqual(lines, [], "switching apps")
+
+        LogiUsageBootstrap.refreshButtonUsage(front: Self.textEdit, afterASettingsChange: true)
+        lines = []
+        LogiUsageBootstrap.refreshButtonUsage(front: Self.safari, afterASettingsChange: true)
+        LogiUsageBootstrap.refreshButtonUsage(front: Self.safari, afterASettingsChange: true)
+        XCTAssertEqual(lines, [
+            "Buttons: the app in front has its own binding: 1 Logitech button(s) taken from the mouse and 0 given back while it is in front",
+        ])
+    }
 }
