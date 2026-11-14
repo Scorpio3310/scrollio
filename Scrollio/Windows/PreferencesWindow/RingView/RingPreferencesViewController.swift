@@ -524,6 +524,7 @@ final class RingPreferencesViewController: NSViewController {
             undoManager: { [weak self] in self?.undoTarget },
             didChange: { [weak self] in self?.reload() }
         )
+        reset.willReset = { [weak self] in self?.endEditing() }
         reset.button.identifier = Identifier.reset
         return reset
     }

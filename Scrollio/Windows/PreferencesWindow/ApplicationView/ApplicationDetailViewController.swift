@@ -4,7 +4,9 @@
 //  The page of one app under Apps, opened from its row in the list (it replaces the old
 //  per-app popover). The way back is the window's: a back button in its title bar, beside
 //  the app's name (PreferencesWindowController), as in System Settings; Esc and ⌘[ go back
-//  too. A box shows the app (icon, name, where it is); under it a segmented control
+//  too. A box shows the app (icon, name, where it is), with a muted line under it while
+//  "Change scrolling only in these apps" is on (being on the list changes the app's
+//  scrolling, whatever it was added for); under it a segmented control
 //  chooses the part of the page that shows (`ApplicationPagePart`: Scrolling, Buttons,
 //  Gestures, Shortcut Ring), one at a time, so the page stays short. The part shown last is shown
 //  again, for every app alike (the UI state, beside Advanced of Scrolling); a part that
@@ -23,6 +25,7 @@ final class ApplicationDetailViewController: NSViewController {
     /// Identifiers for the controls (tests and accessibility tooling).
     enum Identifier {
         static let header = NSUserInterfaceItemIdentifier("apps-detail-header")
+        static let allowlistNote = NSUserInterfaceItemIdentifier("apps-detail-allowlist-note")
         static let parts = NSUserInterfaceItemIdentifier("apps-detail-parts")
         static let inherit = ApplicationScrollingPartViewController.Identifier.inherit
         static let generalRing = ApplicationRingPartViewController.Identifier.generalRing
@@ -39,8 +42,11 @@ final class ApplicationDetailViewController: NSViewController {
 
     /// Esc or ⌘[ asked to go back to the list.
     var onBack: (() -> Void)?
-    /// The app's own settings changed in a way the list shows (its line, its marks).
-    var onInheritChange: (() -> Void)?
+    /// The app's own settings changed in a way the list shows (its line, its marks). The
+    /// Buttons part gets it as it is (an Undo there outlives the page).
+    var onInheritChange: (() -> Void)? {
+        didSet { buttonsPart?.onOwnButtonsChange = onInheritChange }
+    }
     /// The page's height changed: another part, the settings loaded, "Advanced" opened or
     /// closed, a row came or went.
     var onHeightChange: (() -> Void)?
@@ -49,6 +55,12 @@ final class ApplicationDetailViewController: NSViewController {
 
     private(set) var headerRow: ApplicationDetailHeaderRow!
     private(set) var headerSection: PreferencesGroupSection!
+    /// Under the app's box while "Change scrolling only in these apps" is on: being on the
+    /// list changes how the app scrolls, also for an app added only for its buttons,
+    /// gestures or ring.
+    private(set) var allowlistNote: NSTextField!
+    private var controlUnderHeader: NSLayoutConstraint!
+    private var controlUnderNote: NSLayoutConstraint!
     private(set) var partControl: NSSegmentedControl!
     /// Holds the view of the part shown.
     private(set) var partContainer: NSView!
@@ -132,16 +144,34 @@ final class ApplicationDetailViewController: NSViewController {
         container.translatesAutoresizingMaskIntoConstraints = false
         partContainer = container
 
-        for view in [header, control, container] {
+        let note = NSTextField(wrappingLabelWithString: NSLocalizedString("apps-detail-allowlist-note", comment: ""))
+        note.identifier = Identifier.allowlistNote
+        note.font = PreferencesGroupedForm.explanationFont
+        note.textColor = PreferencesGroupedForm.explanationColor(enabled: true)
+        note.isSelectable = false
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        note.preferredMaxLayoutWidth = PreferencesGroupedForm.boxWidth(paneWidth: Self.paneWidth) - 2 * inset
+        note.translatesAutoresizingMaskIntoConstraints = false
+        allowlistNote = note
+
+        for view in [header, note, control, container] {
             root.addSubview(view)
         }
         let margin = PreferencesGroupedForm.margin
+        controlUnderHeader = control.topAnchor.constraint(equalTo: header.bottomAnchor, constant: PreferencesGroupedForm.boxSpacing)
+        controlUnderNote = control.topAnchor.constraint(equalTo: note.bottomAnchor, constant: PreferencesGroupedForm.boxSpacing)
+        let showsNote = Self.showsAllowlistNote
+        note.isHidden = !showsNote
         NSLayoutConstraint.activate([
             // The app's box begins where the first box of every pane does.
             header.topAnchor.constraint(equalTo: root.topAnchor, constant: margin),
             header.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: margin),
             header.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -margin),
-            control.topAnchor.constraint(equalTo: header.bottomAnchor, constant: PreferencesGroupedForm.boxSpacing),
+            // A muted line close under the box, inset like the texts of its row.
+            note.topAnchor.constraint(equalTo: header.bottomAnchor, constant: PreferencesGroupedForm.noteSpacing),
+            note.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: inset),
+            note.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -inset),
+            showsNote ? controlUnderNote : controlUnderHeader,
             control.centerXAnchor.constraint(equalTo: root.centerXAnchor),
             control.leadingAnchor.constraint(greaterThanOrEqualTo: root.leadingAnchor, constant: margin),
             // The part brings its own margins: the space above its first box.
@@ -160,7 +190,7 @@ final class ApplicationDetailViewController: NSViewController {
                 scrolling.onInheritChange = { [weak self] in self?.onInheritChange?() }
             }
             if let buttons = controller as? ApplicationButtonsViewController {
-                buttons.onOwnButtonsChange = { [weak self] in self?.onInheritChange?() }
+                buttons.onOwnButtonsChange = onInheritChange
             }
             addChild(controller)
             controller.view.translatesAutoresizingMaskIntoConstraints = false
@@ -246,14 +276,41 @@ final class ApplicationDetailViewController: NSViewController {
 
     func syncViewWithOptions() {
         guard isViewLoaded else { return }
+        // (Undo of a removal can bring back the name the app had.)
+        let name = application.getName()
+        if title != name {
+            title = name
+            headerRow.title = name
+            headerRow.toolTip = Self.toolTip(name: name, path: application.path)
+            headerRow.explanationLabel.toolTip = headerRow.toolTip
+        }
         for controller in partControllers.values {
             controller.syncViewWithOptions()
         }
+        let showsNote = Self.showsAllowlistNote
+        if allowlistNote.isHidden == showsNote {
+            allowlistNote.isHidden = !showsNote
+            NSLayoutConstraint.deactivate([showsNote ? controlUnderHeader : controlUnderNote])
+            NSLayoutConstraint.activate([showsNote ? controlUnderNote : controlUnderHeader])
+            onHeightChange?()
+        }
+    }
+
+    /// The line under the app's box shows while "Change scrolling only in these apps" is
+    /// on: every app on the list then scrolls as its Scrolling part says, also one added
+    /// only for its buttons, gestures or ring.
+    static var showsAllowlistNote: Bool {
+        return Options.shared.application.allowlist
     }
 
     /// "While Safari is in front, the general ring opens." / "While Safari is in front,
     /// the ring below opens." (The app in front decides, not the one under the pointer.)
-    static func generalRingExplanation(on: Bool, name: String) -> String {
+    /// While no button or key opens the ring (`opens` false), either way: that nothing
+    /// opens it yet, and where to set that up.
+    static func generalRingExplanation(on: Bool, name: String, opens: Bool = true) -> String {
+        guard opens else {
+            return NSLocalizedString("apps-detail-ring-no-trigger", comment: "")
+        }
         let format = NSLocalizedString(on ? "apps-detail-ring-general-on" : "apps-detail-ring-general-off", comment: "")
         return String(format: format, name)
     }
@@ -368,9 +425,35 @@ final class ApplicationDetailHeaderRow: PreferencesGroupRow {
 // MARK: - Page view
 
 /// The page's view. Esc (passed up from whatever has the focus on the page) and ⌘[ go back.
+///
+/// A click on a row's chevron or mark opens the page at once, and may be the first click
+/// of a double-click (a double-click on a row opens it too): the next mouse-down then
+/// lands on the page, where the part's first switch can sit right under the pointer. Such
+/// a continued click (one that began before the page opened) reaches nothing on the page;
+/// a click that begins on the page goes through as always.
 final class ApplicationDetailView: NSView {
 
     var onBack: (() -> Void)?
+    /// The event being handled. Tests give theirs.
+    var currentEvent: () -> NSEvent? = { NSApp.currentEvent }
+    /// When the page opened, on the clock of the events' timestamps.
+    private let openedAt = ProcessInfo.processInfo.systemUptime
+    /// Until a click begins on the page, a continued click is held back.
+    private var holdsBackContinuedClicks = true
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        guard holdsBackContinuedClicks, hit != nil, let event = currentEvent(),
+              event.type == .leftMouseDown, event.timestamp > openedAt else { return hit }
+        guard event.clickCount > 1 else {
+            holdsBackContinuedClicks = false
+            return hit
+        }
+        return self
+    }
+
+    /// A continued click held back (`hitTest`) ends here.
+    override func mouseDown(with event: NSEvent) {}
 
     /// The focus lands here when the page opens, so Esc works straight away.
     override var acceptsFirstResponder: Bool { return true }

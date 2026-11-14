@@ -354,13 +354,16 @@ enum SettingsFile {
 
         /// The file gives a button or a key an action, or a direction of Gesture
         /// Navigation (or its click), of every app's or of an app's own, or a place of the
-        /// Shortcut Ring, or of an app's own ring, another action than the default one. The
-        /// sheet then lists them, and Return does not import.
+        /// Shortcut Ring, or of an app's own ring, another action than the default one, or
+        /// swaps left and right in an app's own gestures. The sheet then lists them, and
+        /// Return does not import.
         var bringsActions: Bool {
             guard allBindings.isEmpty else { return true }
             if let ring, ring.places != ShortcutRingSettings.default.places { return true }
             if applicationRings.contains(where: { $0.places != ShortcutRingSettings.default.places }) { return true }
-            if applicationGestures.contains(where: { $0.gestures.actions != GestureActions.default }) { return true }
+            if applicationGestures.contains(where: { $0.gestures.actions != GestureActions.default || $0.gestures.invertHorizontal }) {
+                return true
+            }
             guard let gesture else { return false }
             return gesture.actions != GestureActions.default
         }

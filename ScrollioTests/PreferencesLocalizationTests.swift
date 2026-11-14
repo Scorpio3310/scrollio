@@ -151,7 +151,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-gestures-general", "apps-detail-gestures-general-on", "apps-detail-gestures-general-off",
         "apps-buttons-empty", "apps-buttons-list-label", "apps-buttons-note", "apps-buttons-note-empty", "apps-buttons-everywhere",
         "apps-buttons-add-mouse", "apps-buttons-add-record", "apps-buttons-add-general", "apps-buttons-add-general-item",
-        "apps-buttons-recorder-general",
+        "apps-buttons-recorder-general", "apps-detail-ring-no-trigger", "apps-detail-allowlist-note",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -268,7 +268,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-app-rings-one", "general-settings-import-app-rings-other",
         "general-settings-import-app-buttons-one", "general-settings-import-app-buttons-other",
         "general-settings-import-app-gestures-one", "general-settings-import-app-gestures-other",
-        "general-settings-import-gesture-line-app",
+        "general-settings-import-gesture-line-app", "general-settings-import-launch-trigger-app",
+        "general-settings-import-gesture-defaults-app", "general-settings-import-gesture-invert-app",
         "ring-undo-reset",
     ]
 
@@ -356,6 +357,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-app-buttons-other": "d",
         "general-settings-import-app-gestures-other": "d",
         "general-settings-import-gesture-line-app": "@@@",
+        "general-settings-import-launch-trigger-app": "@@",
+        "general-settings-import-gesture-defaults-app": "@",
+        "general-settings-import-gesture-invert-app": "@",
         // An app's page
         "apps-buttons-note": "@",
         "apps-buttons-note-empty": "@",

@@ -316,6 +316,52 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(again.accessibilityLabel(), "Calculator, Uses your scrolling settings., Own button settings")
     }
 
+    /// Undo of a removal while the page of the app added again is open: the page shows the
+    /// settings that come back (its own gestures and ring with their rows, its name in the
+    /// header and the window's title), and the pane takes the page's new height; Redo too.
+    func testUndoOntoTheOpenPageOfTheAppAddedAgainShowsItAndRefitsThePane() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.displayName = "Numbers"
+        calculator.setUsesGeneralGestures(false, general: .default)
+        calculator.setUsesGeneralRing(false, general: .default)
+        ApplicationPagePart.gestures.remember(in: uiDefaults)
+        let pane = makePane()
+        let window = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        pane.list.select(Self.calculator)
+        undo.beginUndoGrouping()
+        pane.list.removeButton.performClick(nil)
+        undo.endUndoGrouping()
+        let again = pane.addApplication(path: Self.calculator, knownPaths: [Self.calculator])
+        let page = try XCTUnwrap(pane.detailController)
+        XCTAssertTrue(page.application === again)
+        XCTAssertEqual(page.shownPart, .gestures)
+        XCTAssertNil(page.gesturesPart.controls)
+        let short = pane.view.frame.height
+        var titles: [String?] = []
+        pane.onSubpageChange = { titles.append(pane.subpageTitle) }
+
+        undo.undo()
+        XCTAssertFalse(again.usesGeneralGestures)
+        XCTAssertNotNil(page.gesturesPart.controls, "the app's own rows")
+        XCTAssertGreaterThan(pane.view.frame.height, short + 200)
+        XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+        XCTAssertEqual(page.headerRow.title, "Numbers")
+        XCTAssertEqual(page.title, "Numbers")
+        XCTAssertEqual(titles.last, "Numbers", "the window's title follows")
+        choose(3, on: page)
+        XCTAssertNotNil(page.ringController)
+        XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+
+        undo.redo()
+        XCTAssertTrue(again.usesGeneralRing)
+        XCTAssertNil(page.ringController)
+        XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+        XCTAssertEqual(page.headerRow.title, "Calculator")
+        XCTAssertEqual(titles.last, "Calculator")
+    }
+
     /// A click on a mark opens the app's page on that part; the marks follow a change made
     /// on the page when the list shows again.
     func testAClickOnAMarkOpensThePageOnItsPart() throws {
@@ -342,6 +388,46 @@ final class ApplicationPageTests: XCTestCase {
         page.buttonsPart.removeOwnBinding(id: own.ownButtonBindings[0].id)
         pane.leaveSubpage()
         XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.scrolling])
+    }
+
+    /// A click on a row's chevron opens the page at once; when it is the first click of a
+    /// double-click, the second mouse-down lands on the page and reaches nothing there (not
+    /// the part's first switch under it). A click that begins on the page goes through,
+    /// and so does a double-click there.
+    func testTheSecondClickOfADoubleClickThatOpenedThePageReachesNothingOnIt() throws {
+        addApp(Self.calculator)
+        ApplicationPagePart.ring.remember(in: uiDefaults)
+        let pane = makePane()
+        let window = makeWindow(for: pane)
+        let row = try XCTUnwrap(pane.list.rows.first as? ApplicationListRow)
+        row.layoutSubtreeIfNeeded()
+        let chevron = try XCTUnwrap(row.chevronView)
+        func press(at point: NSPoint, clicks: Int) throws -> NSEvent {
+            return try XCTUnwrap(NSEvent.mouseEvent(
+                with: .leftMouseDown, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1
+            ))
+        }
+        row.mouseDown(with: try press(at: row.convert(NSPoint(x: chevron.frame.midX, y: chevron.frame.midY), to: nil), clicks: 1))
+        let page = try XCTUnwrap(pane.detailController)
+        XCTAssertEqual(page.shownPart, .ring)
+        let pageView = try XCTUnwrap(page.view as? ApplicationDetailView)
+        pane.view.layoutSubtreeIfNeeded()
+        let toggle = page.generalRingSwitch
+        let onSwitch = toggle.convert(NSPoint(x: toggle.bounds.midX, y: toggle.bounds.midY), to: nil)
+        func hit(_ event: NSEvent) -> NSView? {
+            pageView.currentEvent = { event }
+            return pageView.superview.flatMap { pageView.hitTest($0.convert(event.locationInWindow, from: nil)) }
+        }
+
+        let second = try press(at: onSwitch, clicks: 2)
+        XCTAssertTrue(hit(second) === pageView, "held back")
+        pageView.mouseDown(with: second)
+        XCTAssertEqual(toggle.state, .on, "the switch is untouched")
+        XCTAssertTrue(hit(try press(at: onSwitch, clicks: 3)) === pageView)
+        // A click of the page's own, and a double-click there, reach the switch.
+        XCTAssertTrue(hit(try press(at: onSwitch, clicks: 1))?.isDescendant(of: page.generalRingRow) == true)
+        XCTAssertTrue(hit(try press(at: onSwitch, clicks: 2))?.isDescendant(of: page.generalRingRow) == true)
     }
 
     // MARK: - The Buttons part
@@ -455,6 +541,20 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(calculator.ownButtonBindings.last?.isEnabled, true)
     }
 
+    /// A button with modifier keys that Buttons has no binding of its own for runs the
+    /// binding without them everywhere: its new row starts with that action, as its
+    /// "Everywhere" line says, so nothing changes until another one is chosen.
+    func testANewRowForAButtonWithModifierKeysStartsWithWhatItDoesEverywhere() throws {
+        Options.shared.buttons.binding = [binding(3, "copy")]
+        let calculator = addApp(Self.calculator)
+        let (_, part) = try buttonsPart()
+        let commandBack = RecordedEvent(type: .mouse, code: 3, modifiers: UInt(CGEventFlags.maskCommand.rawValue), deviceFilter: nil)
+        part.addOwnBinding(for: commandBack)
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.triggerEvent), [commandBack])
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), ["copy"])
+        XCTAssertEqual(part.rows.first?.explanation, "Everywhere: " + SystemShortcut.copy.localizedName)
+    }
+
     /// A row's pull-down changes the app's binding only; "Default" stores no action (the
     /// button does what it does by itself here); the ring is refused.
     func testARowsPullDownChangesOnlyTheAppsBinding() throws {
@@ -501,6 +601,37 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(part.list.selectedID, AnyHashable(id))
         undo.redo()
         XCTAssertFalse(calculator.hasOwnButtons)
+    }
+
+    /// "−" on the page, then the page closes (Esc, the back button, another pane), then
+    /// Edit › Undo: the button comes back to the app although the page's part is gone, the
+    /// list's mark follows, and Redo takes the button away again.
+    func testUndoOfARemovedRowWorksAfterThePageClosed() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(3, "appExpose")])
+        let pane = makePane()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        weak var closedPart: ApplicationButtonsViewController?
+        try autoreleasepool {
+            pane.openApplication(withID: Self.calculator, part: .buttons)
+            let part = try XCTUnwrap(pane.detailController?.buttonsPart)
+            part.paneUndoManager = undo
+            undo.beginUndoGrouping()
+            part.removeOwnBinding(id: calculator.ownButtonBindings[0].id)
+            undo.endUndoGrouping()
+            closedPart = part
+            pane.leaveSubpage()
+        }
+        XCTAssertNil(closedPart, "the page and its parts are gone")
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [])
+
+        undo.undo()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), ["appExpose"])
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.buttons], "the list's mark follows")
+        undo.redo()
+        XCTAssertFalse(calculator.hasOwnButtons)
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [])
     }
 
     /// "Record a Button or Key…": the Buttons pane's recorder; what it caught is added when

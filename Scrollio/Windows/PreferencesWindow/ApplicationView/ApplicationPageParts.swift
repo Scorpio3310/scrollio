@@ -267,6 +267,7 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         )
         generalRing.toggle.identifier = Identifier.generalRing
         generalRing.reservedExplanations = [true, false].map { ApplicationDetailViewController.generalRingExplanation(on: $0, name: name) }
+            + [ApplicationDetailViewController.generalRingExplanation(on: true, name: name, opens: false)]
         generalRingRow = generalRing
         // (No title: the part's segment names it.)
         let section = PreferencesGroupSection(
@@ -291,7 +292,11 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         guard isViewLoaded else { return }
         let usesGeneralRing = application.usesGeneralRing
         generalRingRow.isOn = usesGeneralRing
-        generalRingRow.explanation = ApplicationDetailViewController.generalRingExplanation(on: usesGeneralRing, name: application.getName())
+        // (What opens the ring is set in the Shortcut Ring pane, and the page has no row
+        // for it: without one, the line says so instead of promising a ring.)
+        generalRingRow.explanation = ApplicationDetailViewController.generalRingExplanation(
+            on: usesGeneralRing, name: application.getName(), opens: ShortcutRingBindingSummary.current.hasTrigger
+        )
         showOwnRing(!usesGeneralRing)
         ringController?.reload()
     }
@@ -335,6 +340,9 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     /// own ring stays stored for later. Off: the app's own ring, which starts as a copy of
     /// the general ring as it is now when the app never had one.
     @objc func generalRingClick(_ sender: NSSwitch) {
+        // First what is being edited (a name typed in a row's popover) goes into the ring,
+        // while it is still the app's own.
+        ringController?.endEditing()
         application.setUsesGeneralRing(sender.state == .on, general: Options.shared.ring)
         syncViewWithOptions()
         onHeightChange?()

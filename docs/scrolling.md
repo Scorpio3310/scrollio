@@ -21,8 +21,11 @@
   scrolling only in these apps" leaves every other app to macOS; buttons and gestures
   still work everywhere. "Smooth Scrolling in …" in the menu bar menu turns smoothing on
   or off for the app in front. An app's page there also holds the app's own buttons
-  ([Buttons and keys](features.md#buttons-and-keys)) and its own
-  [Shortcut Ring](features.md#shortcut-ring), if you give it them.
+  ([Buttons and keys](features.md#buttons-and-keys)), its own gestures
+  ([Mouse gestures](features.md#mouse-gestures)) and its own
+  [Shortcut Ring](features.md#shortcut-ring), if you give it them. While "Change
+  scrolling only in these apps" is on, an app added only for those has its scrolling
+  changed too, and its page says so.
 - Calendar's month view aligns itself to weeks and takes a smoothed wheel badly (a small
   turn barely moves it, a little more runs away). If that bothers you, add Calendar in
   the Apps pane and turn Smooth scrolling off for it, or use "Smooth Scrolling in

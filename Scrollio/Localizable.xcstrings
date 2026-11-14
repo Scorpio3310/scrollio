@@ -8523,6 +8523,66 @@
           }
         }
       }
+    },
+    "apps-detail-ring-no-trigger": {
+      "comment": "App page, Shortcut Ring part: explanation of \"Use the general ring\" while no button or key opens the ring",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing opens the ring yet: set up a button or key for it in the Shortcut Ring pane."
+          }
+        }
+      }
+    },
+    "apps-detail-allowlist-note": {
+      "comment": "App page: muted line under the app's box while \"Change scrolling only in these apps\" is on",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“Change scrolling only in these apps” is on: this app scrolls as its Scrolling part says. To leave its scrolling to macOS, turn off smoothing and reversing there."
+          }
+        }
+      }
+    },
+    "general-settings-import-launch-trigger-app": {
+      "comment": "Import sheet: the button or key of an app's own action that opens or runs something, %1$@ = the button or key (\"⌥ F5\"), %2$@ = the app (\"Notes\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ in %2$@"
+          }
+        }
+      }
+    },
+    "general-settings-import-gesture-defaults-app": {
+      "comment": "Import sheet: an app's own gestures in use that hold the default actions, %@ = the app (\"Notes\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gestures in %@: the default actions"
+          }
+        }
+      }
+    },
+    "general-settings-import-gesture-invert-app": {
+      "comment": "Import sheet: an app's own gestures with \"Invert left and right\" on, %@ = the app (\"Notes\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gestures in %@: left and right swapped"
+          }
+        }
+      }
     }
   },
   "version": "1.1"
