@@ -580,6 +580,31 @@ class PreferencesGroupRow: NSView {
         if contentWidth > 0, abs(explanationLabel.preferredMaxLayoutWidth - titleColumnWidth) > 0.5 {
             updateExplanationWidth()
         }
+        updateTitleToolTip()
+    }
+
+    /// The tooltip this row gave its title because the title is cut; nil while it gave none.
+    private var cutTitleToolTip: String?
+
+    /// A title that is cut with "…" says itself whole in its tooltip ("⌥⌘ Gesture button
+    /// (button 6)" beside a wide pull-down had nothing to read it by); one that fits has
+    /// none. A row with a tooltip of its own, or a title whose tooltip someone else set,
+    /// keeps that.
+    private func updateTitleToolTip() {
+        let isCut = toolTip == nil && titleLabel.frame.width + 0.5 < titleLabel.intrinsicContentSize.width
+        if isCut {
+            guard titleLabel.toolTip == nil || titleLabel.toolTip == cutTitleToolTip else { return }
+            let whole = titleLabel.stringValue
+            if titleLabel.toolTip != whole {
+                titleLabel.toolTip = whole
+            }
+            cutTitleToolTip = whole
+        } else if let given = cutTitleToolTip {
+            if titleLabel.toolTip == given {
+                titleLabel.toolTip = nil
+            }
+            cutTitleToolTip = nil
+        }
     }
 
     private func updateExplanationWidth() {

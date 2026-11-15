@@ -244,6 +244,38 @@ final class PreferencesGroupedFormTests: XCTestCase {
         )
     }
 
+    /// A title that is cut with "…" says itself whole in its tooltip (QA B7: "⌥⌘ Gesture
+    /// button (button 6)" beside a 240 pt pull-down was cut with nothing to read it by); a
+    /// title that fits has none, and neither has one a row or its owner gave a tooltip.
+    func testATitleThatIsCutSaysItselfInItsToolTip() {
+        let long = "⌃⌥⇧⌘ A button whose name is longer than the room beside its control"
+        func wideControl() -> NSView {
+            let control = NSView()
+            control.translatesAutoresizingMaskIntoConstraints = false
+            control.widthAnchor.constraint(equalToConstant: 240).isActive = true
+            control.heightAnchor.constraint(equalToConstant: 22).isActive = true
+            return control
+        }
+        let cut = PreferencesGroupRow(title: long, accessory: wideControl())
+        let fits = PreferencesGroupRow(title: "Back button", accessory: wideControl())
+        let owned = PreferencesGroupRow(title: long, accessory: wideControl())
+        owned.toolTip = "The row's own"
+        let root = makePane([PreferencesGroupBox(width: boxWidth, rows: [cut, fits, owned])])
+
+        XCTAssertLessThan(cut.titleLabel.frame.width, cut.titleLabel.intrinsicContentSize.width, "it is cut")
+        XCTAssertEqual(cut.titleLabel.toolTip, long)
+        XCTAssertNil(fits.titleLabel.toolTip)
+        XCTAssertNil(owned.titleLabel.toolTip, "the row says more than its title")
+
+        // A title that fits again loses the tooltip; one that is cut again gets its new text.
+        cut.title = "Short"
+        root.layoutSubtreeIfNeeded()
+        XCTAssertNil(cut.titleLabel.toolTip)
+        fits.title = long + ", and more"
+        root.layoutSubtreeIfNeeded()
+        XCTAssertEqual(fits.titleLabel.toolTip, long + ", and more")
+    }
+
     func testARowWithoutExplanationIsOneLineAndGrowsWhenItGetsOne() {
         let row = PreferencesSwitchRow(title: "Title", target: nil, action: nil)
         XCTAssertNil(row.explanation)

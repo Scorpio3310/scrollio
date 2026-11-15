@@ -202,9 +202,12 @@ extension ApplicationButtonsViewController {
     }
 
     /// Gives the app the thumb wheel with the function it has everywhere (nothing changes
-    /// until another is chosen), selects its row and opens its menu. A wheel the app has
-    /// already is selected and flashes.
+    /// until another is chosen), selects its row, gives the list the keyboard and opens its
+    /// menu. A wheel the app has already is selected and flashes. Edit › Undo ("Undo Add
+    /// Thumb Wheel") gives the wheel back to Buttons, and Redo takes it again: without it
+    /// ⌘Z right after "+" took back an older change somewhere else.
     func addOwnThumbWheel() {
+        defer { focusList() }
         guard application.ownThumbWheelFunction == nil else {
             list.flash(ButtonsListLayout.thumbWheelRowID)
             return
@@ -213,8 +216,22 @@ extension ApplicationButtonsViewController {
         reloadRows()
         onOwnButtonsChange?()
         list.select(ButtonsListLayout.thumbWheelRowID)
+        if let undo = undoTarget {
+            // As a removal's Undo: the settings are the target, and the entry is found by
+            // its path when it runs. Undo is the removal, which registers the way back.
+            let showing = undoShowing
+            let listDidChange = onOwnButtonsChange
+            let path = application.path
+            let name = NSLocalizedString("apps-buttons-undo-add-thumb-wheel", comment: "")
+            undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+                guard let entry = Self.thumbWheelEntry(storedAs: path) else { return }
+                Self.removeOwnThumbWheel(of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange, undoName: name)
+            }
+            undo.setActionName(name)
+        }
         // The row's menu opens by itself, once the "+" menu is gone.
-        DispatchQueue.main.async { [weak self] in
+        // (From the run loop, never from a block of the main queue: `addOwnBinding`.)
+        UpdateWindows.fromTheRunLoop { [weak self] in
             guard let self, self.view.window != nil, let row = self.thumbWheelRow,
                   self.list.selectedID == ButtonsListLayout.thumbWheelRowID else { return }
             self.openActionMenu(row.pullDown)
@@ -326,15 +343,17 @@ extension ApplicationButtonsViewController {
     }
 
     /// A removal, its Undo or its Redo changed the app's thumb wheel: the rows again, with
-    /// the wheel's row selected when it came back; and the part of the page shown now, if
-    /// another one (the Scrolling part's Thumb wheel › Action is the same value), as a
-    /// button's removal does (`showUndoableChange`).
+    /// the wheel's row selected when it came back and the keyboard in the list (while the
+    /// part is in the window); and the part of the page shown now, if another one (the
+    /// Scrolling part's Thumb wheel › Action is the same value), as a button's removal does
+    /// (`showUndoableChange`).
     private func showThumbWheelChange(selecting: Bool) {
         guard isViewLoaded else { return }
         reloadRows()
         if selecting {
             list.select(ButtonsListLayout.thumbWheelRowID)
         }
+        focusList()
         if let shown = (parent as? ApplicationDetailViewController)?.shownController, shown !== self {
             shown.syncViewWithOptions()
         }

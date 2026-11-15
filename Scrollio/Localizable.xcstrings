@@ -5067,7 +5067,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A key cannot run Gesture Navigation. Choose a mouse button."
+            "value": "A key cannot run Gesture Navigation."
           }
         }
       }
@@ -7527,7 +7527,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Opens the ring at the pointer. Set its shortcuts under Shortcut Ring."
+            "value": "Opens the ring. Set its shortcuts under Shortcut Ring."
           }
         }
       }
@@ -11292,6 +11292,114 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@."
+          }
+        }
+      }
+    },
+    "buttons-recorder-in-list": {
+      "comment": "Key recorder popover of \"+\" in Buttons and in an app's Buttons: the pressed button or key is listed already and its row has no action (\"Default\"), so \"Already has an action\" would not be true",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Already in the list"
+          }
+        }
+      }
+    },
+    "buttons-recorder-own-button": {
+      "comment": "Key recorder popover of a row's \"Keyboard Shortcut…\": the row's own button was pressed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A button cannot send itself"
+          }
+        }
+      }
+    },
+    "buttons-recorder-own-key": {
+      "comment": "Key recorder popover of a row's \"Keyboard Shortcut…\": the row's own key was pressed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A key cannot send itself"
+          }
+        }
+      }
+    },
+    "buttons-undo-add": {
+      "comment": "Buttons pane and an app's Buttons part: the Undo menu item reads \"Undo Add Button\" after \"+\" added a row",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Button"
+          }
+        }
+      }
+    },
+    "apps-buttons-undo-add-thumb-wheel": {
+      "comment": "An app's Buttons part: the Undo menu item reads \"Undo Add Thumb Wheel\" after \"+\" gave the app the thumb wheel",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Thumb Wheel"
+          }
+        }
+      }
+    },
+    "key-recorder-needs-access-hint": {
+      "comment": "Key recorder popover that opens instead of a recording while Scrollio has no Accessibility access: the small line under \"Scrollio needs Accessibility access\"; General is the Settings pane",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow it under General."
+          }
+        }
+      }
+    },
+    "key-recorder-could-not-start": {
+      "comment": "Key recorder popover that opens instead of a recording that could not start although Scrollio has Accessibility access",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording couldn't start"
+          }
+        }
+      }
+    },
+    "key-recorder-try-again": {
+      "comment": "Key recorder popover: the small line under \"Recording couldn't start\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again in a moment."
+          }
+        }
+      }
+    },
+    "key-recorder-paused": {
+      "comment": "Key recorder popover, the small line while Scrollio is paused: the buttons only Scrollio reads from a Logitech mouse (gesture button, thumb panel) do not arrive",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio is paused:\nsome Logitech buttons cannot be recorded now"
           }
         }
       }

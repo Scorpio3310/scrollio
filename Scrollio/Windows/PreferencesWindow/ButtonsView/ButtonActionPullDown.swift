@@ -759,9 +759,16 @@ extension ButtonActionPullDown: KeyRecorderDelegate {
         }
     }
 
+    /// Why a press is refused: what a place or a direction cannot run; or the row's own
+    /// button or key, which cannot be its own shortcut (the popover's "Already has an
+    /// action" is not the reason, and not true of a row that has none).
     func refusalHint(_ recorder: KeyRecorder, event: InputEvent) -> String? {
-        guard isRefused(event) else { return nil }
-        return NSLocalizedString(use == .ringPlace ? "ring-recorder-refused" : "gesture-recorder-refused", comment: "")
+        if isRefused(event) {
+            return NSLocalizedString(use == .ringPlace ? "ring-recorder-refused" : "gesture-recorder-refused", comment: "")
+        }
+        guard !validateRecordedEvent(recorder, event: event) else { return nil }
+        let isKey = binding.triggerEvent.type == .keyboard
+        return NSLocalizedString(isKey ? "buttons-recorder-own-key" : "buttons-recorder-own-button", comment: "")
     }
 
     /// The button cannot be its own shortcut.

@@ -2235,7 +2235,7 @@ final class ShortcutRingButtonsTests: XCTestCase {
         let ring = binding(.mouse, 4, action: "shortcutRing")
         let pane = makePane([ring, binding(.mouse, 3, action: "copy")])
         let row = try XCTUnwrap(pane.rows.first { $0.binding.id == ring.id })
-        XCTAssertEqual(row.explanation, "Opens the ring at the pointer. Set its shortcuts under Shortcut Ring.")
+        XCTAssertEqual(row.explanation, "Opens the ring. Set its shortcuts under Shortcut Ring.")
         XCTAssertEqual(pane.ringTriggerBinding?.id, ring.id)
         XCTAssertTrue(pane.selectRingTrigger())
         XCTAssertFalse(makePane([binding(.mouse, 3, action: "copy")]).selectRingTrigger(), "nothing opens the ring")

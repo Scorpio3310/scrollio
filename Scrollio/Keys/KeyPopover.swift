@@ -14,6 +14,9 @@ import Cocoa
 /// (its room kept) once a press is recorded: nothing is left to cancel then. It grows to fit
 /// its texts, and VoiceOver hears the waiting hint when it opens.
 ///
+/// Where nothing can be recorded at all (no Accessibility access) the same popover opens
+/// to say so, with two lines and no key slot (`showNotice`).
+///
 /// For the "Keyboard Shortcut…" action it has a second state, the details: once a key
 /// combination is recorded (or when the row already holds one) the key slot shows the
 /// keys and under it stands `ShortcutLabelEditorView`, where the combination gets a name
@@ -62,8 +65,11 @@ class KeyPopover: NSObject, NSPopoverDelegate {
     private(set) var labelEditor: ShortcutLabelEditorView?
     /// The popover shows the details, not a recording.
     private(set) var isShowingDetails = false
+    /// The popover says why nothing can be recorded (`showNotice`), not a recording.
+    private(set) var isShowingNotice = false
     private var recordingConstraints: [NSLayoutConstraint] = []
     private var detailsConstraints: [NSLayoutConstraint] = []
+    private var noticeConstraints: [NSLayoutConstraint] = []
     /// What the popover's behaviour was before the chooser opened; nil: it is not open.
     private var behaviorBeforeChooser: NSPopover.Behavior?
     private var appResignObserver: NSObjectProtocol?
@@ -115,7 +121,7 @@ class KeyPopover: NSObject, NSPopoverDelegate {
     /// 显示录制 popover, asking for `waitingHint`. A popover that is open with the
     /// details ("Record Again") goes back to asking for keys where it is, without closing.
     func show(at sourceView: NSView, waitingHint: String) {
-        if isOpen, contentView != nil {
+        if isOpen, contentView != nil, !isShowingNotice {
             turnToRecording(waitingHint: waitingHint)
         } else {
             hide() // 确保之前的 popover 被关闭
@@ -123,6 +129,27 @@ class KeyPopover: NSObject, NSPopoverDelegate {
             popover?.show(relativeTo: sourceView.bounds, of: sourceView, preferredEdge: .maxY)
         }
         announce(Self.spokenText([waitingHint, RecordingHint.escape.localizedText]))
+    }
+
+    /// Opens the popover to say why nothing can be recorded (Scrollio has no Accessibility
+    /// access: a click on "+" or "Record a Button…" did nothing at all then): `title` where
+    /// it otherwise asks for a press, `detail` in the small line under it, no key slot.
+    /// Nothing is recorded; it closes as any popover does, or with `hide`. A view without
+    /// a window gets no popover (its content is still made, as for a test).
+    func showNotice(at sourceView: NSView, title: String, detail: String) {
+        hide()
+        setupPopover(waitingHint: title)
+        isShowingNotice = true
+        keyPreview.isHidden = true
+        hintLabel?.stringValue = detail
+        NSLayoutConstraint.deactivate(recordingConstraints)
+        NSLayoutConstraint.activate(noticeConstraints)
+        contentView?.setAccessibilityLabel(Self.spokenText([title, detail]))
+        updatePopoverContentSize()
+        if sourceView.window != nil {
+            popover?.show(relativeTo: sourceView.bounds, of: sourceView, preferredEdge: .maxY)
+        }
+        announce(Self.spokenText([title, detail]))
     }
 
     /// Opens the popover with keys that are already recorded: their name and icon can be
@@ -430,6 +457,15 @@ class KeyPopover: NSObject, NSPopoverDelegate {
             waitingLabel.topAnchor.constraint(equalTo: view.topAnchor),
             hintLabel.topAnchor.constraint(equalTo: view.topAnchor),
         ]
+        // A notice (`showNotice`): its two lines, no key slot between them.
+        noticeConstraints = [
+            waitingLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: insets.top),
+            hintLabel.topAnchor.constraint(equalTo: waitingLabel.bottomAnchor, constant: 6),
+            hintLabel.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -insets.bottom),
+            // (The key slot is hidden then; it still needs a place.)
+            keyPreview.topAnchor.constraint(equalTo: view.topAnchor),
+        ]
+        isShowingNotice = false
         view.addSubview(editor)
         var constraints: [NSLayoutConstraint] = recordingConstraints + [
             // 内容视图宽度约束

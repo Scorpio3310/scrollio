@@ -491,8 +491,10 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         XCTAssertEqual(row.accessibilityLabel(), "Thumb wheel, In other apps: Switch Tabs")
         XCTAssertTrue(row.isRemovable)
         XCTAssertEqual(part.list.selectedID, ButtonsListLayout.thumbWheelRowID)
+        // (The menu opens from a timer of the run loop, QA B5; timers fire in the order
+        // they were set, so this one comes after it.)
         let opens = expectation(description: "the row's menu opens")
-        DispatchQueue.main.async { opens.fulfill() }
+        UpdateWindows.fromTheRunLoop { opens.fulfill() }
         wait(for: [opens], timeout: 1)
         XCTAssertTrue(opened.first === row.pullDown)
 
@@ -502,6 +504,57 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         // Return on the row opens its menu too.
         part.list.onOpen?(ButtonsListLayout.thumbWheelRowID)
         XCTAssertTrue(opened.last === row.pullDown)
+    }
+
+    /// "+" › "Thumb wheel" has its Undo (QA B2): ⌘Z right after it takes the wheel's row
+    /// away again ("Undo Add Thumb Wheel") and Redo brings it back, selected, with the
+    /// keyboard in the list (QA B11). It registered none: ⌘Z undid an older change
+    /// elsewhere and the app kept its own thumb wheel.
+    func testAddingTheThumbWheelCanBeUndoneAndRedone() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs, speed: 2)
+        let calculator = addCalculator()
+        let part = try buttonsPart()
+        let window = makeWindow(for: part)
+        let undo = try XCTUnwrap(part.paneUndoManager)
+        undo.groupsByEvent = false
+        undo.beginUndoGrouping()
+        part.addOwnThumbWheel()
+        undo.endUndoGrouping()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .tabs)
+        XCTAssertTrue(window.firstResponder === part.list, "the list has the keyboard")
+        XCTAssertTrue(undo.canUndo)
+        XCTAssertEqual(undo.undoActionName, "Add Thumb Wheel")
+
+        undo.undo()
+        XCTAssertNil(calculator.ownThumbWheelFunction, "the wheel is Buttons' again")
+        XCTAssertNil(part.thumbWheelRow)
+        XCTAssertEqual(undo.redoActionName, "Add Thumb Wheel")
+        window.makeFirstResponder(nil)
+        undo.redo()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .tabs)
+        XCTAssertEqual(part.list.selectedID, ButtonsListLayout.thumbWheelRowID)
+        XCTAssertTrue(window.firstResponder === part.list, "and after Redo")
+        XCTAssertEqual(undo.undoActionName, "Add Thumb Wheel")
+        XCTAssertEqual(Options.shared.thumbWheel, ThumbWheelSettings(function: .tabs, speed: 2), "Scrolling is not touched")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    /// The wheel's new row opens its menu from the run loop, not from a block of the main
+    /// queue (QA B5), as a button's new row does.
+    func testTheThumbWheelsMenuOpensWhereTheMainQueueGoesOn() throws {
+        addCalculator()
+        var served: [Bool] = []
+        let part = try buttonsPart(actionMenus: { _ in
+            // As a menu does: a run loop of its own until it closes.
+            var ran = false
+            DispatchQueue.main.async { ran = true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            served.append(ran)
+        })
+        _ = makeWindow(for: part)
+        part.addOwnThumbWheel()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertEqual(served, [true], "the menu opened once, and the main queue went on behind it")
     }
 
     /// The row's pull-down changes the app's function only; the line under it follows the
@@ -1437,9 +1490,11 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
     }
 
     /// "−" on the Buttons part's thumb wheel row, then the Scrolling part, then Edit › Undo:
-    /// the action comes back, and the Scrolling part shown now shows it at once (with its
-    /// reset button), not only after another part was shown; Redo the same way.
-    func testUndoOfTheRemovedRowShowsOnTheScrollingPartShownNow() throws {
+    /// the action comes back and the page shows its Buttons part again, the wheel's row
+    /// selected (QA B4: Undo shows where it acts; the page stayed on Scrolling). The
+    /// Scrolling part shows the action too once it is shown (with its reset button); Redo
+    /// the same way.
+    func testUndoOfTheRemovedRowShowsTheButtonsPartAgain() throws {
         let calculator = addCalculator()
         calculator.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
         calculator.setOwnThumbWheelScrolling(Options.shared.thumbWheel)
@@ -1458,12 +1513,33 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
 
         undo.undo()
         XCTAssertEqual(calculator.ownThumbWheelFunction, .zoom)
+        XCTAssertEqual(page.shownPart, .buttons, "Undo shows where it acts")
+        XCTAssertEqual(page.buttonsPart.thumbWheelRow?.function, .zoom)
+        XCTAssertEqual(page.buttonsPart.list.selectedID, ButtonsListLayout.thumbWheelRowID, "with the wheel's row selected")
+        page.show(.scrolling)
         XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .zoom)
         XCTAssertEqual(tab.thumbWheelFunctionRow.explanation, ThumbWheelFunction.zoom.localizedHint)
         XCTAssertTrue(tab.resetToDefaultsButton.isEnabled, "the app's own action can be reset")
         undo.redo()
+        XCTAssertEqual(page.shownPart, .buttons, "and Redo")
+        XCTAssertNil(page.buttonsPart.thumbWheelRow)
+        page.show(.scrolling)
         XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .tabs)
         XCTAssertFalse(tab.resetToDefaultsButton.isEnabled)
+
+        // A function chosen in the row's pull-down the same way.
+        undo.undo()
+        let row = try XCTUnwrap(page.buttonsPart.thumbWheelRow)
+        undo.beginUndoGrouping()
+        row.pullDown.functionChosen(try XCTUnwrap(row.pullDown.functionItems.first { ThumbWheelPresentation.function(of: $0) == .volume }))
+        undo.endUndoGrouping()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .volume)
+        page.show(.scrolling)
+        page.buttonsPart.list.select(nil)
+        undo.undo()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .zoom)
+        XCTAssertEqual(page.shownPart, .buttons)
+        XCTAssertEqual(page.buttonsPart.list.selectedID, ButtonsListLayout.thumbWheelRowID)
     }
 
     /// The part's "Copy from Scrolling" with the app's own settings: the Scrolling settings'

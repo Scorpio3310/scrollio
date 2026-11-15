@@ -1359,6 +1359,21 @@ final class ButtonBindingTests: XCTestCase {
         )
 
         XCTAssertFalse(pullDown.validateRecordedEvent(KeyRecorder(), event: event))
+        // The recorder says why (QA B1): it said "Already has an action" of a button that
+        // has none; the reason is that a button cannot be its own shortcut.
+        XCTAssertEqual(pullDown.refusalHint(KeyRecorder(), event: event), "A button cannot send itself")
+        let other = InputEvent(type: .mouse, code: 4, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        XCTAssertTrue(pullDown.validateRecordedEvent(KeyRecorder(), event: other))
+        XCTAssertNil(pullDown.refusalHint(KeyRecorder(), event: other))
+
+        // A key's row the same way, in its own words.
+        let keyRow = makePullDown(binding: ButtonBinding(
+            triggerEvent: RecordedEvent(type: .keyboard, code: 40, modifiers: UInt(CGEventFlags.maskCommand.rawValue), deviceFilter: nil),
+            systemShortcutName: "", isEnabled: false
+        ))
+        let itsKey = InputEvent(type: .keyboard, code: 40, modifiers: .maskCommand, phase: .down, source: .hidPP, device: nil)
+        XCTAssertFalse(keyRow.validateRecordedEvent(KeyRecorder(), event: itsKey))
+        XCTAssertEqual(keyRow.refusalHint(KeyRecorder(), event: itsKey), "A key cannot send itself")
     }
 
     func testDuplicateCustomRecordingRestoresPreviousActionDisplay() {

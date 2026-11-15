@@ -457,23 +457,35 @@ class PreferencesButtonsViewController: NSViewController {
     /// Stores what the thumb wheel does, only when it changes. Both panes then show it
     /// (ThumbWheelSettingsChange); the bindings are not touched. Undo ("Undo Change
     /// Action", as a button row's) puts back the function it had; Redo and Undo stay with
-    /// the manager the change used.
+    /// the manager the change used, and show where they act as a button row's do: the pane
+    /// comes forward while another one shows, the wheel's row is selected and the list has
+    /// the keyboard.
     func setThumbWheelFunction(_ function: ThumbWheelFunction) {
-        setThumbWheelFunction(function, undoManager: undoTarget)
+        setThumbWheelFunction(function, undoManager: undoTarget, isUndoOrRedo: false)
     }
 
-    private func setThumbWheelFunction(_ function: ThumbWheelFunction, undoManager undo: UndoManager?) {
+    private func setThumbWheelFunction(_ function: ThumbWheelFunction, undoManager undo: UndoManager?, isUndoOrRedo: Bool) {
         let old = Options.shared.thumbWheel.function
         if old != function {
             Options.shared.thumbWheel.function = function
             if let undo {
                 undo.registerUndo(withTarget: self) { [weak undo] controller in
-                    controller.setThumbWheelFunction(old, undoManager: undo)
+                    controller.setThumbWheelFunction(old, undoManager: undo, isUndoOrRedo: true)
                 }
                 undo.setActionName(text("buttons-undo-change-action"))
             }
         }
+        if isUndoOrRedo {
+            comeForward()
+        }
         syncThumbWheel()
+        if isUndoOrRedo {
+            if thumbWheelRow != nil {
+                list.select(ButtonsListLayout.thumbWheelRowID)
+            }
+            focusList()
+            updateHeader()
+        }
     }
 
     /// The thumb wheel's row (and the card while it is about that row) shows the stored
@@ -726,10 +738,11 @@ class PreferencesButtonsViewController: NSViewController {
     }
 
     /// Replaces a binding (its trigger may change: "Use Standard Button"); a binding of the
-    /// same trigger merges into it. Undo ("Undo Which Button": the row's button changed)
-    /// puts back the replaced binding and the merged ones, so that an older Undo of the row,
-    /// which puts back its whole binding, never takes the new trigger back unseen.
-    func replaceBinding(_ binding: ButtonBinding) {
+    /// same trigger merges into it. Undo (`undoName`; "Undo Which Button" when nil: the
+    /// row's button changed) puts back the replaced binding and the merged ones, so that an
+    /// older Undo of the row, which puts back its whole binding, never takes the new
+    /// trigger back unseen.
+    func replaceBinding(_ binding: ButtonBinding, undoName: String? = nil) {
         guard buttonBindings.contains(where: { $0.id == binding.id }) else { return }
         let before = buttonBindings
         buttonBindings = ButtonBindingReplacement.replacing(binding, in: buttonBindings)
@@ -742,10 +755,12 @@ class PreferencesButtonsViewController: NSViewController {
         }
         // The replaced row first: Undo shows that one.
         let states = touched.filter { $0.id == binding.id } + touched.filter { $0.id != binding.id }
-        registerUndo(of: ButtonRowChange(kind: .whichButton, states: states))
+        registerUndo(of: ButtonRowChange(kind: .whichButton, states: states), name: undoName)
     }
 
-    /// "Use Standard Button": the Logitech button becomes the standard button it stands for.
+    /// "Use Standard Button": the Logitech button becomes the standard button it stands
+    /// for. Edit › Undo names it as the button that was clicked ("Undo Use Standard
+    /// Button"), not as "Which Button Is This?".
     func useStandardButton(for id: UUID) {
         guard let updated = binding(for: id)?.standardMouseAliasBindingIfAvailable() else { return }
         LogiCenter.shared.logButtonCaptureDiagnostic(
@@ -753,7 +768,7 @@ class PreferencesButtonsViewController: NSViewController {
         )
         problemPopover?.close()
         problemPopover = nil
-        replaceBinding(updated)
+        replaceBinding(updated, undoName: text("button_use_native_mouse"))
     }
 
     // MARK: - Which button is this?
@@ -897,24 +912,25 @@ class PreferencesButtonsViewController: NSViewController {
 
     /// Edit › Undo of a change of rows, on the manager a removal uses (`undoTarget` for a
     /// change made here). The target is this pane, which lives as long as the window (as a
-    /// removal's).
-    private func registerUndo(of change: ButtonRowChange) {
-        registerUndo(of: change, undoManager: undoTarget)
+    /// removal's). `name`: what Edit › Undo calls it where the change's kind has no name
+    /// for it ("Add Button", "Use Standard Button"); the kind's own when nil.
+    private func registerUndo(of change: ButtonRowChange, name: String? = nil) {
+        registerUndo(of: change, name: name, undoManager: undoTarget)
     }
 
-    private func registerUndo(of change: ButtonRowChange, undoManager undo: UndoManager?) {
+    private func registerUndo(of change: ButtonRowChange, name: String?, undoManager undo: UndoManager?) {
         guard let undo, !change.states.isEmpty else { return }
         undo.registerUndo(withTarget: self) { [weak undo] controller in
-            controller.takeBack(change, undoManager: undo)
+            controller.takeBack(change, name: name, undoManager: undo)
         }
-        undo.setActionName(change.kind.actionName)
+        undo.setActionName(name ?? change.kind.actionName)
     }
 
     /// Undo or Redo of a change of rows: the bindings it touched as they were, the pane
     /// brought forward while another one shows, the changed row selected and the list
     /// given the keyboard (as the Undo of a removal); the change the other way round goes
-    /// to the undo manager.
-    private func takeBack(_ change: ButtonRowChange, undoManager undo: UndoManager?) {
+    /// to the undo manager, under the same name.
+    private func takeBack(_ change: ButtonRowChange, name: String?, undoManager undo: UndoManager?) {
         let placed: (ButtonBinding) -> ButtonBinding = { [self] binding in
             let trigger = placedLikeItsButton(binding.triggerEvent, except: binding.id)
             return trigger.mousePart == binding.triggerEvent.mousePart ? binding : binding.replacingTriggerEvent(trigger)
@@ -935,7 +951,7 @@ class PreferencesButtonsViewController: NSViewController {
         }
         focusList()
         updateHeader()
-        registerUndo(of: ButtonRowChange(kind: change.kind, states: result.replaced), undoManager: undo)
+        registerUndo(of: ButtonRowChange(kind: change.kind, states: result.replaced), name: name, undoManager: undo)
     }
 
     /// An Undo or Redo shows where it acts, as for a place of the ring or a direction of
@@ -1006,7 +1022,9 @@ class PreferencesButtonsViewController: NSViewController {
     /// Adds `trigger` and returns the id. A trigger the list has already is selected and
     /// flashes; with `action` and no action of its own it gets `action` (a button of the
     /// mouse without a binding gets one, of what was pressed). The list then has the
-    /// keyboard.
+    /// keyboard. A new row has its Undo ("Undo Add Button"; with `action`, "Undo Change
+    /// Action", as a choice in a row's menu): without it ⌘Z right after "+" took back an
+    /// older change somewhere else, and a row added with "+" could never be undone.
     @discardableResult
     func addBinding(for trigger: RecordedEvent, action: SystemShortcut.Shortcut?) -> UUID {
         defer { focusList() }
@@ -1026,8 +1044,13 @@ class PreferencesButtonsViewController: NSViewController {
             systemShortcutName: action?.identifier ?? "",
             isEnabled: action != nil
         )
+        let index = buttonBindings.count
         append(binding)
         list.select(rowID(forBinding: binding.id))
+        registerUndo(
+            of: ButtonRowChange(kind: .action, states: [.init(id: binding.id, binding: nil, index: index)]),
+            name: action == nil ? text("buttons-undo-add") : nil
+        )
         return binding.id
     }
 
@@ -1339,10 +1362,18 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
     }
 
     /// The recorder's hint for a refused event: a key while the gesture button is set up
-    /// ("Gestures need a mouse button"); nil (a duplicate) otherwise.
+    /// ("Gestures need a mouse button"); a button or key of the list whose row has no
+    /// action ("Already in the list": the popover's own "Already has an action" is not
+    /// true of a row that reads "Default"); nil otherwise (a row with an action: the
+    /// popover's own line).
     func refusalHint(_ recorder: KeyRecorder, event: InputEvent) -> String? {
-        guard Self.needsMouseButton(pendingAction), normalizedTrigger(for: event).type == .keyboard else { return nil }
-        return NSLocalizedString("buttons-gesture-needs-mouse-button", comment: "")
+        let trigger = normalizedTrigger(for: event)
+        if Self.needsMouseButton(pendingAction), trigger.type == .keyboard {
+            return NSLocalizedString("buttons-gesture-needs-mouse-button", comment: "")
+        }
+        guard let existing = existingBinding(for: trigger), !takesPendingAction(existing, action: pendingAction),
+              !CellActionState(binding: existing).hasBoundAction else { return nil }
+        return NSLocalizedString("buttons-recorder-in-list", comment: "")
     }
 
     /// What the recorder's popover asks for while it waits: a mouse button only while the
@@ -1399,8 +1430,12 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
         updateHeader()
         guard action == nil, isNew else { return }
         // The recorder's popover is gone: the new button's menu opens by itself (not when
-        // the pane went away meanwhile).
-        DispatchQueue.main.async { [weak self] in
+        // the pane went away meanwhile). From the run loop, never from a block of the main
+        // queue: a menu runs until it closes, and a run loop that starts inside such a
+        // block does not serve the queue, so gesture actions, the thumb wheel's steps and
+        // the Logitech follow-ups would all wait for the menu to close (AGENTS.md, "Module
+        // boundaries").
+        UpdateWindows.fromTheRunLoop { [weak self] in
             guard let self, !self.isAway, let row = self.row(for: id),
                   self.list.selectedID == AnyHashable(id) else { return }
             self.openActionMenu(row.pullDown)

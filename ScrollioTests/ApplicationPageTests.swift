@@ -1462,10 +1462,9 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(Options.shared.buttons.binding, general)
         XCTAssertEqual(part.rows.count, 1)
         XCTAssertEqual(part.list.selectedID, AnyHashable(calculator.ownButtonBindings[0].id))
-        let opens = expectation(description: "the row's menu opens")
-        DispatchQueue.main.async { opens.fulfill() }
-        wait(for: [opens], timeout: 1)
+        drainMainQueue()
         XCTAssertTrue(opened.first === part.rows.first?.pullDown)
+        XCTAssertTrue(window.firstResponder === part.list, "the list has the keyboard: Delete and Return act on the new row (QA B11)")
 
         // A Logitech button without a binding of Buttons: "Default" until one is chosen.
         let gesture = try XCTUnwrap(part.makeAddMenu().items.first {
@@ -1474,6 +1473,87 @@ final class ApplicationPageTests: XCTestCase {
         part.addChosen(gesture)
         XCTAssertEqual(calculator.ownButtonBindings.last?.systemShortcutName, "")
         XCTAssertEqual(calculator.ownButtonBindings.last?.isEnabled, true)
+    }
+
+    /// "+" in an app's Buttons has its Undo (QA B2): ⌘Z right after it takes the new row
+    /// away and Redo adds it again, selected, with the keyboard in the list (QA B11). It
+    /// registered none: ⌘Z undid an older change elsewhere and the app kept its new row.
+    func testAddingARowCanBeUndoneAndRedone() throws {
+        Options.shared.buttons.binding = [binding(3, "missionControl")]
+        let general = Options.shared.buttons.binding
+        let calculator = addApp(Self.calculator)
+        let (_, part) = try buttonsPart()
+        let window = makeWindow(for: part)
+        let undo = try XCTUnwrap(part.paneUndoManager)
+        undo.groupsByEvent = false
+        undo.beginUndoGrouping()
+        let id = try XCTUnwrap(part.addOwnBinding(for: general[0].triggerEvent))
+        undo.endUndoGrouping()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.id), [id])
+        XCTAssertTrue(undo.canUndo)
+        XCTAssertEqual(undo.undoActionName, "Add Button")
+
+        undo.undo()
+        XCTAssertFalse(calculator.hasOwnButtons, "the new row is gone")
+        XCTAssertTrue(part.rows.isEmpty)
+        XCTAssertEqual(undo.redoActionName, "Add Button")
+        window.makeFirstResponder(nil)
+        undo.redo()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.id), [id])
+        XCTAssertEqual(part.list.selectedID, AnyHashable(id))
+        XCTAssertTrue(window.firstResponder === part.list, "the list has the keyboard after Redo")
+        XCTAssertEqual(undo.undoActionName, "Add Button")
+        XCTAssertEqual(Options.shared.buttons.binding, general, "Buttons is not touched")
+        drainMainQueue()
+    }
+
+    /// The new row's menu opens from the run loop, not from a block of the main queue (QA
+    /// B5): a menu runs until it closes, and a run loop that starts inside a block of the
+    /// main queue does not serve that queue (gesture actions, the thumb wheel's steps).
+    func testANewRowsMenuOpensWhereTheMainQueueGoesOn() throws {
+        addApp(Self.calculator)
+        var served: [Bool] = []
+        let (_, part) = try buttonsPart(actionMenus: { _ in
+            // As a menu does: a run loop of its own until it closes.
+            var ran = false
+            DispatchQueue.main.async { ran = true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            served.append(ran)
+        })
+        _ = makeWindow(for: part)
+        part.addOwnBinding(for: RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertEqual(served, [true], "the menu opened once, and the main queue went on behind it")
+    }
+
+    /// The part follows the mouse (QA B8): one that connects while the part shows is in
+    /// the "+" menu and in the rows' pictures at once, and one that leaves is gone. The
+    /// part read the mouse only when it was shown, so "+" offered no "Your Mouse" section
+    /// and no thumb wheel until another part had been shown.
+    func testThePartFollowsTheMouseThatConnectsOrLeaves() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(3, "copy")])
+        let (_, part) = try buttonsPart()
+        var name: String?
+        part.deviceSource = mouse(nil)
+        part.deviceSource.deviceName = { name }
+        part.reloadRows()
+        XCTAssertEqual(part.mouse, .generic)
+        XCTAssertFalse(part.makeAddMenu().items.contains { $0.title == "Thumb wheel" })
+
+        name = "MX Master 3S"
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(part.mouse, .mxMaster3, "the mouse that connected")
+        XCTAssertEqual(part.rows.first?.mouse, .mxMaster3, "in the rows' pictures too")
+        let menu = part.makeAddMenu()
+        XCTAssertTrue(menu.items.contains { $0.isSectionHeader && $0.title == Self.catalog("apps-buttons-add-mouse") })
+        XCTAssertTrue(menu.items.contains { $0.title == "Thumb wheel" })
+
+        // What the mouse says about its buttons changed (a session came or went).
+        name = nil
+        NotificationCenter.default.post(name: LogiCenter.sessionChanged, object: nil)
+        XCTAssertEqual(part.mouse, .generic)
+        XCTAssertFalse(part.makeAddMenu().items.contains { $0.title == "Thumb wheel" })
     }
 
     /// A button with modifier keys that Buttons has no binding of its own for runs the
@@ -1659,9 +1739,12 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// "−" in the Buttons part, then the Gestures or Shortcut Ring part, then Edit › Undo
-    /// or Redo: the part shown now says what the app's buttons make of the gestures or the
+    /// or Redo: the page shows its Buttons part again, where the row came back (selected)
+    /// or went (QA B4: the page stayed on the other part and the change was unseen, though
+    /// Undo is said to show the app's Buttons with the row selected); the Gestures and
+    /// Shortcut Ring parts then say what the app's buttons make of the gestures or the
     /// ring after the change, not what they made before.
-    func testUndoOfARemovedRowShowsOnTheGesturesAndRingPartsShownNow() throws {
+    func testUndoOfARemovedRowShowsTheButtonsPartAgain() throws {
         let gestures = SystemShortcut.mouseGestureNavigation.identifier
         let ringAction = SystemShortcut.shortcutRing.identifier
         let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
@@ -1671,36 +1754,67 @@ final class ApplicationPageTests: XCTestCase {
         let (page, part) = try buttonsPart()
         let undo = try XCTUnwrap(part.paneUndoManager)
         undo.groupsByEvent = false
-        func remove(_ index: Int) {
+        @discardableResult
+        func remove(_ index: Int) -> UUID {
+            let id = calculator.ownButtonBindings[index].id
             undo.beginUndoGrouping()
-            part.removeOwnBinding(id: calculator.ownButtonBindings[index].id)
+            part.removeOwnBinding(id: id)
             undo.endUndoGrouping()
+            return id
+        }
+        func show(_ shown: ApplicationPagePart) {
+            choose(ApplicationPagePart.all.firstIndex(of: shown)!, on: page)
         }
 
         // The Gestures part: the thumb panel runs the gestures again once its row is gone.
         let thumb = ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: thumbPanel, modifiers: 0, deviceFilter: nil))
         let noButton = "None in Calculator"
         let generalGestures = Self.catalog("apps-trigger-everywhere", thumb)
-        remove(0)
-        choose(ApplicationPagePart.all.firstIndex(of: .gestures)!, on: page)
+        let panelRow = remove(0)
+        show(.gestures)
         XCTAssertEqual(page.gesturesPart.holdRow.explanation, generalGestures)
         undo.undo()
-        XCTAssertEqual(page.gesturesPart.holdRow.explanation, noButton, "Undo shows on the part shown now")
+        XCTAssertEqual(page.shownPart, .buttons, "Undo shows where it acts")
+        XCTAssertNotNil(part.view.superview, "the Buttons part is on the page again")
+        XCTAssertEqual(part.list.selectedID, AnyHashable(panelRow), "with the row that came back selected")
+        show(.gestures)
+        XCTAssertEqual(page.gesturesPart.holdRow.explanation, noButton, "the Gestures part says what holds after the Undo")
         undo.redo()
-        XCTAssertEqual(page.gesturesPart.holdRow.explanation, generalGestures, "and Redo")
+        XCTAssertEqual(page.shownPart, .buttons, "and Redo")
+        XCTAssertEqual(part.rows.count, 1)
+        show(.gestures)
+        XCTAssertEqual(page.gesturesPart.holdRow.explanation, generalGestures)
 
         // The Shortcut Ring part: Buttons' ring button does something else here, and back.
-        choose(ApplicationPagePart.all.firstIndex(of: .buttons)!, on: page)
+        show(.buttons)
         let copyRow = try XCTUnwrap(calculator.ownButtonBindings.firstIndex { $0.systemShortcutName == "copy" })
-        remove(copyRow)
-        choose(ApplicationPagePart.all.firstIndex(of: .ring)!, on: page)
+        let copyID = remove(copyRow)
+        show(.ring)
         let five = ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 5, modifiers: 0, deviceFilter: nil))
         let generalRing = Self.catalog("apps-trigger-everywhere", five)
         XCTAssertEqual(page.ringPart.triggerRow.explanation, generalRing)
         undo.undo()
+        XCTAssertEqual(page.shownPart, .buttons)
+        XCTAssertEqual(part.list.selectedID, AnyHashable(copyID))
+        show(.ring)
         XCTAssertEqual(page.ringPart.triggerRow.explanation, "None in Calculator")
         undo.redo()
+        XCTAssertEqual(page.shownPart, .buttons)
+        show(.ring)
         XCTAssertEqual(page.ringPart.triggerRow.explanation, generalRing)
+
+        // A change of a row's action the same way.
+        undo.undo()
+        let kept = try XCTUnwrap(calculator.ownButtonBindings.first)
+        undo.beginUndoGrouping()
+        part.setAction(of: kept.id, named: "paste")
+        undo.endUndoGrouping()
+        show(.scrolling)
+        part.list.select(nil)
+        undo.undo()
+        XCTAssertEqual(calculator.ownButtonBindings.first?.systemShortcutName, kept.systemShortcutName)
+        XCTAssertEqual(page.shownPart, .buttons, "a row's change shows itself too")
+        XCTAssertEqual(part.list.selectedID, AnyHashable(kept.id))
     }
 
     /// "−" on the page, the page closes and the app's page opens again, then Edit › Undo:
@@ -1881,6 +1995,14 @@ final class ApplicationPageTests: XCTestCase {
                        ["appExpose", SystemShortcut.shortcutRing.identifier, ""],
                        "the ring as everywhere; no action of Buttons: Default")
         XCTAssertFalse(part.isRecorderOpen)
+
+        // Of a row that reads "Default" the recorder does not say "Already has an action"
+        // (QA B1): it has none. "Already in the list".
+        part.onRecordingStarted(recorder)
+        XCTAssertFalse(part.validateRecordedEvent(recorder, event: press(5)))
+        XCTAssertEqual(part.refusalHint(recorder, event: press(5)), "Already in the list")
+        XCTAssertNil(part.refusalHint(recorder, event: press(6)), "the ring: \"Already has an action\"")
+        part.onRecordingStopped(recorder, didRecord: false)
     }
 
     /// A binding of the app's own on a button that Buttons gave the ring or Gesture
@@ -2252,10 +2374,12 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertTrue(calculator.usesGeneralGestures, "the switch was only tried")
     }
 
-    /// Lets the blocks queued on the main queue run (a new row's menu opens from one).
+    /// Lets what waits on the main run loop and on the main queue run: a new row's menu
+    /// opens from a timer of the run loop (QA B5), and timers fire in the order they were
+    /// set, so this one comes after it.
     private func drainMainQueue() {
-        let drained = expectation(description: "the main queue ran")
-        DispatchQueue.main.async { drained.fulfill() }
+        let drained = expectation(description: "the run loop's timers and the main queue ran")
+        UpdateWindows.fromTheRunLoop { DispatchQueue.main.async { drained.fulfill() } }
         wait(for: [drained], timeout: 1)
     }
 
@@ -2379,6 +2503,82 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(part.holdButton.title, "Show in Buttons")
         send(part.holdButton)
         XCTAssertEqual(panes, 1)
+    }
+
+    /// "Set Up…" behaves as "Record a Button…" of the Gestures and Shortcut Ring panes (QA
+    /// X4). While the recorder shows the caught button it says what the button loses in
+    /// this app ("Replaces: Copy": Buttons' action, the app's own, or what "Default"
+    /// certainly does); it said nothing. And a row of the app's own that has an action
+    /// takes the new one, with Undo, as the pane replaces: it was refused with "Already has
+    /// an action" and flashed a row of the Buttons part, which is not on screen.
+    func testSetUpSaysWhatTheButtonLosesAndReplacesAnOwnRowsAction() throws {
+        let gestures = SystemShortcut.mouseGestureNavigation
+        Options.shared.buttons.binding = [binding(3, "copy")]
+        let general = Options.shared.buttons.binding
+        let calculator = addApp(Self.calculator)
+        let pane = makePane()
+        let window = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        pane.openApplication(withID: Self.calculator, part: .gestures)
+        let page = try XCTUnwrap(pane.detailController)
+        let part = try XCTUnwrap(page.gesturesPart)
+        let buttons = try XCTUnwrap(page.buttonsPart)
+        buttons.deviceSource = mouse(nil)
+        buttons.startRecording = { _ in }
+        buttons.stopRecording = {}
+        buttons.openActionMenu = { _ in XCTFail("no menu opens: the action is chosen") }
+        let recorder = KeyRecorder()
+        func press(_ code: UInt16) -> InputEvent {
+            return InputEvent(type: .mouse, code: code, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        }
+        func record(_ event: InputEvent) {
+            undo.beginUndoGrouping()
+            buttons.onEventRecorded(recorder, didRecordEvent: event, isDuplicate: false)
+            buttons.onRecordingStopped(recorder, didRecord: true)
+            undo.endUndoGrouping()
+            drainMainQueue()
+        }
+
+        // (a) What Buttons gives the button is lost in this app: the recorder says so.
+        send(part.holdButton)
+        XCTAssertEqual(buttons.pendingAction?.identifier, gestures.identifier)
+        XCTAssertEqual(buttons.recordedNote(recorder, event: press(3)), "Replaces: Copy")
+        XCTAssertEqual(buttons.recordedNote(recorder, event: press(4)), "Replaces: Default (Forward)", "what Default certainly does")
+        XCTAssertNil(buttons.recordedNote(recorder, event: press(7)), "nothing certain is lost")
+        buttons.onRecordingStopped(recorder, didRecord: false)
+        // "Record a Button or Key…" of the Buttons part adds a row with what the button
+        // does everywhere: nothing is lost, nothing is said.
+        buttons.beginRecording()
+        XCTAssertNil(buttons.recordedNote(recorder, event: press(3)))
+        buttons.onRecordingStopped(recorder, didRecord: false)
+
+        // (b) A row of the app's own with an action: taken, and replaced with Undo.
+        let own = binding(3, "paste")
+        calculator.setOwnButtonBindings([own])
+        part.syncViewWithOptions()
+        XCTAssertEqual(part.holdButton.title, "Set Up…")
+        send(part.holdButton)
+        XCTAssertTrue(buttons.validateRecordedEvent(recorder, event: press(3)), "replaced, as the pane replaces")
+        XCTAssertEqual(buttons.recordedNote(recorder, event: press(3)), "Replaces: Paste", "the app's own action")
+        record(press(3))
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), [gestures.identifier])
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.id), [own.id], "the same row")
+        XCTAssertEqual(part.holdButton.title, "Show in Calculator › Buttons")
+        XCTAssertEqual(undo.undoActionName, "Change Button to Hold")
+        undo.undo()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), ["paste"], "Undo gives the action back")
+        XCTAssertEqual(page.shownPart, .gestures, "seen where it was set up")
+        XCTAssertEqual(part.holdButton.title, "Set Up…")
+        undo.redo()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), [gestures.identifier])
+
+        // The row that runs the gestures already: nothing to set up, a duplicate.
+        buttons.beginRecording(action: gestures, from: part.holdButton)
+        XCTAssertFalse(buttons.validateRecordedEvent(recorder, event: press(3)))
+        XCTAssertNil(buttons.recordedNote(recorder, event: press(3)))
+        buttons.onRecordingStopped(recorder, didRecord: false)
+        XCTAssertEqual(Options.shared.buttons.binding, general, "Buttons is not touched")
     }
 
     /// "Show in <app> › Buttons" of the Gestures and Shortcut Ring parts' first rows names the app; a

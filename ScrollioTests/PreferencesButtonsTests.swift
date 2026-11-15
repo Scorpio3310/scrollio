@@ -1029,6 +1029,93 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(summary.buttonTitles, ["Thumb panel"], "the Gestures pane's line")
     }
 
+    /// The recorder's line about a listed button says what is so (QA B1): "Already has an
+    /// action" only of a row that has one; of a "Default" row, which has none, "Already in
+    /// the list". It said "Already has an action" of both, under a card that answered
+    /// "That's Gesture button / Default".
+    func testTheRecorderSaysAlreadyInTheListOfARowWithoutAnAction() {
+        let pane = makePane([binding(3, "copy"), binding(5)])
+        let recorder = KeyRecorder()
+        pane.beginAddingBinding()
+        pane.onRecordingStarted(recorder)
+        XCTAssertEqual(text("buttons-recorder-in-list"), "Already in the list")
+        // A button of the mouse without a binding.
+        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: mouseEvent(1000)))
+        XCTAssertEqual(pane.refusalHint(recorder, event: mouseEvent(1000)), "Already in the list")
+        // A stored row without an action.
+        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: mouseEvent(5)))
+        XCTAssertEqual(pane.refusalHint(recorder, event: mouseEvent(5)), "Already in the list")
+        // A row with an action: the popover's own "Already has an action".
+        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: mouseEvent(3)))
+        XCTAssertNil(pane.refusalHint(recorder, event: mouseEvent(3)))
+        // A new button: nothing to say.
+        XCTAssertNil(pane.refusalHint(recorder, event: mouseEvent(6)))
+        pane.onRecordingStopped(recorder, didRecord: false)
+    }
+
+    /// "+" has its Undo (QA B2): ⌘Z right after it takes the new row away, and Redo adds it
+    /// again. It registered none: ⌘Z undid an older change in another pane, and a row added
+    /// with "+" could never be undone (the first Undo only took its action away).
+    func testPlusCanBeUndoneAndRedone() throws {
+        deviceName = nil
+        let first = binding(3, "copy")
+        let pane = makePane([first])
+        let (window, _) = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        let recorder = KeyRecorder()
+        pane.beginAddingBinding()
+        pane.onRecordingStarted(recorder)
+        pane.onEventRecorded(recorder, didRecordEvent: mouseEvent(4, modifiers: .maskAlternate), isDuplicate: false)
+        step(undo) { pane.onRecordingStopped(recorder, didRecord: true) }
+        let added = try XCTUnwrap(Options.shared.buttons.binding.last)
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.id), [first.id, added.id])
+        XCTAssertTrue(undo.canUndo)
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Add Button")
+
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [first], "the new row is gone")
+        XCTAssertEqual(pane.rows.count, 1)
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Add Button")
+        undo.redo()
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.id), [first.id, added.id])
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(added.id), "back, and selected")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Add Button")
+
+        // An action chosen in the menu that opened is its own step, before the row's.
+        let row = try XCTUnwrap(pane.row(for: added.id))
+        try step(undo) { row.pullDown.shortcutSelected(try XCTUnwrap(item("copy", in: row.pullDown.menu))) }
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding.last?.systemShortcutName, "")
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [first])
+        flush()
+    }
+
+    /// The new row's menu opens from the run loop, not from a block of the main queue (QA
+    /// B5): a menu runs until it closes, and a run loop that starts inside a block of the
+    /// main queue does not serve that queue, so gesture actions and the thumb wheel's steps
+    /// waited for the menu to close.
+    func testTheNewRowsMenuOpensWhereTheMainQueueGoesOn() {
+        let pane = makePane([binding(3, "copy")])
+        var served: [Bool] = []
+        pane.openActionMenu = { _ in
+            // As a menu does: a run loop of its own until it closes.
+            var ran = false
+            DispatchQueue.main.async { ran = true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            served.append(ran)
+        }
+        let recorder = KeyRecorder()
+        pane.beginAddingBinding()
+        pane.onRecordingStarted(recorder)
+        pane.onEventRecorded(recorder, didRecordEvent: mouseEvent(4, modifiers: .maskAlternate), isDuplicate: false)
+        pane.onRecordingStopped(recorder, didRecord: true)
+        flush(0.3)
+        XCTAssertEqual(served, [true], "the menu opened once, and the main queue went on behind it")
+    }
+
     /// A "Default" row says what the button then does ("Default (Back)") only where that is
     /// certain. It is while Scrollio catches the back button's Logitech control for a
     /// binding with modifiers: the plain press then reaches only Scrollio, which passes it
@@ -1553,7 +1640,8 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertNil(row.explanation)
     }
 
-    /// "Use Standard Button" has its own Undo ("Undo Which Button"): ⌘Z takes the
+    /// "Use Standard Button" has its own Undo, named after the button that was clicked
+    /// ("Undo Use Standard Button"; it read "Undo Which Button", QA B10): ⌘Z takes the
     /// conversion back first, the merged row with it, and the row's older change of action
     /// afterwards. Regression: it had none, and the older Undo, which puts back the row's
     /// whole binding, took the standard button back to the Logitech one unseen.
@@ -1577,7 +1665,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(converted.triggerEvent.code, 3, "the standard Back button")
         XCTAssertEqual(converted.systemShortcutName, missionControl)
         XCTAssertNil(pane.binding(for: nativeBack.id), "the Back button's own binding merged into it")
-        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Which Button")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Use Standard Button")
 
         undo.undo()
         XCTAssertEqual(Options.shared.buttons.binding.map(\.id), [nativeBack.id, logiBack.id, other.id], "the merged row is back")
@@ -1585,11 +1673,13 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(back.triggerEvent.code, 1006, "the conversion is taken back first")
         XCTAssertEqual(back.systemShortcutName, missionControl, "the newer action stays")
         XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Use Standard Button")
         undo.undo()
         XCTAssertEqual(Options.shared.buttons.binding, [nativeBack, logiBack, other])
 
         undo.redo()
         undo.redo()
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Use Standard Button", "the name outlives Undo and Redo")
         XCTAssertEqual(Options.shared.buttons.binding.map(\.id), [logiBack.id, other.id])
         XCTAssertEqual(pane.binding(for: logiBack.id)?.triggerEvent.code, 3)
         XCTAssertEqual(pane.binding(for: logiBack.id)?.systemShortcutName, missionControl)
@@ -2159,7 +2249,8 @@ final class PreferencesButtonsTests: XCTestCase {
         pane.onEventRecorded(recorder, didRecordEvent: mouseEvent(6, modifiers: .maskCommand), isDuplicate: false)
         XCTAssertEqual(pane.headerView.content.title, "⌘ Gesture button (button 6)")
         XCTAssertEqual(pane.headerView.content.part, .gesture)
-        pane.onRecordingStopped(recorder, didRecord: true)
+        // ("+" has its Undo, so it is a step of its own, as an event makes it.)
+        step(undo) { pane.onRecordingStopped(recorder, didRecord: true) }
         let added = try XCTUnwrap(pane.rows.last)
         XCTAssertEqual(added.title, "⌘ Gesture button (button 6)")
         XCTAssertEqual(Options.shared.buttons.binding.last?.triggerEvent.mousePart, .gestureButton)
@@ -2323,7 +2414,7 @@ final class PreferencesButtonsTests: XCTestCase {
         ])
         let stored = Options.shared.buttons.binding
         XCTAssertEqual(pane.rows.map(\.explanation), [
-            "A key cannot run Gesture Navigation. Choose a mouse button.",
+            "A key cannot run Gesture Navigation.",
             "Hold and move the mouse. Set the directions under Gestures.",
         ])
         XCTAssertEqual(pane.rows.map { $0.note?.tone }, [.problem, .plain])
@@ -2332,7 +2423,7 @@ final class PreferencesButtonsTests: XCTestCase {
         let line = pane.rows[0].explanationLabel.attributedStringValue
         XCTAssertTrue(line.containsAttachments(in: NSRange(location: 0, length: line.length)), "after the warning sign")
         XCTAssertEqual(line.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .systemOrange)
-        XCTAssertEqual(pane.rows[0].accessibilityLabel(), "\(pane.rows[0].title), A key cannot run Gesture Navigation. Choose a mouse button.")
+        XCTAssertEqual(pane.rows[0].accessibilityLabel(), "\(pane.rows[0].title), A key cannot run Gesture Navigation.")
 
         let popover = try XCTUnwrap(pane.showProblem(of: pane.rows[0], relativeTo: pane.rows[0].infoButton))
         _ = popover.view
@@ -2429,6 +2520,30 @@ final class PreferencesButtonsTests: XCTestCase {
         let pane = makePane([binding(40, "copy", modifiers: control, type: .keyboard)])
         XCTAssertNil(pane.rows.first?.note, "a key never asks the mouse")
         XCTAssertEqual(pane.rows.first?.title, "⌃ K")
+    }
+
+    /// The lines that say what an action needs fit the row's two lines (QA B7): the ring's
+    /// and the one of a key that cannot run Gesture Navigation (with its sign) took three
+    /// in the 172 pt beside the pull-down, on a button and on a key.
+    func testTheLinesOfWhatAnActionNeedsFitTwoLines() throws {
+        let ring = SystemShortcut.shortcutRing.identifier
+        let gesture = SystemShortcut.mouseGestureNavigation.identifier
+        let scroll = try XCTUnwrap(SystemShortcut.mouseScrollCategory.shortcuts.first).identifier
+        let bindings = [
+            binding(1000, ring), binding(49, ring, modifiers: control, type: .keyboard), binding(3, gesture),
+            binding(41, gesture, modifiers: command, type: .keyboard), binding(4, scroll),
+        ]
+        let pane = makePane(bindings)
+        pane.view.layoutSubtreeIfNeeded()
+        let oneLine = NSTextField(labelWithString: "Xg")
+        oneLine.font = PreferencesGroupedForm.explanationFont
+        let listed = try rows(of: bindings, in: pane)
+        XCTAssertEqual(listed.map(\.note?.kind), [.shortcutRing, .shortcutRing, .gestureNavigation, .keyGestureNavigation, .holdAction])
+        XCTAssertEqual(listed[0].explanation, "Opens the ring. Set its shortcuts under Shortcut Ring.")
+        for row in listed {
+            XCTAssertFalse(row.explanationLabel.isHidden, row.title)
+            XCTAssertLessThanOrEqual(row.explanationLabel.frame.height, 2 * oneLine.fittingSize.height + 1, row.explanation ?? row.title)
+        }
     }
 
     // MARK: - Changing an action
@@ -2854,6 +2969,40 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(pane.list.selectedID, AnyHashable(second.id))
         XCTAssertTrue(window.firstResponder === pane.list, "the list has the keyboard")
         XCTAssertEqual(undo.redoMenuItemTitle, "Redo Remove Button")
+    }
+
+    /// Undo and Redo of the thumb wheel row's action show themselves as a button row's do
+    /// (QA B3): the pane comes forward while another one shows, the wheel's row is selected
+    /// and the list has the keyboard. They acted unseen: another pane stayed on screen and
+    /// nothing was selected. Choosing the action itself brings nothing forward.
+    func testUndoOfTheThumbWheelRowsActionShowsItself() throws {
+        let pane = makePane()
+        let (window, container) = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        step(undo) { pane.setThumbWheelFunction(.zoom) }
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        XCTAssertTrue(shownPanes.isEmpty, "the choice itself is made in sight")
+        XCTAssertNil(pane.list.selectedID)
+
+        // Another pane shows.
+        pane.view.removeFromSuperview()
+        undo.undo()
+        XCTAssertEqual(Options.shared.thumbWheel.function, .scroll)
+        XCTAssertEqual(shownPanes, [PANEL_IDENTIFIER.buttons], "Buttons comes forward")
+        XCTAssertEqual(pane.list.selectedID, ButtonsListLayout.thumbWheelRowID, "with the wheel's row selected")
+
+        // The pane is back: Redo selects the row again and gives the list the keyboard.
+        container.addSubview(pane.view)
+        window.makeFirstResponder(nil)
+        pane.list.select(nil)
+        shownPanes = []
+        undo.redo()
+        XCTAssertEqual(Options.shared.thumbWheel.function, .zoom)
+        XCTAssertTrue(shownPanes.isEmpty, "already on show")
+        XCTAssertEqual(pane.list.selectedID, ButtonsListLayout.thumbWheelRowID)
+        XCTAssertTrue(window.firstResponder === pane.list, "the list has the keyboard")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
     }
 
     // MARK: - Changing a row, with Undo

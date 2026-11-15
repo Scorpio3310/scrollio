@@ -62,17 +62,33 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     var partShowing: ((Application) -> ApplicationButtonsViewController?)?
 
     /// Where a change of the rows or of the thumb wheel, its Undo and its Redo show: the
-    /// part `partShowing` gives (this one, without it); when no page of the app is open
-    /// (it closed, another pane shows), Apps comes forward with the app's page on its
-    /// Buttons part, as an Undo of a place of the ring shows itself. Holds neither the page
-    /// nor the window's panes.
+    /// part `partShowing` gives (this one, without it), on a page that shows its Buttons
+    /// part (a page that shows another part shows Buttons again, where the row came back or
+    /// went: every Undo shows where it acts); when no page of the app is open (it closed,
+    /// another pane shows), Apps comes forward with the app's page on its Buttons part, as
+    /// an Undo of a place of the ring shows itself. Holds neither the page nor the
+    /// window's panes.
     var undoShowing: (Application) -> ApplicationButtonsViewController? {
+        return undoShowing(madeOn: nil)
+    }
+
+    /// `home`: the part the change was made on when that is not Buttons ("Set Up…" of the
+    /// Gestures or Shortcut Ring part, whose first row says what was set up): a page that
+    /// shows that part stays on it, and a page that has to be shown, or shows neither,
+    /// shows it.
+    func undoShowing(madeOn home: ApplicationPagePart?) -> (Application) -> ApplicationButtonsViewController? {
         let showing = partShowing ?? { [weak self] entry in
             self?.application === entry ? self : nil
         }
         weak var split = PreferencesButtonsViewController.splitViewController(of: self)
         return { entry in
-            showing(entry) ?? split?.bringForward(pageOf: entry, part: .buttons)?.buttonsPart
+            guard let part = showing(entry) else {
+                return split?.bringForward(pageOf: entry, part: home ?? .buttons)?.buttonsPart
+            }
+            if let page = part.parent as? ApplicationDetailViewController, page.shownPart != .buttons, page.shownPart != home {
+                page.show(home ?? .buttons)
+            }
+            return part
         }
     }
     /// "Show in Safari › Gestures" was chosen in a row's menu: the page shows the app's
@@ -139,6 +155,8 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     private var pendingActionAdded: (() -> Void)?
     private let recorder = KeyRecorder()
     private let resolver = ActionDisplayResolver()
+    /// Hear of the mouse that connects or leaves while the part exists.
+    private var mouseObservers: [NSObjectProtocol] = []
 
     init(application: Application) {
         self.application = application
@@ -151,6 +169,9 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     deinit {
         openTargetPopover?.hide()
+        for observer in mouseObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     // MARK: - Lifecycle
@@ -217,6 +238,23 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         view = root
         recorder.delegate = self
         reloadRows()
+        observeMouse()
+    }
+
+    /// The part follows the mouse as the Buttons pane does: one that connects or leaves
+    /// while the part exists changes the rows' pictures and names and what "+" offers (the
+    /// "Your Mouse" section, the thumb wheel) at once. The part read the mouse only when
+    /// it was shown: "+" offered a mouse that had left, or none of the one that had come.
+    private func observeMouse() {
+        let center = NotificationCenter.default
+        mouseObservers.append(center.addObserver(forName: LogiCenter.sessionChanged, object: nil, queue: .main) { [weak self] _ in
+            self?.reloadRows()
+        })
+        // (Sent for every change of a mouse's state, its battery too: only another mouse.)
+        mouseObservers.append(center.addObserver(forName: LogiCenter.mouseStateChanged, object: nil, queue: .main) { [weak self] _ in
+            guard let self, MouseArtworkModel.model(forDeviceName: self.deviceSource.deviceName()) != self.mouse else { return }
+            self.reloadRows()
+        })
     }
 
     /// The line under the list: with rows, that every other button works as set in Buttons
@@ -426,9 +464,12 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// The action of the app's binding `id`: a listed one (the Shortcut Ring and Gesture
     /// Navigation among them), a recorded key combination (with its name and icon), or ""
     /// ("Default": the button does what it does by itself here). `undoName`: what Edit ›
-    /// Undo calls it ("Change Action" when nil).
-    func setAction(of id: UUID, named name: String, label: ShortcutLabel? = nil, undoName: String? = nil) {
-        change(id, undoName: undoName) { old in
+    /// Undo calls it ("Change Action" when nil); `home`: the part it was made on when that
+    /// is not this one (`undoShowing(madeOn:)`).
+    func setAction(
+        of id: UUID, named name: String, label: ShortcutLabel? = nil, undoName: String? = nil, madeOn home: ApplicationPagePart? = nil
+    ) {
+        change(id, undoName: undoName, madeOn: home) { old in
             ButtonBinding(
                 id: old.id, triggerEvent: old.triggerEvent, systemShortcutName: name, isEnabled: true,
                 createdAt: old.createdAt, label: label
@@ -446,7 +487,9 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// Rename" when only the name or icon of its keys changed; `undoName` when given) puts
     /// the one before back, with an undo target that outlives the page, as a removal's
     /// (`registerOwnRowUndo`).
-    private func change(_ id: UUID, undoName: String? = nil, _ transform: (ButtonBinding) -> ButtonBinding) {
+    private func change(
+        _ id: UUID, undoName: String? = nil, madeOn home: ApplicationPagePart? = nil, _ transform: (ButtonBinding) -> ButtonBinding
+    ) {
         var own = ownBindings
         guard let index = own.firstIndex(where: { $0.id == id }) else { return }
         let old = own[index]
@@ -455,13 +498,14 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         store(own)
         guard !ButtonRowChange.isSame(old, new) else { return }
         registerOwnRowUndo(
-            ButtonRowChange(kind: .of(old, to: new), states: [.init(id: id, binding: old, index: index)]), name: undoName
+            ButtonRowChange(kind: .of(old, to: new), states: [.init(id: id, binding: old, index: index)]), name: undoName, madeOn: home
         )
     }
 
-    /// Registers Undo of `change` on the undo target, for this part's app.
-    private func registerOwnRowUndo(_ change: ButtonRowChange, name: String?) {
-        let showing = undoShowing
+    /// Registers Undo of `change` on the undo target, for this part's app. `home`: the part
+    /// the change was made on when that is not this one (`undoShowing(madeOn:)`).
+    private func registerOwnRowUndo(_ change: ButtonRowChange, name: String?, madeOn home: ApplicationPagePart? = nil) {
+        let showing = undoShowing(madeOn: home)
         Self.registerOwnRowUndo(
             change, name: name, of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange
         )
@@ -590,17 +634,23 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     }
 
     /// Adds a binding of the app's own for `trigger` with the action the button has
-    /// everywhere (so nothing changes until another one is chosen), selects it and opens
-    /// its menu. A trigger the app has already is selected and flashes. With `action`
-    /// ("Set Up…" of the Gestures or Shortcut Ring part) the new binding has that action
-    /// and no menu opens; a row of the trigger with "Default" takes it too; either has
-    /// Undo, named as the panes' choice of the button ("Undo Change Button to Hold").
+    /// everywhere (so nothing changes until another one is chosen), selects it, gives the
+    /// list the keyboard and opens its menu. A trigger the app has already is selected and
+    /// flashes. With `action` ("Set Up…" of the Gestures or Shortcut Ring part) the new
+    /// binding has that action and no menu opens; a row of the trigger takes it too, in
+    /// place of what it had ("Default" or an action, as the panes' choice of the button
+    /// replaces one). Every one of these has its Undo: "Undo Add Button" for "+" (without
+    /// it ⌘Z right after "+" took back an older change somewhere else), and for "Set Up…"
+    /// the name of the panes' choice of the button ("Undo Change Button to Hold"), shown
+    /// on the part it was set up on.
     @discardableResult
     func addOwnBinding(for trigger: RecordedEvent, action: SystemShortcut.Shortcut? = nil) -> UUID? {
+        defer { focusList() }
         let undoName = action.map(Self.setUpUndoName(for:))
+        let home = action.map(Self.setUpPart(for:))
         if let existing = ownBinding(for: trigger) {
-            if let action, Self.takesAction(existing) {
-                setAction(of: existing.id, named: action.identifier, undoName: undoName)
+            if let action, Self.takesAction(existing, action) {
+                setAction(of: existing.id, named: action.identifier, undoName: undoName, madeOn: home)
                 list.select(AnyHashable(existing.id))
             } else {
                 list.flash(AnyHashable(existing.id))
@@ -616,20 +666,29 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         if trigger.type == .mouse, deviceSource.captureStatus(trigger.code) == .bleHIDPPUnstable {
             deviceSource.warnBluetoothButton(trigger.code)
         }
-        if let undoName {
-            // (Undo takes the new row away again; Redo puts it back.)
-            registerOwnRowUndo(
-                ButtonRowChange(kind: .action, states: [.init(id: added.id, binding: nil, index: own.count)]), name: undoName
-            )
-        }
+        // (Undo takes the new row away again; Redo puts it back.)
+        registerOwnRowUndo(
+            ButtonRowChange(kind: .action, states: [.init(id: added.id, binding: nil, index: own.count)]),
+            name: undoName ?? text("buttons-undo-add"), madeOn: home
+        )
         guard action == nil else { return added.id }
         // The new row's menu opens by itself, once the "+" menu or the recorder is gone.
-        DispatchQueue.main.async { [weak self] in
+        // From the run loop, never from a block of the main queue: a menu runs until it
+        // closes, and a run loop that starts inside such a block does not serve the queue
+        // (gesture actions, the thumb wheel's steps; AGENTS.md, "Module boundaries").
+        UpdateWindows.fromTheRunLoop { [weak self] in
             guard let self, self.view.window != nil, let row = self.row(for: added.id),
                   self.list.selectedID == AnyHashable(added.id) else { return }
             self.openActionMenu(row.pullDown)
         }
         return added.id
+    }
+
+    /// The list takes the keyboard (after "+", an Undo or a Redo), while the part is in the
+    /// window: Delete and Return then act on the row that was selected.
+    func focusList() {
+        guard isViewLoaded, let window = view.window, list.window === window else { return }
+        window.makeFirstResponder(list)
     }
 
     /// A new binding of the app's own for `trigger`, with the action a press of it has
@@ -806,14 +865,17 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     }
 
     /// A removal, its Undo or its Redo changed the app's list: the rows again, with `id`
-    /// selected; and the part of the page shown now, if another one: the Gestures and
-    /// Shortcut Ring parts say what this app's buttons make of the gestures and the ring.
+    /// selected and the keyboard in the list (while the part is in the window); and the
+    /// part of the page shown now, if another one ("Set Up…" of the Gestures or Shortcut
+    /// Ring part, whose Undo stays there): those parts say what this app's buttons make of
+    /// the gestures and the ring.
     private func showUndoableChange(selecting id: UUID?) {
         guard isViewLoaded else { return }
         reloadRows()
         if let id {
             list.select(AnyHashable(id))
         }
+        focusList()
         if let shown = (parent as? ApplicationDetailViewController)?.shownController, shown !== self {
             shown.syncViewWithOptions()
         }
@@ -821,10 +883,48 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     // MARK: - Recording
 
-    /// A row of the app's own that "Set Up…" gives its action: one with "Default" (no
-    /// action of its own here), as the Buttons pane's Set Up… takes a row without one.
-    static func takesAction(_ binding: ButtonBinding) -> Bool {
-        return !CellActionState(binding: binding).hasBoundAction
+    /// A row of the app's own that "Set Up…" gives `action`: every one that does not do it
+    /// already, in place of its "Default" or of the action it has, as the panes' choice of
+    /// the button replaces what the chosen button did (the recorder says what is replaced,
+    /// `replacedNote`, and Edit › Undo gives it back).
+    static func takesAction(_ binding: ButtonBinding, _ action: SystemShortcut.Shortcut) -> Bool {
+        return !(binding.isEnabled && binding.systemShortcutName == action.identifier)
+    }
+
+    /// The part of the page whose "Set Up…" gives a button `action`.
+    static func setUpPart(for action: SystemShortcut.Shortcut) -> ApplicationPagePart {
+        return action.identifier == SystemShortcut.shortcutRing.identifier ? .ring : .gestures
+    }
+
+    /// "Replaces: Copy": what a button or key that "Set Up…" caught loses in this app when
+    /// it gets `action`, in the words of the panes' "Record a Button…"
+    /// (`TriggerChoiceMenu.replaced`): the action of the app's own row, else the action a
+    /// press of it runs in other apps, or what "Default" certainly does ("Default
+    /// (Back)"). Nil when it does `action` already and when nothing certain is lost.
+    func replacedNote(for trigger: RecordedEvent, by action: SystemShortcut.Shortcut) -> String? {
+        let holdKeys = holdKeysThatCatch()
+        let outcome: ButtonDefaultOutcome
+        if let existing = ownBinding(for: trigger) {
+            if CellActionState(binding: existing).hasBoundAction {
+                return Self.takesAction(existing, action) ? resolver.actionName(of: existing).map(Self.replaces) : nil
+            }
+            let merged = ApplicationButtons.merged(general: generalBindings, own: ownBindings)
+            outcome = Self.ownDefaultOutcome(of: trigger, merged: merged, holdKeys: holdKeys)
+        } else {
+            outcome = ButtonDefaultOutcome.of(trigger, bindings: generalBindings, holdKeys: holdKeys)
+        }
+        switch outcome {
+        case .runs(let other):
+            return Self.takesAction(other, action) ? resolver.actionName(of: other).map(Self.replaces) : nil
+        case .passes(let effect):
+            return effect.map { Self.replaces(ButtonsMousePart.defaultTitle(effect: $0)) }
+        case .caught:
+            return nil
+        }
+    }
+
+    private static func replaces(_ name: String) -> String {
+        return String(format: NSLocalizedString("buttons-trigger-choice-recorded-replaces", comment: ""), name)
     }
 
     /// What Edit › Undo calls what "Set Up…" recorded: as the Gestures and Shortcut Ring
@@ -880,22 +980,36 @@ extension ApplicationButtonsViewController: KeyRecorderDelegate {
     }
 
     /// A button the app has already counts as a duplicate (the recorder says so), unless
-    /// "Set Up…" waits and its row has "Default"; every other button or key is taken, also
-    /// one that opens the ring or runs Gesture Navigation in Buttons. A key is never the
-    /// button to hold for the gestures.
+    /// "Set Up…" waits and its row does not do that already (`takesAction`); every other
+    /// button or key is taken, also one that opens the ring or runs Gesture Navigation in
+    /// Buttons. A key is never the button to hold for the gestures.
     func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool {
         let trigger = normalizedTrigger(for: event)
         if PreferencesButtonsViewController.needsMouseButton(pendingAction), trigger.type == .keyboard { return false }
         guard let existing = ownBinding(for: trigger) else { return true }
-        return pendingAction != nil && Self.takesAction(existing)
+        return pendingAction.map { Self.takesAction(existing, $0) } ?? false
     }
 
-    /// The recorder's hint for a refused key while the button to hold is set up, as the
-    /// Buttons pane's.
+    /// While "Set Up…" shows the button or key it caught: what that loses in this app
+    /// ("Replaces: Copy"), as the panes' "Record a Button…" says it. "Record a Button or
+    /// Key…" of this part adds a row with what the button does everywhere: nothing is
+    /// lost, nothing is said.
+    func recordedNote(_ recorder: KeyRecorder, event: InputEvent) -> String? {
+        guard let action = pendingAction else { return nil }
+        return replacedNote(for: normalizedTrigger(for: event), by: action)
+    }
+
+    /// The recorder's hint for a refused event, as the Buttons pane's: a key while the
+    /// button to hold is set up; a button or key the app has already whose row reads
+    /// "Default" ("Already in the list": the popover's own "Already has an action" is not
+    /// true of it); nil otherwise (a row with an action: the popover's own line).
     func refusalHint(_ recorder: KeyRecorder, event: InputEvent) -> String? {
-        guard PreferencesButtonsViewController.needsMouseButton(pendingAction),
-              normalizedTrigger(for: event).type == .keyboard else { return nil }
-        return NSLocalizedString("buttons-gesture-needs-mouse-button", comment: "")
+        let trigger = normalizedTrigger(for: event)
+        if PreferencesButtonsViewController.needsMouseButton(pendingAction), trigger.type == .keyboard {
+            return NSLocalizedString("buttons-gesture-needs-mouse-button", comment: "")
+        }
+        guard let existing = ownBinding(for: trigger), !CellActionState(binding: existing).hasBoundAction else { return nil }
+        return NSLocalizedString("buttons-recorder-in-list", comment: "")
     }
 
     /// What the recorder asks for while the button to hold is set up: a mouse button.
@@ -910,7 +1024,7 @@ extension ApplicationButtonsViewController: KeyRecorderDelegate {
             pendingRecorded = nil
             return
         }
-        if let existing = ownBinding(for: trigger), !(pendingAction != nil && Self.takesAction(existing)) {
+        if let existing = ownBinding(for: trigger), !(pendingAction.map { Self.takesAction(existing, $0) } ?? false) {
             pendingRecorded = nil
             list.flash(AnyHashable(existing.id))
             return
