@@ -14,7 +14,8 @@
 //  replaced"; without an action what Buttons says, "Default (Back), will be replaced" where
 //  what it then does is certain, else "Default"; the one that does it is ticked); then
 //  "Record a Button…" (the ring: "Record a Button or Key…"), the recorder's popover at the
-//  pull-down; then "Show in Buttons", which says where it goes: "Show in Notes" while only
+//  pull-down, which says what the caught button or key loses ("Replaces: Copy",
+//  `TriggerChoiceMenu.replaced`); then "Show in Buttons", which says where it goes: "Show in Notes" while only
 //  an app's own button or key does it, since it then shows that app's Buttons part. While
 //  two or more of Buttons' buttons or keys do it, the menu offers "Show in Buttons" only:
 //  which one to keep is decided there.
@@ -129,6 +130,39 @@ struct TriggerChoiceMenu: Equatable {
             )
         }
         return TriggerChoiceMenu(title: triggerTitles.first.map(Title.trigger) ?? .choose, items: items)
+    }
+
+    /// What choosing `trigger` (a button or key "Record a Button…" caught) takes the place
+    /// of, named as the menu names it: the action of the binding it gets ("Copy"), or what
+    /// "Default" certainly does there ("Default (Back)"). Nil when it does it already, when
+    /// nothing certain is lost, and when it cannot be chosen.
+    static func replaced(
+        by trigger: RecordedEvent,
+        rule: ApplicationTriggerRule,
+        bindings: [ButtonBinding],
+        mouse: MouseArtworkModel,
+        actionName: (ButtonBinding) -> String?,
+        logitechRole: @escaping (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forScrollioCode: $0) }
+    ) -> String? {
+        if rule == .gestureNavigation, trigger.type != .mouse { return nil }
+        guard ButtonUtils.isRunnable(trigger) else { return nil }
+        let trigger = TriggerChoiceEdit.placedLikeItsButton(trigger, in: bindings)
+        let layout = ButtonsListLayout.make(bindings: bindings, mouse: mouse, logitechRole: logitechRole)
+        // The binding that gets the action, as `TriggerChoiceEdit.choosing` finds it.
+        let part = layout.part(for: trigger, logitechRole: logitechRole)
+        let existing: ButtonBinding?
+        if let part {
+            existing = layout.row(of: part)?.binding
+        } else {
+            existing = bindings.first { $0.triggerEvent == trigger }
+        }
+        if let existing, CellActionState(binding: existing).hasBoundAction {
+            return rule.takes(existing) ? nil : actionName(existing)
+        }
+        let pressed = part ?? ButtonsListLayout.plainPart(of: trigger, logitechRole: logitechRole)
+        let caught = pressed.map { ButtonsListLayout.catchesControl(of: $0, in: bindings, logitechRole: logitechRole) } ?? false
+        let effect = ButtonsMousePart.defaultEffect(of: trigger, part: part, isCaught: caught, logitechRole: logitechRole)
+        return effect.map { ButtonsMousePart.defaultTitle(effect: $0) }
     }
 }
 
@@ -537,6 +571,21 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
 
     func onEventRecorded(_ recorder: KeyRecorder, didRecordEvent event: InputEvent, isDuplicate: Bool) {
         pendingRecorded = isDuplicate ? nil : trigger(of: event)
+    }
+
+    /// While the popover shows the caught button or key: what it loses, in the menu's
+    /// words ("Replaces: Copy"), as the menu says "will be replaced" for the same choice.
+    func recordedNote(_ recorder: KeyRecorder, event: InputEvent) -> String? {
+        return replacedNote(for: trigger(of: event))
+    }
+
+    /// "Replaces: Copy" for a choice of `trigger`; nil when it loses nothing certain.
+    func replacedNote(for trigger: RecordedEvent) -> String? {
+        let replaced = TriggerChoiceMenu.replaced(
+            by: trigger, rule: rule, bindings: bindings(), mouse: mouse,
+            actionName: { [resolver] in resolver.actionName(of: $0) }
+        )
+        return replaced.map { String(format: text("buttons-trigger-choice-recorded-replaces"), $0) }
     }
 
     /// The recorder closed, however: what it caught is chosen now.

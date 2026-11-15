@@ -10751,6 +10751,18 @@
           }
         }
       }
+    },
+    "buttons-trigger-choice-recorded-replaces": {
+      "comment": "Gestures and Shortcut Ring panes: under the button \"Record a Button…\" caught, when it takes the place of what that button does now; %@ is that action",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replaces: %@"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

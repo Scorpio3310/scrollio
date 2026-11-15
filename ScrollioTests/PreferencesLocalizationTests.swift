@@ -125,6 +125,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-default", "buttons-default-back", "buttons-default-forward", "buttons-default-middle",
         "buttons-default-mode-shift", "buttons-default-own", "buttons-list-other",
         "buttons-default-with", "buttons-default-effect-back", "buttons-default-effect-forward", "buttons-default-effect-middle",
+        "buttons-trigger-choice-recorded-replaces",
     ]
 
     /// Gestures pane and its gesture controls.
@@ -452,6 +453,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "toast-system-shortcut-off": "@",
         "buttons-default-with": "@",
         "apps-buttons-same-as-other-apps": "@",
+        "buttons-trigger-choice-recorded-replaces": "@",
     ]
 
     /// The arguments `format` reads, in argument order: "%2$d of %1$@" -> "@d"; "@" an
