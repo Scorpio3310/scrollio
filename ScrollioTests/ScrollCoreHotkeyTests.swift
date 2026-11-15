@@ -546,15 +546,16 @@ final class ScrollModifierHoldKeyLostReleaseTests: XCTestCase {
         _ = ScrollCore.shared.hotkeyEventCallBack(CGEventTapProxy(bitPattern: 1)!, down ? .keyDown : .keyUp, event, nil)
     }
 
-    /// One click of the main wheel down the page with these modifiers, aimed at no app (pid
-    /// 1), from the hardware (source pid 0) unless another process is named, at its own time
-    /// unless one is given. What the poster got, or nil when it was let through unsmoothed.
-    private func click(_ flags: CGEventFlags, sourcePID: Int64 = 0,
+    /// One click of the main wheel down the page with these modifiers (sideways only: as macOS
+    /// sends it with ⇧ down), aimed at no app (pid 1), from the hardware (source pid 0) unless
+    /// another process is named, at its own time unless one is given. What the poster got, or
+    /// nil when it was let through unsmoothed.
+    private func click(_ flags: CGEventFlags, sideways: Bool = false, sourcePID: Int64 = 0,
                        at timestamp: CGEventTimestamp? = nil) throws -> ScrollPosterInput? {
         let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 0, wheel2: 0, wheel3: 0))
-        event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: -1)
-        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: -1)
-        event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: -120)
+        event.setIntegerValueField(sideways ? .scrollWheelEventDeltaAxis2 : .scrollWheelEventDeltaAxis1, value: -1)
+        event.setDoubleValueField(sideways ? .scrollWheelEventFixedPtDeltaAxis2 : .scrollWheelEventFixedPtDeltaAxis1, value: -1)
+        event.setDoubleValueField(sideways ? .scrollWheelEventPointDeltaAxis2 : .scrollWheelEventPointDeltaAxis1, value: -120)
         event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 0)
         event.setIntegerValueField(.eventSourceUnixProcessID, value: sourcePID)
         event.setIntegerValueField(.eventTargetUnixProcessID, value: 1)
@@ -762,6 +763,19 @@ final class ScrollModifierHoldKeyLostReleaseTests: XCTestCase {
         XCTAssertTrue(ScrollCore.shared.dashScroll, "no side bits: ⌥ alone says pressed")
         try flagsChanged(KeyCode.optionL, [])
         XCTAssertFalse(ScrollCore.shared.dashScroll)
+    }
+
+    /// ⇧ is "Scroll sideways" as installed. While ⇧ is down macOS sends the main wheel's turns
+    /// sideways only and keeps ⇧ in their flags: such an event does not let ⇧ go.
+    func testShiftWithTheWheel_isNotLetGo() throws {
+        try flagsChanged(KeyCode.shiftL, .maskShift)
+        XCTAssertTrue(ScrollCore.shared.toggleScroll)
+        let input = try XCTUnwrap(try click(.maskShift, sideways: true))
+        XCTAssertNotEqual(input.x, 0)
+        XCTAssertTrue(ScrollCore.shared.toggleKeyHeld, "the event carries ⇧")
+        XCTAssertTrue(ScrollCore.shared.toggleScroll)
+        try flagsChanged(KeyCode.shiftL, [])
+        XCTAssertFalse(ScrollCore.shared.toggleScroll)
     }
 
     /// Something took ⌥ off the wheel's flags while the key is down (a shortcut Scrollio
