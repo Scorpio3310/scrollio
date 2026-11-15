@@ -1033,7 +1033,7 @@ final class ButtonBindingTests: XCTestCase {
         pullDown.onRecordingStopped(KeyRecorder(), didRecord: false)
         flushMainQueue()
 
-        XCTAssertEqual(pullDown.menu?.items.first?.title, NSLocalizedString("unbound", comment: ""))
+        XCTAssertEqual(pullDown.menu?.items.first?.title, NSLocalizedString("buttons-default", comment: ""), "a pull-down of Buttons says Default")
     }
 
     func testCustomRecordingDidStop_restoresExistingDisplayWhenNoKeyRecorded() {
@@ -1383,7 +1383,7 @@ final class ButtonBindingTests: XCTestCase {
         pullDown.onRecordingStopped(KeyRecorder(), didRecord: true)
         advanceMainRunLoop(by: KeyRecorder.recordingFeedbackDelay(isDuplicate: true) + 0.05)
 
-        XCTAssertEqual(pullDown.menu?.items.first?.title, NSLocalizedString("unbound", comment: ""))
+        XCTAssertEqual(pullDown.menu?.items.first?.title, NSLocalizedString("buttons-default", comment: ""), "a pull-down of Buttons says Default")
     }
 
     func testDuplicateCustomRecordingKeepsPromptUntilDuplicateFeedbackEnds() {
@@ -1410,7 +1410,7 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertEqual(pullDown.menu?.items.first?.title, NSLocalizedString("custom-recording-prompt", comment: ""))
 
         advanceMainRunLoop(by: KeyRecorder.recordingFeedbackDelay(isDuplicate: true))
-        XCTAssertEqual(pullDown.menu?.items.first?.title, NSLocalizedString("unbound", comment: ""))
+        XCTAssertEqual(pullDown.menu?.items.first?.title, NSLocalizedString("buttons-default", comment: ""), "a pull-down of Buttons says Default")
     }
 
     // MARK: - OpenTarget extension

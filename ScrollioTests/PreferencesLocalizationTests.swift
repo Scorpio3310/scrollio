@@ -88,7 +88,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-trigger-choice-item", "buttons-trigger-choice-replaced", "buttons-trigger-choice-show",
         "buttons-trigger-choice-show-in-app",
         "buttons-header-your-mouse", "buttons-header-count", "buttons-header-one", "buttons-header-none",
-        "buttons-header-no-action", "buttons-header-recording", "buttons-header-recording-hint",
+        "buttons-header-recording", "buttons-header-recording-hint",
         "buttons-header-find-hint", "buttons-header-find-this-one", "buttons-header-answer", "buttons-note-extra-button",
         "buttons-header-recording-hint-gesture", "buttons-gesture-needs-mouse-button",
         "buttons-gesture-needs-mouse-button-detail",
@@ -124,6 +124,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "Press ESC to cancel recording", "button-recording-duplicate-hint",
         "buttons-default", "buttons-default-back", "buttons-default-forward", "buttons-default-middle",
         "buttons-default-mode-shift", "buttons-default-own", "buttons-list-other",
+        "buttons-default-with", "buttons-default-effect-back", "buttons-default-effect-forward", "buttons-default-effect-middle",
     ]
 
     /// Gestures pane and its gesture controls.
@@ -176,6 +177,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-summary-own", "apps-summary-scrolling", "apps-summary-buttons-one", "apps-summary-buttons-other",
         "apps-summary-thumb-wheel", "apps-summary-gestures", "apps-summary-ring", "apps-summary-none",
         "apps-empty", "apps-show-in-finder",
+        "apps-buttons-same-as-other-apps",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -448,6 +450,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "openTargetScriptFailed": "@",
         "openTargetScriptExitedWithError": "@d",
         "toast-system-shortcut-off": "@",
+        "buttons-default-with": "@",
+        "apps-buttons-same-as-other-apps": "@",
     ]
 
     /// The arguments `format` reads, in argument order: "%2$d of %1$@" -> "@d"; "@" an

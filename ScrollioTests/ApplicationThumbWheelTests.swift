@@ -316,6 +316,113 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         return ButtonTriggerNaming.title(for: controller.trigger(for: part))
     }
 
+    // MARK: - "Same as Other Apps" and the words of the part (round 2, 23 and 22)
+
+    private func binding(_ code: UInt16, _ action: String) -> ButtonBinding {
+        return ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil), systemShortcutName: action,
+            isEnabled: true
+        )
+    }
+
+    /// Every row's menu starts with "Same as Other Apps (…)", then a separator, then
+    /// "Default (…)": the parenthesis holds what other apps get, as Buttons names it (the
+    /// effect of their "Default" where it is certain, else "Default"). The line under the
+    /// row says the same ("In other apps: Default (Back)"), the app's own "Default" says
+    /// what it does in the app, and the notes say where in the app's words.
+    func testEveryRowsMenuStartsWithSameAsOtherApps() throws {
+        Options.shared.buttons.binding = [binding(4, SystemShortcut.missionControl.identifier)]
+        let calculator = addCalculator()
+        calculator.setOwnButtonBindings([binding(4, "copy"), binding(3, ""), binding(1000, "")])
+        calculator.setOwnThumbWheelFunction(.zoom)
+        let part = try buttonsPart()
+        XCTAssertEqual(part.rows.map(\.explanation), [
+            "In other apps: Mission Control", "In other apps: Default\u{A0}(Back)", "In other apps: Default",
+        ], "Default (Back) kept on one line")
+        XCTAssertEqual(part.rows.map { $0.pullDown.sameAsOtherAppsItem?.title }, [
+            "Same as Other Apps (Mission Control)", "Same as Other Apps (Back)", "Same as Other Apps (Default)",
+        ])
+        for row in part.rows {
+            let items = try XCTUnwrap(row.pullDown.menu?.items)
+            XCTAssertTrue(items[2] === row.pullDown.sameAsOtherAppsItem, row.title)
+            XCTAssertTrue(items[3].isSeparatorItem, row.title)
+            XCTAssertTrue(items[4] === row.pullDown.noActionItem, "Default after it")
+        }
+        XCTAssertEqual(part.rows.map { $0.pullDown.noActionItem?.title }, ["Default (Forward)", "Default (Back)", "Default"])
+        XCTAssertEqual(part.rows.map { $0.pullDown.menu?.items.first?.title }, ["Copy", "Default (Back)", "Default"])
+        XCTAssertEqual(part.rows[1].pullDown.toolTip, "Goes back in apps that support it.")
+
+        let wheel = try XCTUnwrap(part.thumbWheelRow)
+        XCTAssertEqual(wheel.explanation, "In other apps: Scroll Sideways")
+        let wheelItems = try XCTUnwrap(wheel.pullDown.menu?.items)
+        XCTAssertEqual(wheelItems[1].title, "Same as Other Apps (Scroll Sideways)")
+        XCTAssertTrue(wheelItems[1] === wheel.pullDown.sameAsOtherAppsItem)
+        XCTAssertTrue(wheelItems[2].isSeparatorItem)
+        XCTAssertEqual(wheelItems[3].title, "Default (Scroll Sideways)")
+        XCTAssertEqual(wheel.pullDown.functionItems.count, ThumbWheelFunction.allCases.count, "no function of its own")
+        Options.shared.thumbWheel.function = .tabs
+        part.syncViewWithOptions()
+        XCTAssertEqual(wheel.pullDown.sameAsOtherAppsItem?.title, "Same as Other Apps (Switch Tabs)")
+        XCTAssertEqual(wheel.explanation, "In other apps: Switch Tabs")
+
+        // The notes.
+        XCTAssertEqual(part.noteLabel.stringValue, "In Calculator, these do this. Everything else works as set in Buttons.")
+        XCTAssertEqual(ApplicationButtonsViewController.note(for: "Calculator"),
+                       "In Calculator, these buttons do this. Every other button works as set in Buttons.")
+        XCTAssertEqual(ApplicationButtonsViewController.note(for: "Calculator", isEmpty: true),
+                       "Click + to give a button something else to do in Calculator.")
+        XCTAssertEqual(part.list.emptyRow.title, "Every button works as set in Buttons.")
+    }
+
+    /// "Same as Other Apps" does what "−" does: the row leaves and the button follows
+    /// Buttons again; Edit › Undo ("Undo Change Action") brings it back and Redo takes it
+    /// again. The same for the thumb wheel's row.
+    func testSameAsOtherAppsGivesTheButtonBackWithUndo() throws {
+        Options.shared.buttons.binding = [binding(4, SystemShortcut.missionControl.identifier)]
+        let calculator = addCalculator()
+        let own = binding(4, "copy")
+        calculator.setOwnButtonBindings([own])
+        calculator.setOwnThumbWheelFunction(.zoom)
+        let part = try buttonsPart()
+        let undo = try XCTUnwrap(part.paneUndoManager)
+        undo.groupsByEvent = false
+        let row = try XCTUnwrap(part.rows.first)
+        let menu = try XCTUnwrap(row.pullDown.menu)
+        undo.beginUndoGrouping()
+        menu.performActionForItem(at: menu.index(of: try XCTUnwrap(row.pullDown.sameAsOtherAppsItem)))
+        undo.endUndoGrouping()
+        XCTAssertTrue(calculator.ownButtonBindings.isEmpty)
+        XCTAssertTrue(part.rows.isEmpty)
+        XCTAssertEqual(Options.shared.buttons.binding.count, 1, "Buttons is not touched")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        undo.undo()
+        XCTAssertEqual(calculator.ownButtonBindings, [own])
+        XCTAssertEqual(part.list.selectedID, AnyHashable(own.id))
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Change Action")
+        undo.redo()
+        XCTAssertTrue(calculator.ownButtonBindings.isEmpty)
+
+        let wheel = try XCTUnwrap(part.thumbWheelRow)
+        let wheelMenu = try XCTUnwrap(wheel.pullDown.menu)
+        undo.beginUndoGrouping()
+        wheelMenu.performActionForItem(at: wheelMenu.index(of: try XCTUnwrap(wheel.pullDown.sameAsOtherAppsItem)))
+        undo.endUndoGrouping()
+        XCTAssertNil(calculator.ownThumbWheelFunction)
+        XCTAssertNil(part.thumbWheelRow)
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        undo.undo()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .zoom)
+        undo.redo()
+        XCTAssertNil(calculator.ownThumbWheelFunction)
+        // "−" keeps its own name.
+        calculator.setOwnButtonBindings([own])
+        part.reloadRows()
+        undo.beginUndoGrouping()
+        part.removeOwnBinding(id: own.id)
+        undo.endUndoGrouping()
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Remove Button")
+    }
+
     /// "+" lists "Thumb wheel" in the mouse's section where the Buttons pane lists it (after
     /// the mode shift button), only with a mouse that has one, and only while the app has
     /// no function of its own for it.
@@ -380,8 +487,8 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         XCTAssertEqual(part.list.rows.count, 2)
         XCTAssertEqual(row.title, "Thumb wheel")
         XCTAssertEqual(row.function, .tabs)
-        XCTAssertEqual(row.explanation, "Everywhere: Switch Tabs")
-        XCTAssertEqual(row.accessibilityLabel(), "Thumb wheel, Everywhere: Switch Tabs")
+        XCTAssertEqual(row.explanation, "In other apps: Switch Tabs")
+        XCTAssertEqual(row.accessibilityLabel(), "Thumb wheel, In other apps: Switch Tabs")
         XCTAssertTrue(row.isRemovable)
         XCTAssertEqual(part.list.selectedID, ButtonsListLayout.thumbWheelRowID)
         let opens = expectation(description: "the row's menu opens")
@@ -405,8 +512,8 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         calculator.setOwnThumbWheelFunction(.zoom)
         let part = try buttonsPart()
         let row = try XCTUnwrap(part.thumbWheelRow)
-        XCTAssertEqual(row.explanation, "Everywhere: Scroll Sideways", "what the wheel does there, by its name")
-        XCTAssertEqual(part.noteLabel.stringValue, "These do this while Calculator is in front; everything else does what Buttons says.",
+        XCTAssertEqual(row.explanation, "In other apps: Scroll Sideways", "what the wheel does there, by its name")
+        XCTAssertEqual(part.noteLabel.stringValue, "In Calculator, these do this. Everything else works as set in Buttons.",
                        "the wheel is no button")
 
         let volume = try XCTUnwrap(row.pullDown.functionItems.first { ThumbWheelPresentation.function(of: $0) == .volume })
@@ -419,11 +526,11 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         let scroll = try XCTUnwrap(row.pullDown.functionItems.first { ThumbWheelPresentation.function(of: $0) == .scroll })
         row.pullDown.functionChosen(scroll)
         XCTAssertEqual(calculator.ownThumbWheelFunction, .scroll, "\"Default\" is the app's own: it scrolls here")
-        XCTAssertEqual(row.pullDown.menu?.items.first?.title, "Default")
+        XCTAssertEqual(row.pullDown.menu?.items.first?.title, "Default (Scroll Sideways)")
 
         Options.shared.thumbWheel.function = .desktops
         part.syncViewWithOptions()
-        XCTAssertEqual(row.explanation, "Everywhere: Switch Desktops")
+        XCTAssertEqual(row.explanation, "In other apps: Switch Desktops")
         XCTAssertEqual(calculator.ownThumbWheelFunction, .scroll)
     }
 

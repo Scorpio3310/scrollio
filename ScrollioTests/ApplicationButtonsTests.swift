@@ -206,6 +206,48 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertEqual(executed.first?.0, shortcut(SystemShortcut.paste).code)
     }
 
+    /// Why every row of Buttons may say "Default": a key or a numbered button without an
+    /// action (stored with "Default", not enabled) is matched by nothing, so its press goes
+    /// on to the app as it came, and so does an app's own "Default" on a key. A Logitech
+    /// control without an action is not asked from the mouse for it; one another binding
+    /// keeps with Scrollio (a binding with modifier keys) reaches only Scrollio, which the
+    /// rows say by naming no effect (`ButtonsMousePart.defaultEffect`).
+    func testAKeyOrANumberedButtonWithoutAnActionPassesItsPressThrough() {
+        let control = UInt(CGEventFlags.maskControl.rawValue)
+        func none(_ code: UInt16, modifiers: UInt = 0, type: EventType = .mouse) -> ButtonBinding {
+            return ButtonBinding(
+                triggerEvent: RecordedEvent(type: type, code: code, modifiers: modifiers, deviceFilter: nil),
+                systemShortcutName: "", isEnabled: false
+            )
+        }
+        set(general: [none(40, modifiers: control, type: .keyboard), none(6), binding(4, "paste")], safari: [binding(4, "", type: .mouse)])
+        front = Self.textEdit
+        XCTAssertEqual(InputProcessor.shared.process(press(40, modifiers: .maskControl, type: .keyboard)), .passthrough, "the key")
+        XCTAssertEqual(InputProcessor.shared.process(press(40, modifiers: .maskControl, phase: .up, type: .keyboard)), .passthrough)
+        XCTAssertEqual(InputProcessor.shared.process(press(6)), .passthrough, "the numbered button")
+        XCTAssertEqual(InputProcessor.shared.process(press(6, phase: .up)), .passthrough)
+        XCTAssertTrue(executed.isEmpty)
+        XCTAssertFalse(ButtonUtils.shared.hasKeyboardTriggers, "no key is listened to for it")
+
+        // An app's own "Default" on a key: passed through there.
+        set(general: [binding(40, "copy", modifiers: control, type: .keyboard)], safari: [binding(40, "", modifiers: control, type: .keyboard)])
+        front = Self.safari
+        XCTAssertEqual(InputProcessor.shared.process(press(40, modifiers: .maskControl, type: .keyboard)), .passthrough)
+        _ = InputProcessor.shared.process(press(40, modifiers: .maskControl, phase: .up, type: .keyboard))
+        XCTAssertTrue(executed.isEmpty)
+
+        // The Logitech codes a binding without an action asks the mouse for: none.
+        let back = LogiCenter.shared.scrollioCode(for: .back)
+        XCTAssertEqual(LogiUsageBootstrap.buttonBindingCodes(general: [none(back)], frontAppOwn: [], isLogiCode: { $0 == back }), [])
+        XCTAssertEqual(
+            LogiUsageBootstrap.buttonBindingCodes(
+                general: [none(back), binding(back, "copy", modifiers: UInt(CGEventFlags.maskAlternate.rawValue))],
+                frontAppOwn: [], isLogiCode: { $0 == back }
+            ),
+            [back], "kept for ⌥: its plain press reaches only Scrollio"
+        )
+    }
+
     /// Scrollio's own settings in front: every button does what Buttons says, so a binding
     /// can be tried there whatever app it was set for.
     func testScrollioInFrontGoesByButtons() {

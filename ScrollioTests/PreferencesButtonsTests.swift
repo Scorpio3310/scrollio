@@ -246,39 +246,61 @@ final class PreferencesButtonsTests: XCTestCase {
     }
 
     /// An MX Master 4 with nothing set up: a row for each of its buttons, in the order they
-    /// sit on it, each "Default" with what it then does where that is certain. Left and
-    /// right clicks are not listed, nothing is stored, the list has no title inside, and
-    /// "−" and Delete never remove one.
+    /// sit on it, each "Default", with what it then does in parentheses where that is
+    /// certain ("Default (Back)", its sentence in the pull-down's tooltip and no line) and
+    /// else "Does what the mouse does on its own." under it. Left and right clicks are not
+    /// listed, nothing is stored, the list has no title inside, and "−" and Delete never
+    /// remove one.
     func testAnMXMaster4ListsEveryButtonInTheOrderTheySit() throws {
         let pane = makePane()
         let (window, _) = makeWindow(for: pane)
         XCTAssertEqual(ButtonsMousePart.listed(on: .mxMaster4), [.middle, .modeShift, .gesture, .forward, .back, .thumbPanel])
         XCTAssertEqual(pane.rows.map(\.title), mxMaster4Titles)
         XCTAssertEqual(pane.rows.map(\.id), ButtonsMousePart.listed(on: .mxMaster4).map { AnyHashable($0) })
-        XCTAssertEqual(pane.rows.map { shown($0.pullDown) }, Array(repeating: "Default", count: 6))
+        XCTAssertEqual(pane.rows.map { shown($0.pullDown) }, [
+            "Default (Middle Click)", "Default (Switch Wheel Mode)", "Default", "Default (Forward)", "Default (Back)", "Default",
+        ])
         XCTAssertEqual(pane.rows.map(\.explanation), [
+            nil, nil, "Does what the mouse does on its own.", nil, nil, "Does what the mouse does on its own.",
+        ])
+        XCTAssertEqual(pane.rows.map(\.pullDown.toolTip), [
             "Middle click.",
             "Switches the wheel between clicking and spinning freely.",
-            "Does what the mouse does on its own.",
+            nil,
             "Goes forward in apps that support it.",
             "Goes back in apps that support it.",
-            "Does what the mouse does on its own.",
-        ])
-        XCTAssertEqual(pane.rows.map { $0.note?.tone }, Array(repeating: ButtonRowNote.Tone.plain as ButtonRowNote.Tone?, count: 6))
+            nil,
+        ], "the sentence the line said is the tooltip")
+        XCTAssertEqual(pane.rows.map { $0.note?.tone }, [nil, nil, .plain, nil, nil, .plain])
         XCTAssertTrue(pane.rows.allSatisfy { $0.isDefault && !$0.isStored && !$0.isRemovable && $0.infoButton.isHidden && $0.placeButton.isHidden })
         XCTAssertEqual(pane.rows.map(\.picture), ButtonsMousePart.listed(on: .mxMaster4).map { ButtonTriggerPicture.mouse(part: $0, number: nil) })
-        XCTAssertEqual(pane.rows[4].accessibilityLabel(), "Back button, Goes back in apps that support it.")
+        XCTAssertEqual(pane.rows[4].accessibilityLabel(), "Back button")
+        XCTAssertEqual(pane.rows[4].pullDown.accessibilityHelp(), "Goes back in apps that support it.", "VoiceOver hears it")
+        XCTAssertEqual(pane.rows[2].accessibilityLabel(), "Gesture button, Does what the mouse does on its own.")
         XCTAssertTrue(pane.list.groupTitles.isEmpty)
         XCTAssertNil(pane.list.emptyRow.superview, "never empty")
 
-        // "Default" where other rows offer "No Action".
+        // "Default (Back)" where the Shortcut Ring's places offer "No Action"; the
+        // parenthesis in grey, the plain title the same text for VoiceOver.
         let back = pane.rows[4].pullDown
-        XCTAssertEqual(back.noActionItem?.title, "Default")
+        XCTAssertEqual(back.noActionItem?.title, "Default (Back)")
         XCTAssertNil(back.menu?.items.first { $0.title == "No Action" })
-        XCTAssertEqual(ButtonActionPullDown(binding: binding(5)).noActionItem?.title, "No Action")
+        XCTAssertEqual(back.menu?.items.first?.title, "Default (Back)")
+        let attributed = try XCTUnwrap(back.menu?.items.first?.attributedTitle)
+        XCTAssertEqual(attributed.string, "Default (Back)")
+        XCTAssertNil(attributed.attribute(.foregroundColor, at: 0, effectiveRange: nil), "Default in the title's own colour")
+        XCTAssertEqual(attributed.attribute(.foregroundColor, at: 8, effectiveRange: nil) as? NSColor, .secondaryLabelColor)
+        XCTAssertEqual(pane.rows[2].pullDown.noActionItem?.title, "Default")
+        XCTAssertNil(pane.rows[2].pullDown.menu?.items.first?.attributedTitle, "nothing in grey")
+        XCTAssertNil(pane.rows[2].pullDown.toolTip)
+        XCTAssertEqual(ButtonActionPullDown(binding: binding(5)).noActionItem?.title, "Default", "every row of Buttons")
+        XCTAssertEqual(ButtonActionPullDown(binding: binding(5), forRingPlace: true).noActionItem?.title, "No Action")
 
-        // The card: no button has an action; a row lights its button and says "Default".
+        // The card: no button has an action; a row lights its button and says what its
+        // pull-down says.
         XCTAssertEqual(pane.headerView.content.subtitle, "No buttons set up yet")
+        pane.list.select(ButtonsMousePart.back)
+        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Back button", subtitle: "Default (Back)", part: .back))
         pane.list.select(ButtonsMousePart.thumbPanel)
         XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Thumb panel", subtitle: "Default", part: .thumbPanel))
         XCTAssertEqual(pane.headerView.artwork.emphasis, .thumbPanel)
@@ -369,9 +391,10 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(ButtonsListLayout(partRows: [], others: []).hasThumbWheel, false)
     }
 
-    /// An MX Master 4 at the defaults: the row reads "Default", says it scrolls sideways,
-    /// lights the thumb wheel in its picture, and offers the six functions; it is no button
-    /// row (no recorder, no ⓘ, never removed) and the buttons' rows are as they were.
+    /// An MX Master 4 at the defaults: the row reads "Default (Scroll Sideways)" with no line
+    /// under it (the sentence is the pull-down's tooltip), lights the thumb wheel in its
+    /// picture, and offers the six functions; it is no button row (no recorder, no ⓘ, never
+    /// removed) and the buttons' rows are as they were.
     func testTheThumbWheelRowReadsDefaultWhileItScrolls() throws {
         let pane = makePane()
         let row = try XCTUnwrap(pane.thumbWheelRow)
@@ -380,10 +403,13 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(pane.rows.map(\.title), mxMaster4Titles, "the button rows are the same")
         XCTAssertTrue(pane.list.rows[2] === row)
         XCTAssertEqual(row.id, ButtonsListLayout.thumbWheelRowID)
-        XCTAssertEqual(shown(row.pullDown), "Default")
+        XCTAssertEqual(shown(row.pullDown), "Default (Scroll Sideways)")
+        XCTAssertEqual(row.pullDown.menu?.items.first?.attributedTitle?.attribute(.foregroundColor, at: 8, effectiveRange: nil) as? NSColor,
+                       .secondaryLabelColor, "the parenthesis in grey")
         XCTAssertNil(row.pullDown.menu?.items.first?.image, "no symbol for Default, as on the other rows")
-        XCTAssertEqual(row.explanation, "Scrolls sideways.")
-        XCTAssertEqual(row.accessibilityLabel(), "Thumb wheel, Scrolls sideways.")
+        XCTAssertNil(row.explanation, "the title says it")
+        XCTAssertEqual(row.pullDown.toolTip, "Scrolls sideways.")
+        XCTAssertEqual(row.accessibilityLabel(), "Thumb wheel")
         XCTAssertEqual(row.pullDown.accessibilityLabel(), "Thumb wheel")
         XCTAssertEqual(row.pullDown.accessibilityHelp(), "Scrolls sideways.")
         XCTAssertEqual(row.pullDown.identifier, ButtonsThumbWheelRow.identifier)
@@ -403,7 +429,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertFalse(row.subviews.contains { $0 is ButtonPlacePictureButton }, "no picture menu")
 
         let items = row.pullDown.functionItems
-        XCTAssertEqual(items.map(\.title), ["Default", "Zoom", "Switch Tabs", "Switch Desktops", "Back and Forward", "Volume"])
+        XCTAssertEqual(items.map(\.title), ["Default (Scroll Sideways)", "Zoom", "Switch Tabs", "Switch Desktops", "Back and Forward", "Volume"])
         XCTAssertEqual(items.compactMap(ThumbWheelPresentation.function(of:)), ThumbWheelFunction.allCases)
         XCTAssertNil(items[0].image)
         XCTAssertTrue(items.dropFirst().allSatisfy { $0.image?.isTemplate == true }, "the others with their symbols")
@@ -414,16 +440,18 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(items.map(\.toolTip), ThumbWheelFunction.allCases.map(\.localizedHint))
         XCTAssertTrue(row.pullDown.menu?.items[2].isSeparatorItem ?? false, "Default stands apart")
 
-        // Pointed at or selected, the card lights the thumb wheel and says "Default".
+        // Pointed at or selected, the card lights the thumb wheel and says what the row says.
         pane.list.select(ButtonsListLayout.thumbWheelRowID)
-        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "Thumb wheel", subtitle: "Default", part: nil, lightsThumbWheel: true))
+        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(
+            title: "Thumb wheel", subtitle: "Default (Scroll Sideways)", part: nil, lightsThumbWheel: true
+        ))
         XCTAssertTrue(pane.headerView.artwork.emphasizesThumbWheel)
         XCTAssertNil(pane.headerView.artwork.emphasis)
         XCTAssertFalse(pane.list.removeButton.isEnabled, "the thumb wheel is never removed")
         pane.list.select(ButtonsMousePart.back)
         XCTAssertEqual(pane.headerView.artwork.emphasis, .back)
         XCTAssertFalse(pane.headerView.artwork.emphasizesThumbWheel)
-        XCTAssertEqual(pane.headerView.content.subtitle, "Default")
+        XCTAssertEqual(pane.headerView.content.subtitle, "Default (Back)")
         pane.list.select(nil)
         XCTAssertEqual(pane.headerView.content.subtitle, "No buttons set up yet", "the thumb wheel is no button with an action")
         XCTAssertTrue(Options.shared.buttons.binding.isEmpty, "showing it stores nothing")
@@ -465,8 +493,9 @@ final class PreferencesButtonsTests: XCTestCase {
         let defaultItem = try XCTUnwrap(row.pullDown.functionItems.first)
         row.pullDown.functionChosen(defaultItem)
         XCTAssertEqual(Options.shared.thumbWheel.function, .scroll)
-        XCTAssertEqual(shown(row.pullDown), "Default")
-        XCTAssertEqual(pane.headerView.content.subtitle, "Default")
+        XCTAssertEqual(shown(row.pullDown), "Default (Scroll Sideways)")
+        XCTAssertNil(row.explanation)
+        XCTAssertEqual(pane.headerView.content.subtitle, "Default (Scroll Sideways)")
 
         // The bindings: the same values, the same bytes, never saved.
         XCTAssertEqual(try encoder.encode(Options.shared.buttons.binding), before)
@@ -499,7 +528,7 @@ final class PreferencesButtonsTests: XCTestCase {
 
         undo.undo()
         XCTAssertEqual(Options.shared.thumbWheel.function, .scroll)
-        XCTAssertEqual(shown(row.pullDown), "Default", "the row follows")
+        XCTAssertEqual(shown(row.pullDown), "Default (Scroll Sideways)", "the row follows")
         XCTAssertEqual(undo.redoMenuItemTitle, "Redo Change Action")
         undo.redo()
         XCTAssertEqual(Options.shared.thumbWheel.function, .tabs)
@@ -740,12 +769,12 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(changes, 3)
         XCTAssertEqual(shown(row.pullDown), "Back and Forward")
 
-        // Reset under Scrolling: the row reads "Default" again.
+        // Reset under Scrolling: the row reads "Default (Scroll Sideways)" again.
         scrolling.paneUndoManager = UndoManager()
         XCTAssertTrue(scrolling.resetToDefaultsButton.sendAction(scrolling.resetToDefaultsButton.action, to: scrolling.resetToDefaultsButton.target))
         XCTAssertEqual(Options.shared.thumbWheel, .default)
-        XCTAssertEqual(shown(row.pullDown), "Default")
-        XCTAssertEqual(buttons.headerView.content.subtitle, "Default")
+        XCTAssertEqual(shown(row.pullDown), "Default (Scroll Sideways)")
+        XCTAssertEqual(buttons.headerView.content.subtitle, "Default (Scroll Sideways)")
         XCTAssertEqual(changes, 4, "one write for the reset, none from the panes showing it")
         XCTAssertTrue(Options.shared.buttons.binding.isEmpty)
     }
@@ -775,8 +804,10 @@ final class PreferencesButtonsTests: XCTestCase {
         let top = Array(pane.rows.prefix(6))
         XCTAssertEqual(top.map(\.isStored), [true, false, true, false, true, false])
         XCTAssertEqual(top.map(\.isDefault), [false, true, false, true, false, true])
+        // (The mode shift button: "⌥ Mode shift button" keeps its Logitech control with
+        // Scrollio, so what it does by itself is not certain.)
         XCTAssertEqual(top.map { shown($0.pullDown) }, [
-            SystemShortcut.missionControl.localizedName, "Default", "Gesture Navigation", "Default", "Copy", "Default",
+            SystemShortcut.missionControl.localizedName, "Default", "Gesture Navigation", "Default (Forward)", "Copy", "Default",
         ])
         XCTAssertEqual(pane.row(for: ButtonsMousePart.back)?.binding, bindings[1])
         XCTAssertEqual(pane.row(for: ButtonsMousePart.gesture)?.binding, gestureNumber)
@@ -856,8 +887,9 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertTrue(pane.row(for: ButtonsMousePart.back) === back)
         XCTAssertTrue(back.isDefault)
         XCTAssertFalse(back.isStored)
-        XCTAssertEqual(shown(back.pullDown), "Default")
-        XCTAssertEqual(back.explanation, "Goes back in apps that support it.")
+        XCTAssertEqual(shown(back.pullDown), "Default (Back)")
+        XCTAssertNil(back.explanation)
+        XCTAssertEqual(back.pullDown.toolTip, "Goes back in apps that support it.")
         XCTAssertEqual(undo.undoMenuItemTitle, "Undo Clear Action")
         undo.undo()
         XCTAssertEqual(Options.shared.buttons.binding.first, stored, "back where it was, unchanged")
@@ -869,7 +901,7 @@ final class PreferencesButtonsTests: XCTestCase {
         // "Default" on a row without a binding changes nothing.
         back.pullDown.shortcutSelected(defaultItem)
         XCTAssertEqual(Options.shared.buttons.binding.count, 5)
-        XCTAssertEqual(shown(back.pullDown), "Default")
+        XCTAssertEqual(shown(back.pullDown), "Default (Back)")
     }
 
     /// What a "Default" row stores is what "+" records for that button on this mouse: over a
@@ -915,7 +947,8 @@ final class PreferencesButtonsTests: XCTestCase {
         pane.reload()
         let back = try XCTUnwrap(pane.row(for: ButtonsMousePart.back))
         XCTAssertEqual(back.title, "Back button")
-        XCTAssertEqual(back.explanation, "Goes back in apps that support it.", "not caught while it has no binding")
+        XCTAssertEqual(shown(back.pullDown), "Default (Back)", "not caught while it has no binding")
+        XCTAssertNil(back.explanation)
         back.pullDown.shortcutSelected(try XCTUnwrap(item("copy", in: back.pullDown.menu)))
         XCTAssertEqual(Options.shared.buttons.binding.first?.triggerEvent.code, 1006)
         XCTAssertEqual(back.title, "Back button")
@@ -984,10 +1017,11 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(summary.buttonTitles, ["Thumb panel"], "the Gestures pane's line")
     }
 
-    /// The line under a "Default" row says what the button then does only where that is
-    /// certain: a hold key under Scrolling says so; while Scrollio catches its Logitech
-    /// control for a binding with modifiers (the plain press then reaches only Scrollio),
-    /// nothing; a numbered button said to be there makes no claim beyond its own.
+    /// A "Default" row says what the button then does ("Default (Back)") only where that is
+    /// certain: while Scrollio catches its Logitech control for a binding with modifiers (the
+    /// plain press then reaches only Scrollio), plain "Default" and no line; a hold key under
+    /// Scrolling has its line, and still does what it does; a numbered button said to be
+    /// there makes no claim beyond its own.
     func testTheDefaultLineSaysOnlyWhatIsCertain() throws {
         scrollKeys = [ScrollHotkey(type: .mouse, code: 1001)]
         let caught = binding(1006, "copy", modifiers: option)
@@ -997,18 +1031,24 @@ final class PreferencesButtonsTests: XCTestCase {
             return try XCTUnwrap(pane.row(for: part))
         }
         XCTAssertNil(try row(.back).explanation, "the plain press reaches only Scrollio")
-        XCTAssertEqual(try row(.forward).explanation, "Goes forward in apps that support it.", "a standard button with ⌘ is not caught")
+        XCTAssertEqual(shown(try row(.back).pullDown), "Default")
+        XCTAssertNil(try row(.back).pullDown.toolTip)
+        XCTAssertEqual(shown(try row(.forward).pullDown), "Default (Forward)", "a standard button with ⌘ is not caught")
+        XCTAssertNil(try row(.forward).explanation)
         XCTAssertEqual(try row(.modeShift).explanation, "Also set under Scrolling\u{A0}›\u{A0}While\u{A0}you\u{A0}hold\u{A0}a\u{A0}key.")
+        XCTAssertEqual(shown(try row(.modeShift).pullDown), "Default (Switch Wheel Mode)", "holding it does both")
         XCTAssertEqual(try row(.modeShift).note?.tone, .problem)
         XCTAssertFalse(try row(.modeShift).infoButton.isHidden)
         XCTAssertEqual(try row(.middle).title, "Middle button (button 8)")
         XCTAssertEqual(try row(.middle).picture, .mouse(part: .middle, number: nil))
         XCTAssertEqual(try row(.middle).explanation, "Does what the mouse does on its own.")
+        XCTAssertEqual(shown(try row(.middle).pullDown), "Default")
         XCTAssertTrue(try row(.middle).placeButton.isHidden)
 
         // Without its action the ⌥ binding catches nothing.
         pane.setAction(of: caught.id, to: nil)
-        XCTAssertEqual(try row(.back).explanation, "Goes back in apps that support it.")
+        XCTAssertEqual(shown(try row(.back).pullDown), "Default (Back)")
+        XCTAssertEqual(try row(.back).pullDown.toolTip, "Goes back in apps that support it.")
 
         // The middle row stores the number said to be there, without modifiers.
         try row(.middle).pullDown.shortcutSelected(try XCTUnwrap(item("paste", in: try row(.middle).pullDown.menu)))
@@ -1336,7 +1376,7 @@ final class PreferencesButtonsTests: XCTestCase {
                        Content(title: "Your mouse", subtitle: "4 buttons have actions", part: nil, hint: findHint))
         let focus = Content.Focus(title: "Back button", action: nil, picture: .mouse(part: .back, number: nil))
         XCTAssertEqual(Content.make(deviceName: nil, boundCount: 4, isRecording: false, focus: focus),
-                       Content(title: "Back button", subtitle: "No action", part: .back))
+                       Content(title: "Back button", subtitle: "Default", part: .back), "a row says what its pull-down says")
         XCTAssertEqual(Content.make(deviceName: nil, boundCount: 4, isRecording: true, focus: focus),
                        Content(title: "Press a button", subtitle: "Or a key with ⌘, ⌥, ⌃ or ⇧.\nPress Esc to cancel.", part: nil))
     }
@@ -1356,7 +1396,7 @@ final class PreferencesButtonsTests: XCTestCase {
 
         // A button of the mouse without an action does what it does by itself.
         pane.list.select(ButtonsMousePart.forward)
-        XCTAssertEqual(pane.headerView.content.subtitle, "Default")
+        XCTAssertEqual(pane.headerView.content.subtitle, "Default (Forward)")
         XCTAssertEqual(pane.headerView.artwork.emphasis, .forward)
 
         pane.list.select(ButtonsMousePart.gesture)
@@ -1549,7 +1589,7 @@ final class PreferencesButtonsTests: XCTestCase {
         let bindings = [binding(5), binding(6, SystemShortcut.scrollDash.identifier), binding(7, "copy"), binding(8, "copy"), binding(2000 + 0x005B, "copy")]
         let pane = makePane(bindings)
         XCTAssertEqual(try rows(of: bindings, in: pane).map(\.explanation), [
-            "Choose what this button does.",
+            "Does what the mouse does on its own.",
             "Works while you hold the button.",
             "Also set under Scrolling\u{A0}›\u{A0}While\u{A0}you\u{A0}hold\u{A0}a\u{A0}key.",
             "An extra button on your mouse.",
@@ -1664,7 +1704,7 @@ final class PreferencesButtonsTests: XCTestCase {
                        Content(title: "That's Button 6", subtitle: "Copy", part: nil, number: 6))
         let tilt = Content.Focus(title: "Left Tilt button", action: nil, picture: .mouse(part: nil, number: nil))
         XCTAssertEqual(Content.make(deviceName: nil, boundCount: 0, isRecording: false, focus: tilt),
-                       Content(title: "Left Tilt button", subtitle: "No action", part: nil, hint: find))
+                       Content(title: "Left Tilt button", subtitle: "Default", part: nil, hint: find))
         var recorded = six
         recorded.reason = .recorded
         XCTAssertEqual(Content.make(deviceName: "MX Master 4", boundCount: 1, isRecording: false, focus: recorded),
@@ -2186,9 +2226,10 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(listed.map(\.explanation), [
             "Hold and move the mouse. Set the directions under Gestures.",
             "Works while you hold the button.",
-            "Choose what this button does.",
+            "Does what the mouse does on its own.",
             "An extra button on your mouse.",
         ])
+        XCTAssertEqual(shown(listed[2].pullDown), "Default", "a numbered button without an action")
         pane.view.layoutSubtreeIfNeeded()
         for row in pane.rows {
             XCTAssertTrue(row.infoButton.isHidden, row.title)
@@ -2198,7 +2239,7 @@ final class PreferencesButtonsTests: XCTestCase {
             let width = row.pullDown.alignmentRect(forFrame: row.pullDown.frame).width
             XCTAssertEqual(width, 240, accuracy: 0.5)
         }
-        XCTAssertEqual(listed[2].accessibilityLabel(), "Button 5, Choose what this button does.")
+        XCTAssertEqual(listed[2].accessibilityLabel(), "Button 5, Does what the mouse does on its own.")
     }
 
     func testProblemNotesAreOrangeWithADetailsButton() throws {
@@ -2379,8 +2420,9 @@ final class PreferencesButtonsTests: XCTestCase {
 
     // MARK: - Changing an action
 
-    /// On the plain list; a button of an MX Master has "Default" instead of "No Action"
-    /// (`testADefaultRowStoresItsBindingWhenItGetsAnAction`).
+    /// On the plain list: "Default" keeps the binding without an action (a button of an MX
+    /// Master loses it, `testADefaultRowStoresItsBindingWhenItGetsAnAction`), and says what
+    /// the standard Back button then does.
     func testChoosingAnActionSavesItAndUpdatesTheRowInPlace() throws {
         deviceName = nil
         let pane = makePane([binding(3)])
@@ -2406,11 +2448,14 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(shownPanes, [GesturesPreferencesViewController.tabIdentifier])
 
         let noAction = menu.items[2]
-        XCTAssertEqual(noAction.title, "No Action")
+        XCTAssertEqual(noAction.title, "Default (Back)")
+        XCTAssertTrue(noAction === pullDown.noActionItem)
         pullDown.shortcutSelected(noAction)
         XCTAssertEqual(Options.shared.buttons.binding.first?.systemShortcutName, "")
         XCTAssertEqual(Options.shared.buttons.binding.first?.isEnabled, false)
-        XCTAssertEqual(row.explanation, "Choose what this button does.")
+        XCTAssertEqual(shown(pullDown), "Default (Back)")
+        XCTAssertNil(row.explanation, "the pull-down says it")
+        XCTAssertEqual(pullDown.toolTip, "Goes back in apps that support it.")
     }
 
     func testReturnOpensTheSelectedRowsMenu() throws {
@@ -2444,7 +2489,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertTrue(pane.validateRecordedEvent(recorder, event: event))
         pane.onEventRecorded(recorder, didRecordEvent: event, isDuplicate: false)
         // The card shows the button at once; the row comes when the recorder closes.
-        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "⌥ Forward button", subtitle: "No action", part: .forward))
+        XCTAssertEqual(pane.headerView.content, ButtonsHeaderContent(title: "⌥ Forward button", subtitle: "Default", part: .forward))
         XCTAssertEqual(Options.shared.buttons.binding.count, 1)
 
         pane.onRecordingStopped(recorder, didRecord: true)
@@ -2848,7 +2893,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertTrue(Options.shared.buttons.binding.isEmpty)
         XCTAssertTrue(pane.row(for: ButtonsMousePart.back) === back, "the same row")
         XCTAssertTrue(back.isDefault)
-        XCTAssertEqual(shown(back.pullDown), "Default")
+        XCTAssertEqual(shown(back.pullDown), "Default (Back)")
         XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.back))
         undo.redo()
         XCTAssertEqual(Options.shared.buttons.binding, [stored])
@@ -3011,7 +3056,7 @@ final class PreferencesButtonsTests: XCTestCase {
         let pullDown = ButtonActionPullDown(binding: binding(1000, "copy"))
         let menu = try XCTUnwrap(pullDown.menu)
         let titles = menu.items.map(\.title)
-        XCTAssertEqual(menu.items[2].title, "No Action")
+        XCTAssertEqual(menu.items[2].title, "Default", "a row of Buttons: the button does what it does by itself")
         XCTAssertTrue(menu.items[1].isHidden, "a pull-down shows no separator first")
         XCTAssertTrue(titles.contains("Scrolling"))
         XCTAssertTrue(titles.contains("Logitech Mouse"))
@@ -3112,7 +3157,7 @@ final class PreferencesButtonsTests: XCTestCase {
 
         let pane = makePane(decoded)
         XCTAssertEqual(try rows(of: decoded, in: pane).map(\.title), ["⌥ Back button", "Gesture button", "⌃⌥ K", "Button 5"])
-        XCTAssertEqual(try rows(of: decoded, in: pane).map { shown($0.pullDown) }, ["Gesture Navigation", "⌥⌘K", "Calculator", "No Action"])
+        XCTAssertEqual(try rows(of: decoded, in: pane).map { shown($0.pullDown) }, ["Gesture Navigation", "⌥⌘K", "Calculator", "Default"])
         // Where they are: the gesture button is its row, the rest below in stored order.
         XCTAssertEqual(pane.rows.map(\.title), mxMaster4Titles + ["⌥ Back button", "⌃⌥ K", "Button 5"])
         XCTAssertEqual(pane.row(for: ButtonsMousePart.gesture)?.binding, decoded[1])
@@ -3135,5 +3180,87 @@ final class PreferencesButtonsTests: XCTestCase {
 
     private func shown(_ pullDown: NSPopUpButton) -> String? {
         return pullDown.menu?.items.first?.title
+    }
+
+    // MARK: - "Default" on every row (round 2, 23)
+
+    /// Every row without an action reads "Default", in its pull-down, its menu and on the
+    /// card: what the button then does in parentheses only where that is certain (a
+    /// standard button pressed by itself, not caught for another binding), its sentence in
+    /// the tooltip and no line; a button whose effect is not certain says "Does what the
+    /// mouse does on its own."; a key keeps its line. A plain mouse (no drawing) and an
+    /// MX Master's "Other buttons and keys" alike; nothing is stored by showing it.
+    func testEveryRowWithoutAnActionReadsDefault() throws {
+        deviceName = nil
+        // (⌥ and the Logitech Forward button keep that control with Scrollio.)
+        let caught = binding(1007, "copy", modifiers: option)
+        let bindings = [
+            binding(3), binding(4, modifiers: option), binding(6), binding(40, modifiers: control, type: .keyboard),
+            binding(1007), caught, binding(2, "copy"),
+        ]
+        let pane = makePane(bindings)
+        let listed = try rows(of: bindings, in: pane)
+        XCTAssertEqual(listed.map { shown($0.pullDown) }, [
+            "Default (Back)", "Default", "Default", "Default", "Default", "Copy", "Copy",
+        ])
+        XCTAssertEqual(listed.map { $0.pullDown.noActionItem?.title }, [
+            "Default (Back)", "Default", "Default", "Default", "Default", "Default", "Default (Middle Click)",
+        ], "the item says what choosing it gives")
+        XCTAssertEqual(listed.map(\.explanation), [
+            nil,
+            "Does what the mouse does on its own.",
+            "Does what the mouse does on its own.",
+            "Choose what this button does.",
+            nil,
+            nil,
+            nil,
+        ])
+        XCTAssertEqual(listed.map(\.pullDown.toolTip), ["Goes back in apps that support it.", nil, nil, nil, nil, nil, nil])
+        XCTAssertNil(listed[4].pullDown.toolTip, "the Logitech Forward button is caught for ⌥: no claim")
+        XCTAssertEqual(listed.map(\.defaultTitle), ["Default (Back)", "Default", "Default", "Default", "Default", nil, nil])
+        for (row, expected) in zip(listed.prefix(5), ["Default (Back)", "Default", "Default", "Default", "Default"]) {
+            pane.list.select(row.id)
+            XCTAssertEqual(pane.headerView.content.subtitle, expected, row.title)
+        }
+        XCTAssertEqual(Options.shared.buttons.binding, bindings, "showing stores nothing")
+
+        // A row that gets "Default" keeps its binding without an action, and says so.
+        let middle = listed[6]
+        middle.pullDown.shortcutSelected(try XCTUnwrap(middle.pullDown.noActionItem))
+        XCTAssertEqual(Options.shared.buttons.binding.last?.systemShortcutName, "")
+        XCTAssertEqual(shown(middle.pullDown), "Default (Middle Click)")
+        XCTAssertEqual(middle.pullDown.toolTip, "Middle click.")
+        XCTAssertEqual(middle.pullDown.accessibilityHelp(), "Middle click.")
+    }
+
+    /// What "Default" names, by trigger (`ButtonsMousePart.defaultEffect`): the standard
+    /// middle, back and forward buttons and the mode shift button pressed by themselves;
+    /// nothing for a key, modifier keys, a numbered button (also one said to be on a part),
+    /// another part, or a control caught for another binding, except that an app's own
+    /// "Default" sends the standard button even then (not the mode shift's switch).
+    func testDefaultNamesWhatTheButtonDoesOnlyWhereThatIsCertain() {
+        func title(
+            _ code: UInt16, modifiers: UInt = 0, type: EventType = .mouse, caught: Bool = false, own: Bool = false,
+            placed: PlacedMousePart? = nil
+        ) -> String {
+            let trigger = RecordedEvent(type: type, code: code, modifiers: modifiers, deviceFilter: nil, mousePart: placed)
+            return ButtonsMousePart.defaultTitle(effect: ButtonsMousePart.defaultEffect(of: trigger, isCaught: caught, isAppsOwn: own))
+        }
+        let logi = { LogiCenter.shared.scrollioCode(for: $0) }
+        XCTAssertEqual(title(2), "Default (Middle Click)")
+        XCTAssertEqual(title(3), "Default (Back)")
+        XCTAssertEqual(title(4), "Default (Forward)")
+        XCTAssertEqual(title(logi(.back)), "Default (Back)")
+        XCTAssertEqual(title(logi(.modeShift)), "Default (Switch Wheel Mode)")
+        XCTAssertEqual(title(logi(.gesture)), "Default")
+        XCTAssertEqual(title(logi(.thumbPanel)), "Default")
+        XCTAssertEqual(title(3, modifiers: option), "Default", "the app gets the press with ⌥")
+        XCTAssertEqual(title(6), "Default", "a numbered button")
+        XCTAssertEqual(title(6, placed: .backButton), "Default", "said to be Back, it still sends its number")
+        XCTAssertEqual(title(40, modifiers: control, type: .keyboard), "Default", "a key")
+        XCTAssertEqual(title(logi(.back), caught: true), "Default", "the plain press reaches only Scrollio")
+        XCTAssertEqual(title(logi(.back), caught: true, own: true), "Default (Back)", "an app's own Default sends Back")
+        XCTAssertEqual(title(logi(.modeShift), caught: true, own: true), "Default", "never the mode shift's switch")
+        XCTAssertEqual(ButtonsMousePart.pointerSpeed.defaultEffectKey, nil, "known from Logitech's description only")
     }
 }

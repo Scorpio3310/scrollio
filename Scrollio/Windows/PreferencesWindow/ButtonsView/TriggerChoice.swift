@@ -10,8 +10,9 @@
 //  Its title is what does it now, as the row names it ("Gesture button"), "Choose" while
 //  nothing of Buttons does it, "Multiple" while two or more do. Its menu: the buttons of
 //  the connected mouse in the order they sit on it (`ButtonsListLayout`, the rows of the
-//  Buttons pane), each with what it does now in grey ("Back button — Back, will be
-//  replaced"; "Default" while it has no action; the one that does it is ticked); then
+//  Buttons pane), each with what it does now in grey ("Back button — Copy, will be
+//  replaced"; without an action what Buttons says, "Default (Back), will be replaced" where
+//  what it then does is certain, else "Default"; the one that does it is ticked); then
 //  "Record a Button…" (the ring: "Record a Button or Key…"), the recorder's popover at the
 //  pull-down; then "Show in Buttons", which says where it goes: "Show in Notes" while only
 //  an app's own button or key does it, since it then shows that app's Buttons part. While
@@ -54,10 +55,17 @@ struct TriggerChoiceMenu: Equatable {
         let action: String?
         /// It does it now.
         let isChosen: Bool
+        /// Without an action: what "Default" does, where that is certain ("Default (Back)").
+        var defaultEffect: ButtonsMousePart? = nil
 
-        /// Choosing it replaces an action it has.
+        /// Choosing it replaces an action it has, or what "Default" certainly does.
         var replacesAction: Bool {
-            return action != nil && !isChosen
+            return (action != nil || defaultEffect != nil) && !isChosen
+        }
+
+        /// What it does now, as the row of Buttons says it: "Copy", "Default (Back)".
+        var shownAction: String {
+            return action ?? ButtonsMousePart.defaultTitle(effect: defaultEffect)
         }
     }
 
@@ -106,12 +114,18 @@ struct TriggerChoiceMenu: Equatable {
                 ?? TriggerChoiceEdit.defaultTrigger(for: row.part, in: bindings, recordedTrigger: recordedTrigger)
             guard ButtonUtils.isRunnable(trigger) else { return nil }
             let action = row.binding.flatMap { CellActionState(binding: $0).hasBoundAction ? actionName($0) : nil }
+            let effect = action != nil ? nil : ButtonsMousePart.defaultEffect(
+                of: trigger, part: row.part,
+                isCaught: ButtonsListLayout.catchesControl(of: row.part, in: bindings, logitechRole: logitechRole),
+                logitechRole: logitechRole
+            )
             return Item(
                 part: row.part,
                 trigger: trigger,
                 title: row.binding.flatMap { names[$0.id] } ?? title(trigger),
                 action: action,
-                isChosen: row.binding.map(rule.takes) ?? false
+                isChosen: row.binding.map(rule.takes) ?? false,
+                defaultEffect: effect
             )
         }
         return TriggerChoiceMenu(title: triggerTitles.first.map(Title.trigger) ?? .choose, items: items)
@@ -391,16 +405,12 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
         pullDown.titleDidChange()
     }
 
-    /// "Back button — Back, will be replaced": the name, then what it does now in grey
-    /// ("Default" while nothing). The one that does it is ticked. The plain title holds
-    /// both, for VoiceOver.
+    /// "Back button — Copy, will be replaced": the name, then what it does now in grey
+    /// ("Default (Back), will be replaced", "Default"). The one that does it is ticked. The
+    /// plain title holds both, for VoiceOver.
     private func menuItem(for item: TriggerChoiceMenu.Item) -> NSMenuItem {
-        let detail: String
-        if let action = item.action {
-            detail = item.replacesAction ? String(format: text("buttons-trigger-choice-replaced"), action) : action
-        } else {
-            detail = text("buttons-default")
-        }
+        let shown = item.shownAction
+        let detail = item.replacesAction ? String(format: text("buttons-trigger-choice-replaced"), shown) : shown
         let plain = String(format: text("buttons-trigger-choice-item"), item.title, detail)
         let menuItem = NSMenuItem(title: plain, action: #selector(partChosen(_:)), keyEquivalent: "")
         menuItem.target = self

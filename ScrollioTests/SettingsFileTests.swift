@@ -2782,7 +2782,7 @@ final class SettingsImportSheetTests: XCTestCase {
             "\(trigger(.keyboard, 8, 1_048_576)): Switch to Computer 2",
             "\(trigger(.mouse, 2, 0)): \(ButtonTriggerNaming.shortcutText(type: .keyboard, code: 12, modifiers: 1_703_936))",
             "\(trigger(.keyboard, 14, 131_072)): Move to Trash",
-            "\(trigger(.mouse, 3, 0)): No Action",
+            "\(trigger(.mouse, 3, 0)): Default",
             "\(trigger(.keyboard, 96, 524_288)): Open App or File: sync.sh",
             "\(trigger(.mouse, 4, 0)) in Notes: Mission Control",
             "\(trigger(.mouse, 4, 0)) in Other: Mission Control",

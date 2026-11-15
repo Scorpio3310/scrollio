@@ -242,14 +242,15 @@ final class TriggerChoiceTests: XCTestCase {
         Options.shared.buttons.binding = [binding(3, SystemShortcut.copy.identifier)]
         let pane = gesturesPane(undo: undoManager())
         let items = try XCTUnwrap(pane.gestureButtonButton.menu?.items)
-        // The Logitech buttons are named as Buttons names them.
+        // The Logitech buttons are named as Buttons names them; without an action what the
+        // row says, "will be replaced" where what it does by itself is certain.
         let byDefault = { (part: ButtonsMousePart) in "\(ButtonTriggerNaming.title(for: self.recordedTrigger(part))) — Default" }
         XCTAssertEqual(items.map(\.title), [
             "Choose",
             "Your Mouse",
-            "Middle button — Default",
-            byDefault(.modeShift),
-            "Forward button — Default",
+            "Middle button — Default (Middle Click), will be replaced",
+            "\(ButtonTriggerNaming.title(for: recordedTrigger(.modeShift))) — Default (Switch Wheel Mode), will be replaced",
+            "Forward button — Default (Forward), will be replaced",
             "Back button — \(SystemShortcut.copy.localizedName), will be replaced",
             byDefault(.gesture),
             "",
