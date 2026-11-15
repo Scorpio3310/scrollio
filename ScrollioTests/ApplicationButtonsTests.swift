@@ -562,9 +562,18 @@ final class ApplicationButtonsTests: XCTestCase {
     /// wheel find it the same way), its ring, the menu bar's "Smooth Scrolling in …" and
     /// "Settings for …", and "+" in Apps, which adds no second entry. An entry stored under
     /// that very path still comes first, and nothing stored changes.
+    ///
+    /// Only the links are read, and only in the folders that may be looked into (the
+    /// Applications folders and /System; the test points that rule at its own folder): a
+    /// link elsewhere is not followed, and nothing is asked about where a link leads once
+    /// that is outside them. A link is followed as Safari's is: relative, with "..", and
+    /// through a second link, every path on the way counting.
     func testAnEntryStoredUnderASymbolicLinkIsFoundByThePathBehindIt() throws {
         let files = FileManager.default
-        let folder = files.temporaryDirectory.appendingPathComponent("scrollio-link-\(UUID().uuidString)")
+        // The temporary folder by its real path (/var is a link itself).
+        let resolved = try XCTUnwrap(realpath(files.temporaryDirectory.path, nil))
+        defer { free(resolved) }
+        let folder = URL(fileURLWithPath: String(cString: resolved)).appendingPathComponent("scrollio-link-\(UUID().uuidString)")
         addTeardownBlock { try? files.removeItem(at: folder) }
         let bundle = folder.appendingPathComponent("Real.app")
         try files.createDirectory(at: bundle.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
@@ -572,8 +581,19 @@ final class ApplicationButtonsTests: XCTestCase {
         let link = folder.appendingPathComponent("Link.app")
         try files.createSymbolicLink(at: link, withDestinationURL: bundle)
 
+        // A folder that is not one of the Applications folders is not looked at.
+        XCTAssertEqual(StoredPathLinks.forms(of: link.path), [])
+        XCTAssertNil(Self.makeStore([Application(path: link.path)]).get(by: bundle.path))
+        let savedRule = StoredPathLinks.mayLookAt
+        defer { StoredPathLinks.mayLookAt = savedRule }
+        var asked: [String] = []
+        StoredPathLinks.mayLookAt = { path in
+            asked.append(path)
+            return path.hasPrefix(folder.path + "/")
+        }
+
         // What the running app reports: its real place, no link in it.
-        let real = (bundle.path as NSString).resolvingSymlinksInPath
+        let real = bundle.path
         let program = real + "/Contents/MacOS/Real"
         let running = ShortcutRingChoice.FrontApp(bundlePath: real, executablePath: program)
 
@@ -614,11 +634,50 @@ final class ApplicationButtonsTests: XCTestCase {
             XCTAssertTrue(list.get(by: link.path) === entry)
         }
 
-        // A path without a link, a file that is not there and a key that is no path have
-        // no second form.
-        XCTAssertNil(EnhanceArray<Application>.pathBehindSymbolicLinks(of: real))
-        XCTAssertNil(EnhanceArray<Application>.pathBehindSymbolicLinks(of: "/Applications/Not There \(UUID().uuidString).app"))
-        XCTAssertNil(EnhanceArray<Application>.pathBehindSymbolicLinks(of: "com.example.app"))
+        // As Safari's: a relative link that climbs with "..", and a link to a link. Every
+        // path on the way finds the entry.
+        try files.createDirectory(at: folder.appendingPathComponent("Sub"), withIntermediateDirectories: true)
+        let climbing = folder.appendingPathComponent("Sub/Climbing.app")
+        try files.createSymbolicLink(atPath: climbing.path, withDestinationPath: "../Link.app")
+        XCTAssertEqual(StoredPathLinks.forms(of: climbing.path), [link.path, real])
+        XCTAssertEqual(
+            StoredPathLinks.forms(of: climbing.path + "/Contents/MacOS/Real"), [link.path + "/Contents/MacOS/Real", program]
+        )
+        let chained = Application(path: climbing.path)
+        list = Self.makeStore([chained])
+        XCTAssertTrue(list.get(by: real) === chained)
+        XCTAssertTrue(list.get(by: link.path) === chained)
+
+        // A link that leads out of the folders that may be looked at: where it points is a
+        // path the entry is found by, and nothing is asked about that place.
+        let outside = folder.appendingPathComponent("Outside.app")
+        try files.createSymbolicLink(atPath: outside.path, withDestinationPath: "/Volumes/Not Mounted/Other.app")
+        asked = []
+        XCTAssertEqual(StoredPathLinks.forms(of: outside.path), ["/Volumes/Not Mounted/Other.app"])
+        XCTAssertEqual(asked, [outside.path, "/Volumes/Not Mounted/Other.app"], "the rule was asked, the place was not")
+
+        // A path without a link, a file that is not there, a link to itself and a key that
+        // is no path have no second form.
+        XCTAssertEqual(StoredPathLinks.forms(of: real), [])
+        XCTAssertEqual(StoredPathLinks.forms(of: folder.path + "/Not There.app"), [])
+        let loop = folder.appendingPathComponent("Loop.app")
+        try files.createSymbolicLink(atPath: loop.path, withDestinationPath: "Loop.app")
+        XCTAssertEqual(StoredPathLinks.forms(of: loop.path), [])
+        XCTAssertEqual(StoredPathLinks.forms(of: "com.example.app"), [])
+
+        // The rule of the app: the Applications folders and /System, never /System/Volumes.
+        StoredPathLinks.mayLookAt = savedRule
+        XCTAssertTrue(StoredPathLinks.mayLookAt("/Applications/Safari.app"))
+        XCTAssertTrue(StoredPathLinks.mayLookAt("/System/Cryptexes/App/System/Applications/Safari.app"))
+        XCTAssertFalse(StoredPathLinks.mayLookAt("/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app"))
+        XCTAssertFalse(StoredPathLinks.mayLookAt("/Volumes/Disk/Some.app"))
+        XCTAssertFalse(StoredPathLinks.mayLookAt(NSHomeDirectory() + "/Documents/Some.app"))
+
+        // The case itself, on a Mac that has it (Safari in the cryptex): its links, read
+        // one by one, end where the system says they do.
+        if let last = StoredPathLinks.forms(of: "/Applications/Safari.app").last {
+            XCTAssertEqual(last, ("/Applications/Safari.app" as NSString).resolvingSymlinksInPath)
+        }
     }
 
     /// "Everywhere: …": the general binding of the same trigger, else the one such a press
