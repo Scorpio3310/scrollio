@@ -3415,3 +3415,52 @@ private final class MenuStandInView: NSView {
         }
     }
 }
+
+// MARK: - Round 2 B1
+
+extension PreferencesWindowRenderTests {
+
+    /// "Scrolling in Safari" (`r2-b1-<case>-<appearance>.png`), Safari's page on its
+    /// Scrolling part: `same`, `own`, `macos` (the three choices); `own-limit` and
+    /// `macos-limit` with "Change scrolling only in these apps" on (the line under the
+    /// app's box, not with Left to macOS); `own-min` and `macos-min` in the smallest
+    /// window; `long-name` and `long-name-own`, an app with a long name and the limit on.
+    func testRenderRound2B1ScrollingChoice() throws {
+        let stored = Options.shared.application.applications
+        addTeardownBlock { Options.shared.application.applications = stored }
+        let minimum = PreferencesWindowLayout.minimumContentHeight
+        func page(
+            _ name: String, _ choice: ApplicationScrollingChoice, limit: Bool = false,
+            displayName: String? = nil, windowHeight: CGFloat? = nil
+        ) throws {
+            let safari = Application(path: "/Applications/Safari.app")
+            safari.setUsesScrollingSettings(choice == .sameAsScrolling, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
+            if choice == .leftToMacOS {
+                safari.scroll.smooth = false
+                safari.scroll.reversesWheel = false
+            }
+            if let displayName {
+                safari.displayName = displayName
+            }
+            Options.shared.application.applications = EnhanceArray<Application>(withArray: [safari], matchKey: "path")
+            Options.shared.application.allowlist = limit
+            let defaults = uiDefaults(advanced: false)
+            try renderPane(PANEL_IDENTIFIER.application, name: "r2-b1-\(name)", windowHeight: windowHeight, prepare: { preferences in
+                (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                    .uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                (controller as? PreferencesApplicationViewController)?.openApplication(withID: safari.path, part: .scrolling)
+            })
+        }
+        try page("same", .sameAsScrolling)
+        try page("own", .ownSettings)
+        try page("macos", .leftToMacOS)
+        try page("own-limit", .ownSettings, limit: true)
+        try page("macos-limit", .leftToMacOS, limit: true)
+        try page("own-min", .ownSettings, limit: true, windowHeight: minimum)
+        try page("macos-min", .leftToMacOS, windowHeight: minimum)
+        let long = "An Application With A Remarkably Long Name For Its Kind"
+        try page("long-name", .leftToMacOS, limit: true, displayName: long)
+        try page("long-name-own", .ownSettings, limit: true, displayName: long)
+    }
+}
