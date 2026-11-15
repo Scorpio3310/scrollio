@@ -426,6 +426,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         applyAdvancedExpanded()
         syncViewWithOptions()
         applyLeftToMacOS()
+        if currentTargetApplication == nil { DifferentInAppsLine.add(to: content, part: .scrolling, pane: self) }
         root.setFrameSize(root.fittingSize)
         isBuilt = true
     }

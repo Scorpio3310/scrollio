@@ -433,6 +433,7 @@ final class RingPreferencesViewController: NSViewController {
 
         view = root
         reload()
+        if application == nil { DifferentInAppsLine.add(to: content, part: .ring, pane: self, showsIcons: true) }
         root.setFrameSize(root.fittingSize)
     }
 

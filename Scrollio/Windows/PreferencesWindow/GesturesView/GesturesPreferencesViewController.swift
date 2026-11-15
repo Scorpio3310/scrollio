@@ -219,6 +219,7 @@ final class GesturesPreferencesViewController: NSViewController {
 
         view = root
         reload()
+        DifferentInAppsLine.add(to: content, part: .gestures, pane: self)
         root.setFrameSize(root.fittingSize)
     }
 
