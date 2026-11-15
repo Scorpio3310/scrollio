@@ -654,7 +654,9 @@ final class ThumbWheelFollowTests: XCTestCase {
         rig.advance(to: 500.1)
         Options.shared.thumbWheel.followsWheel = false
         try turn(at: 0.15)
-        XCTAssertEqual(dock.terminals, [.end(0)])
+        XCTAssertTrue(dock.terminals.isEmpty, "nothing is sent to the Dock inside the tap callback")
+        rig.advance(to: 500.15)
+        XCTAssertEqual(dock.terminals, [.end(0)], "on the main queue, right after it")
         try turn(at: 0.2)
         try turn(at: 0.25)
         rig.advance(to: 502)
@@ -887,7 +889,9 @@ final class ThumbWheelFollowTests: XCTestCase {
         try turn(at: 0.05)
         rig.advance(to: 500.1)
         try turn(at: 0.6, busy: true)
-        XCTAssertEqual(dock.terminals, [.end(0)], "the stroke ended in the callback")
+        XCTAssertTrue(dock.terminals.isEmpty, "the stroke is over, but nothing is sent to the Dock inside the callback")
+        rig.advance(to: 500.6)
+        XCTAssertEqual(dock.terminals, [.end(0)], "it ended on the main queue, right after the callback")
         rig.advance(to: 503)
         XCTAssertEqual(rig.lines.first?.swipes.map(ScrollSystemLog.swipeMessage), ["0.33 ended", "0.17 ended"], "the new stroke's too")
 
@@ -1437,6 +1441,87 @@ final class ThumbWheelFollowTests: XCTestCase {
         XCTAssertEqual(dock.terminals, [.end(0)], "ended by its rest, not kept alive")
         XCTAssertEqual(follower.state, .idle)
         follower.cancel()
+    }
+
+    /// Nothing is sent to the Dock from inside the tap callback (a synthetic event posted
+    /// there re-enters the event pipeline and can time the tap out). The wheel is taken
+    /// again 0.46 s after a stop, before the rest's look came (it is scheduled with
+    /// leeway): the event finds the stroke over, and the stroke's end (the swipe's last
+    /// update and its end) goes out on the main queue, right after the callback; the
+    /// events that came meanwhile begin the next stroke after it, in order, with all their
+    /// travel. The same when the turn stops following in the middle of a stroke, and a stop
+    /// meanwhile cancels at once and runs nothing later.
+    func testAStrokeAnEventFindsOverEndsOnTheMainQueueNotInTheTapCallback() throws {
+        let follower = bareFollower()
+        var strokesEnded: [Int] = []
+        follower.onStrokeEnd = { tag, _ in strokesEnded.append(tag) }
+        func add(at time: Double, tag: Int) -> ThumbWheelFollower.Taken {
+            return follower.add(1, at: time, seenAt: time, tag: tag)
+        }
+        rig.advance(to: 500)
+        XCTAssertEqual(add(at: 500, tag: 1), .yes(newStroke: true))
+        rig.advance(to: 500.44)
+        let sliding = dock.calls
+        XCTAssertEqual(sliding.first, .begin)
+        XCTAssertTrue(dock.terminals.isEmpty)
+
+        // 0.46 s after the stop: the rest's look, due at 0.45 s, has not run.
+        rig.now = 500.46
+        XCTAssertEqual(add(at: 500.46, tag: 2), .yes(newStroke: true), "the next stroke's first event")
+        rig.now = 500.48
+        XCTAssertEqual(add(at: 500.48, tag: 2), .yes(newStroke: false))
+        XCTAssertEqual(dock.calls, sliding, "no call to the Dock inside the tap callback")
+        XCTAssertTrue(follower.isInStroke)
+        XCTAssertTrue(strokesEnded.isEmpty)
+
+        rig.advance(to: 500.48)
+        XCTAssertEqual(dock.terminals, [.end(0)], "the main queue ran: the stroke that rested ended")
+        XCTAssertEqual(strokesEnded, [1])
+        rig.advance(to: 500.7)
+        let end = try XCTUnwrap(dock.calls.firstIndex { if case .end = $0 { return true } else { return false } })
+        let begins = dock.calls.indices.filter { dock.calls[$0] == .begin }
+        XCTAssertEqual(begins.count, 2, "\(dock.calls)")
+        XCTAssertLessThan(end, try XCTUnwrap(begins.last), "the end first, then the next stroke's swipe")
+        XCTAssertEqual(try XCTUnwrap(dock.updates.last), 2.0 / 6 * Self.space, accuracy: 1e-9, "both events' travel")
+        rig.advance(to: 502)
+        XCTAssertEqual(strokesEnded, [1, 2])
+        XCTAssertEqual(dock.terminals.count, 2)
+        XCTAssertFalse(follower.isInStroke)
+
+        // The turn stops following in the middle of a stroke (`endStroke(at:)`, in the tap
+        // callback too, asked by every event until the stroke is over): once, on the main queue.
+        dock.calls = []
+        rig.advance(to: 510)
+        XCTAssertEqual(add(at: 510, tag: 3), .yes(newStroke: true))
+        rig.advance(to: 510.05)
+        let running = dock.calls
+        rig.now = 510.1
+        follower.endStroke(at: 510.1)
+        rig.now = 510.12
+        follower.endStroke(at: 510.12)
+        XCTAssertEqual(dock.calls, running, "no call to the Dock inside the tap callback")
+        XCTAssertTrue(follower.isInStroke)
+        rig.advance(to: 510.12)
+        XCTAssertEqual(dock.terminals, [.end(0)])
+        XCTAssertEqual(follower.state, .idle)
+        XCTAssertEqual(strokesEnded, [1, 2, 3])
+
+        // A stop while an end waits for the main queue and events wait behind it: the swipe
+        // is cancelled at once (a stop does not wait for the queue), the kept events begin
+        // nothing, and both strokes are over for their rolls.
+        dock.calls = []
+        rig.advance(to: 520)
+        XCTAssertEqual(add(at: 520, tag: 4), .yes(newStroke: true))
+        rig.advance(to: 520.44)
+        rig.now = 520.46
+        XCTAssertEqual(add(at: 520.46, tag: 5), .yes(newStroke: true))
+        follower.cancel()
+        XCTAssertEqual(dock.terminals, [.cancel])
+        XCTAssertEqual(Set(strokesEnded.suffix(2)), [4, 5])
+        XCTAssertFalse(follower.isInStroke)
+        rig.advance(to: 523)
+        XCTAssertEqual(dock.calls.filter { $0 == .begin }.count, 1, "nothing began later: \(dock.calls)")
+        XCTAssertEqual(dock.terminals, [.cancel])
     }
 
     /// A swipe that waits as late holds back only the later endings of its own roll (their
