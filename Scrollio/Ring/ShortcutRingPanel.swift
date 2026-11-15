@@ -274,8 +274,12 @@ final class ShortcutRingStageView: NSView {
 protocol ShortcutRingPresenting: AnyObject {
     /// A pointer button went down or came up on the ring's panel (event coordinates).
     var onButton: ((_ button: Int, _ isDown: Bool, _ location: CGPoint) -> Void)? { get set }
-    /// Shows the ring with its middle at `centre` on `screen` (event coordinates).
-    func show(_ face: ShortcutRingFace, centre: CGPoint, screen: ShortcutRingScreen, lit: Int?, takesClicks: Bool)
+    /// Shows the ring with its middle at `centre` on `screen` (event coordinates). `owner`:
+    /// whose ring it is (its label, and an app's icon in the middle while nothing is lit).
+    func show(
+        _ face: ShortcutRingFace, owner: ShortcutRingOwner, centre: CGPoint, screen: ShortcutRingScreen, lit: Int?,
+        takesClicks: Bool
+    )
     func light(_ place: Int?)
     /// Whether the panel takes the mouse (the ring's controller asks for it whenever a
     /// ring is open) or ignores it.
@@ -284,6 +288,13 @@ protocol ShortcutRingPresenting: AnyObject {
     func hide()
     /// Whether `window` is the ring's own panel.
     func owns(_ window: NSWindow?) -> Bool
+}
+
+extension ShortcutRingPresenting {
+    /// Shows the general ring.
+    func show(_ face: ShortcutRingFace, centre: CGPoint, screen: ShortcutRingScreen, lit: Int?, takesClicks: Bool) {
+        show(face, owner: .general, centre: centre, screen: screen, lit: lit, takesClicks: takesClicks)
+    }
 }
 
 /// Calls back once per frame of the screen until it is stopped.
@@ -414,7 +425,10 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
         }
     }
 
-    func show(_ face: ShortcutRingFace, centre: CGPoint, screen: ShortcutRingScreen, lit: Int?, takesClicks: Bool) {
+    func show(
+        _ face: ShortcutRingFace, owner: ShortcutRingOwner, centre: CGPoint, screen: ShortcutRingScreen, lit: Int?,
+        takesClicks: Bool
+    ) {
         assertMainThread()
         let (panel, stage) = makePanelIfNeeded()
         let appearance = self.appearance()
@@ -427,6 +441,11 @@ final class ShortcutRingPanelPresenter: ShortcutRingPresenting {
         let drops = stage.drops(of: appearance.material)
         stage.place(centre: centre, on: screen.frame)
         drops.increasesContrast = appearance.increasesContrast
+        drops.reducesTransparency = appearance.reducesTransparency
+        // Whose ring: its label, and an app's icon in the middle while nothing is lit (made
+        // at a quiet moment; nothing is loaded here).
+        drops.setAccessibilityLabel(owner.accessibilityLabel)
+        drops.appIcon = owner.hubIcon
         drops.face = face
         self.face = face
         reducesMotion = appearance.reducesMotion

@@ -348,11 +348,16 @@ final class ShortcutRingDropsPanelTests: XCTestCase {
             }
         }
 
-        func show(lit: Int? = nil) {
+        func show(lit: Int? = nil, owner: ShortcutRingOwner = .general) {
             let screen = ShortcutRingScreen(
                 frame: CGRect(x: 0, y: 0, width: 1512, height: 982), usable: CGRect(x: 0, y: 32, width: 1512, height: 950)
             )
-            presenter.show(face, centre: CGPoint(x: 400, y: 300), screen: screen, lit: lit, takesClicks: false)
+            presenter.show(face, owner: owner, centre: CGPoint(x: 400, y: 300), screen: screen, lit: lit, takesClicks: false)
+        }
+
+        /// What the hub shows now.
+        var hub: ShortcutRingDropContentView {
+            return drops.contents[ShortcutRingDrops.placeCount]
         }
 
         var drops: ShortcutRingDropsView {
@@ -689,6 +694,124 @@ final class ShortcutRingDropsPanelTests: XCTestCase {
         // The lit drop is larger and farther out: the material is under all of it.
         XCTAssertEqual(alpha(ShortcutRingGeometry.offset(ofPlace: 2, radius: 88 + 30)), 1, accuracy: 0.01)
         XCTAssertEqual(alpha(ShortcutRingGeometry.offset(ofPlace: 6, radius: 82 + 28)), 0, accuracy: 0.01)
+    }
+
+    // MARK: An app's own ring: the app's icon in the middle
+
+    /// What the hub's view shows, in words: "nothing", "name <title>" or "icon <opacity>".
+    private func described(_ content: ShortcutRingDropContentView.Content) -> String {
+        switch content {
+        case .nothing: return "nothing"
+        case .place(let place): return "place \(place.title)"
+        case .name(let title, _): return "name \(title)"
+        case .appIcon(_, let opacity): return "icon \(opacity)"
+        }
+    }
+
+    private let notesIcon = RingHarness.mark(named: "Notes").icon
+
+    /// An app's own ring shows the app's icon in its middle while nothing is lit; a lit
+    /// place's name takes its place, and when nothing is lit again the icon is back. On
+    /// every material, and with no animation of its own: the hub's view only gets another
+    /// content.
+    func testTheHubShowsTheIconThenTheLitNameThenTheIconAgain() {
+        var appearances = [ShortcutRingAppearance(), ShortcutRingAppearance(reducesTransparency: true)]
+        if #available(macOS 26.0, *) {
+            appearances.append(ShortcutRingAppearance(hasLiquidGlass: true))
+        }
+        for appearance in appearances {
+            let rig = Rig(appearance: appearance)
+            rig.show(owner: .app(name: "Notes", icon: notesIcon))
+            let faint = appearance.reducesTransparency ? "icon 1.0" : "icon 0.5"
+            XCTAssertEqual(described(rig.hub.content), faint, "\(appearance.material)")
+            guard case .appIcon(let icon, _) = rig.hub.content else { return XCTFail("no icon") }
+            XCTAssertTrue(icon === notesIcon, "the icon made at a quiet moment, as it is")
+
+            rig.presenter.light(3)
+            XCTAssertEqual(described(rig.hub.content), "name \(rig.face.places[3].title)")
+            rig.presenter.light(5)
+            XCTAssertEqual(described(rig.hub.content), "name \(rig.face.places[5].title)")
+            rig.presenter.light(nil)
+            XCTAssertEqual(described(rig.hub.content), faint, "nothing lit: the icon again")
+            XCTAssertFalse(rig.hub.isHidden)
+
+            // A ring that opens with a place lit shows its name first.
+            rig.presenter.hide()
+            rig.show(lit: 2, owner: .app(name: "Notes", icon: notesIcon))
+            XCTAssertEqual(described(rig.hub.content), "name \(rig.face.places[2].title)")
+            rig.presenter.light(nil)
+            XCTAssertEqual(described(rig.hub.content), faint)
+        }
+    }
+
+    /// The general ring's middle is empty, also right after an app's own ring was shown on
+    /// the same panel; so is an app's own ring whose icon was not made yet.
+    func testTheGeneralRingAndARingWithoutAMadeIconHaveAnEmptyMiddle() {
+        let rig = Rig(appearance: ShortcutRingAppearance())
+        rig.show()
+        XCTAssertEqual(described(rig.hub.content), "nothing")
+        XCTAssertNil(rig.drops.appIcon)
+        rig.presenter.hide()
+        rig.show(owner: .app(name: "Notes", icon: notesIcon))
+        XCTAssertEqual(described(rig.hub.content), "icon 0.5")
+        rig.presenter.hide()
+        rig.show()
+        XCTAssertEqual(described(rig.hub.content), "nothing", "the general ring after an app's own")
+        rig.presenter.light(4)
+        rig.presenter.light(nil)
+        XCTAssertEqual(described(rig.hub.content), "nothing")
+        rig.presenter.hide()
+        rig.show(owner: .app(name: "Notes", icon: nil))
+        XCTAssertEqual(described(rig.hub.content), "nothing", "no icon made yet: nothing is loaded at the open")
+    }
+
+    /// 40 points, half of it, nothing around it; whole under Increase Contrast and under
+    /// Reduce Transparency, also when the setting changes between two rings.
+    func testTheIconIsHalfFaintUnlessContrastOrNoTransparencyIsAsked() {
+        XCTAssertEqual(ShortcutRingArtwork.appIconSide, 40)
+        XCTAssertEqual(ShortcutRingArtwork.appIconOpacity(increasesContrast: false, reducesTransparency: false), 0.5)
+        XCTAssertEqual(ShortcutRingArtwork.appIconOpacity(increasesContrast: true, reducesTransparency: false), 1)
+        XCTAssertEqual(ShortcutRingArtwork.appIconOpacity(increasesContrast: false, reducesTransparency: true), 1)
+        XCTAssertEqual(ShortcutRingArtwork.appIconOpacity(increasesContrast: true, reducesTransparency: true), 1)
+
+        var appearance = ShortcutRingAppearance()
+        let rig = Rig(appearance: appearance)
+        rig.presenter.appearance = { appearance }
+        rig.show(owner: .app(name: "Notes", icon: notesIcon))
+        XCTAssertEqual(described(rig.hub.content), "icon 0.5")
+        for asked in [ShortcutRingAppearance(increasesContrast: true), ShortcutRingAppearance(reducesTransparency: true)] {
+            rig.presenter.hide()
+            appearance = asked
+            rig.show(owner: .app(name: "Notes", icon: notesIcon))
+            XCTAssertEqual(described(rig.hub.content), "icon 1.0", "\(asked)")
+        }
+        rig.presenter.hide()
+        appearance = ShortcutRingAppearance()
+        rig.show(owner: .app(name: "Notes", icon: notesIcon))
+        XCTAssertEqual(described(rig.hub.content), "icon 0.5")
+    }
+
+    /// VoiceOver finds the ring as "Shortcut Ring", an app's own as "Shortcut Ring for
+    /// Notes"; what stands in the drops, the icon among it, is drawn and not read.
+    func testTheRingsLabelNamesTheAppAndTheIconIsNotRead() {
+        let rig = Rig(appearance: ShortcutRingAppearance())
+        rig.show()
+        XCTAssertTrue(rig.drops.isAccessibilityElement())
+        XCTAssertEqual(rig.drops.accessibilityRole(), .group)
+        XCTAssertEqual(rig.drops.accessibilityLabel(), "Shortcut Ring")
+        rig.presenter.hide()
+        rig.show(owner: .app(name: "Notes", icon: notesIcon))
+        XCTAssertEqual(rig.drops.accessibilityLabel(), "Shortcut Ring for Notes")
+        XCTAssertFalse(rig.hub.isAccessibilityElement(), "the icon is decorative")
+        XCTAssertTrue(rig.drops.contents.allSatisfy { !$0.isAccessibilityElement() })
+        rig.presenter.hide()
+        rig.show(owner: .app(name: "Notes", icon: nil))
+        XCTAssertEqual(rig.drops.accessibilityLabel(), "Shortcut Ring for Notes", "named also before its icon is made")
+        rig.presenter.hide()
+        rig.show()
+        XCTAssertEqual(rig.drops.accessibilityLabel(), "Shortcut Ring")
+        XCTAssertEqual(ShortcutRingOwner.app(name: "Notes", icon: nil).hubIcon, nil)
+        XCTAssertNil(ShortcutRingOwner.general.hubIcon)
     }
 }
 

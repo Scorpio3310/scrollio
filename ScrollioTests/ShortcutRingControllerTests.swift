@@ -15,12 +15,18 @@ final class RingPresenterDouble: ShortcutRingPresenting {
     var onButton: ((Int, Bool, CGPoint) -> Void)?
     var log: (String) -> Void = { _ in }
     private(set) var shown: [(face: ShortcutRingFace, centre: CGPoint, screen: ShortcutRingScreen, lit: Int?, takesClicks: Bool)] = []
+    /// Whose ring each of `shown` was.
+    private(set) var owners: [ShortcutRingOwner] = []
     private(set) var lit: [Int?] = []
     private(set) var takesClicks: Bool?
     private(set) var hides = 0
 
-    func show(_ face: ShortcutRingFace, centre: CGPoint, screen: ShortcutRingScreen, lit: Int?, takesClicks: Bool) {
+    func show(
+        _ face: ShortcutRingFace, owner: ShortcutRingOwner, centre: CGPoint, screen: ShortcutRingScreen, lit: Int?,
+        takesClicks: Bool
+    ) {
         shown.append((face, centre, screen, lit, takesClicks))
+        owners.append(owner)
         self.takesClicks = takesClicks
         log("show")
     }
@@ -78,6 +84,8 @@ final class RingHarness {
     private var scheduled: [() -> Void] = []
     /// How often a place of a face was looked up on disk (an app's name and icon).
     private(set) var placesLookedUp = 0
+    /// The apps whose mark was made (`makeAppMark`), by path, in order: no disk is read.
+    private(set) var marksMade: [String] = []
     /// What was asked to run after a delay, with the time it is due.
     private var delayed: [(due: TimeInterval, block: () -> Void)] = []
 
@@ -102,6 +110,10 @@ final class RingHarness {
             makePlace: { [unowned self] in
                 self.placesLookedUp += 1
                 return ShortcutRingFace.place($0)
+            },
+            makeAppMark: { [unowned self] path in
+                self.marksMade.append(path)
+                return RingHarness.mark(named: ShortcutRingAppMark.plainName(ofPath: path))
             },
             run: { [unowned self] in self.log.append("run \(ShortcutRingController.logName(of: $0))") },
             allowsHaptics: { [unowned self] in self.hapticsAllowed },
@@ -146,6 +158,16 @@ final class RingHarness {
 
     func clearLog() {
         log = []
+    }
+
+    /// An app's mark made without a look on disk: a small square of one colour.
+    static func mark(named name: String, colour: NSColor = .systemTeal) -> ShortcutRingAppMark {
+        let icon = NSImage(size: NSSize(width: 40, height: 40), flipped: false) { rect in
+            colour.setFill()
+            NSBezierPath(roundedRect: rect.insetBy(dx: 3, dy: 3), xRadius: 8, yRadius: 8).fill()
+            return true
+        }
+        return ShortcutRingAppMark(icon: icon, name: name)
     }
 
     static func button(_ phase: InputPhase, code: UInt16 = 4, overHIDPP: Bool = false) -> InputEvent {
@@ -990,6 +1012,277 @@ final class ShortcutRingControllerTests: XCTestCase {
         XCTAssertEqual(ShortcutRingController.logName(of: ShortcutRingPlace(openTarget: OpenTargetPayload(
             path: "/Users/someone/bin/sync.sh", bundleID: nil, arguments: "", kind: .script
         ))), "a script")
+    }
+}
+
+// MARK: - The app's icon in the middle of its own ring
+
+final class ShortcutRingAppMarkTests: XCTestCase {
+
+    private typealias FrontApp = ShortcutRingChoice.FrontApp
+
+    private static let notes = "/System/Applications/Notes.app"
+    private static let calculator = "/System/Applications/Calculator.app"
+    private static let ringAction = SystemShortcut.shortcutRing.identifier
+
+    private var harness: RingHarness!
+    private var controller: ShortcutRingController { return harness.controller }
+    private var front: FrontApp?
+    private var applications = EnhanceArray<Application>(withArray: [], matchKey: "path")
+
+    private static func list(_ applications: [Application]) -> EnhanceArray<Application> {
+        return EnhanceArray<Application>(withArray: applications, matchKey: "path")
+    }
+
+    /// An app on the list with a ring of its own (a copy of a new ring).
+    private static func ownRing(_ path: String) -> Application {
+        let application = Application(path: path)
+        application.setUsesGeneralRing(false, general: .default)
+        return application
+    }
+
+    private static func opensTheRing(code: UInt16 = 4) -> ButtonBinding {
+        return ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: ringAction, isEnabled: true
+        )
+    }
+
+    override func setUp() {
+        super.setUp()
+        ShortcutRingController.forgetPreparedFaces()
+        harness = RingHarness()
+        front = nil
+        applications = Self.list([Self.ownRing(Self.notes), Application(path: Self.calculator)])
+        controller.environment.choice = { [unowned self] general in
+            ShortcutRingChoice.make(front: self.front, applications: self.applications, general: general)
+        }
+    }
+
+    override func tearDown() {
+        harness = nil
+        ShortcutRingController.forgetPreparedFaces()
+        super.tearDown()
+    }
+
+    // MARK: Which ring has one
+
+    /// The choice carries the stored path of the app's entry for its own ring only; the
+    /// owner of a ring is the general ring, or the app with its mark when one was made.
+    func testOnlyAnAppsOwnRingHasAnAppAndItsPathIsTheEntrys() {
+        let program = Self.notes + "/Contents/MacOS/Notes"
+        let own = ShortcutRingChoice.make(
+            front: FrontApp(bundlePath: nil, executablePath: program),
+            applications: Self.list([Self.ownRing(program)]), general: .default
+        )
+        XCTAssertEqual(own.appPath, program, "the entry's path, as stored")
+        for front in [FrontApp(bundlePath: Self.calculator, executablePath: nil), FrontApp(bundlePath: "/Applications/Other.app"), nil] {
+            let general = ShortcutRingChoice.make(front: front, applications: applications, general: .default)
+            XCTAssertNil(general.appPath)
+            XCTAssertEqual(ShortcutRingController.owner(of: general), .general)
+        }
+        XCTAssertNil(ShortcutRingChoice(ring: .default, isAppsOwn: false, appPath: Self.notes).appPath, "never for the general ring")
+
+        XCTAssertEqual(ShortcutRingController.owner(of: own), .app(name: "Notes", icon: nil), "no mark made: the name in its path")
+        let mark = RingHarness.mark(named: "Notes (made)")
+        ShortcutRingController.prepare(mark, forAppAt: program)
+        XCTAssertEqual(ShortcutRingController.owner(of: own), .app(name: "Notes (made)", icon: mark.icon))
+
+        XCTAssertEqual(ShortcutRingAppMark.plainName(ofPath: "/Applications/Safari.app"), "Safari")
+        XCTAssertEqual(ShortcutRingAppMark.plainName(ofPath: program), "Notes")
+        XCTAssertEqual(ShortcutRingAppMark.plainName(ofPath: "/usr/local/bin/tool"), "tool")
+    }
+
+    /// Nothing is loaded when the ring opens: an app's own ring whose mark was not made
+    /// shows an empty middle (and is named by its path), its mark is made after it closed,
+    /// and the next ring has the icon. The general ring never has one, also when marks of
+    /// apps are there.
+    func testNothingIsLoadedAtTheOpenAndTheMarkIsMadeAfterTheRingClosed() {
+        front = FrontApp(bundlePath: Self.notes, executablePath: nil)
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertEqual(harness.presenter.owners.last, .app(name: "Notes", icon: nil))
+        XCTAssertTrue(harness.marksMade.isEmpty, "nothing is loaded at the open")
+        controller.triggerReleased(isMadeUp: false)   // nothing lit: it stands open
+        harness.runScheduled()
+        XCTAssertTrue(harness.marksMade.isEmpty, "nor while it stands open")
+        controller.cancel()
+        harness.runScheduled()
+        XCTAssertEqual(harness.marksMade, [Self.notes], "after it closed")
+        XCTAssertNotNil(ShortcutRingController.preparedAppMark(forPath: Self.notes))
+
+        harness.tap()
+        XCTAssertNotNil(harness.presenter.owners.last?.hubIcon, "the next ring has the icon")
+        controller.cancel()
+        harness.runScheduled()
+        XCTAssertEqual(harness.marksMade, [Self.notes], "made once")
+
+        // The general ring: the app in front has no ring of its own, or there is none.
+        for general in [FrontApp(bundlePath: Self.calculator, executablePath: nil), nil] {
+            front = general
+            harness.tap()
+            XCTAssertEqual(harness.presenter.owners.last, .general)
+            XCTAssertNil(harness.presenter.owners.last?.hubIcon)
+            controller.cancel()
+            harness.runScheduled()
+        }
+        XCTAssertEqual(harness.marksMade, [Self.notes])
+        XCTAssertFalse(harness.logLines.contains { $0.contains("Notes") }, "the log never names the app")
+    }
+
+    /// A ring that had to be shown without its places' icons makes its face first, one
+    /// place per turn, and the app's mark in a turn of its own after it.
+    func testAfterAClosedRingTheFaceComesFirstAndTheMarkInATurnOfItsOwn() throws {
+        let notes = try XCTUnwrap(applications.get(by: Self.notes))
+        notes.ring?[1] = ShortcutRingPlace(openTarget: OpenTargetPayload(path: Self.calculator, bundleID: nil, arguments: "", kind: .application))
+        notes.ring?[3] = ShortcutRingPlace(openTarget: OpenTargetPayload(path: "/System/Applications/TextEdit.app", bundleID: nil, arguments: "", kind: .application))
+        front = FrontApp(bundlePath: Self.notes, executablePath: nil)
+        harness.tap()
+        controller.cancel()
+        var perTurn: [String] = []
+        while harness.hasScheduledWork {
+            let (places, marks) = (harness.placesLookedUp, harness.marksMade.count)
+            harness.runOneTurn()
+            perTurn.append("\(harness.placesLookedUp - places)/\(harness.marksMade.count - marks)")
+        }
+        XCTAssertEqual(perTurn, ["1/0", "1/0", "0/1"])
+    }
+
+    // MARK: At launch and after a change
+
+    /// The marks are made where the faces are: decided on a later turn, then one app per
+    /// turn, never while a ring is open, only for apps whose own ring can open, after the
+    /// faces, and not again once they are there. They are dropped when the app leaves the
+    /// list.
+    func testTheMarksAreMadeOnePerTurnAfterTheFacesAndDroppedWithTheApp() throws {
+        let options = Options()
+        options.defaults = TestDefaults.make(for: self)
+        let notes = Self.ownRing(Self.notes)
+        notes.ring?[2] = ShortcutRingPlace(openTarget: OpenTargetPayload(path: Self.calculator, bundleID: nil, arguments: "", kind: .application))
+        let maps = Self.ownRing("/System/Applications/Maps.app")
+        let preview = Application(path: "/System/Applications/Preview.app")   // the general ring
+        options.application.applications = Self.list([notes, maps, preview])
+
+        var turns: [(delay: TimeInterval, block: () -> Void)] = []
+        var work: [String] = []
+        func prepare() {
+            ShortcutRingController.prepareMissingFaces(options: options, after: { turns.append(($0, $1)) }, makePlace: {
+                work.append("place \($0.openTarget?.path ?? "")")
+                return ShortcutRingFace.place($0, looksOnDisk: false)
+            }, makeMark: { path in
+                work.append("mark \(path)")
+                return RingHarness.mark(named: ShortcutRingAppMark.plainName(ofPath: path))
+            })
+        }
+        func nextTurn() {
+            guard !turns.isEmpty else { return XCTFail("no turn is due") }
+            turns.removeFirst().block()
+        }
+
+        prepare()
+        nextTurn()
+        XCTAssertTrue(turns.isEmpty, "nothing opens a ring: no mark")
+        XCTAssertEqual(ShortcutRingController.appMarksToPrepare(options: options), [])
+
+        options.buttons.binding = [Self.opensTheRing()]
+        XCTAssertEqual(ShortcutRingController.appMarksToPrepare(options: options), [Self.notes, maps.path],
+                       "the apps whose own ring can open; not the one with the general ring")
+        prepare()
+        nextTurn()
+        XCTAssertTrue(work.isEmpty, "nothing in the turn that decides")
+
+        ShortcutRingController.setTestingController(controller)
+        defer { ShortcutRingController.setTestingController(nil) }
+        var perTurn: [Int] = []
+        var pressed = false
+        while !turns.isEmpty {
+            // A ring opens after the face is made, before the first mark.
+            if work.count == 1, !pressed {
+                pressed = true
+                controller.triggerPressed(by: RingHarness.button(.down))
+            } else if controller.isOpen {
+                controller.cancel()
+            }
+            let before = work.count
+            nextTurn()
+            perTurn.append(work.count - before)
+        }
+        XCTAssertEqual(work, ["place \(Self.calculator)", "mark \(Self.notes)", "mark \(maps.path)"], "the face first")
+        XCTAssertTrue(perTurn.allSatisfy { $0 <= 1 }, "\(perTurn)")
+        XCTAssertTrue(perTurn.contains(0), "a turn found the ring open and waited: \(perTurn)")
+        XCTAssertNotNil(ShortcutRingController.preparedAppMark(forPath: Self.notes))
+        XCTAssertNotNil(ShortcutRingController.preparedAppMark(forPath: maps.path))
+        XCTAssertNil(ShortcutRingController.preparedAppMark(forPath: preview.path))
+
+        prepare()
+        nextTurn()
+        XCTAssertTrue(turns.isEmpty, "a mark that is there is not made again")
+        XCTAssertEqual(work.count, 3)
+
+        // Maps leaves the list: its mark goes at the next pass.
+        options.application.applications = Self.list([notes, preview])
+        prepare()
+        nextTurn()
+        XCTAssertNil(ShortcutRingController.preparedAppMark(forPath: maps.path))
+        XCTAssertNotNil(ShortcutRingController.preparedAppMark(forPath: Self.notes))
+        XCTAssertTrue(turns.isEmpty)
+    }
+
+    /// At launch the marks follow the faces of the launch: the pass after a change (asked
+    /// for at launch too) waits while the launch's faces are under way, so that no turn
+    /// does two things, and then makes only what is still missing.
+    func testAtLaunchTheMarksWaitForTheLaunchsFaces() {
+        let options = Options()
+        options.defaults = TestDefaults.make(for: self)
+        var general = ShortcutRingSettings.default
+        general[5] = ShortcutRingPlace(openTarget: OpenTargetPayload(path: Self.calculator, bundleID: nil, arguments: "", kind: .application))
+        options.ring = general
+        let notes = Self.ownRing(Self.notes)
+        notes.ring?[2] = ShortcutRingPlace(openTarget: OpenTargetPayload(path: "/System/Applications/TextEdit.app", bundleID: nil, arguments: "", kind: .application))
+        options.application.applications = Self.list([notes])
+        options.buttons.binding = [Self.opensTheRing()]
+
+        var turns: [(delay: TimeInterval, block: () -> Void)] = []
+        var work: [String] = []
+        let after: (TimeInterval, @escaping () -> Void) -> Void = { turns.append(($0, $1)) }
+        let makePlace: (ShortcutRingPlace) -> ShortcutRingFace.Place = {
+            work.append("place")
+            return ShortcutRingFace.place($0, looksOnDisk: false)
+        }
+        ShortcutRingController.prepareFaceAtLaunch(options: options, after: after, makePlace: makePlace)
+        ShortcutRingController.prepareMissingFaces(options: options, after: after, makePlace: makePlace, makeMark: { path in
+            work.append("mark")
+            return RingHarness.mark(named: ShortcutRingAppMark.plainName(ofPath: path))
+        })
+        var perTurn: [Int] = []
+        var guardCount = 0
+        while !turns.isEmpty, guardCount < 50 {
+            guardCount += 1
+            let before = work.count
+            turns.removeFirst().block()
+            perTurn.append(work.count - before)
+        }
+        XCTAssertEqual(work, ["place", "place", "mark"], "the launch's two faces, then the mark")
+        XCTAssertTrue(perTurn.allSatisfy { $0 <= 1 }, "\(perTurn)")
+        XCTAssertNotNil(ShortcutRingController.preparedAppMark(forPath: Self.notes))
+        XCTAssertEqual(ShortcutRingController.preparedFaces.count, 2)
+    }
+
+    /// At most as many marks as faces are kept, the newest; an app beyond them takes the
+    /// oldest one's place.
+    func testOnlyTheNewestMarksAreKept() {
+        let limit = ShortcutRingController.preparedFaceLimit
+        for index in 0..<(limit + 2) {
+            ShortcutRingController.prepare(RingHarness.mark(named: "App \(index)"), forAppAt: "/Applications/App \(index).app")
+        }
+        XCTAssertEqual(ShortcutRingController.preparedAppMarks.count, limit)
+        XCTAssertNil(ShortcutRingController.preparedAppMark(forPath: "/Applications/App 0.app"))
+        XCTAssertNil(ShortcutRingController.preparedAppMark(forPath: "/Applications/App 1.app"))
+        XCTAssertEqual(ShortcutRingController.preparedAppMarks.first?.mark.name, "App \(limit + 1)")
+        // The same app again: one mark, the newest.
+        ShortcutRingController.prepare(RingHarness.mark(named: "App 5 again"), forAppAt: "/Applications/App 5.app")
+        XCTAssertEqual(ShortcutRingController.preparedAppMarks.count, limit)
+        XCTAssertEqual(ShortcutRingController.preparedAppMarks.first?.mark.name, "App 5 again")
     }
 }
 
