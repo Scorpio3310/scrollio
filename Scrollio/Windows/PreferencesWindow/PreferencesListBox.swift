@@ -277,6 +277,12 @@ final class PreferencesListBox: NSView {
         scrollSelectionToVisible()
     }
 
+    /// Runs a step of the blink on the main queue after a delay. A test takes the steps and
+    /// runs them itself: by the clock, a late main queue ran two of them in one turn.
+    var scheduleFlashStep: (TimeInterval, @escaping () -> Void) -> Void = { delay, step in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: step)
+    }
+
     /// Selects the row with `id` and blinks its selection twice ("this one is already
     /// there"). Only selects under Reduce Motion.
     func flash(_ id: AnyHashable) {
@@ -285,7 +291,7 @@ final class PreferencesListBox: NSView {
         flashGeneration += 1
         let generation = flashGeneration
         for step in 1...4 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12 * Double(step)) { [weak self] in
+            scheduleFlashStep(0.12 * Double(step)) { [weak self] in
                 guard let self, self.flashGeneration == generation else { return }
                 self.isFlashedOff = step % 2 == 1
                 self.applySelection()
