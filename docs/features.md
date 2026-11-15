@@ -443,7 +443,9 @@ only when you move those controls.
 ## Menu bar
 
 - The menu lists each Logitech mouse's battery (a click opens Settings › Mouse), then
-  "Smooth Scrolling in …" for the app in front with "Pause Scrollio", then "Settings…"
+  "Smooth Scrolling in …" for the app in front, "Settings for …" (the app's page in
+  Apps, or a line there that offers to add it; also while paused) and "Pause Scrollio",
+  then "Settings…"
   (and "Check for Updates…"), then "Quit Scrollio". A pause stops everything and gives
   the Logitech mice their buttons back; it is not kept after Scrollio quits. With Option
   held the menu also lists Logitech Diagnostics, a developer window with the HID++

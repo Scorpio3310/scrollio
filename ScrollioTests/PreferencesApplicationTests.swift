@@ -397,6 +397,190 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertNil(controller.detailController, "nothing was added: the list stays")
     }
 
+    // MARK: - "Settings for Safari…" of the menu bar
+
+    private static let calculatorApp = AppSmoothing.App(name: "Calculator", bundlePath: calculator, executablePath: calculatorProgram)
+    private static let textEditApp = AppSmoothing.App(name: "TextEdit", bundlePath: textEdit, executablePath: textEditProgram)
+
+    /// An app on the list: its page, on the part shown last; nothing is added. Found by its
+    /// bundle or by its program, as "Smooth Scrolling in …" finds it.
+    func testSettingsForAListedAppOpensItsPageOnThePartShownLast() throws {
+        let calculator = application(Self.calculator, inherit: true)
+        let textEdit = application(Self.textEditProgram, inherit: true)
+        Options.shared.application.applications = Self.makeStore([textEdit, calculator])
+        ApplicationPagePart.buttons.remember(in: uiDefaults)
+        let controller = makeController()
+        let window = makeWindow(for: controller)
+
+        controller.showSettings(for: Self.calculatorApp)
+        let page = try XCTUnwrap(controller.detailController)
+        XCTAssertTrue(page.application === calculator)
+        XCTAssertEqual(page.shownPart, .buttons, "the part shown last")
+        XCTAssertTrue(window.firstResponder === page.view)
+        XCTAssertNil(controller.offeredApplication)
+
+        // Another listed app, by its program: its page instead, on the same part.
+        page.show(.ring)
+        controller.showSettings(for: Self.textEditApp)
+        XCTAssertTrue(controller.detailController?.application === textEdit)
+        XCTAssertEqual(controller.detailController?.shownPart, .ring)
+        // The page that is open stays as it is.
+        let open = try XCTUnwrap(controller.detailController)
+        controller.showSettings(for: Self.textEditApp)
+        XCTAssertTrue(controller.detailController === open)
+        XCTAssertEqual(storedPaths(), [Self.textEditProgram, Self.calculator], "nothing added")
+    }
+
+    /// An app that is not on the list: the list with one line at its top that offers to add
+    /// it; only its button adds it (one entry, by its program's path as "+" stores a running
+    /// app), and its page opens.
+    func testSettingsForAnAppNotOnTheListOffersALineThatAddsIt() throws {
+        Options.shared.application.applications = Self.makeStore([application(Self.calculator, inherit: true)])
+        let controller = makeController()
+        _ = makeWindow(for: controller)
+        controller.openApplication(withID: Self.calculator)
+
+        controller.showSettings(for: Self.textEditApp)
+        XCTAssertNil(controller.detailController, "back to the list")
+        XCTAssertTrue(controller.currentPage === controller.listPage)
+        XCTAssertEqual(storedPaths(), [Self.calculator], "the menu bar adds nothing")
+        XCTAssertEqual(controller.list.rows.map { $0.id as? String }, [PreferencesApplicationViewController.offerRowID, Self.calculator])
+        let line = try XCTUnwrap(controller.list.rows.first)
+        XCTAssertEqual(line.title, "TextEdit isn't on the list.")
+        XCTAssertEqual(line.title, Self.catalog("apps-not-on-list", "TextEdit"))
+        XCTAssertNotNil(line.iconView?.image)
+        XCTAssertNil(line.chevronView, "nothing to open")
+        XCTAssertNil(controller.list.selectedID)
+        let add = try XCTUnwrap(line.accessory as? NSButton)
+        XCTAssertEqual(add.title, "Add TextEdit")
+        XCTAssertEqual(add.identifier, PreferencesApplicationViewController.Identifier.offerAdd)
+        XCTAssertEqual(controller.view.frame.height, controller.listPage.fittingSize.height, accuracy: 0.5)
+
+        // Neither Return, a double click nor − does anything with the line.
+        controller.list.select(PreferencesApplicationViewController.offerRowID)
+        XCTAssertFalse(controller.list.removeButton.isEnabled)
+        controller.list.keyDown(with: try key("\r", keyCode: 36))
+        controller.removeApplication(withID: PreferencesApplicationViewController.offerRowID)
+        XCTAssertNil(controller.detailController)
+        XCTAssertEqual(storedPaths(), [Self.calculator])
+
+        // The button adds it once and opens its page.
+        add.performClick(nil)
+        XCTAssertEqual(storedPaths(), [Self.calculator, Self.textEditProgram])
+        let added = try XCTUnwrap(Options.shared.application.applications.get(by: Self.textEditProgram))
+        XCTAssertTrue(added.inherit, "nothing of its own, as after \"+\"")
+        XCTAssertTrue(controller.detailController?.application === added)
+        XCTAssertNil(controller.offeredApplication)
+        controller.showList(focusList: false)
+        XCTAssertEqual(controller.list.rows.map { $0.id as? String }, [Self.calculator, Self.textEditProgram], "the line is gone")
+        controller.addOfferedApplication(add)
+        XCTAssertEqual(storedPaths(), [Self.calculator, Self.textEditProgram], "never a second entry")
+    }
+
+    /// One line at a time; it goes when the pane is left or when the app gets on the list
+    /// another way (the menu bar's "Smooth Scrolling in …", "+"), and its button then adds
+    /// nothing more.
+    func testTheLineIsOneAndGoesWithItsReason() throws {
+        let controller = makeController(running: [candidate(Self.textEdit, program: Self.textEditProgram, name: "TextEdit")])
+        controller.showSettings(for: Self.calculatorApp)
+        controller.showSettings(for: Self.textEditApp)
+        XCTAssertEqual(controller.list.rows.map(\.title), ["TextEdit isn't on the list."], "the empty list's line makes way")
+
+        controller.viewDidDisappear()
+        XCTAssertNil(controller.offeredApplication)
+        XCTAssertTrue(controller.list.rows.isEmpty)
+        XCTAssertEqual(controller.list.emptyRow.title, text("apps-empty"))
+
+        controller.showSettings(for: Self.textEditApp)
+        let add = try XCTUnwrap(controller.list.rows.first?.accessory as? NSButton)
+        AppSmoothing.addWithSmoothingOff(path: Self.textEditProgram, list: Options.shared.application, scrolling: Options.shared.scroll)
+        controller.reloadRows()
+        XCTAssertNil(controller.offeredApplication)
+        XCTAssertEqual(controller.list.rows.map { $0.id as? String }, [Self.textEditProgram])
+        controller.addOfferedApplication(add)
+        XCTAssertEqual(storedPaths(), [Self.textEditProgram])
+
+        // Added by "+" while the line shows: the line goes with the reload.
+        Options.shared.application.applications = Self.makeStore()
+        controller.showSettings(for: Self.textEditApp)
+        controller.addRunningApplication(try XCTUnwrap(controller.makeAddMenu().items.first))
+        controller.showList(focusList: false)
+        XCTAssertEqual(controller.list.rows.map { $0.id as? String }, [Self.textEditProgram])
+        XCTAssertNil(controller.offeredApplication)
+
+        // A later ask for an app on the list takes the line away too.
+        Options.shared.application.applications = Self.makeStore([application(Self.calculator, inherit: true)])
+        controller.showSettings(for: Self.textEditApp)
+        XCTAssertNotNil(controller.offeredApplication)
+        controller.showSettings(for: Self.calculatorApp)
+        controller.showList(focusList: false)
+        XCTAssertNil(controller.offeredApplication)
+        XCTAssertEqual(controller.list.rows.map { $0.id as? String }, [Self.calculator])
+    }
+
+    /// A long name is cut short in the line and in the button, so that both still say what
+    /// they are about and fit side by side; whole in the tooltips and for VoiceOver. A short
+    /// name stays whole.
+    func testALongNameIsCutInTheLineAndItsButton() throws {
+        let long = AppSmoothing.App(
+            name: "Microsoft Visual Studio Code Insiders Edition With A Very Long Name",
+            bundlePath: "/Applications/Long Test.app", executablePath: "/Applications/Long Test.app/Contents/MacOS/Long"
+        )
+        let controller = makeController()
+        _ = makeWindow(for: controller)
+        controller.showSettings(for: long)
+        controller.view.layoutSubtreeIfNeeded()
+        let line = try XCTUnwrap(controller.list.rows.first)
+        let add = try XCTUnwrap(line.accessory as? NSButton)
+        let cut = PreferencesApplicationViewController.offerName(long.name)
+        XCTAssertTrue(cut.hasSuffix("…"))
+        XCTAssertTrue(long.name.hasPrefix(String(cut.dropLast())))
+        XCTAssertEqual(line.title, cut + " isn't on the list.")
+        XCTAssertEqual(add.title, "Add " + cut)
+        XCTAssertLessThanOrEqual(line.titleLabel.intrinsicContentSize.width, line.titleLabel.frame.width + 0.5, "not cut again")
+        XCTAssertLessThanOrEqual(add.intrinsicContentSize.width, add.frame.width + 0.5, "not cut again")
+        XCTAssertLessThanOrEqual(add.frame.width, PreferencesApplicationViewController.boxWidth / 2 + 0.5)
+        XCTAssertLessThanOrEqual(line.titleLabel.frame.maxX, add.frame.minX)
+        XCTAssertLessThanOrEqual(add.frame.maxX, line.bounds.maxX)
+        XCTAssertEqual(line.toolTip, long.name + " isn't on the list.", "whole in the tooltip")
+        XCTAssertEqual(add.toolTip, "Add " + long.name)
+        XCTAssertEqual(add.accessibilityLabel(), "Add " + long.name)
+
+        XCTAssertEqual(PreferencesApplicationViewController.offerName("Safari"), "Safari")
+        XCTAssertEqual(PreferencesApplicationViewController.offerName("Visual Studio Code"), "Visual Studio Code")
+    }
+
+    /// From the menu bar: the window on Apps, whichever pane it showed, with the app's page
+    /// (its name in the title bar) or the line.
+    func testTheMenuBarsItemSelectsAppsInTheWindow() throws {
+        Options.shared.application.applications = Self.makeStore([application(Self.calculator, inherit: false)])
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let windowController = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController) as? PreferencesWindowController
+        )
+        let window = try XCTUnwrap(windowController.window)
+        let preferences = PreferencesSplitViewController(storyboard: storyboard, uiStateDefaults: nil)
+        let apps = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)
+        apps.uiStateDefaults = uiDefaults
+        windowController.contentViewController = preferences
+        windowController.configure(window, remembersFrame: false)
+        addTeardownBlock { windowController.close() }
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.scrolling))
+
+        PreferencesApplicationViewController.showSettings(for: Self.calculatorApp, in: preferences)
+        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application)
+        XCTAssertEqual(apps.detailController?.application.path, Self.calculator)
+        XCTAssertEqual(window.title, "Calculator")
+        XCTAssertTrue(preferences.canGoBack)
+
+        PreferencesApplicationViewController.showSettings(for: Self.textEditApp, in: preferences)
+        XCTAssertNil(apps.detailController)
+        XCTAssertEqual(window.title, "Apps")
+        XCTAssertFalse(preferences.canGoBack)
+        XCTAssertEqual(apps.list.rows.first?.title, "TextEdit isn't on the list.")
+        XCTAssertEqual(storedPaths(), [Self.calculator])
+    }
+
     // MARK: - Removing
 
     func testRemovingAnAppCanBeUndoneWithItsSettingsAndRedone() throws {

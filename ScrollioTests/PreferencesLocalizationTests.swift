@@ -183,6 +183,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-scrolling-choice", "apps-detail-scrolling-same", "apps-detail-scrolling-own",
         "apps-detail-scrolling-macos", "apps-detail-scrolling-macos-hint", "apps-undo-scrolling-choice",
         "apps-buttons-same-as-other-apps",
+        // Round 3 C4: the line that offers to add the app of "Settings for Safari…"
+        "apps-not-on-list", "apps-add-named",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -263,6 +265,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "main-menu-paste", "main-menu-select-all", "main-menu-window", "main-menu-minimize",
         "main-menu-zoom", "main-menu-close", "main-menu-bring-all-to-front", "main-menu-help",
         "main-menu-welcome-guide", "main-menu-check-for-updates", "status-menu-update-waiting",
+        // Round 3 C4
+        "status-menu-app-settings",
     ]
 
     /// The Welcome Guide (Introduction window): its bar, the four steps and their pictures.
@@ -468,6 +472,10 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-trigger-choice-recorded-replaces": "@",
         "ring-panel-label-app": "@",
         "buttons-default-runs-another": "@",
+        // Round 3 C4: "Settings for Safari…" and the line that offers to add Safari
+        "status-menu-app-settings": "@",
+        "apps-not-on-list": "@",
+        "apps-add-named": "@",
     ]
 
     /// The arguments `format` reads, in argument order: "%2$d of %1$@" -> "@d"; "@" an
