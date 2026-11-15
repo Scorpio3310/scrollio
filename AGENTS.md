@@ -93,6 +93,13 @@ scripts/update-key.sh          # shows whether the update key in the keychain is
 ```
 
 - Always use the shared scheme `Debug`. Never build with `-target Scrollio`.
+- `-only-testing:ScrollioTests/<name>` takes a test class, not a file. A name that is no
+  class runs nothing and still ends "TEST SUCCEEDED", and eleven test files hold classes
+  under other names (`MousePreferencesTests.swift`, `PreferencesWindowTests.swift`,
+  `SettingsFileTests.swift`, `ShortcutRingTests.swift` among them:
+  `grep -h "^final class" ScrollioTests/<file>` lists a file's classes). After a narrow
+  run, see in its output that the suites you meant ran (`Test Suite '<Class>' passed`).
+  A test class this file names is one: `ReleaseReadinessTests` checks it.
 - `scripts/release.sh` builds the app for other people's Macs. It passes the Developer ID
   identity to that one build and leaves the project's signing settings alone. Without
   `--check` it uploads the build to Apple's notary service: run it only when the owner
@@ -320,7 +327,7 @@ Choose by risk, and run it: reading the code is not verification.
 | ButtonCore, Shortcut, InputEvent | ButtonBinding, InputProcessor, ShortcutExecutor tests | by hand: the Buttons pane |
 | App lifecycle (`AppRunController`, `AppDelegate`, status-bar menu) | `AppRunControllerTests`, `StatusMenuTests` | by hand: sleep and wake, another user, Pause / Resume, Accessibility turned off and on |
 | Logi, HID | the `ScrollioTests/Logi*` tests and the boundary lint | real-device tests and the `logi` log, by hand |
-| Preferences panes | the pane's `Preferences*Tests` / `MousePreferencesTests`, `PreferencesWindowTests` | by hand: look at the pane (its render test can draw it); previews stop when it is hidden |
+| Preferences panes | the pane's `Preferences*Tests` (for Mouse the classes of `MousePreferencesTests.swift`), the classes of `PreferencesWindowTests.swift` | by hand: look at the pane (its render test can draw it); previews stop when it is hidden |
 | The Shortcut Ring (`Scrollio/Ring/`, its hooks in `InputProcessor`) | the classes of `ShortcutRingTests.swift`, `ShortcutRingControllerTests.swift` and `ShortcutRingDropsTests.swift`, `InputProcessorTests`, `PreferencesRingTests` | by hand, on a screen: open it with a button and with a key, both ways of choosing, at a screen edge, over a full-screen app; that the app in front keeps the keyboard (`ShortcutRingRenderTests` only draws it) |
 | UI text | catalogs in sync, `PreferencesLocalizationTests` | long text, dark mode |
 | `scripts/`, licence and notices, `Acknowledgements.txt`, the DGCharts exclusion | `ReleaseReadinessTests`, `bash -n` on the script, `scripts/install.sh --check` | a Release build; `scripts/release.sh --check` when the owner asked (it signs with the Developer ID) |

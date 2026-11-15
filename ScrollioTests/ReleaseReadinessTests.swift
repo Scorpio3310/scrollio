@@ -202,6 +202,33 @@ final class ReleaseReadinessTests: XCTestCase {
                        "the app's Release configuration, and only it, leaves DGCharts out")
     }
 
+    // MARK: - The test classes the agent files name
+
+    /// `-only-testing:ScrollioTests/<name>` with a name that is no test class runs nothing
+    /// and still ends "TEST SUCCEEDED". AGENTS.md named two files as classes
+    /// (`MousePreferencesTests`, `PreferencesWindowTests`: each holds classes under other
+    /// names), and the narrow runs it asks for after a change to a pane tested nothing.
+    func testEveryTestClassTheAgentFilesNameIsOne() throws {
+        let name = try NSRegularExpression(pattern: "`([A-Za-z0-9]+Tests)(\\.swift)?`")
+        var classes: Set<String> = []
+        for file in ["AGENTS.md", ".agents/docs/code-map.md"] {
+            let source = try text(file)
+            for match in name.matches(in: source, range: NSRange(source.startIndex..., in: source)) {
+                let word = String(source[try XCTUnwrap(Range(match.range(at: 1), in: source))])
+                if match.range(at: 2).location != NSNotFound {
+                    let path = Self.root.appendingPathComponent("ScrollioTests/\(word).swift").path
+                    XCTAssertTrue(FileManager.default.fileExists(atPath: path), "\(file) names the file \(word).swift")
+                } else if word != "ScrollioTests" {
+                    classes.insert(word)
+                    XCTAssertTrue(NSClassFromString("ScrollioTests.\(word)") is XCTestCase.Type,
+                                  "\(file) names `\(word)` as a test class; it is none (a file? write `\(word).swift`)")
+                }
+            }
+        }
+        XCTAssertGreaterThan(classes.count, 20, "the names were found")
+        XCTAssertTrue(classes.contains("ReleaseReadinessTests"))
+    }
+
     // MARK: - The thumb wheel's trace line is not in a release
 
     /// The trace line (every event of a thumb wheel roll) is what the wheel is tuned from. A
