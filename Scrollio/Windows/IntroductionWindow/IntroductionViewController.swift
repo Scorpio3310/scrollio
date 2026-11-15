@@ -50,12 +50,17 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     /// Whether macOS lets Scrollio use the Accessibility API right now.
     var isAccessGranted: () -> Bool = { Utils.isHadAccessibilityPermissions() }
     /// Asks macOS for the permission. It adds Scrollio to the Accessibility list and,
-    /// when macOS decides to, shows the system prompt.
-    var requestAccess: () -> Void = { Utils.requireAccessibilityPermissions() }
-    /// Opens System Settings › Privacy & Security › Accessibility.
+    /// when macOS decides to, shows the system prompt. Inert under XCTest.
+    var requestAccess: () -> Void = {
+        guard !AppRuntime.isRunningXCTest else { return }
+        Utils.requireAccessibilityPermissions()
+    }
+    /// Opens System Settings › Privacy & Security › Accessibility. Inert under XCTest.
     var openAccessibilitySettings: () -> Void = IntroductionViewController.openAccessibilityPane
-    /// Selects the app in Finder, so it can be dragged into the Accessibility list.
+    /// Selects the app in Finder, so it can be dragged into the Accessibility list. Inert
+    /// under XCTest.
     var revealApplication: () -> Void = {
+        guard !AppRuntime.isRunningXCTest else { return }
         NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
     }
     /// The permission arrived while the window was open: the app starts its event taps now.
@@ -776,8 +781,9 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     /// System Settings › Privacy & Security › Accessibility.
     static let accessibilityPaneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
 
-    /// Also the "Open Settings…" of General › Permissions.
+    /// Also the "Open Settings…" of General › Permissions. Inert under XCTest.
     static func openAccessibilityPane() {
+        guard !AppRuntime.isRunningXCTest else { return }
         NSWorkspace.shared.open(accessibilityPaneURL)
     }
 }
