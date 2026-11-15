@@ -3,6 +3,27 @@ import XCTest
 
 final class LogiDivertReconciliationTests: XCTestCase {
 
+    /// The ledger's lines, here instead of the system log.
+    private var ledgerLines: [String] = []
+    /// How often the ledger told of a divert written again (instead of a notification).
+    private var announcements = 0
+    private var realLedgerLog: ((String) -> Void)?
+    private var realAnnounce: (() -> Void)?
+
+    override func setUp() {
+        super.setUp()
+        realLedgerLog = LogiDivertLedger.log
+        realAnnounce = LogiDivertLedger.announceWrittenAgain
+        LogiDivertLedger.log = { [weak self] in self?.ledgerLines.append($0) }
+        LogiDivertLedger.announceWrittenAgain = { [weak self] in self?.announcements += 1 }
+    }
+
+    override func tearDown() {
+        if let log = realLedgerLog { LogiDivertLedger.log = log }
+        if let announce = realAnnounce { LogiDivertLedger.announceWrittenAgain = announce }
+        super.tearDown()
+    }
+
     func testQueriedMissingDivertIsRemovedFromAppliedAndDivertedCIDs() {
         let result = LogiDeviceSession.reconciledDivertStateForTests(
             lastApplied: [0x0053, 0x0056],
@@ -454,12 +475,22 @@ final class LogiDivertReconciliationTests: XCTestCase {
         enum Write: Equatable { case divert(UInt16), giveBack(UInt16) }
 
         var ledger = LogiDivertLedger()
-        let modes = LogiButtonDeliveryModeStore()
+        let modes: LogiButtonDeliveryModeStore
         var now = Date(timeIntervalSince1970: 1_000)
         private(set) var writes: [Write] = []
+        private let productId: UInt16
+        private let name: String
+
+        /// `modes`: the manager's store, one for every mouse; `productId` and `name`: which mouse.
+        init(modes: LogiButtonDeliveryModeStore = LogiButtonDeliveryModeStore(),
+             productId: UInt16 = 0xB034, name: String = "MX Master 3S") {
+            self.modes = modes
+            self.productId = productId
+            self.name = name
+        }
 
         func key(_ cid: UInt16) -> LogiOwnershipKey {
-            return LogiOwnershipKey(vendorId: 0x046D, productId: 0xB034, name: "MX Master 3S", transport: .receiver, cid: cid)
+            return LogiOwnershipKey(vendorId: 0x046D, productId: productId, name: name, transport: .receiver, cid: cid)
         }
 
         mutating func write(_ cid: UInt16, divert: Bool) {
@@ -561,27 +592,180 @@ final class LogiDivertReconciliationTests: XCTestCase {
         XCTAssertEqual(slot.writes, [.divert(gesture)])
     }
 
-    /// Only an echo of Scrollio's own write counts: another app's divert of the button, or an
-    /// echo after the slot was forgotten, does not make Scrollio believe it diverted it.
+    /// Divert, give back and divert again within the answer time (Undo and Redo of a binding,
+    /// a recording started, cancelled and started again), and the mouse refuses only the last
+    /// divert. The echo of the first divert came while the give-back was still on its way: it
+    /// tells the state before the give-back, not that the last divert was taken. It used to
+    /// count for the last one, and the next re-read took the refused divert for another app's
+    /// clear (two of those within 30 s: "Logi Options+ keeps taking this button over").
+    func testAnEchoOfAnEarlierDivertDoesNotVouchForALaterOne() {
+        let gesture: UInt16 = 0x00C3
+        var slot = ModelledSlot()
+        slot.pass(bindings: [gesture])
+        slot.pass(bindings: [])
+        slot.pass(bindings: [gesture])          // refused: no echo
+        slot.echo(gesture, divert: true)
+        XCTAssertEqual(slot.ledger.unacknowledged, [gesture], "the give-back is still on its way")
+        slot.echo(gesture, divert: false)
+        XCTAssertEqual(slot.ledger.unacknowledged, [gesture])
+
+        slot.now += 15
+        slot.ledger.noteQuerySent(cid: gesture)
+        XCTAssertEqual(slot.ledger.heldBack, [gesture])
+        var copy = slot.ledger
+        XCTAssertEqual(copy.dropLost(queriedControls: [queried(gesture, diverted: false)]), [], "the mouse's refusal, not another app's doing")
+
+        // All three taken: the echo of the last divert counts.
+        var taken = ModelledSlot()
+        taken.pass(bindings: [gesture])
+        taken.pass(bindings: [])
+        taken.pass(bindings: [gesture])
+        taken.echo(gesture, divert: true)
+        taken.echo(gesture, divert: false)
+        taken.echo(gesture, divert: true)
+        XCTAssertEqual(taken.ledger.unacknowledged, [])
+        XCTAssertTrue(taken.ledger.pendingAcks.isEmpty)
+    }
+
+    /// Only an echo of Scrollio's own write counts: another app's divert of the button, an
+    /// echo of Scrollio's that comes too late to be told from another app's, or an echo after
+    /// the slot was forgotten, does not make Scrollio believe it diverted it.
     func testOnlyScrolliosOwnEchoCountsADivertAsTaken() {
         let gesture: UInt16 = 0x00C3
         var slot = ModelledSlot()
         slot.pass(bindings: [gesture])
         slot.ledger.noteQuerySent(cid: gesture)
-        slot.now += LogiPendingReportingAcks.lifetime + 1
-        XCTAssertFalse(slot.ledger.consumeAck(cid: gesture, flags: 0x03, targetCID: 0, now: slot.now), "another app's write")
+        XCTAssertEqual(slot.ledger.heldBack, [gesture])
+        // Another app diverts the button to a target of its own while Scrollio's divert waits.
+        XCTAssertFalse(slot.ledger.consumeAck(cid: gesture, flags: 0x03, targetCID: 0x0056, now: slot.now), "another app's write")
         XCTAssertEqual(slot.ledger.lastApplied, [], "not believed applied: the pass after the re-read writes it again")
         XCTAssertEqual(slot.ledger.toGiveBack, [gesture])
+        // Scrollio's own echo after the lifetime matches nothing any more.
+        slot.now += LogiPendingReportingAcks.lifetime + 1
+        XCTAssertFalse(slot.ledger.consumeAck(cid: gesture, flags: 0x03, targetCID: 0, now: slot.now))
+        XCTAssertEqual(slot.ledger.lastApplied, [])
 
         // The slot disconnects (the session forgets what it applied and diverted): an echo
         // that comes after that puts nothing back.
-        slot.write(gesture, divert: true)
+        var forgotten = ModelledSlot()
+        forgotten.pass(bindings: [gesture])
+        forgotten.ledger.noteQuerySent(cid: gesture)
+        XCTAssertEqual(forgotten.ledger.heldBack, [gesture])
+        forgotten.ledger.lastApplied.removeAll()
+        forgotten.ledger.diverted.removeAll()
+        forgotten.echo(gesture, divert: true)
+        XCTAssertEqual(forgotten.ledger.lastApplied, [])
+        XCTAssertEqual(forgotten.ledger.toGiveBack, [])
+    }
+
+    /// A pass between a query and its answer: a binding is added while the buttons' state is
+    /// re-read. The held-back divert is written again in that pass; the answer was asked for
+    /// before that write, so it counts nothing.
+    func testAPassBetweenAQueryAndItsAnswer() {
+        let gesture: UInt16 = 0x00C3, back: UInt16 = 0x0053
+        var slot = ModelledSlot()
+        slot.pass(bindings: [gesture])          // refused: no echo
+        slot.now += 15
         slot.ledger.noteQuerySent(cid: gesture)
-        slot.ledger.lastApplied.removeAll()
-        slot.ledger.diverted.removeAll()
+        XCTAssertEqual(slot.ledger.heldBack, [gesture])
+
+        slot.pass(bindings: [gesture, back])    // before the answer comes
+        XCTAssertEqual(slot.writes, [.divert(gesture), .divert(back), .divert(gesture)])
+        XCTAssertEqual(slot.ledger.heldBack, [])
+        XCTAssertTrue(slot.ledger.answerPredatesAWrite(cid: gesture))
+        var copy = slot.ledger
+        XCTAssertEqual(copy.dropLost(queriedControls: [queried(gesture, diverted: false)]), [], "older than the write")
+        XCTAssertEqual(slot.ledger.lastApplied, [gesture, back])
+
+        // The binding removed instead: the pass gives back what lastApplied has
+        // (LogiDeviceSession), so it writes nothing for the held-back button. The ledger
+        // still has it, and gives it back at Pause, Quit and sleep.
+        var removed = ModelledSlot()
+        removed.pass(bindings: [gesture])
+        removed.now += 15
+        removed.ledger.noteQuerySent(cid: gesture)
+        removed.pass(bindings: [])
+        XCTAssertEqual(removed.ledger.heldBack, [gesture])
+        XCTAssertEqual(removed.ledger.toGiveBack, [gesture])
+    }
+
+    /// A divert the mouse refuses every time is written again at every re-read and the button
+    /// does what it does without Scrollio. After the third refusal in a row one `logi` line
+    /// says so (the toast of 1.1.0 is gone); an echo or a give-back starts the count again.
+    func testADivertTheMouseKeepsRefusingIsNamedOnceInTheLog() {
+        let gesture: UInt16 = 0x00C3
+        var slot = ModelledSlot()
+        slot.pass(bindings: [gesture])          // refused, and every write after it
+        for _ in 0..<2 {
+            slot.now += 12
+            slot.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        }
+        XCTAssertEqual(ledgerLines, [], "two refusals in a row are no line's worth yet")
+        slot.now += 12
+        slot.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        XCTAssertEqual(ledgerLines, [LogiDivertLedger.keepsRefusingLine(cid: gesture, times: 3)])
+        XCTAssertTrue(ledgerLines.first?.contains("0x00C3 Gesture") ?? false, "\(ledgerLines)")
+        slot.now += 12
+        slot.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        XCTAssertEqual(ledgerLines.count, 1, "one line, not one per re-read")
+        XCTAssertEqual(slot.writes.count, 5, "written again all the same")
+
+        // The mouse takes it: the count starts again.
         slot.echo(gesture, divert: true)
-        XCTAssertEqual(slot.ledger.lastApplied, [])
-        XCTAssertEqual(slot.ledger.toGiveBack, [])
+        slot.now += 12
+        slot.reRead(controls: [gesture], divertedOnTheMouse: [gesture], bindings: [gesture])
+        slot.write(gesture, divert: false)
+        slot.write(gesture, divert: true)       // refused again, three times
+        slot.ledger.lastApplied = [gesture]
+        for _ in 0..<3 {
+            slot.now += 12
+            slot.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        }
+        XCTAssertEqual(ledgerLines.count, 2)
+
+        // A give-back in between starts it again too.
+        var givenBack = ModelledSlot()
+        givenBack.pass(bindings: [gesture])
+        for _ in 0..<2 {
+            givenBack.now += 12
+            givenBack.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        }
+        givenBack.pass(bindings: [])
+        givenBack.pass(bindings: [gesture])
+        for _ in 0..<2 {
+            givenBack.now += 12
+            givenBack.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        }
+        XCTAssertEqual(ledgerLines.count, 2)
+    }
+
+    /// Two mice on one receiver, both with a gesture button. The session keeps a ledger per
+    /// slot and gives an echo to the slot the report names: the second mouse's echo does not
+    /// vouch for the first mouse's divert, which that mouse refused. Reading the second
+    /// mouse (the cursor slot) writes nothing; the first one, when its slot is read, is held
+    /// back and written again, and never counts as another app's.
+    func testTwoMiceOfAReceiverKeepTheirOwnEchoes() {
+        let gesture: UInt16 = 0x00C3
+        let modes = LogiButtonDeliveryModeStore()
+        var first = ModelledSlot(modes: modes)
+        var second = ModelledSlot(modes: modes, productId: 0xB023, name: "MX Master 3")
+        first.pass(bindings: [gesture])         // refused: no echo
+        second.pass(bindings: [gesture])
+        second.echo(gesture, divert: true)
+        XCTAssertEqual(first.ledger.unacknowledged, [gesture])
+        XCTAssertEqual(second.ledger.unacknowledged, [])
+
+        second.now += 15
+        second.reRead(controls: [gesture], divertedOnTheMouse: [gesture], bindings: [gesture])
+        XCTAssertEqual(second.writes, [.divert(gesture)])
+
+        for _ in 0..<2 {
+            first.now += 12
+            first.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        }
+        XCTAssertEqual(first.writes, [.divert(gesture), .divert(gesture), .divert(gesture)])
+        XCTAssertEqual(modes.mode(for: first.key(gesture)), .hidpp)
+        XCTAssertEqual(modes.mode(for: second.key(gesture)), .hidpp)
     }
 
     func testAnEchoThatDiffersOrComesTooLateIsNotScrollios() {
@@ -595,6 +779,171 @@ final class LogiDivertReconciliationTests: XCTestCase {
         ledger.expectAck(cid: 0x00C4, flags: 0x03, targetCID: 0, now: start)
         let late = start.addingTimeInterval(LogiPendingReportingAcks.lifetime + 0.5)
         XCTAssertFalse(ledger.consumeAck(cid: 0x00C4, flags: 0x03, targetCID: 0, now: late))
+    }
+
+    // MARK: - One more re-read after a divert written again
+
+    /// The ledger tells of a divert the mouse did not have that is written again: one held
+    /// back (no echo) and one a re-read found dropped. A new binding's divert is not one.
+    func testADivertTheMouseDidNotHaveIsAnnouncedWhenWrittenAgain() {
+        let gesture: UInt16 = 0x00C3, back: UInt16 = 0x0053
+        var refused = ModelledSlot()
+        refused.pass(bindings: [gesture])
+        XCTAssertEqual(announcements, 0, "a new divert")
+        refused.now += 15
+        refused.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        XCTAssertEqual(announcements, 1, "held back and written again")
+
+        var dropped = ModelledSlot()
+        dropped.pass(bindings: [gesture])
+        dropped.echo(gesture, divert: true)
+        dropped.now += 15
+        dropped.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        XCTAssertEqual(dropped.writes, [.divert(gesture), .divert(gesture)])
+        XCTAssertEqual(announcements, 2, "dropped and written again")
+
+        // Dropped while its binding went away: nothing is written. The next re-read forgets
+        // that it was dropped, and a binding made after it is a new divert.
+        var unbound = ModelledSlot()
+        unbound.pass(bindings: [back])
+        unbound.echo(back, divert: true)
+        unbound.now += 15
+        unbound.reRead(controls: [back], divertedOnTheMouse: [], bindings: [])
+        unbound.ledger.noteQuerySent(cid: back)
+        unbound.pass(bindings: [back])
+        XCTAssertEqual(unbound.writes, [.divert(back), .divert(back)])
+        XCTAssertEqual(announcements, 2)
+    }
+
+    /// Settings opens and re-reads the buttons; the mouse had not taken a divert, the pass
+    /// writes it again, and the mouse refuses that too; Settings is closed. A few seconds
+    /// later one more re-read writes it again. Its own re-read asks for no other; a later
+    /// re-read that writes a divert again gets its own.
+    func testAReReadThatWroteADivertAgainIsFollowedByOneMoreAndNoOther() {
+        let gesture: UInt16 = 0x00C3
+        let readAgain = LogiUsageBootstrap.ButtonsReadAgain()
+        var busy = false
+        var requests = 0
+        var pending: [(delay: TimeInterval, work: () -> Void)] = []
+        readAgain.isBusy = { busy }
+        readAgain.lastRequest = { nil }
+        readAgain.request = { requests += 1; busy = true }
+        readAgain.schedule = { pending.append((delay: $0, work: $1)) }
+        LogiDivertLedger.announceWrittenAgain = { readAgain.divertWrittenAgain() }
+
+        var slot = ModelledSlot()
+        /// One re-read as LogiCenter sees it: busy, the queries and their answers, the
+        /// closing pass, "reporting did complete", no longer busy.
+        func reRead(diverted: Set<UInt16>) {
+            busy = true
+            readAgain.activityChanged()
+            slot.now += 12
+            slot.reRead(controls: [gesture], divertedOnTheMouse: diverted, bindings: [gesture])
+            readAgain.reReadCompleted()
+            busy = false
+            readAgain.activityChanged()
+        }
+
+        slot.pass(bindings: [gesture])          // refused: no echo
+        reRead(diverted: [])
+        XCTAssertEqual(slot.writes.count, 2)
+        XCTAssertEqual(pending.map { $0.delay }, [LogiUsageBootstrap.ButtonsReadAgain.delay])
+        XCTAssertEqual(requests, 0)
+
+        guard !pending.isEmpty else { return XCTFail("no follow-up was scheduled") }
+        pending.removeFirst().work()
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(readAgain.phase, .running)
+        reRead(diverted: [])                    // refused again
+        XCTAssertEqual(slot.writes.count, 3, "written again by the follow-up")
+        XCTAssertTrue(pending.isEmpty, "the follow-up's own re-read asks for no other")
+        XCTAssertEqual(readAgain.phase, .idle)
+
+        // The mouse takes it: a re-read that writes nothing again asks for nothing.
+        slot.echo(gesture, divert: true)
+        reRead(diverted: [gesture])
+        XCTAssertEqual(slot.writes.count, 3)
+        XCTAssertTrue(pending.isEmpty)
+
+        // Dropped later, and written again: a follow-up of its own.
+        reRead(diverted: [])
+        XCTAssertEqual(slot.writes.count, 4)
+        XCTAssertEqual(pending.count, 1)
+    }
+
+    /// LogiCenter starts a re-read at most every 10 s from the last request: the follow-up of
+    /// a re-read Settings asked for comes once LogiCenter takes a request again. Two mice
+    /// whose re-reads end one after the other get one follow-up. A request LogiCenter still
+    /// refuses, or one with nothing to read, ends it.
+    func testTheFollowUpComesOnceLogiCenterTakesARequestAgain() {
+        let readAgain = LogiUsageBootstrap.ButtonsReadAgain()
+        let now = Date(timeIntervalSince1970: 5_000)
+        var last: Date? = now.addingTimeInterval(-1)
+        var pending: [(delay: TimeInterval, work: () -> Void)] = []
+        var requests = 0
+        readAgain.now = { now }
+        readAgain.lastRequest = { last }
+        readAgain.isBusy = { false }
+        readAgain.request = { requests += 1 }
+        readAgain.schedule = { pending.append((delay: $0, work: $1)) }
+
+        XCTAssertEqual(readAgain.delayFromNow(), LogiCenter.reportingRefreshMinimumInterval - 1 + 0.5, accuracy: 0.001)
+        last = now.addingTimeInterval(-20)
+        XCTAssertEqual(readAgain.delayFromNow(), LogiUsageBootstrap.ButtonsReadAgain.delay)
+        last = nil
+        XCTAssertEqual(readAgain.delayFromNow(), LogiUsageBootstrap.ButtonsReadAgain.delay)
+
+        readAgain.reReadCompleted()
+        XCTAssertTrue(pending.isEmpty, "nothing was written again")
+        readAgain.divertWrittenAgain()
+        readAgain.reReadCompleted()
+        readAgain.divertWrittenAgain()
+        readAgain.reReadCompleted()
+        XCTAssertEqual(pending.count, 1)
+        guard !pending.isEmpty else { return XCTFail("no follow-up was scheduled") }
+        pending.removeFirst().work()
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(readAgain.phase, .idle, "no re-read started: nothing to wait for")
+    }
+
+    /// From launch on (AppDelegate) the follow-up hears the ledger and LogiCenter.
+    func testTheFollowUpHearsTheLedgerAndLogiCenter() {
+        let readAgain = LogiUsageBootstrap.ButtonsReadAgain.shared
+        let saved = (readAgain.request, readAgain.isBusy, readAgain.lastRequest, readAgain.schedule)
+        var busy = false
+        var requests = 0
+        var pending: [() -> Void] = []
+        readAgain.request = { requests += 1; busy = true }
+        readAgain.isBusy = { busy }
+        readAgain.lastRequest = { nil }
+        readAgain.schedule = { pending.append($1) }
+        if let announce = realAnnounce { LogiDivertLedger.announceWrittenAgain = announce }
+        LogiUsageBootstrap.installReadAgainObserver()
+        defer {
+            LogiUsageBootstrap.removeReadAgainObserverForTests()
+            (readAgain.request, readAgain.isBusy, readAgain.lastRequest, readAgain.schedule) = saved
+        }
+        XCTAssertEqual(readAgain.phase, .idle)
+
+        LogiDivertLedger.announceWrittenAgain()
+        NotificationCenter.default.post(name: LogiCenter.reportingDidComplete, object: nil)
+        XCTAssertEqual(pending.count, 1)
+        guard !pending.isEmpty else { return XCTFail("no follow-up was scheduled") }
+        pending.removeFirst()()
+        XCTAssertEqual(requests, 1)
+        busy = false
+        NotificationCenter.default.post(name: LogiCenter.activityChanged, object: nil)
+        XCTAssertEqual(readAgain.phase, .idle)
+    }
+
+    /// LogiCenter's word for the session manager's limit is the manager's (private there).
+    func testLogiCenterKnowsTheManagersLimitForReReads() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let manager = try String(
+            contentsOf: root.appendingPathComponent("Scrollio/Logi/Core/LogiSessionManager.swift"), encoding: .utf8
+        )
+        let seconds = Int(LogiCenter.reportingRefreshMinimumInterval)
+        XCTAssertTrue(manager.contains("private static let reportingRefreshMinInterval: TimeInterval = \(seconds)\n"))
     }
 
     // MARK: - The left and the right button

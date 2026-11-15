@@ -142,7 +142,18 @@ final class LogiCenter {
     func runsAction(named name: String) -> Bool { LogiButtonAction(name: name) != nil }
 
     // MARK: - Reporting refresh
-    func refreshReportingStates() { manager.refreshReportingStates() }
+
+    /// The session manager starts a re-read of the buttons' state at most this often
+    /// (`LogiSessionManager.reportingRefreshMinInterval`, private there; a test holds the
+    /// two equal): a request sooner than this after the last one does nothing.
+    static let reportingRefreshMinimumInterval: TimeInterval = 10
+    /// When a re-read was last asked for here; nil before the first.
+    private(set) var lastReportingRefreshRequest: Date?
+
+    func refreshReportingStates() {
+        lastReportingRefreshRequest = Date()
+        manager.refreshReportingStates()
+    }
 
     // MARK: - Scroll wheel hardware settings (contract: Scrollio/Logi/Wheel/LogiWheelTypes.swift)
 
@@ -326,6 +337,10 @@ final class LogiCenter {
     static let conflictChanged       = LogiSessionManager.conflictChangedNotification
     static let buttonEventRelay      = LogiSessionManager.buttonEventNotification
     static let rawButtonEvent        = NSNotification.Name("LogiRawButtonEvent")  // Step 4 fills in posters
+    /// A divert the mouse did not have (it did not take Scrollio's write, or it dropped it)
+    /// was written again, in the pass that ends a re-read of the buttons' state
+    /// (`LogiDivertLedger`). Main thread.
+    static let divertWrittenAgain    = NSNotification.Name("LogiDivertWrittenAgain")
 }
 
 /// The role of a Logitech control on the mouse (`LogiCenter.controlRole(forScrollioCode:)`).

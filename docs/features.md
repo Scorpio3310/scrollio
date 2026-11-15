@@ -507,6 +507,13 @@ Apart from those settings, and whatever that switch says:
   down stays with Scrollio until it is up; one that is down while the mouse handles it
   can be taken in the middle of its press, and the app's own action may then run without
   a new press, or macOS may not get its release.
+- Scrollio checks which buttons the mouse sends it when Settings opens, when Buttons
+  comes forward (at most every 10 seconds) and when the mouse connects. A button the
+  mouse did not take, or has let go of, is asked for again then, and once more a few
+  seconds later. Until the mouse takes it, the button does what it does without
+  Scrollio; a button the mouse keeps refusing is asked for again at each check, and the
+  `logi` log says so after the third time in a row. On a receiver with two mice a check
+  reads one of them; the other is checked when it connects again.
 - While you record a button in the Buttons pane, Scrollio asks the mouse for every
   button it can send (never the left or the right one), so that it can tell which one
   you press, and gives them back when the recording ends.
