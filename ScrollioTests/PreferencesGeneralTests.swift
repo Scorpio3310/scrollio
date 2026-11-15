@@ -415,8 +415,8 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.statusRow.title, NSLocalizedString(StatusMenu.Title.paused.key, comment: ""))
     }
 
-    /// A start that failed: the menu's title, and Try Again tries at once (as "Try Again
-    /// Now" in the menu). A tap kept off comes back by itself: Pause, as in the menu.
+    /// A start that failed: the menu's title, and "Try Again Now", the menu's item in the
+    /// menu's words, tries at once. A tap kept off comes back by itself: Pause, as in the menu.
     func testAStartThatFailedOffersTryAgain() throws {
         install(.notRegistered)
         let world = World()
@@ -424,7 +424,18 @@ final class PreferencesGeneralTests: XCTestCase {
         let pane = try makePane(world)
         XCTAssertEqual(pane.statusRow.title, "Scrollio couldn't start and is trying again")
         XCTAssertNil(pane.statusRow.explanation)
-        XCTAssertEqual(pane.statusButton.title, "Try Again")
+        XCTAssertEqual(pane.statusButton.title, "Try Again Now")
+        let menu = NSMenu()
+        StatusMenu.build(
+            into: menu,
+            state: StatusMenu.State(
+                hasAccess: true, isPaused: false, showsDiagnostics: false, batteries: [], appSmoothing: nil,
+                appSettings: nil, updates: .none, startProblem: .retrying
+            ),
+            actions: StatusMenuActions()
+        )
+        let item = try XCTUnwrap(menu.items.first { $0.action == #selector(StatusMenuActions.tryAgainClicked(_:)) })
+        XCTAssertEqual(pane.statusButton.title, item.title, "the menu's item for the same state")
         XCTAssertTrue(pane.statusButton.accessibilityTitleUIElement() as? NSTextField === pane.statusRow.titleLabel)
         click(pane.statusButton)
         XCTAssertEqual(world.tryAgains, 1)

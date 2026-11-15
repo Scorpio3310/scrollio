@@ -159,7 +159,7 @@ class PreferencesGeneralViewController: NSViewController {
     /// The box under the card, always there: whether Scrollio works, and the way out.
     private(set) var statusSection: PreferencesGroupSection!
     private(set) var statusRow: PreferencesGroupRow!
-    /// "Pause", "Resume", "Try Again" or "Open System Settings", by `runStatus`.
+    /// "Pause", "Resume", "Try Again Now" or "Open System Settings", by `runStatus`.
     private(set) var statusButton: NSButton!
     private(set) var launchOnLoginRow: PreferencesSwitchRow!
     /// Shown while macOS waits for the login item to be approved in System Settings.
@@ -702,7 +702,7 @@ class PreferencesGeneralViewController: NSViewController {
     /// What the row under the card says and what its button does. Pure. The title is the
     /// status-bar menu's, by the menu's rule and in its order (the missing access first,
     /// also while paused, then the pause, then a start problem); while Scrollio works,
-    /// "Scrollio is on". The button is the menu's way out: Pause, Resume, Try Again (a
+    /// "Scrollio is on". The button is the menu's way out: Pause, Resume, Try Again Now (a
     /// start that failed; an event tap kept off comes back by itself, so Pause there, as
     /// in the menu), and for the missing access the Permissions row's way to System Settings.
     struct RunStatus: Equatable {
@@ -740,7 +740,8 @@ class PreferencesGeneralViewController: NSViewController {
             switch action {
             case .pause: return "general-pause"
             case .resume: return "general-resume"
-            case .tryAgain: return "general-try-again"
+            // The menu's words: the line says it is trying again already; this tries now.
+            case .tryAgain: return "status-menu-try-again"
             case .allowAccess: return "general-accessibility-open-settings"
             }
         }

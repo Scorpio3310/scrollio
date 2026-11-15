@@ -10874,18 +10874,6 @@
         }
       }
     },
-    "general-try-again": {
-      "comment": "General pane: the button of \"Scrollio couldn't start and is trying again\": tries at once, as \"Try Again Now\" in the status-bar menu",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Try Again"
-          }
-        }
-      }
-    },
     "general-settings-file-show-in-finder": {
       "comment": "General pane: the last item of \"Restore…\", under the kept settings: selects them in Finder",
       "extractionState": "manual",

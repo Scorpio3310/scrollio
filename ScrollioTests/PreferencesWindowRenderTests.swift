@@ -3888,7 +3888,7 @@ extension PreferencesWindowRenderTests {
 
 /// Round 3 C3 (`round3-c3-*-<appearance>.png`): General's row under the card in each of
 /// its four states (Scrollio is on with Pause, paused with Resume, a start that failed with
-/// Try Again, the access missing with Open System Settings), and "Restore…" as a pull-down
+/// Try Again Now, the access missing with Open System Settings), and "Restore…" as a pull-down
 /// of the kept settings by local date and time, then "Show in Finder" (the row and its
 /// menu, two backups of the same minute with their seconds).
 extension PreferencesWindowRenderTests {
