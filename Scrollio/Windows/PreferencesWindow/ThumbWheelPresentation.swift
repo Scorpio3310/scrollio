@@ -148,11 +148,16 @@ enum ThumbWheelPresentation {
 
     // MARK: The row's menu
 
-    /// "Thumb Wheel Settings…" at the end of a thumb wheel row's menu (the Buttons pane's,
-    /// an app's Buttons part's): it opens Scrolling › Thumb wheel, as "Show Gesture
-    /// Settings" opens the Gestures pane.
+    /// "Show in Scrolling" at the end of a thumb wheel row's menu (the Buttons pane's): it
+    /// opens Scrolling › Thumb wheel, as "Show in Gestures" opens the Gestures pane.
     static var settingsItemTitle: String {
         return NSLocalizedString("buttons-thumb-wheel-settings", comment: "")
+    }
+
+    /// The same item on an app's Buttons part, which shows the app's Scrolling part:
+    /// "Show in Safari › Scrolling" (`application`: the app's name).
+    static func settingsItemTitle(application: String) -> String {
+        return ButtonActionPullDown.showInTitle(paneKey: "buttons-thumb-wheel-settings", part: .scrolling, application: application)
     }
 }
 

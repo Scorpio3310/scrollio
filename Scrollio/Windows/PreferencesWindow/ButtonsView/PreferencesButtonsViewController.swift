@@ -442,7 +442,7 @@ class PreferencesButtonsViewController: NSViewController {
         return row
     }
 
-    /// "Thumb Wheel Settings…" of the row: the Scrolling pane, its Thumb wheel box in view.
+    /// "Show in Scrolling" of the row: the Scrolling pane, its Thumb wheel box in view.
     func showThumbWheelSettings() {
         if let showPane {
             showPane(PANEL_IDENTIFIER.scrolling)
@@ -583,6 +583,9 @@ class PreferencesButtonsViewController: NSViewController {
         }
         pullDown.onGestureSettingsRequested = { [weak self] in
             self?.showGesturesPane()
+        }
+        pullDown.onRingSettingsRequested = { [weak self] in
+            self?.showRingPane()
         }
         let row = ButtonBindingRow(
             binding: binding, title: title, note: note, mouse: mouse, pullDown: pullDown, part: part, isStored: isStored,
@@ -1084,9 +1087,17 @@ class PreferencesButtonsViewController: NSViewController {
         return selectRow(ofBinding: binding.id)
     }
 
-    /// "Show Gesture Settings": the Gestures pane.
+    /// "Show in Gestures": the Gestures pane.
     func showGesturesPane() {
-        let identifier = GesturesPreferencesViewController.tabIdentifier
+        showOtherPane(GesturesPreferencesViewController.tabIdentifier)
+    }
+
+    /// "Show in Shortcut Ring": the Shortcut Ring pane.
+    func showRingPane() {
+        showOtherPane(RingPreferencesViewController.tabIdentifier)
+    }
+
+    private func showOtherPane(_ identifier: String) {
         if let showPane {
             showPane(identifier)
             return

@@ -282,7 +282,7 @@ final class LogiGestureSectionTests: XCTestCase {
         XCTAssertFalse(controller.hapticsOffNote.isHidden)
         XCTAssertTrue(controller.logitechNeedsLabel.superview?.isHidden ?? false)
         XCTAssertEqual(controller.hapticsOffLabel.stringValue, "Haptic feedback is off under Mouse.")
-        XCTAssertEqual(controller.openMouseButton.title, "Open Mouse")
+        XCTAssertEqual(controller.openMouseButton.title, NSLocalizedString("gestures-open-mouse", comment: ""))
         XCTAssertEqual(controller.openMouseButton.controlSize, .small)
         XCTAssertEqual(controller.hapticsOffLabel.textColor, PreferencesGroupedForm.explanationColor(enabled: true))
         // The switch stays as it is: the line only says where the haptics are off.

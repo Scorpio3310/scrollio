@@ -3,8 +3,11 @@
 //  Mos
 //  The action of one button in the Buttons pane: a pull-down 240 pt wide that shows the
 //  action as the pull-downs of the Gestures pane do (a symbol and a name), and opens the
-//  menu of ShortcutManager. "Open App or File…", "Keyboard Shortcut…" and "Show Gesture
-//  Settings" are handed to the pane (or recorded here); every other item binds directly.
+//  menu of ShortcutManager. "Open App or File…", "Keyboard Shortcut…", "Show in Gestures"
+//  and "Show in Shortcut Ring" are handed to the pane (or recorded here); every other item
+//  binds directly. The two "Show in" items stand under their action while it is the row's;
+//  on an app's Buttons part they name the app's part ("Show in Safari › Gestures",
+//  `showsInApplication`).
 //  On every row of Buttons (`offersDefault`) "No Action" is "Default": the button or key
 //  keeps doing what it does by itself (a press without an action is passed on), and the
 //  pane removes the binding of a button of the connected mouse. Where what it then does is
@@ -71,8 +74,10 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     var onCustomShortcutRecorded: ((String, ShortcutLabel?) -> Void)?
     /// "Open App or File…" was chosen.
     var onOpenTargetSelectionRequested: (() -> Void)?
-    /// "Show Gesture Settings" was chosen.
+    /// "Show in Gestures" was chosen.
     var onGestureSettingsRequested: (() -> Void)?
+    /// "Show in Shortcut Ring" was chosen.
+    var onRingSettingsRequested: (() -> Void)?
     /// "Same as Other Apps (…)" was chosen (an app's Buttons part).
     var onSameAsOtherApps: (() -> Void)?
 
@@ -109,6 +114,14 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         didSet {
             guard sameAsOtherAppsTitle != oldValue else { return }
             applySameAsOtherApps()
+        }
+    }
+    /// The app whose page the "Show in" items lead to (its name): "Show in Safari ›
+    /// Gestures". nil: the panes ("Show in Gestures").
+    var showsInApplication: String? {
+        didSet {
+            guard showsInApplication != oldValue else { return }
+            applyShowInTitles()
         }
     }
     private var isCustomRecordingActive = false
@@ -189,6 +202,7 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
             buildMenu()
         }
         gestureSettingsItem?.isHidden = !isGestureNavigationBound
+        ringSettingsItem?.isHidden = !isShortcutRingBound
         // Gesture Navigation is held while the mouse moves: a key cannot run it (the input
         // side passes such a binding through), so a key is not offered it. A key that
         // already has it keeps the item, so the menu still shows what is set.
@@ -227,6 +241,24 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         self.menu = menu
         applyNoActionTitle()
         applySameAsOtherApps()
+        applyShowInTitles()
+    }
+
+    /// "Show in Gestures" (`paneKey`), or on an app's page that app's part: "Show in
+    /// Safari › Gestures" (`application`: the app's name). Places are named as the sidebar
+    /// and the page's segments name them.
+    static func showInTitle(paneKey: String, part: ApplicationPagePart, application: String?) -> String {
+        guard let application else { return NSLocalizedString(paneKey, comment: "") }
+        return String(format: NSLocalizedString("buttons-show-in-app-part", comment: ""), application, part.title)
+    }
+
+    private func applyShowInTitles() {
+        gestureSettingsItem?.title = Self.showInTitle(
+            paneKey: "buttons-show-gesture-settings", part: .gestures, application: showsInApplication
+        )
+        ringSettingsItem?.title = Self.showInTitle(
+            paneKey: "buttons-show-ring-settings", part: .ring, application: showsInApplication
+        )
     }
 
     /// The item that clears the action ("No Action", or "Default").
@@ -300,9 +332,14 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         }
     }
 
-    /// "Show Gesture Settings", shown while Gesture Navigation is the action.
+    /// "Show in Gestures", shown while Gesture Navigation is the action.
     var gestureSettingsItem: NSMenuItem? {
         return menu?.items.first { $0.representedObject as? String == ShortcutManager.MenuMarker.gestureSettings }
+    }
+
+    /// "Show in Shortcut Ring", shown while the Shortcut Ring is the action.
+    var ringSettingsItem: NSMenuItem? {
+        return menu?.items.first { $0.representedObject as? String == ShortcutManager.MenuMarker.ringSettings }
     }
 
     private var isLogitechTrigger: Bool {
@@ -312,6 +349,11 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     var isGestureNavigationBound: Bool {
         guard case .namedShortcut(let shortcut) = CellActionState(binding: binding) else { return false }
         return shortcut.identifier == SystemShortcut.mouseGestureNavigation.identifier
+    }
+
+    var isShortcutRingBound: Bool {
+        guard case .namedShortcut(let shortcut) = CellActionState(binding: binding) else { return false }
+        return shortcut.identifier == SystemShortcut.shortcutRing.identifier
     }
 
     /// Puts the action into the title (item 0).
@@ -474,6 +516,10 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         case ShortcutManager.MenuMarker.gestureSettings?:
             refreshActionDisplay()
             onGestureSettingsRequested?()
+            return
+        case ShortcutManager.MenuMarker.ringSettings?:
+            refreshActionDisplay()
+            onRingSettingsRequested?()
             return
         default:
             break

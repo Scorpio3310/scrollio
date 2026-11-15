@@ -54,7 +54,7 @@ final class ButtonBindingTests: XCTestCase {
         let menu = try XCTUnwrap(gesture.menu)
         let item = try XCTUnwrap(gesture.gestureSettingsItem)
         XCTAssertFalse(item.isHidden)
-        XCTAssertEqual(item.title, "Show Gesture Settings")
+        XCTAssertEqual(item.title, "Show in Gestures")
         // Right under Gesture Navigation.
         let gestureIndex = try XCTUnwrap(menu.items.firstIndex {
             ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == SystemShortcut.mouseGestureNavigation.identifier
@@ -1737,5 +1737,74 @@ private extension ButtonBinding {
     /// The same trigger without an action.
     func disabledCopy() -> ButtonBinding {
         return ButtonBinding(id: id, triggerEvent: triggerEvent, systemShortcutName: "", isEnabled: false, createdAt: createdAt)
+    }
+}
+
+// MARK: - "Show in <Place>" (round 3)
+
+extension ButtonBindingTests {
+
+    /// "Show in Shortcut Ring" stands right under the Shortcut Ring while the ring is the
+    /// action, as "Show in Gestures" under Gesture Navigation; it asks for the pane and
+    /// changes nothing, and is never ticked.
+    func testShowInShortcutRing_onlyWhileTheRingIsTheAction() throws {
+        var requests = 0
+        var selected = 0
+        let ring = makePullDown(binding: makeBinding(SystemShortcut.shortcutRing), onShortcutSelected: { _ in selected += 1 })
+        ring.onRingSettingsRequested = { requests += 1 }
+        let menu = try XCTUnwrap(ring.menu)
+        let item = try XCTUnwrap(ring.ringSettingsItem)
+        XCTAssertFalse(item.isHidden)
+        XCTAssertEqual(item.title, "Show in Shortcut Ring")
+        XCTAssertNotNil(item.image)
+        let ringIndex = try XCTUnwrap(menu.items.firstIndex {
+            ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == SystemShortcut.shortcutRing.identifier
+        })
+        XCTAssertEqual(menu.index(of: item), ringIndex + 1)
+        XCTAssertEqual(ring.gestureSettingsItem?.isHidden, true)
+
+        ring.menuWillOpen(menu)
+        XCTAssertEqual(item.state, .off)
+        ring.menuDidClose(menu)
+
+        ring.shortcutSelected(item)
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(selected, 0)
+        XCTAssertEqual(shownTitle(ring), SystemShortcut.shortcutRing.localizedName)
+
+        XCTAssertEqual(makePullDown(binding: makeBinding(SystemShortcut.copy)).ringSettingsItem?.isHidden, true)
+        let gesture = makePullDown(binding: makeBinding(SystemShortcut.mouseGestureNavigation))
+        XCTAssertEqual(gesture.ringSettingsItem?.isHidden, true)
+        XCTAssertEqual(gesture.gestureSettingsItem?.isHidden, false)
+    }
+
+    /// A place of the ring and a direction of the gestures have no "Show in" items.
+    func testRingPlacesAndGestureDirectionsHaveNoShowInItems() {
+        for use in [ButtonActionPullDown.Use.ringPlace, .gesture(showsLogiActions: false)] {
+            let pullDown = ButtonActionPullDown(binding: makeBinding(SystemShortcut.copy), use: use)
+            XCTAssertNil(pullDown.gestureSettingsItem)
+            XCTAssertNil(pullDown.ringSettingsItem)
+        }
+    }
+
+    /// On an app's Buttons part the items name the app's part, as the sidebar and the
+    /// page's segments name places; without an app, the panes.
+    func testShowInItemsNameTheAppsPartOnAnAppsPage() throws {
+        let pullDown = makePullDown(binding: makeBinding(SystemShortcut.shortcutRing))
+        pullDown.showsInApplication = "Safari"
+        XCTAssertEqual(pullDown.gestureSettingsItem?.title, "Show in Safari › Gestures")
+        XCTAssertEqual(pullDown.ringSettingsItem?.title, "Show in Safari › Shortcut Ring")
+        // (A trigger of another kind builds the menu anew: the titles stay the app's.)
+        pullDown.configure(with: ButtonBinding(
+            triggerEvent: RecordedEvent(type: .keyboard, code: 40, modifiers: 0, displayComponents: ["K"], deviceFilter: nil),
+            systemShortcutName: SystemShortcut.shortcutRing.identifier
+        ))
+        XCTAssertEqual(pullDown.ringSettingsItem?.title, "Show in Safari › Shortcut Ring")
+        pullDown.showsInApplication = nil
+        XCTAssertEqual(pullDown.gestureSettingsItem?.title, "Show in Gestures")
+        XCTAssertEqual(pullDown.ringSettingsItem?.title, "Show in Shortcut Ring")
+
+        XCTAssertEqual(ThumbWheelPresentation.settingsItemTitle, "Show in Scrolling")
+        XCTAssertEqual(ThumbWheelPresentation.settingsItemTitle(application: "Safari"), "Show in Safari › Scrolling")
     }
 }

@@ -538,8 +538,8 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(Options.shared.buttons.binding, bindings, "no binding is touched")
     }
 
-    /// The row's menu ends with "Thumb Wheel Settings…" (after a separator, with its
-    /// symbol, never ticked): it opens the Scrolling pane and changes nothing.
+    /// The row's menu ends with "Show in Scrolling" (after a separator, with its symbol,
+    /// never ticked): it opens the Scrolling pane and changes nothing.
     func testTheThumbWheelRowsMenuOpensItsSettings() throws {
         let pane = makePane([])
         let row = try XCTUnwrap(pane.thumbWheelRow)
@@ -549,7 +549,7 @@ final class PreferencesButtonsTests: XCTestCase {
         let item = try XCTUnwrap(row.pullDown.settingsItem)
         XCTAssertTrue(menu.items.last === item, "last")
         XCTAssertTrue(menu.items[menu.items.count - 2].isSeparatorItem)
-        XCTAssertEqual(item.title, "Thumb Wheel Settings…")
+        XCTAssertEqual(item.title, "Show in Scrolling")
         XCTAssertNotNil(item.image)
         XCTAssertNil(ThumbWheelPresentation.function(of: item), "it picks no function")
         XCTAssertEqual(row.pullDown.functionItems.count, ThumbWheelFunction.allCases.count)
@@ -2448,8 +2448,25 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(pullDown.gestureSettingsItem?.isHidden, false)
 
         let showSettings = try XCTUnwrap(pullDown.gestureSettingsItem)
+        XCTAssertEqual(showSettings.title, "Show in Gestures")
         pullDown.shortcutSelected(showSettings)
         XCTAssertEqual(shownPanes, [GesturesPreferencesViewController.tabIdentifier])
+
+        // The Shortcut Ring: "Show in Shortcut Ring" under it shows the Shortcut Ring pane.
+        XCTAssertEqual(pullDown.ringSettingsItem?.isHidden, true)
+        let ring = try XCTUnwrap(menu.items.first {
+            ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == SystemShortcut.shortcutRing.identifier
+        })
+        pullDown.shortcutSelected(ring)
+        XCTAssertEqual(pullDown.gestureSettingsItem?.isHidden, true)
+        let showRing = try XCTUnwrap(pullDown.ringSettingsItem)
+        XCTAssertFalse(showRing.isHidden)
+        XCTAssertEqual(showRing.title, "Show in Shortcut Ring")
+        XCTAssertEqual(menu.index(of: showRing), menu.index(of: ring) + 1, "right under the Shortcut Ring")
+        shownPanes = []
+        pullDown.shortcutSelected(showRing)
+        XCTAssertEqual(shownPanes, [RingPreferencesViewController.tabIdentifier])
+        XCTAssertEqual(Options.shared.buttons.binding.first?.systemShortcutName, SystemShortcut.shortcutRing.identifier, "nothing changes")
 
         let noAction = menu.items[2]
         XCTAssertEqual(noAction.title, "Default (Back)")
@@ -3082,14 +3099,17 @@ final class PreferencesButtonsTests: XCTestCase {
             // longer offered: they left the mouse changed after Pause and Quit.
             "Next Pointer Speed",
         ])
-        // The last group: Gesture Navigation, its settings (hidden: not its action), the
-        // Shortcut Ring, Open App or File…, Keyboard Shortcut….
-        let last = Array(menu.items.suffix(5))
-        XCTAssertTrue(menu.items[menu.items.count - 6].isSeparatorItem)
+        // The last group: Gesture Navigation and "Show in Gestures", the Shortcut Ring and
+        // "Show in Shortcut Ring" (both hidden: not the action), Open App or File…,
+        // Keyboard Shortcut….
+        let last = Array(menu.items.suffix(6))
+        XCTAssertTrue(menu.items[menu.items.count - 7].isSeparatorItem)
         XCTAssertEqual(last.map(\.title), [
-            "Gesture Navigation", "Show Gesture Settings", "Shortcut Ring", "Open App or File…", "Keyboard Shortcut…",
+            "Gesture Navigation", "Show in Gestures", "Shortcut Ring", "Show in Shortcut Ring",
+            "Open App or File…", "Keyboard Shortcut…",
         ])
         XCTAssertTrue(last[1].isHidden)
+        XCTAssertTrue(last[3].isHidden)
 
         // A standard button gets no Logitech actions.
         let standard = ButtonActionPullDown(binding: binding(3, "copy"))

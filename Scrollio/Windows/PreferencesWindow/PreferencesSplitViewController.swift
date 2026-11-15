@@ -287,7 +287,7 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
         }
     }
 
-    /// A button inside a pane that switches panes ("Open Mouse", "Set Up…") goes away with
+    /// A button inside a pane that switches panes ("Show in Mouse", "Set Up…") goes away with
     /// its pane, and the window takes the focus: Tab would start over. The sidebar list gets
     /// it, as when the window opens, so Tab goes on into the new pane.
     private func keepKeyboardFocus() {

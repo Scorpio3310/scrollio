@@ -127,6 +127,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-default-with", "buttons-default-effect-back", "buttons-default-effect-forward", "buttons-default-effect-middle",
         "buttons-trigger-choice-recorded-replaces",
         "buttons-default-runs-another", "buttons-default-caught", "buttons-default-key-own",
+        "buttons-show-ring-settings", "buttons-show-in-app-part",
     ]
 
     /// Gestures pane and its gesture controls.
@@ -468,6 +469,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-trigger-choice-recorded-replaces": "@",
         "ring-panel-label-app": "@",
         "buttons-default-runs-another": "@",
+        // Round 3 C1: "Show in Safari › Gestures"
+        "buttons-show-in-app-part": "@@",
     ]
 
     /// The arguments `format` reads, in argument order: "%2$d of %1$@" -> "@d"; "@" an

@@ -259,7 +259,8 @@ final class ShortcutRingSettingsTests: XCTestCase {
             XCTAssertTrue(names.contains(place.action), place.action)
         }
         let titles = menu.items.map { $0.title }
-        for absent in ["Modifier Keys", "Scrolling", "Logitech Mouse", "Gesture Navigation", "Show Gesture Settings", "Shortcut Ring"] {
+        let showIn = ["buttons-show-gesture-settings", "buttons-show-ring-settings"].map { NSLocalizedString($0, comment: "") }
+        for absent in ["Modifier Keys", "Scrolling", "Logitech Mouse", "Gesture Navigation", "Shortcut Ring"] + showIn {
             XCTAssertFalse(titles.contains(absent), absent)
         }
         XCTAssertEqual(Array(titles.suffix(2)), ["Open App or File…", "Keyboard Shortcut…"])

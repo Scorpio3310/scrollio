@@ -14,8 +14,9 @@
 //  the window's Undo takes it again; Undo also takes back a change of a row's action or of
 //  the name or icon of its keys (`ButtonRowChange`). Nothing stays general: every button of Buttons is
 //  offered, the one that opens the Shortcut Ring or runs Gesture Navigation there too, and
-//  a row's menu is the Buttons pane's ("Show Gesture Settings" shows the app's Gestures
-//  part).
+//  a row's menu is the Buttons pane's, its "Show in" items naming the app's parts ("Show
+//  in Safari › Gestures" shows the app's Gestures part, "Show in Safari › Shortcut Ring"
+//  its Shortcut Ring part).
 //
 //  A Logitech button that no binding of Buttons uses is the mouse's own in every other
 //  app: Scrollio asks the mouse for it only while this app is in front
@@ -59,10 +60,14 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// or Redo of a removal asks it when it runs, maybe after this page closed and the
     /// app's page opened again: it must not hold the page. nil: this part, while it is there.
     var partShowing: ((Application) -> ApplicationButtonsViewController?)?
-    /// "Show Gesture Settings" was chosen in a row's menu: the page shows the app's
+    /// "Show in Safari › Gestures" was chosen in a row's menu: the page shows the app's
     /// Gestures part.
     var onGestureSettingsRequested: (() -> Void)?
-    /// "Thumb Wheel Settings…" of the thumb wheel's row: the page shows its Scrolling part.
+    /// "Show in Safari › Shortcut Ring" was chosen in a row's menu: the page shows the
+    /// app's Shortcut Ring part.
+    var onRingSettingsRequested: (() -> Void)?
+    /// "Show in Safari › Scrolling" of the thumb wheel's row: the page shows its Scrolling
+    /// part.
     var onThumbWheelSettingsRequested: (() -> Void)?
 
     // MARK: - Seams (tests and screenshots replace them)
@@ -373,9 +378,14 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         pullDown.onOpenTargetSelectionRequested = { [weak self] in
             self?.presentOpenTargetPopover(forRow: id)
         }
-        // The gestures this app runs are on its own page.
+        // The gestures and the ring this app runs are on its own page: "Show in Safari ›
+        // Gestures", "Show in Safari › Shortcut Ring".
+        pullDown.showsInApplication = application.getName()
         pullDown.onGestureSettingsRequested = { [weak self] in
             self?.onGestureSettingsRequested?()
+        }
+        pullDown.onRingSettingsRequested = { [weak self] in
+            self?.onRingSettingsRequested?()
         }
         // "Same as Other Apps (…)": what "−" does.
         pullDown.onSameAsOtherApps = { [weak self] in

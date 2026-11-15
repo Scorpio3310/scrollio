@@ -9,6 +9,9 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   Finder, screenshots, navigation and more), a keyboard shortcut you record, a modifier
   key, another mouse button, one of the scroll keys, Gesture Navigation, the
   [Shortcut Ring](#shortcut-ring), or opening an app, a file or a script.
+- A row's menu ticks the action the row shows (a listed one inside its group, which gets
+  a dash). Under Gesture Navigation and the Shortcut Ring, while one is the row's action,
+  "Show in Gestures" or "Show in Shortcut Ring" leads to its pane.
 - The listed shortcuts (Select All, Undo, Copy and the rest) press the right key on every
   keyboard layout, and keys are named as your keyboard names them.
 - To record a button or a key, click + and press it. Esc, a left click, closing the
@@ -80,8 +83,9 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   front, every button does what Buttons says. Nothing stays general: + offers the button
   that opens the Shortcut Ring or runs Gesture Navigation in the Buttons pane too (such
   as the MX Master 4's thumb panel), and a row's menu is the Buttons pane's, the Shortcut
-  Ring and Gesture Navigation among it ("Show Gesture Settings" opens the app's Gestures
-  part). A button that opens the ring while the app is in front opens the app's own ring
+  Ring and Gesture Navigation among it ("Show in Safari › Gestures" and "Show in Safari ›
+  Shortcut Ring" open the app's parts). A button that opens the ring while the app is in
+  front opens the app's own ring
   if it has one, else the general one; one that runs Gesture Navigation runs the app's
   own gestures if it has them, else the general ones. A Logitech
   button that no binding of the Buttons pane uses is taken from the mouse only while an
@@ -345,8 +349,9 @@ wheel.
   them. A deliberate turn back acts a tick or two later.
 - Speed: how far a sideways scroll goes, how little of a turn each step needs, or how far
   a turn slides the desktop.
-- The Thumb wheel row's menu in Buttons ends with "Thumb Wheel Settings…", which opens
-  Scrolling › Thumb wheel (on an app's Buttons part: the app's Scrolling part).
+- The Thumb wheel row's menu in Buttons ends with "Show in Scrolling", which opens
+  Scrolling › Thumb wheel (on an app's Buttons part "Show in Safari › Scrolling": the app's
+  Scrolling part).
 - An app can have all of them of its own, on its page in Apps, where the wheel is the
   same as in the panes: the Scrolling part has the Thumb wheel box, and the Buttons part
   a Thumb wheel row whose action is the box's action. Its settings count while the app
@@ -360,7 +365,7 @@ wheel.
   shows its settings, the Thumb wheel box among them, only while that switch is off: on,
   it is the switch alone, as the Gestures and Shortcut Ring parts are with theirs. An
   app whose own settings date from before keeps the speed and directions of Scrolling ›
-  Thumb wheel until you change them on its page. "Thumb Wheel Settings…" of the app's
+  Thumb wheel until you change them on its page. "Show in Safari › Scrolling" of the app's
   Buttons part shows the Scrolling part either way: with the switch on it is the switch
   that gives the app its own.
 - The action is the app's own whatever that switch says: choose it in the Scrolling

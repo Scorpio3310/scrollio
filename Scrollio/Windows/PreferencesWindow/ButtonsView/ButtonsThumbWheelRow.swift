@@ -9,8 +9,8 @@
 //  wheel; the line under the title says what a turn of another function does (on Default the
 //  title says it, and the pull-down's tooltip). No recorder, no ⓘ, never removed with "−". Whoever owns the
 //  row stores the choice (`onFunctionSelected`) and shows the stored value (`update`). The
-//  menu ends with "Thumb Wheel Settings…" (`onSettingsRequested`), which opens Scrolling ›
-//  Thumb wheel, as "Show Gesture Settings" opens the Gestures pane.
+//  menu ends with "Show in Scrolling" (`onSettingsRequested`), which opens Scrolling ›
+//  Thumb wheel, as "Show in Gestures" opens the Gestures pane.
 //
 
 import Cocoa
@@ -20,15 +20,15 @@ import Cocoa
 /// The six functions of the thumb wheel in a pull-down as wide as the buttons' action
 /// pull-downs, so the column lines up: "Default (Scroll Sideways)", then the others with
 /// their symbols. The one in use is ticked. Choosing one only reports it. Last,
-/// "Thumb Wheel Settings…", which changes nothing and only asks for the settings.
+/// "Show in Scrolling", which changes nothing and only asks for the settings.
 final class ThumbWheelPullDown: NSPopUpButton {
 
-    /// What the "Thumb Wheel Settings…" item carries.
+    /// What the "Show in Scrolling" item carries.
     static let settingsMarker = "thumb-wheel-settings"
 
     /// A function was chosen (also the one already in use).
     var onFunctionSelected: ((ThumbWheelFunction) -> Void)?
-    /// "Thumb Wheel Settings…" was chosen.
+    /// "Show in Scrolling" was chosen.
     var onSettingsRequested: (() -> Void)?
     /// "Same as Other Apps (…)" was chosen (an app's Buttons part).
     var onSameAsOtherApps: (() -> Void)?
@@ -107,7 +107,7 @@ final class ThumbWheelPullDown: NSPopUpButton {
         return menu
     }
 
-    /// The "Thumb Wheel Settings…" item.
+    /// The "Show in Scrolling" item.
     var settingsItem: NSMenuItem? {
         return menu?.items.first { ($0.representedObject as? String) == Self.settingsMarker }
     }

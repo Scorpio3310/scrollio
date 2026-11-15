@@ -16,8 +16,8 @@
 //  to Buttons, and the window's Undo takes it again,
 //  with an undo target that outlives the page, as for a button's row; Undo takes back a
 //  function chosen in the pull-down the same way. Buttons and
-//  Scrolling › Thumb wheel are never touched. The menu's "Thumb Wheel Settings…" shows the
-//  app's Scrolling part (`onThumbWheelSettingsRequested`, the page's
+//  Scrolling › Thumb wheel are never touched. The menu's "Show in Safari › Scrolling" shows
+//  the app's Scrolling part (`onThumbWheelSettingsRequested`, the page's
 //  `showThumbWheelSettings`).
 //
 
@@ -148,6 +148,8 @@ extension ApplicationButtonsViewController {
         row.pullDown.onFunctionSelected = { [weak self] chosen in
             self?.setOwnThumbWheelFunction(chosen)
         }
+        // "Show in Safari › Scrolling": the app's part, not the pane.
+        row.pullDown.settingsItem?.title = ThumbWheelPresentation.settingsItemTitle(application: application.getName())
         row.pullDown.onSettingsRequested = { [weak self] in
             self?.onThumbWheelSettingsRequested?()
         }

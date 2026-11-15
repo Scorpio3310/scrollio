@@ -18,8 +18,10 @@ class ShortcutManager {
         static let openTarget = "__open__"
         /// "Keyboard Shortcut…": the caller records a key.
         static let keyboardShortcut = "__custom__"
-        /// "Show Gesture Settings": the caller shows the Gestures pane.
+        /// "Show in Gestures": the caller shows the Gestures pane.
         static let gestureSettings = "__gestureSettings__"
+        /// "Show in Shortcut Ring": the caller shows the Shortcut Ring pane.
+        static let ringSettings = "__ringSettings__"
     }
 
     /// 创建带图标的 NSImage (SF Symbol)
@@ -37,16 +39,18 @@ class ShortcutManager {
     /// - 索引3: 分割线 #2 - 分隔操作区和分类菜单
     /// - 索引4+: 分类子菜单 (功能键,应用与窗口等), then Modifier Keys, Mouse Buttons,
     ///   Scrolling and, for a Logitech button, Logitech Mouse; every category with a symbol
-    /// - last group, after a separator: "Gesture Navigation" (and "Show Gesture Settings"
-    ///   while it is the button's action), "Shortcut Ring", "Open App or File…" and "Keyboard Shortcut…",
+    /// - last group, after a separator: "Gesture Navigation" (and "Show in Gestures"
+    ///   while it is the button's action), "Shortcut Ring" (and "Show in Shortcut Ring"
+    ///   likewise), "Open App or File…" and "Keyboard Shortcut…",
     ///   the actions that are configured rather than picked from a list
     ///
     /// - Parameter menu: 目标菜单对象
     /// - Parameter target: 菜单项点击事件的目标对象
     /// - Parameter action: 菜单项点击事件的选择器
     /// - Parameter showLogiActions: the trigger is a Logitech button: offer its actions.
-    /// - Parameter showsGestureSettings: Gesture Navigation is the button's action: offer
-    ///   "Show Gesture Settings" under it.
+    /// - Parameter showsGestureSettings: offer "Show in Gestures" under Gesture Navigation
+    ///   and "Show in Shortcut Ring" under the Shortcut Ring (the pull-down shows each only
+    ///   while its action is the button's).
     /// - Parameter forRingPlace: the menu of a place of the Shortcut Ring: only what a
     ///   place can hold (`ShortcutRingPlace.shortcut(named:)`, "Open App or File…",
     ///   "Keyboard Shortcut…"). The modifier keys, the scroll holds, the left, right and
@@ -216,6 +220,19 @@ class ShortcutManager {
         if !forRingPlace {
             menu.addItem(ringItem)
             totalShortcuts += 1
+        }
+
+        // "Show in Shortcut Ring", as "Show in Gestures" under Gesture Navigation.
+        if showsGestureSettings && !forRingPlace {
+            let settingsItem = NSMenuItem(
+                title: NSLocalizedString("buttons-show-ring-settings", comment: ""),
+                action: action,
+                keyEquivalent: ""
+            )
+            settingsItem.target = target
+            settingsItem.representedObject = MenuMarker.ringSettings as NSString
+            settingsItem.image = createSymbolImage("slider.horizontal.3")
+            menu.addItem(settingsItem)
         }
 
         // "Open App or File…"
