@@ -1598,24 +1598,47 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertTrue(calculator.usesGeneralGestures, "the switch was only tried")
     }
 
+    /// Lets the blocks queued on the main queue run (a new row's menu opens from one).
+    private func drainMainQueue() {
+        let drained = expectation(description: "the main queue ran")
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 1)
+    }
+
     /// The first row's buttons go where its line says: "Show in Buttons" to the Buttons
     /// pane, "Show Buttons" to the app's Buttons part with that row selected, "Set Up…"
     /// records a mouse button at the push button that runs the gestures only in this app
-    /// (a key is refused, a row with "Default" takes it), and the row says so at once.
+    /// (a key is refused, a row with "Default" takes it), and the row says so at once. What
+    /// Set Up… recorded has its Undo in the window's Edit menu ("Change Button to Hold"),
+    /// although the Buttons part that records it is out of the window, and no row's menu
+    /// opens; "Record a Button or Key…" of the Buttons part opens the new row's menu.
     func testTheFirstRowsButtonsOfTheGesturesPartGoWhereTheLineSays() throws {
         let gestures = SystemShortcut.mouseGestureNavigation.identifier
         let calculator = addApp(Self.calculator)
         let pane = makePane()
+        let window = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
         pane.openApplication(withID: Self.calculator, part: .gestures)
         let page = try XCTUnwrap(pane.detailController)
         let part = try XCTUnwrap(page.gesturesPart)
         let buttons = try XCTUnwrap(page.buttonsPart)
+        XCTAssertNil(buttons.view.window, "the Buttons part is out of the window")
         var anchors: [NSView] = []
         buttons.startRecording = { anchors.append($0) }
         buttons.stopRecording = {}
-        buttons.openActionMenu = { _ in XCTFail("no menu opens: the action is chosen") }
+        var menus: [NSPopUpButton] = []
+        buttons.openActionMenu = { menus.append($0) }
         var panes = 0
         part.openButtonsPane = { panes += 1 }
+        let recorder = KeyRecorder()
+        func record(_ event: InputEvent) {
+            undo.beginUndoGrouping()
+            buttons.onEventRecorded(recorder, didRecordEvent: event, isDuplicate: false)
+            buttons.onRecordingStopped(recorder, didRecord: true)
+            undo.endUndoGrouping()
+            drainMainQueue()
+        }
 
         // Set Up…: at the push button, on the Gestures part; a key is refused.
         XCTAssertEqual(part.holdButton.title, "Set Up…")
@@ -1623,15 +1646,14 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(anchors.count, 1)
         XCTAssertTrue(anchors.first === part.holdButton, "the recorder hangs on the push button")
         XCTAssertEqual(page.shownPart, .gestures, "the part stays")
-        let recorder = KeyRecorder()
         let key = InputEvent(type: .keyboard, code: 40, modifiers: CGEventFlags.maskCommand, phase: .down, source: .hidPP, device: nil)
         XCTAssertFalse(buttons.validateRecordedEvent(recorder, event: key), "a key never holds the gestures")
         XCTAssertEqual(buttons.refusalHint(recorder, event: key), "Gestures need a mouse button")
         XCTAssertEqual(buttons.waitingHint(recorder, mode: .combination), "Press a mouse button")
         let back = InputEvent(type: .mouse, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil)
         XCTAssertTrue(buttons.validateRecordedEvent(recorder, event: back))
-        buttons.onEventRecorded(recorder, didRecordEvent: back, isDuplicate: false)
-        buttons.onRecordingStopped(recorder, didRecord: true)
+        record(back)
+        XCTAssertTrue(menus.isEmpty, "no menu opens: the action is chosen")
         let added = try XCTUnwrap(calculator.ownButtonBindings.first)
         XCTAssertEqual(calculator.ownButtonBindings.count, 1)
         XCTAssertEqual(added.systemShortcutName, gestures, "for this app only")
@@ -1640,22 +1662,45 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(part.holdButton.title, "Show Buttons")
         XCTAssertNil(buttons.waitingHint(recorder, mode: .combination), "\"Record a Button or Key…\" asks as ever")
 
+        // Edit › Undo takes the new row away again, and the row says so; Redo puts it back.
+        XCTAssertEqual(undo.undoActionName, "Change Button to Hold")
+        undo.undo()
+        XCTAssertTrue(calculator.ownButtonBindings.isEmpty)
+        XCTAssertEqual(part.holdRow.explanation, "None in Calculator")
+        XCTAssertEqual(part.holdButton.title, "Set Up…")
+        undo.redo()
+        XCTAssertEqual(calculator.ownButtonBindings, [added])
+        XCTAssertEqual(part.holdButton.title, "Show Buttons")
+
         // Show Buttons: the app's Buttons part, that row selected.
         send(part.holdButton)
         XCTAssertEqual(page.shownPart, .buttons)
         XCTAssertEqual(buttons.list.selectedID, AnyHashable(added.id))
 
-        // A row with "Default" takes the action at Set Up….
+        // A row with "Default" takes the action at Set Up…, with Undo too.
         calculator.setOwnButtonBindings([binding(3, "")])
         page.show(.gestures)
+        XCTAssertNil(buttons.view.window)
         XCTAssertEqual(part.holdButton.title, "Set Up…")
         send(part.holdButton)
         XCTAssertTrue(buttons.validateRecordedEvent(recorder, event: back), "its row has no action of its own")
-        buttons.onEventRecorded(recorder, didRecordEvent: back, isDuplicate: false)
-        buttons.onRecordingStopped(recorder, didRecord: true)
+        record(back)
         XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), [gestures])
+        XCTAssertTrue(menus.isEmpty, "no menu opens: the action is chosen")
+        XCTAssertEqual(undo.undoActionName, "Change Button to Hold")
+        undo.undo()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), [""])
+        XCTAssertEqual(part.holdButton.title, "Set Up…")
+
+        // The control: "Record a Button or Key…" of the Buttons part, in the window, opens
+        // the new row's menu once the recorder is gone.
+        page.show(.buttons)
+        buttons.beginRecording()
+        record(InputEvent(type: .mouse, code: 4, modifiers: [], phase: .down, source: .hidPP, device: nil))
+        XCTAssertEqual(menus.count, 1, "the new row's menu opens")
 
         // Show in Buttons: the Buttons pane.
+        page.show(.gestures)
         Options.shared.buttons.binding = [binding(4, gestures)]
         calculator.setOwnButtonBindings([])
         part.syncViewWithOptions()
@@ -1760,31 +1805,51 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// "Set Up…" of the Ring part records a button or a key (a key opens the ring too) at
-    /// the push button, for this app only; "Show in Buttons" goes to the Buttons pane.
+    /// the push button, for this app only, with its Undo in the window's Edit menu ("Change
+    /// What Opens the Ring") and no row's menu opening; "Show in Buttons" goes to the
+    /// Buttons pane.
     func testTheRingPartsSetUpRecordsAButtonOrKeyForThisAppOnly() throws {
         let ring = SystemShortcut.shortcutRing.identifier
         let calculator = addApp(Self.calculator)
         let pane = makePane()
+        let window = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
         pane.openApplication(withID: Self.calculator, part: .ring)
         let page = try XCTUnwrap(pane.detailController)
         let part = try XCTUnwrap(page.ringPart)
         let buttons = try XCTUnwrap(page.buttonsPart)
+        XCTAssertNil(buttons.view.window, "the Buttons part is out of the window")
         var anchors: [NSView] = []
         buttons.startRecording = { anchors.append($0) }
         buttons.stopRecording = {}
-        buttons.openActionMenu = { _ in XCTFail("no menu opens: the action is chosen") }
+        var menus = 0
+        buttons.openActionMenu = { _ in menus += 1 }
         send(part.triggerButton)
         XCTAssertTrue(anchors.first === part.triggerButton)
         let recorder = KeyRecorder()
         let key = InputEvent(type: .keyboard, code: 49, modifiers: CGEventFlags.maskControl, phase: .down, source: .hidPP, device: nil)
         XCTAssertTrue(buttons.validateRecordedEvent(recorder, event: key), "a key opens the ring")
         XCTAssertNil(buttons.waitingHint(recorder, mode: .combination))
+        undo.beginUndoGrouping()
         buttons.onEventRecorded(recorder, didRecordEvent: key, isDuplicate: false)
         buttons.onRecordingStopped(recorder, didRecord: true)
+        undo.endUndoGrouping()
+        drainMainQueue()
+        XCTAssertEqual(menus, 0, "no menu opens: the action is chosen")
         XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), [ring])
         XCTAssertTrue(Options.shared.buttons.binding.isEmpty)
         XCTAssertEqual(page.shownPart, .ring)
         XCTAssertEqual(part.triggerRow.explanation?.hasSuffix(", only in Calculator"), true)
+        XCTAssertEqual(part.triggerButton.title, "Show Buttons")
+
+        XCTAssertEqual(undo.undoActionName, "Change What Opens the Ring")
+        undo.undo()
+        XCTAssertTrue(calculator.ownButtonBindings.isEmpty)
+        XCTAssertEqual(part.triggerRow.explanation, "None in Calculator")
+        XCTAssertEqual(part.triggerButton.title, "Set Up…")
+        undo.redo()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), [ring])
         XCTAssertEqual(part.triggerButton.title, "Show Buttons")
 
         var panes = 0
