@@ -539,6 +539,18 @@ final class PreferencesLocalizationTests: XCTestCase {
         }
     }
 
+    /// What an app has of its own reads "Own: 1 button, thumb wheel, gestures and ring"
+    /// (owner, Q24): a colon after "Own", the list as ListFormatter joins it, "ring" for the
+    /// Shortcut Ring; "Nothing of its own yet" while it has nothing.
+    func testAnAppsSummaryReadsOwnColonAndAList() {
+        let kinds = ["apps-summary-buttons-one", "apps-summary-thumb-wheel", "apps-summary-gestures", "apps-summary-ring"]
+            .map { NSLocalizedString($0, comment: "") }
+        XCTAssertEqual(kinds, ["1 button", "thumb wheel", "gestures", "ring"])
+        let list = ListFormatter.localizedString(byJoining: kinds)
+        XCTAssertEqual(String(format: NSLocalizedString("apps-summary-own", comment: ""), list), "Own: " + list)
+        XCTAssertEqual(NSLocalizedString("apps-summary-none", comment: ""), "Nothing of its own yet")
+    }
+
     func testTheFormatReaderReadsWhatStringFormatReads() {
         XCTAssertEqual(Self.arguments(ofFormat: "No arguments"), "")
         XCTAssertEqual(Self.arguments(ofFormat: "100%% sure"), "")

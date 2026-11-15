@@ -10333,13 +10333,13 @@
       }
     },
     "apps-summary-own": {
-      "comment": "Apps: an app's row and its page's header, what it has of its own; %@ the list of kinds (“scrolling, 2 buttons and ring”), as System Settings › Notifications says it",
+      "comment": "Apps: an app's row and its page's header, what it has of its own; %@ the list of kinds joined by ListFormatter (“Own: scrolling, 2 buttons and ring”)",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Own %@"
+            "value": "Own: %@"
           }
         }
       }
