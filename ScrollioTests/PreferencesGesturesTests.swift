@@ -851,7 +851,7 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(added.systemShortcutName, SystemShortcut.mouseGestureNavigation.identifier)
         XCTAssertTrue(added.isEnabled)
         XCTAssertEqual(added.triggerEvent, RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil))
-        XCTAssertEqual(gestures.gestureButtonRow.explanation, "Back button.", "shown at once")
+        XCTAssertEqual(gestures.gestureButtonRow.explanation, "Hold it and move the mouse.", "shown at once")
         XCTAssertEqual(gestures.gestureButtonButton.shownTitle, "Back button")
         XCTAssertTrue(gestures.foldingSections.allSatisfy { $0.showsBody }, "the sections open")
         XCTAssertEqual(undo.undoActionName, "Change Button to Hold")

@@ -86,6 +86,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-trigger-logitech", "buttons-trigger-logitech-twin", "buttons-trigger-key",
         "buttons-trigger-choice-choose", "buttons-trigger-choice-several", "buttons-trigger-choice-mouse",
         "buttons-trigger-choice-item", "buttons-trigger-choice-replaced", "buttons-trigger-choice-show",
+        "buttons-trigger-choice-show-in-app",
         "buttons-header-your-mouse", "buttons-header-count", "buttons-header-one", "buttons-header-none",
         "buttons-header-no-action", "buttons-header-recording", "buttons-header-recording-hint",
         "buttons-header-find-hint", "buttons-header-find-this-one", "buttons-header-answer", "buttons-note-extra-button",
@@ -137,7 +138,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gesture-mode-interactive-description", "gesture-invert-horizontal-hint", "gesture-freeze-pointer-hint",
         "gesture-tracking-speed-label", "gesture-tracking-speed-hint", "gesture-tracking-speed-hint-discrete",
         "gesture-tracking-speed-slower", "gesture-tracking-speed-faster",
-        "gestures-gesture-button", "gestures-gesture-button-none", "gestures-gesture-button-bound",
+        "gestures-gesture-button", "gestures-gesture-button-none", "gestures-gesture-button-bound", "gestures-gesture-button-one",
         "gestures-trigger-choice-record", "gestures-undo-choose-button", "gestures-directions-header", "gestures-directions-hint",
         "gestures-behaviour-header", "gestures-logitech-header", "gestures-logitech-needs",
         "mouse-gesture-device-tracking", "mouse-gesture-device-tracking-hint", "mouse-gesture-device-tracking-unavailable",
@@ -283,6 +284,7 @@ final class PreferencesLocalizationTests: XCTestCase {
     static let ringKeys = [
         "shortcutRing", "ring-menu-tooltip", "ring-tab-title",
         "ring-trigger", "ring-trigger-none", "ring-trigger-bound", "ring-trigger-choice-record", "ring-undo-choose-trigger", "ring-trigger-apps",
+        "ring-trigger-one", "ring-trigger-one-key",
         "ring-places-header", "ring-places-hint",
         "ring-place-top", "ring-place-top-right", "ring-place-right", "ring-place-bottom-right",
         "ring-place-bottom", "ring-place-bottom-left", "ring-place-left", "ring-place-top-left",
@@ -417,6 +419,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         // The trigger pull-down of the Gestures and Shortcut Ring panes
         "buttons-trigger-choice-item": "@@",
         "buttons-trigger-choice-replaced": "@",
+        "buttons-trigger-choice-show-in-app": "@",
         "ring-trigger-bound": "@",
         "ring-trigger-apps": "@",
         "general-settings-problem-damaged": "@",

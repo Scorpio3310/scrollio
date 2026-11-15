@@ -26,6 +26,10 @@ extension NSPopUpButton {
 final class TriggerChoiceTests: XCTestCase {
 
     private let gestures = SystemShortcut.mouseGestureNavigation.identifier
+    /// The line under the pull-down while one button or key does it: what to do with it.
+    private static let gesturesOne = "Hold it and move the mouse."
+    private static let ringOneButton = "Hold it, move towards a shortcut and let go. A key combination works too, even one from Logi Options+."
+    private static let ringOneKey = "Hold it, move towards a shortcut and let go."
     private let ring = SystemShortcut.shortcutRing.identifier
     private var savedBindings: [ButtonBinding] = []
     private var savedApplications: EnhanceArray<Application>!
@@ -291,7 +295,7 @@ final class TriggerChoiceTests: XCTestCase {
             XCTAssertEqual(Options.shared.buttons.binding.map(\.id), [back.id], "the Back button's binding")
             XCTAssertEqual(Options.shared.buttons.binding.first?.systemShortcutName, rule.action.identifier)
             XCTAssertEqual(pullDown.shownTitle, "Back button")
-            XCTAssertTrue(explanation()?.hasPrefix("Back button.") ?? false, explanation() ?? "")
+            XCTAssertEqual(explanation(), rule == .shortcutRing ? Self.ringOneButton : Self.gesturesOne, "what to do, not the name again")
             XCTAssertEqual(folded(), false, "the sections open")
             XCTAssertEqual(picture(), TriggerPictureSource(event: event(3)), "the picture lights it at once")
             XCTAssertEqual(pullDown.menu?.item(withIdentifierForTests: TriggerChooser.Identifier.item(.back))?.state, .on)
@@ -332,6 +336,75 @@ final class TriggerChoiceTests: XCTestCase {
         }
     }
 
+    /// With one button or key chosen the pull-down names it, and the line under it says
+    /// what to do instead of the name again, in two lines at most; with two or more (the
+    /// pull-down says "Multiple") the line names them. Regression: "Gesture button ⌄" over
+    /// "Gesture button.", and "A key combination works too" under a key.
+    func testWithOneTriggerTheLineSaysWhatToDoInTwoLines() throws {
+        let font = PreferencesGroupedForm.explanationFont
+        let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
+        func fits(_ row: PreferencesGroupRow, _ label: String) {
+            let text = row.explanationLabel.stringValue
+            let width = row.explanationLabel.frame.width
+            XCTAssertGreaterThan(width, 100, label)
+            let height = (text as NSString).boundingRect(
+                with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
+            ).height
+            XCTAssertLessThanOrEqual(height, twoLines, "\(label): \(text) in \(width) pt")
+        }
+        let control = UInt(CGEventFlags.maskControl.rawValue)
+        for (bindings, ringLine) in [
+            ([binding(3, gestures), binding(3, ring, modifiers: control)], Self.ringOneButton),
+            ([binding(3, gestures), binding(49, ring, modifiers: control, type: .keyboard)], Self.ringOneKey),
+        ] {
+            Options.shared.buttons.binding = bindings
+            let gesturesController = gesturesPane(undo: undoManager())
+            let ringController = ringPane(undo: undoManager())
+            gesturesController.view.layoutSubtreeIfNeeded()
+            ringController.view.layoutSubtreeIfNeeded()
+            XCTAssertEqual(gesturesController.gestureButtonButton.shownTitle, "Back button")
+            XCTAssertEqual(gesturesController.gestureButtonRow.explanation, Self.gesturesOne)
+            fits(gesturesController.gestureButtonRow, "Gestures")
+            XCTAssertEqual(ringController.triggerRow.explanation, ringLine)
+            fits(ringController.triggerRow, "Shortcut Ring")
+        }
+        Options.shared.buttons.binding = [binding(3, gestures), binding(4, gestures), binding(3, ring, modifiers: control), binding(2, ring)]
+        XCTAssertEqual(gesturesPane(undo: undoManager()).gestureButtonRow.explanation, "Back button and Forward button.")
+        XCTAssertEqual(ringPane(undo: undoManager()).triggerRow.explanation?.hasPrefix("⌃ Back button and Middle button."), true)
+    }
+
+    /// "Show in Buttons" says where it goes: the Buttons pane, or, while only an app's own
+    /// button or key does it, that app's Buttons part ("Show in Notes"), in both panes.
+    func testTheShowItemSaysWhereItGoes() throws {
+        let notes = ApplicationTriggers(applicationNames: ["Notes", "Safari"], triggerTitles: ["Back button"], path: "/System/Applications/Notes.app")
+        let gesturesController = gesturesPane(undo: undoManager())
+        let ringController = ringPane(undo: undoManager())
+        let pullDowns = { [gesturesController.gestureButtonButton, ringController.triggerButton] as [NSPopUpButton?] }
+        func showTitles() -> [String?] {
+            return pullDowns().map { $0?.menu?.items.first { $0.identifier == TriggerChooser.Identifier.showInButtons }?.title }
+        }
+        XCTAssertEqual(showTitles(), ["Show in Buttons", "Show in Buttons"], "nothing does it yet: Buttons")
+
+        gesturesController.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false, onlyInApps: notes) }
+        ringController.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: [], onlyInApps: notes) }
+        gesturesController.reload()
+        ringController.reload()
+        XCTAssertEqual(showTitles(), ["Show in Notes", "Show in Notes"], "the first app's Buttons part")
+        var opened: [String] = []
+        gesturesController.openApplicationButtons = { opened.append($0.applicationNames[0]) }
+        ringController.openApplicationButtons = { opened.append($0.applicationNames[0]) }
+        for pullDown in pullDowns() {
+            XCTAssertEqual(pullDown?.chooseItemForTests(TriggerChooser.Identifier.showInButtons), true)
+        }
+        XCTAssertEqual(opened, ["Notes", "Notes"], "it goes where it says")
+
+        gesturesController.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"]) }
+        ringController.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: ["Back button"]) }
+        gesturesController.reload()
+        ringController.reload()
+        XCTAssertEqual(showTitles(), ["Show in Buttons", "Show in Buttons"], "a button of Buttons does it")
+    }
+
     /// "Record a Button or Key…" in the Shortcut Ring pane: the recorder opens at the
     /// pull-down; a key combination pressed opens the ring from then on.
     func testRecordAButtonOrKeyInTheRingPaneTakesAKey() throws {
@@ -361,7 +434,7 @@ final class TriggerChoiceTests: XCTestCase {
         let stored = try XCTUnwrap(Options.shared.buttons.binding.first)
         XCTAssertEqual(stored.triggerEvent.type, .keyboard)
         XCTAssertEqual(stored.systemShortcutName, ring)
-        XCTAssertEqual(pane.triggerRow.explanation?.hasPrefix(pane.triggerButton.shownTitle), true)
+        XCTAssertEqual(pane.triggerRow.explanation, Self.ringOneKey, "a key opens it: no word on keys")
         undo.undo()
         XCTAssertEqual(Options.shared.buttons.binding, [])
     }
