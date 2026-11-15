@@ -10945,6 +10945,150 @@
           }
         }
       }
+    },
+    "ring-menu-swap-with": {
+      "comment": "Shortcut Ring pane and an app's Shortcut Ring part: the last item of a place's menu, and the first of the menu a secondary click on a drop of the drawing opens; its submenu lists the seven other places",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swap With"
+          }
+        }
+      }
+    },
+    "ring-menu-swap-item": {
+      "comment": "Shortcut Ring pane, the Swap With submenu: %1$@ is a place in Title Case (Top Right), %2$@ what it holds (Copy; No Action for an empty place)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ (%2$@)"
+          }
+        }
+      }
+    },
+    "ring-menu-clear": {
+      "comment": "Shortcut Ring pane and an app's Shortcut Ring part: the menu a secondary click on a drop of the drawing opens; empties the place",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear"
+          }
+        }
+      }
+    },
+    "ring-undo-swap": {
+      "comment": "Shortcut Ring pane and an app's Shortcut Ring part: the Undo menu item reads \"Undo Swap\" after two places were swapped",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swap"
+          }
+        }
+      }
+    },
+    "ring-menu-place-top": {
+      "comment": "Shortcut Ring pane, the Swap With submenu: a place of the ring in Title Case, as menus name things (the rows say \"Top\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top"
+          }
+        }
+      }
+    },
+    "ring-menu-place-top-right": {
+      "comment": "Shortcut Ring pane, the Swap With submenu: a place of the ring in Title Case, as menus name things (the rows say \"Top right\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top Right"
+          }
+        }
+      }
+    },
+    "ring-menu-place-right": {
+      "comment": "Shortcut Ring pane, the Swap With submenu: a place of the ring in Title Case, as menus name things (the rows say \"Right\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right"
+          }
+        }
+      }
+    },
+    "ring-menu-place-bottom-right": {
+      "comment": "Shortcut Ring pane, the Swap With submenu: a place of the ring in Title Case, as menus name things (the rows say \"Bottom right\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bottom Right"
+          }
+        }
+      }
+    },
+    "ring-menu-place-bottom": {
+      "comment": "Shortcut Ring pane, the Swap With submenu: a place of the ring in Title Case, as menus name things (the rows say \"Bottom\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bottom"
+          }
+        }
+      }
+    },
+    "ring-menu-place-bottom-left": {
+      "comment": "Shortcut Ring pane, the Swap With submenu: a place of the ring in Title Case, as menus name things (the rows say \"Bottom left\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bottom Left"
+          }
+        }
+      }
+    },
+    "ring-menu-place-left": {
+      "comment": "Shortcut Ring pane, the Swap With submenu: a place of the ring in Title Case, as menus name things (the rows say \"Left\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Left"
+          }
+        }
+      }
+    },
+    "ring-menu-place-top-left": {
+      "comment": "Shortcut Ring pane, the Swap With submenu: a place of the ring in Title Case, as menus name things (the rows say \"Top left\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top Left"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

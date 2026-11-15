@@ -730,6 +730,48 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(preview.lit, 3)
     }
 
+    // MARK: The drawing as an editor
+
+    /// What "Swap With" and "Clear" offer, from a ring and a place alone: the seven other
+    /// places clockwise from the top, named in Title Case with what each holds ("No Action"
+    /// for none); a swap that would show nothing new is off, and so is Clear on a place
+    /// that holds nothing.
+    func testTheMenuModelNamesTheSevenOtherPlacesAndKnowsWhatChangesNothing() {
+        var ring = ShortcutRingSettings(places: [])
+        ring[0] = ShortcutRingPlace(SystemShortcut.copy)
+        ring[3] = ShortcutRingPlace(SystemShortcut.copy)
+        ring[4] = ShortcutRingPlace(action: "somethingNewer")
+        ring[7] = ShortcutRingPlace(SystemShortcut.paste)
+        let names: (ShortcutRingPlace) -> String? = { $0.runs ? $0.action.uppercased() : nil }
+
+        let top = RingPlaceMenuModel.make(for: 0, in: ring, name: names)
+        XCTAssertEqual(top.place, 0)
+        XCTAssertEqual(top.swaps.map(\.place), [1, 2, 3, 4, 5, 6, 7])
+        XCTAssertEqual(top.swaps.map(\.title), [
+            "Top Right (No Action)", "Right (No Action)", "Bottom Right (COPY)", "Bottom (No Action)",
+            "Bottom Left (No Action)", "Left (No Action)", "Top Left (PASTE)",
+        ])
+        XCTAssertEqual(top.swaps.map(\.isEnabled), [true, true, false, true, true, true, true], "Bottom Right holds the same")
+        XCTAssertTrue(top.canClear)
+
+        let empty = RingPlaceMenuModel.make(for: 1, in: ring, name: names)
+        XCTAssertEqual(empty.swaps.map(\.place), [0, 2, 3, 4, 5, 6, 7])
+        XCTAssertEqual(empty.swaps.first?.title, "Top (COPY)")
+        XCTAssertEqual(empty.swaps.map(\.isEnabled), [true, false, true, false, false, false, true], "only with a place that holds something")
+        XCTAssertFalse(empty.canClear)
+        XCTAssertFalse(RingPlaceMenuModel.make(for: 4, in: ring, name: names).canClear, "what this version does not run shows as nothing")
+
+        XCTAssertEqual((0..<8).map(RingPlaceMenuModel.menuTitle(ofPlace:)), [
+            "Top", "Top Right", "Right", "Bottom Right", "Bottom", "Bottom Left", "Left", "Top Left",
+        ])
+        // What a row shows: the action's name, a named shortcut's name without its keys.
+        XCTAssertEqual(RingPlaceMenuModel.shownName(of: ring[0]), "Copy")
+        XCTAssertNil(RingPlaceMenuModel.shownName(of: .empty))
+        XCTAssertNil(RingPlaceMenuModel.shownName(of: ring[4]))
+        let named = ShortcutRingPlace(action: "custom::1:1048576", label: ShortcutLabel(name: "Save All", icon: nil))
+        XCTAssertEqual(RingPlaceMenuModel.shownName(of: named), "Save All")
+    }
+
     // MARK: The picture of what opens it
 
     private static let notes = "/System/Applications/Notes.app"
