@@ -107,7 +107,8 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   or back, quit), event taps that
   could not be created or that macOS turned off, restarts, settings that could not be
   read or written, an app, a file or a script that could not be opened (never its name
-  or path), a held action whose release never came, each use of the Shortcut Ring ("opened
+  or path), a held action whose release never came, a scroll key let go at a wheel turn
+  without its modifier (its release was not seen), each use of the Shortcut Ring ("opened
   by" a mouse button, a key or a button over HID++, and "the own ring of the app in
   front" when it was an app's own, never which app; "left open"; then "closed, nothing
   ran" or "closed, ran" with the shortcut's name, or for a key combination or an app

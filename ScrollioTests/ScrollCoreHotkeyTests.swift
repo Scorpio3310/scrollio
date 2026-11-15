@@ -479,3 +479,230 @@ final class ScrollSlowerKeyTests: XCTestCase {
         XCTAssertEqual(core.dashAmplification, 1.0)
     }
 }
+
+/// A hold key that is a modifier (⌥, ⇧, ⌘, ⌃) whose release is lost: another program
+/// swallowed it (a window switcher, a key remapper) or secure keyboard entry hid it. The key
+/// stayed "held" until it was pressed again: five times the distance, smoothing paused,
+/// sideways. Each wheel event from the hardware carries the modifiers that are down: one the
+/// event does not carry lets its key go, as the key's own release would. Wheel events go
+/// through the scroll tap's callback, keys through the hold-key tap's; nothing is posted.
+final class ScrollModifierHoldKeyLostReleaseTests: XCTestCase {
+
+    private var inputs: [ScrollPosterInput] = []
+    private var savedScroll: OPTIONS_SCROLL_DEFAULT!
+    private var savedAllowlist = false
+    private var savedApplication: Application?
+    private var savedCurrentApplication: Application?
+
+    override func setUp() {
+        super.setUp()
+        savedScroll = Options.shared.scroll
+        savedAllowlist = Options.shared.application.allowlist
+        savedApplication = ScrollCore.shared.application
+        savedCurrentApplication = ScrollCore.shared.currentApplication
+        // A new installation's settings: ⌥ faster, ⇧ sideways, ⌘ pauses smoothing.
+        let scroll = OPTIONS_SCROLL_DEFAULT()
+        scroll.reverse = false
+        Options.shared.scroll = scroll
+        Options.shared.application.allowlist = false
+        ScrollCore.shared.settingsWereReplaced()   // nothing held
+        ScrollCore.shared.application = nil
+        ScrollCore.shared.currentApplication = nil
+        ScrollCore.shared.handover = ScrollHandover()
+        ScrollUtils.shared.treatAsRemoteForTests(sourcePID: nil)
+        inputs = []
+        ScrollCore.posterInputObserverForTests = { [unowned self] input in self.inputs.append(input) }
+    }
+
+    override func tearDown() {
+        ScrollCore.posterInputObserverForTests = nil
+        ScrollCore.shared.settingsWereReplaced()
+        ScrollCore.shared.handover = ScrollHandover()
+        ScrollCore.shared.application = savedApplication
+        ScrollCore.shared.currentApplication = savedCurrentApplication
+        Options.shared.scroll = savedScroll
+        Options.shared.application.allowlist = savedAllowlist
+        ScrollUtils.shared.treatAsRemoteForTests(sourcePID: nil)
+        ScrollSystemLog.resetPassthroughForTests()
+        super.tearDown()
+    }
+
+    /// The key's own flagsChanged (its press or its release), through the hold-key tap.
+    private func flagsChanged(_ code: UInt16, _ flags: CGEventFlags) throws {
+        let event = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(code), keyDown: true))
+        event.type = .flagsChanged
+        event.flags = flags
+        _ = ScrollCore.shared.hotkeyEventCallBack(CGEventTapProxy(bitPattern: 1)!, .flagsChanged, event, nil)
+    }
+
+    /// A plain key's press or release, through the hold-key tap.
+    private func key(_ code: UInt16, down: Bool) throws {
+        let event = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(code), keyDown: down))
+        _ = ScrollCore.shared.hotkeyEventCallBack(CGEventTapProxy(bitPattern: 1)!, down ? .keyDown : .keyUp, event, nil)
+    }
+
+    /// One click of the main wheel down the page with these modifiers, aimed at no app (pid
+    /// 1), from the hardware (source pid 0) unless another process is named. What the poster
+    /// got, or nil when it was let through unsmoothed.
+    private func click(_ flags: CGEventFlags, sourcePID: Int64 = 0) throws -> ScrollPosterInput? {
+        let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 0, wheel2: 0, wheel3: 0))
+        event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: -1)
+        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: -1)
+        event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: -120)
+        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 0)
+        event.setIntegerValueField(.eventSourceUnixProcessID, value: sourcePID)
+        event.setIntegerValueField(.eventTargetUnixProcessID, value: 1)
+        event.flags = flags
+        inputs = []
+        _ = ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .scrollWheel, event, nil)
+        XCTAssertLessThanOrEqual(inputs.count, 1)
+        return inputs.last
+    }
+
+    private func plainDistance() throws -> Double {
+        return try XCTUnwrap(try click([])).y
+    }
+
+    /// The case of the report: ⌥ ("Scroll faster") is pressed, its release never comes. The
+    /// wheel goes five times as far while its events carry ⌥, and the first one without ⌥
+    /// lets the key go. A release that comes late changes nothing; the next press holds it.
+    func testAHeldOptionWhoseReleaseNeverComes_isLetGoByTheFirstWheelEventWithoutIt() throws {
+        let plain = try plainDistance()
+        try flagsChanged(KeyCode.optionL, .maskAlternate)
+        XCTAssertTrue(ScrollCore.shared.dashScroll)
+        XCTAssertEqual(try XCTUnwrap(try click(.maskAlternate)).y, plain * 5, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(try click([.maskAlternate, .maskNonCoalesced])).y, plain * 5, accuracy: 1e-9,
+                       "held while the wheel carries ⌥, with whatever else")
+
+        let after = try XCTUnwrap(try click(.maskNonCoalesced))
+        XCTAssertEqual(after.y, plain, "not five times: ⌥ is up")
+        XCTAssertEqual(after.notch, try XCTUnwrap(try click([])).notch)
+        XCTAssertFalse(ScrollCore.shared.dashScroll)
+        XCTAssertFalse(ScrollCore.shared.dashKeyHeld)
+        XCTAssertEqual(ScrollCore.shared.dashAmplification, 1.0)
+
+        try flagsChanged(KeyCode.optionL, [])
+        XCTAssertFalse(ScrollCore.shared.dashScroll, "the late release finds it up")
+        try flagsChanged(KeyCode.optionL, .maskAlternate)
+        XCTAssertEqual(try XCTUnwrap(try click(.maskAlternate)).y, plain * 5, accuracy: 1e-9, "pressed again: held again")
+        try flagsChanged(KeyCode.optionL, [])
+        XCTAssertEqual(try plainDistance(), plain, "and its own release lets it go as before")
+    }
+
+    /// The other three the same way, each by its own modifier only: ⌘ (Pause smoothing),
+    /// ⇧ (Scroll sideways) and a recorded ⌃ (Scroll slower). A wheel event that carries
+    /// one of them lets only the others go.
+    func testEachModifierHoldKey_isLetGoByItsOwnModifierOnly() throws {
+        Options.shared.scroll.slow = ScrollHotkey(type: .keyboard, code: KeyCode.controlR)
+        let plain = try plainDistance()
+        try flagsChanged(KeyCode.commandL, .maskCommand)
+        try flagsChanged(KeyCode.shiftL, [.maskCommand, .maskShift])
+        try flagsChanged(KeyCode.controlR, [.maskCommand, .maskShift, .maskControl])
+        XCTAssertTrue(ScrollCore.shared.blockSmooth)
+        XCTAssertTrue(ScrollCore.shared.toggleScroll)
+        XCTAssertTrue(ScrollCore.shared.slowScroll)
+        XCTAssertNil(try click([.maskCommand, .maskShift, .maskControl]), "smoothing paused: let through")
+        XCTAssertTrue(ScrollCore.shared.blockSmooth)
+        XCTAssertTrue(ScrollCore.shared.toggleScroll)
+        XCTAssertTrue(ScrollCore.shared.slowScroll)
+
+        // ⌘'s release was lost.
+        let shifted = try XCTUnwrap(try click([.maskShift, .maskControl]), "smoothed again")
+        XCTAssertFalse(ScrollCore.shared.blockSmooth)
+        XCTAssertTrue(ScrollCore.shared.toggleScroll)
+        XCTAssertTrue(ScrollCore.shared.slowScroll)
+        XCTAssertEqual(abs(shifted.y), abs(plain) / 5, accuracy: 1e-9)
+
+        // ⌃'s and ⇧'s too.
+        XCTAssertEqual(try XCTUnwrap(try click([])).y, plain)
+        XCTAssertFalse(ScrollCore.shared.toggleScroll)
+        XCTAssertFalse(ScrollCore.shared.slowScroll)
+        XCTAssertEqual(ScrollCore.shared.dashAmplification, 1.0)
+    }
+
+    /// The side is the key's, as before: a right ⌥ is not held by the left one. Once held,
+    /// the wheel's ⌥ (which does not say which side) keeps it, and a wheel event without ⌥
+    /// lets it go.
+    func testTheSideOfTheKey_isAsBefore() throws {
+        Options.shared.scroll.dash = ScrollHotkey(type: .keyboard, code: KeyCode.optionR)
+        let plain = try plainDistance()
+        try flagsChanged(KeyCode.optionL, .maskAlternate)
+        XCTAssertFalse(ScrollCore.shared.dashScroll, "the left ⌥ is not the right one")
+        XCTAssertEqual(try XCTUnwrap(try click(.maskAlternate)).y, plain)
+        try flagsChanged(KeyCode.optionL, [])
+
+        try flagsChanged(KeyCode.optionR, .maskAlternate)
+        XCTAssertTrue(ScrollCore.shared.dashScroll)
+        XCTAssertEqual(try XCTUnwrap(try click(.maskAlternate)).y, plain * 5, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(try click([])).y, plain)
+        XCTAssertFalse(ScrollCore.shared.dashScroll)
+    }
+
+    /// A mouse button and a plain key are not modifiers: the wheel's flags say nothing about
+    /// them, and they stay held until their own release, as before.
+    func testAButtonOrAPlainKey_isNotLetGoByTheWheel() throws {
+        let plain = try plainDistance()
+        Options.shared.scroll.dash = ScrollHotkey(type: .mouse, code: 50)
+        XCTAssertTrue(ScrollCore.shared.handleScrollHotkey(code: 50, isDown: true))
+        XCTAssertEqual(try XCTUnwrap(try click([])).y, plain * 5, accuracy: 1e-9)
+        XCTAssertTrue(ScrollCore.shared.dashScroll, "a button: held")
+        ScrollCore.shared.handleScrollHotkey(code: 50, isDown: false)
+        XCTAssertFalse(ScrollCore.shared.dashScroll)
+
+        let keyD: UInt16 = 2
+        Options.shared.scroll.dash = ScrollHotkey(type: .keyboard, code: keyD)
+        try key(keyD, down: true)
+        XCTAssertTrue(ScrollCore.shared.dashScroll)
+        XCTAssertEqual(try XCTUnwrap(try click([])).y, plain * 5, accuracy: 1e-9)
+        XCTAssertTrue(ScrollCore.shared.dashScroll, "a plain key: held")
+        try key(keyD, down: false)
+        XCTAssertFalse(ScrollCore.shared.dashScroll)
+    }
+
+    /// A wheel event another program posted carries the flags that program gave it, which say
+    /// nothing about the keyboard: it lets no key go.
+    func testAWheelEventFromAnotherProgram_letsNoKeyGo() throws {
+        let plain = try plainDistance()
+        try flagsChanged(KeyCode.optionL, .maskAlternate)
+        let pid = Int64(ProcessInfo.processInfo.processIdentifier)
+        XCTAssertEqual(try XCTUnwrap(try click([], sourcePID: pid)).y, plain * 5, accuracy: 1e-9)
+        XCTAssertTrue(ScrollCore.shared.dashScroll)
+        XCTAssertEqual(try XCTUnwrap(try click([])).y, plain, "the hardware's says ⌥ is up")
+    }
+
+    /// fn is left as it was: it holds the key until its own release.
+    func testFn_isLeftToItsOwnRelease() throws {
+        Options.shared.scroll.slow = ScrollHotkey(type: .keyboard, code: KeyCode.fnL)
+        let plain = try plainDistance()
+        try flagsChanged(KeyCode.fnL, .maskSecondaryFn)
+        XCTAssertTrue(ScrollCore.shared.slowScroll)
+        XCTAssertEqual(try XCTUnwrap(try click([])).y, plain / 5, accuracy: 1e-9)
+        XCTAssertTrue(ScrollCore.shared.slowScroll)
+        try flagsChanged(KeyCode.fnL, [])
+        XCTAssertFalse(ScrollCore.shared.slowScroll)
+    }
+
+    /// A button that holds the key after ⌥ did is not let go by a wheel event without ⌥:
+    /// after the keys were forgotten (the core stopped, the settings were replaced), and when
+    /// the button is pressed while ⌥ still holds it (an app with its own keys came to the front).
+    func testAButtonThatHoldsTheKeyAfterAModifier_isNotLetGoByTheWheel() throws {
+        let plain = try plainDistance()
+        try flagsChanged(KeyCode.optionL, .maskAlternate)
+        ScrollCore.shared.settingsWereReplaced()
+        Options.shared.scroll.dash = ScrollHotkey(type: .mouse, code: 50)
+        XCTAssertTrue(ScrollCore.shared.handleScrollHotkey(code: 50, isDown: true))
+        XCTAssertEqual(try XCTUnwrap(try click([])).y, plain * 5, accuracy: 1e-9)
+        XCTAssertTrue(ScrollCore.shared.dashScroll, "forgotten keys left nothing behind")
+        ScrollCore.shared.handleScrollHotkey(code: 50, isDown: false)
+        XCTAssertFalse(ScrollCore.shared.dashScroll)
+
+        Options.shared.scroll.dash = ScrollHotkey(type: .keyboard, code: KeyCode.optionL)
+        try flagsChanged(KeyCode.optionL, .maskAlternate)
+        Options.shared.scroll.dash = ScrollHotkey(type: .mouse, code: 50)
+        XCTAssertTrue(ScrollCore.shared.handleScrollHotkey(code: 50, isDown: true))
+        XCTAssertEqual(try XCTUnwrap(try click([])).y, plain * 5, accuracy: 1e-9)
+        XCTAssertTrue(ScrollCore.shared.dashScroll, "the button holds it now")
+        ScrollCore.shared.handleScrollHotkey(code: 50, isDown: false)
+        XCTAssertFalse(ScrollCore.shared.dashScroll)
+    }
+}
