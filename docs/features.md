@@ -117,6 +117,10 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   too (scrolling settings, buttons, gestures, a ring); a click on one opens the page on
   that part. The page's box says the same under the app's name, with "Show in Finder",
   and a small dot marks each part the app has settings of its own in.
+  The Scrolling, Buttons, Gestures and Shortcut Ring panes each end with a line that
+  names the apps the list marks for that kind ("Different in Safari and Figma"; of four
+  or more the first two and "3 more"): a name opens that app's page on that part,
+  "3 more" the list. With no such app there is no line.
   While "Change scrolling only in these apps" is on, every app on the list has its
   scrolling changed, also one you added only for its buttons, gestures or ring, and its
   page says so under the app's box: to leave its scrolling to macOS, choose Left to
