@@ -1700,6 +1700,42 @@ final class GestureDirectionUndoTests: XCTestCase {
         XCTAssertEqual(popUp.binding.systemShortcutName, GestureActions.default.click.action)
     }
 
+    /// Left while the desktops follow the hand: the row shows the swipe and takes no choice,
+    /// so Undo puts the value back and brings nothing forward. Up, which takes a choice in
+    /// that mode, still comes forward.
+    func testUndoOfASidewaysDirectionWhileFollowingTheHandBringsNothingForward() throws {
+        var driver = DockSwipeDriver.inert
+        driver.isAvailable = { true }
+        DockSwipeSynthesizer.shared.setTestingDriver(driver)
+        addTeardownBlock { DockSwipeSynthesizer.shared.clearTestingDriver() }
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: GesturesPreferencesViewController.tabIdentifier))
+        w.gestures.directionsSection.setExpanded(true)
+        let left = w.gestures.controls.actionPopUp(for: .left)
+        let up = w.gestures.controls.actionPopUp(for: .up)
+        XCTAssertTrue(left.isEnabled, "taps: the sideways rows take a choice")
+        try step(w.undo) { left.onShortcutSelected?(SystemShortcut.paste) }
+        try step(w.undo) { up.onShortcutSelected?(SystemShortcut.copy) }
+        XCTAssertEqual(Options.shared.gesture.actions.left, GestureAction(SystemShortcut.paste))
+        Options.shared.gesture.mode = .interactive
+        w.gestures.reload()
+        XCTAssertFalse(left.isEnabled, "the swipe owns sideways movement")
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.gesture.actions.up, GestureActions.default.up)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, GesturesPreferencesViewController.tabIdentifier, "Up comes forward")
+        XCTAssertTrue(w.window.firstResponder === up)
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.gesture.actions.left, GestureActions.default.left, "the value is back")
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.general, "nothing comes forward")
+        w.undo.redo()
+        XCTAssertEqual(Options.shared.gesture.actions.left, GestureAction(SystemShortcut.paste))
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.general)
+    }
+
     /// An app's own gestures, after its page closed and while General shows: Apps comes
     /// forward with the app's page on its Gestures part, the row selected; Redo too. The
     /// general gestures are never touched.

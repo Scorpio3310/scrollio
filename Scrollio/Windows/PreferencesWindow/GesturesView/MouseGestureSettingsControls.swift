@@ -522,8 +522,11 @@ final class MouseGestureSettingsControls: NSObject {
 
     /// Shows the direction an Undo or Redo changed where it is: the Gestures pane, or the
     /// app's page under Apps on its Gestures part, comes forward and shows the gestures as
-    /// stored, with the direction's row selected (`selectRow`).
+    /// stored, with the direction's row selected (`selectRow`). Not for Left or Right while
+    /// the desktops follow the hand: the row shows the swipe and takes no choice, so nothing
+    /// there would show the change (the value is back all the same).
     private static func show(_ slot: Slot, of entry: Application?, in showing: DirectionShowing) {
+        guard isEditable(slot, of: entry, in: showing) else { return }
         if let split = showing.split {
             if let entry {
                 let part = split.bringForward(pageOf: entry, part: .gestures)?.gesturesPart
@@ -548,6 +551,16 @@ final class MouseGestureSettingsControls: NSObject {
         controls.sync()
         controls.onChange?()
         controls.selectRow(of: slot)
+    }
+
+    /// Whether the row of `slot` takes a choice in the mode of the gestures it belongs to
+    /// (the general ones, or the app's as they run), as `applyModePresentation` shows it.
+    private static func isEditable(_ slot: Slot, of entry: Application?, in showing: DirectionShowing) -> Bool {
+        guard slot.isHorizontal else { return true }
+        let general = Options.shared.gesture
+        let mode = entry?.gesturesThatRun(general: general).mode ?? general.mode
+        let available = showing.controls?.isInteractiveAvailable() ?? DockSwipeSynthesizer.shared.isAvailable
+        return MouseGestureModePresentation.make(storedMode: mode, isInteractiveAvailable: available).areHorizontalActionsEditable
     }
 
     /// The row of `slot` as the one an Undo or Redo changed: a folded section around it
