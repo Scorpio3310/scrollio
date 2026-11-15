@@ -58,9 +58,10 @@ enum ThumbWheelTuning {
     /// Desktops: the first desktop after 3 events, each further one after 5 more, so one long
     /// roll moves several (at 0.7× steps at events 5, 12, 19; with "next" 12 the second
     /// needed four times the first, and the owner's rolls of 16 to 18 events gave one). Their
-    /// pacing (`desktopsPacing`) keeps the Dock from stacking switches. A second quick stroke
-    /// after 0.3 s of rest steps again after 3 events.
-    static let desktops = ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.3)
+    /// pacing (`desktopsPacing`) keeps the Dock from stacking switches. The rest is the
+    /// turn's: the thumb takes the wheel again after 250 to 580 ms (the owner's log), and a
+    /// shorter rest made the desktops of a roll depend on how quickly it did.
+    static let desktops = ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.6)
     /// Back / forward: one stroke of 3 to 14 events gives one step, 15 events two.
     static let backForward = ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3)
 

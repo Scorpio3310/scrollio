@@ -662,7 +662,7 @@ final class ThumbWheelStepperTests: XCTestCase {
         XCTAssertEqual(ThumbWheelFunction.volume.stepping, ThumbWheelStepping(first: 2, next: 3, accelerates: true, rest: 0.6))
         XCTAssertEqual(ThumbWheelFunction.zoom.stepping, ThumbWheelStepping(first: 3, next: 5, accelerates: true, rest: 0.6))
         XCTAssertEqual(ThumbWheelFunction.tabs.stepping, ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.6))
-        XCTAssertEqual(ThumbWheelFunction.desktops.stepping, ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.3))
+        XCTAssertEqual(ThumbWheelFunction.desktops.stepping, ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.6))
         XCTAssertEqual(ThumbWheelFunction.backForward.stepping, ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3))
         XCTAssertNil(ThumbWheelFunction.scroll.stepping)
         XCTAssertEqual(ThumbWheelTuning.maxStepsPerEvent, 2)
@@ -751,11 +751,13 @@ final class ThumbWheelStepperTests: XCTestCase {
                        "after a rest the next step needs 3 again, not 5")
     }
 
-    /// Each function has its own rest: 0.3 s for desktops and back / forward (two quick strokes
-    /// are two steps), 0.6 s for the others (a slow roll's gaps reach 0.4 s).
+    /// Each function has its own rest: 0.3 s for back / forward (two quick strokes are two
+    /// steps), 0.6 s for the others (a slow roll's gaps reach 0.4 s, a re-grip 0.6 s).
     func testRest_isPerFunction() {
+        var back = ThumbWheelStepper()
+        XCTAssertEqual(run(&back, [-1, -1, -1], .backForward, gaps: [0.05, 0.35]), [0, 0, 0], "0.35 s is a rest for back / forward")
         var desktops = ThumbWheelStepper()
-        XCTAssertEqual(run(&desktops, [-1, -1, -1], .desktops, gaps: [0.05, 0.35]), [0, 0, 0], "0.35 s is a rest for desktops")
+        XCTAssertEqual(run(&desktops, [-1, -1, -1], .desktops, gaps: [0.05, 0.35]), [0, 0, 1], "not for desktops")
         var tabs = ThumbWheelStepper()
         XCTAssertEqual(run(&tabs, [-1, -1, -1], .tabs, gaps: [0.05, 0.35]), [0, 0, 1], "but not for tabs")
         var strokes = ThumbWheelStepper()
@@ -1424,6 +1426,32 @@ final class ThumbWheelEngineTests: XCTestCase {
             XCTAssertEqual(rig.performed.map(\.action), [.named("moveSpaceRight"), .named("moveSpaceRight")], "pause \(pause)")
             XCTAssertEqual(rig.lines.map(\.ticksDropped), [1], "pause \(pause)")
             XCTAssertEqual(rig.lines.map(\.ticksHeld), [1], "pause \(pause)")
+        }
+    }
+
+    /// 0.7×, events of half a line 94 ms apart in strokes of 4+4+9 and 6+6+5, the thumb taking
+    /// the wheel again after 280, 320 or 470 ms (the owner's re-grips take 250 to 580 ms):
+    /// as many desktops whatever the gap.
+    func testDesktops_aRegripGapDoesNotChangeHowManyDesktopsARollGives() throws {
+        for strokes in [[4, 4, 9], [6, 6, 5]] {
+            var counts: [Int] = []
+            for gap in [0.28, 0.32, 0.47] {
+                let rig = Rig()
+                let settings = ThumbWheelSettings(function: .desktops, speed: 0.7)
+                var time = 0.0
+                var steps = 0
+                for (index, count) in strokes.enumerated() {
+                    if index > 0 { time += gap - 0.094 }
+                    for _ in 0..<count {
+                        steps += rig.turn(lines: -0.5, at: time, settings: settings)
+                        time += 0.094
+                    }
+                }
+                rig.advance(to: 510)
+                XCTAssertEqual(rig.performed.count, steps, "\(strokes), gap \(gap): every desktop ran")
+                counts.append(steps)
+            }
+            XCTAssertEqual(counts, [2, 2, 2], "\(strokes)")
         }
     }
 
