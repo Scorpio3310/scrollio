@@ -7439,7 +7439,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hold the button and move towards a shortcut, then let go.\nOr press and let go, then click one."
+            "value": "Hold the button or key and move towards a shortcut, then let go.\nOr press and let go, then click one."
           }
         }
       }
@@ -7647,7 +7647,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The pointer stays where it is while you hold the button. The way your hand moves still chooses."
+            "value": "The pointer stays where it is while you hold the button or key. The way your hand moves still chooses."
           }
         }
       }

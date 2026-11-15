@@ -687,7 +687,7 @@ final class PreferencesRingTests: XCTestCase {
         let controller = makeController()
         XCTAssertEqual(controller.freezeRow.title, "Freeze pointer while the ring is held")
         XCTAssertEqual(controller.freezeRow.explanation,
-                       "The pointer stays where it is while you hold the button. The way your hand moves still chooses.")
+                       "The pointer stays where it is while you hold the button or key. The way your hand moves still chooses.")
         XCTAssertTrue(controller.freezeRow.accessory === controller.freezeToggle)
         let toggle = try XCTUnwrap(controller.freezeToggle as? NSSwitch)
         XCTAssertEqual(toggle.state, .off, "a new ring leaves the pointer alone")
@@ -707,7 +707,7 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(Options.shared.ring, .default)
     }
 
-    func testEveryExplanationFitsTwoLines() {
+    func testEveryExplanationFitsTwoLines() throws {
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
         func height(_ text: String, width: CGFloat) -> CGFloat {
@@ -736,9 +736,19 @@ final class PreferencesRingTests: XCTestCase {
         let freeze = controller.freezeRow.explanationLabel
         XCTAssertGreaterThan(freeze.frame.width, 200)
         XCTAssertLessThanOrEqual(height(freeze.stringValue, width: freeze.frame.width), twoLines, freeze.stringValue)
+        // An app's own ring has the same switch and line on the app's page.
+        let calculator = Application(path: "/System/Applications/Calculator.app")
+        calculator.setUsesGeneralRing(false, general: .default)
+        let own = RingPreferencesViewController(application: calculator)
+        own.view.layoutSubtreeIfNeeded()
+        let ownFreeze = try XCTUnwrap(own.freezeRow?.explanationLabel)
+        XCTAssertEqual(ownFreeze.stringValue, freeze.stringValue)
+        XCTAssertGreaterThan(ownFreeze.frame.width, 200)
+        XCTAssertLessThanOrEqual(height(ownFreeze.stringValue, width: ownFreeze.frame.width), twoLines, "on an app's page")
         let hint = controller.placesHintLabel.stringValue
         // Two sentences, each on its own line (wrapped as one text, the second line was two words).
-        XCTAssertEqual(hint, "Hold the button and move towards a shortcut, then let go.\nOr press and let go, then click one.")
+        // ("the button or key": the row above is titled so, and a key may be what opens the ring.)
+        XCTAssertEqual(hint, "Hold the button or key and move towards a shortcut, then let go.\nOr press and let go, then click one.")
         for line in hint.split(separator: "\n") {
             XCTAssertLessThanOrEqual(height(String(line), width: RingPreferencesViewController.boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset),
                                      twoLines / 2 + 1, String(line))
