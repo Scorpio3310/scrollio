@@ -784,9 +784,11 @@ final class ApplicationPageTests: XCTestCase {
         // A name that fits is said whole.
         XCTAssertEqual(ApplicationPagePart.name("Calculator", fittingTwoLinesOf: 200) { [$0] }, "Calculator")
 
-        // The line under the app's box (the limit on) and the thumb wheel's.
+        // The line under the app's box (the limit on, the app smoothed: the picks above
+        // left its own values not smoothed and not reversed) and the thumb wheel's.
         Options.shared.application.allowlist = true
         defer { Options.shared.application.allowlist = false }
+        long.scroll.smooth = true
         page.syncViewWithOptions()
         page.view.layoutSubtreeIfNeeded()
         XCTAssertFalse(page.allowlistNote.isHidden)

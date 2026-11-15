@@ -209,8 +209,7 @@ final class ApplicationDetailViewController: NSViewController {
         let margin = PreferencesGroupedForm.margin
         controlUnderHeader = control.topAnchor.constraint(equalTo: header.bottomAnchor, constant: PreferencesGroupedForm.boxSpacing)
         controlUnderNote = control.topAnchor.constraint(equalTo: note.bottomAnchor, constant: PreferencesGroupedForm.boxSpacing)
-        // (The parts are not made yet: what is stored says whether the app is left to macOS.)
-        let showsNote = Self.showsAllowlistNote(choice: application.scrollingChoice)
+        let showsNote = Self.showsAllowlistNote(for: application)
         note.isHidden = !showsNote
         NSLayoutConstraint.activate([
             // The app's box begins where the first box of every pane does.
@@ -440,7 +439,7 @@ final class ApplicationDetailViewController: NSViewController {
         if allowlistNote.stringValue != text {
             allowlistNote.stringValue = text
         }
-        let showsNote = Self.showsAllowlistNote(choice: scrollingPart?.shownChoice ?? application.scrollingChoice)
+        let showsNote = Self.showsAllowlistNote(for: application)
         guard allowlistNote.isHidden == showsNote else { return }
         allowlistNote.isHidden = !showsNote
         NSLayoutConstraint.deactivate([showsNote ? controlUnderHeader : controlUnderNote])
@@ -495,10 +494,14 @@ final class ApplicationDetailViewController: NSViewController {
 
     /// The line under the app's box shows while "Change scrolling only in these apps" is
     /// on (every app on the list then scrolls as its Scrolling part says, also one added
-    /// only for its buttons, gestures or ring) and the part shows `choice` other than Left
-    /// to macOS (then the app scrolls as one off the list does).
-    static func showsAllowlistNote(choice: ApplicationScrollingChoice) -> Bool {
-        return Options.shared.application.allowlist && choice != .leftToMacOS
+    /// only for its buttons, gestures or ring) and what the app really gets is not left to
+    /// macOS (then it scrolls as an app off the list does): its own values, or with Same as
+    /// Scrolling the Scrolling settings' (which may be not smoothed and not reversed too),
+    /// whatever the pop-up shows (Own Settings held over values that say Left to macOS).
+    static func showsAllowlistNote(for application: Application) -> Bool {
+        guard Options.shared.application.allowlist else { return false }
+        let scroll = application.inherit ? Options.shared.scroll : application.scroll
+        return ApplicationScrollingChoice.of(inherit: false, scroll: scroll) != .leftToMacOS
     }
 
     /// "Safari is on the list, so Scrollio changes how it scrolls. To leave that to macOS,

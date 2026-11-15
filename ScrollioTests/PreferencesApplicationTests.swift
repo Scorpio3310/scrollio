@@ -1160,6 +1160,51 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
     }
 
+    /// The line goes by what the app really scrolls with, not by the item the pop-up shows:
+    /// Same as Scrolling over Scrolling settings that are themselves not smoothed and not
+    /// reversed, and Own Settings held over own values that say Left to macOS (smoothing
+    /// and the direction switched off by hand), show no line; switched on again, it is
+    /// back at once.
+    func testTheLimitsLineGoesByWhatTheAppReallyGets() throws {
+        Options.shared.application.allowlist = true
+        Options.shared.scroll.smooth = false
+        Options.shared.scroll.reversesWheel = false
+        let calculator = application(Self.calculator, inherit: true)
+        Options.shared.application.applications = Self.makeStore([calculator])
+        let controller = makeController()
+        controller.openApplication(withID: Self.calculator, part: .scrolling)
+        var page = try XCTUnwrap(controller.detailController)
+        XCTAssertEqual(page.scrollingPart.shownChoice, .sameAsScrolling)
+        XCTAssertFalse(ApplicationDetailViewController.showsAllowlistNote(for: calculator))
+        XCTAssertTrue(page.allowlistNote.isHidden, "Same as Scrolling over a Scrolling left to macOS")
+        Options.shared.scroll.smooth = true
+        XCTAssertTrue(ApplicationDetailViewController.showsAllowlistNote(for: calculator))
+        page.syncViewWithOptions()
+        XCTAssertFalse(page.allowlistNote.isHidden)
+        controller.leaveSubpage()
+
+        // Own Settings held over values switched to Left to macOS here, by hand.
+        calculator.inherit = false
+        calculator.scroll.smooth = true
+        calculator.scroll.reversesWheel = true
+        controller.openApplication(withID: Self.calculator, part: .scrolling)
+        page = try XCTUnwrap(controller.detailController)
+        let settings = try XCTUnwrap(page.scrollingController)
+        XCTAssertFalse(page.allowlistNote.isHidden)
+        settings.smoothSwitch.state = .off
+        send(settings.smoothSwitch)
+        XCTAssertFalse(page.allowlistNote.isHidden, "the direction is still reversed")
+        settings.reverseSwitch.state = .off
+        send(settings.reverseSwitch)
+        XCTAssertEqual(page.scrollingPart.shownChoice, .ownSettings, "held while the part shows")
+        XCTAssertEqual(calculator.scrollingChoice, .leftToMacOS)
+        XCTAssertTrue(page.allowlistNote.isHidden, "the app scrolls as one off the list")
+        settings.smoothSwitch.state = .on
+        send(settings.smoothSwitch)
+        XCTAssertFalse(page.allowlistNote.isHidden)
+        XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+    }
+
     /// Nothing of the choice is stored: a settings file carries what it is worked out from,
     /// and every app reads the same choice after an export and an import.
     func testASettingsFileKeepsEachAppsChoice() throws {

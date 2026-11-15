@@ -264,7 +264,9 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
     /// What the app has of its own changed (a pick, its Undo or Redo): the list says which
     /// apps have their own. The page hands on the pane's, which outlives the page.
     var onInheritChange: (() -> Void)?
-    /// The choice the pop-up shows changed: the page's line under the app's box follows.
+    /// The part showed the stored settings again: the choice, or the values the app really
+    /// scrolls with, may have changed (also under Own Settings held, smoothing switched
+    /// off here by hand). The page's line under the app's box follows.
     var onChoiceChange: (() -> Void)?
     /// The app's own thumb wheel function changed in these settings (its action, a reset or
     /// the reset's Undo): the Buttons part and the list show it. Handed on to the settings
@@ -437,7 +439,6 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
         showName()
         choicePopUp.selectItem(withTag: choice.rawValue)
         choiceRow.explanation = Self.explanation(of: choice, name: linesName)
-        let changed = choice != shownChoice
         shownChoice = choice
         let showsOwn = choice != .sameAsScrolling
         // Out of the part before they change and into it after, so that the page hears of
@@ -446,9 +447,7 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
         scrollingController.syncViewWithOptions()
         scrollingController.isLeftToMacOS = choice == .leftToMacOS
         moved = (showsOwn && showSettings(true)) || moved
-        if changed {
-            onChoiceChange?()
-        }
+        onChoiceChange?()
         return moved && view.superview != nil
     }
 
