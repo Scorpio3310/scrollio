@@ -73,6 +73,9 @@ class PreferencesGeneralViewController: NSViewController {
     /// When the pause ends by itself ("Pause For" of the status-bar menu); nil for a pause
     /// until Resume, and while not paused.
     var pauseEnd: () -> Date? = { AppRunController.shared.pauseEnd }
+    /// Ends a pause whose time is up, before the row reads it: the end hangs on one timer,
+    /// which macOS may fire late in an idle menu bar app (the status item does the same).
+    var endPauseIfDue: () -> Void = { AppRunController.shared.endPauseIfDue() }
     /// Pauses, as "Pause Scrollio" of the status-bar menu does.
     var pause: () -> Void = { AppRunController.shared.setPaused(true) }
     /// Ends the pause, as "Resume Scrollio" of the status-bar menu does.
@@ -766,9 +769,11 @@ class PreferencesGeneralViewController: NSViewController {
         }
     }
 
-    /// Reads whether Scrollio works and shows it in the row under the card.
+    /// Reads whether Scrollio works and shows it in the row under the card. A pause whose
+    /// time is up ends first, so the row never names a time that has passed.
     func refreshRunStatus() {
         guard isViewLoaded else { return }
+        endPauseIfDue()
         let status = RunStatus(
             hasAccess: isAccessGranted(), isPaused: isPaused(), startProblem: startProblem(), pauseEnd: pauseEnd()
         )

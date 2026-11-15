@@ -1158,6 +1158,64 @@ final class AppRunControllerTests: XCTestCase {
         XCTAssertEqual(world.log, ["stop", "start"])
     }
 
+    /// The end hangs on one timer, and macOS may fire the timer of an idle menu bar app
+    /// late. So the menu bar menu looks at the clock before it reads the pause: opened
+    /// after the end with the timer still waiting, it ends the pause (the cores start) and
+    /// does not say "paused until 14:15" after 14:15. Before the end the pause stays.
+    func testTheMenuEndsAPauseWhoseTimeIsUpBeforeItReadsIt() throws {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        controller.pause(for: .fifteenMinutes)
+        let end = try XCTUnwrap(controller.pauseEnd)
+        world.log = []
+
+        world.now = end.addingTimeInterval(-1)
+        var state = StatusItemManager.liveState(of: controller)
+        XCTAssertTrue(state.isPaused)
+        XCTAssertEqual(state.pauseEnd, end)
+        XCTAssertEqual(world.log, [])
+
+        // A minute and a half past the end, and the timer has not fired.
+        world.now = end.addingTimeInterval(90)
+        XCTAssertTrue(controller.isPaused)
+        state = StatusItemManager.liveState(of: controller)
+        XCTAssertFalse(state.isPaused)
+        XCTAssertNil(state.pauseEnd)
+        XCTAssertFalse(controller.isPaused)
+        XCTAssertTrue(controller.coresActive)
+        XCTAssertNil(controller.pauseTimer)
+        XCTAssertEqual(world.log, ["start"], "started, and no Welcome Guide")
+    }
+
+    /// Those who show the pause also look from inside the controller's own notification
+    /// (the icon, General's row). A look there starts nothing: the change being told may be
+    /// a stop for sleep or for quitting, and the cores would run on behind it.
+    func testALookAtThePauseFromInsideAStopsNotificationStartsNothing() throws {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        controller.pause(for: .fifteenMinutes)
+        let end = try XCTUnwrap(controller.pauseEnd)
+        world.now = end.addingTimeInterval(90)
+        world.log = []
+
+        let token = NotificationCenter.default.addObserver(
+            forName: AppRunController.didChangeNotification, object: controller, queue: nil
+        ) { _ in controller.endPauseIfDue() }
+        controller.stop(because: .sleep)
+        NotificationCenter.default.removeObserver(token)
+        XCTAssertEqual(world.log, ["stop"])
+        XCTAssertFalse(controller.coresActive, "nothing runs through the sleep")
+        XCTAssertTrue(controller.isPaused)
+
+        // The wake ends the pause, as before.
+        controller.wake()
+        XCTAssertFalse(controller.isPaused)
+        XCTAssertTrue(controller.coresActive)
+        XCTAssertEqual(world.log, ["stop", "start"])
+    }
+
     /// The end is a moment, the whole minute the chosen length ends in: what the menu
     /// shows ("until 14:15") is when it ends, never later than chosen, up to 59 s sooner.
     func testThePauseEndIsAWholeMinuteNeverLaterThanChosen() {

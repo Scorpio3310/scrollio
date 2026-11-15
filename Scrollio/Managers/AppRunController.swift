@@ -22,8 +22,10 @@
 //    is a moment (`pauseEnd`, a whole minute, never later than chosen), not a countdown: a
 //    one-shot timer only wakes the check `endPauseIfDue()`, which also runs after a wake,
 //    when this user is back and after a change of the clock (`clockDidChange()`), because a
-//    timer does not count the time asleep. At its end the pause is over as after "Resume
-//    Scrollio", but quietly: no window opens. The end, like the pause, is only in memory.
+//    timer does not count the time asleep, and before the pause is shown (the menu bar
+//    menu, the icon's tooltip, General's row), because macOS may fire the timer of an idle
+//    menu bar app late. At its end the pause is over as after "Resume Scrollio", but
+//    quietly: no window opens. The end, like the pause, is only in memory.
 //  - tryAgainNow(): "Try Again Now" in the status-bar menu: a failed start's next try, now.
 //
 //  Starting: the event taps first, then the Logitech sessions, and only when every tap runs.
@@ -160,6 +162,8 @@ final class AppRunController {
     private(set) var pauseTimer: Timer?
     /// The length chosen for the pause that runs, for a change of the clock.
     private var pauseLength: TimeInterval?
+    /// `didChangeNotification` is being posted: its observers run now (`endPauseIfDue`).
+    private var isTellingOfAChange = false
     /// This user's session has the Mac (fast user switching). A launch happens in an active session.
     private(set) var isSessionActive = true
     /// Waits for the Accessibility access (at launch, or after it was lost).
@@ -349,7 +353,15 @@ final class AppRunController {
     /// and while another user has the Mac nothing starts until this one is back. Before
     /// the end (the timer fired early, the Mac woke up, the clock changed) the timer is
     /// armed again for what is left. Nothing while not paused, or paused until resumed.
+    ///
+    /// Whoever shows the pause asks this first (the menu bar menu, the icon's tooltip,
+    /// General's row), so none of them names a time that has passed when the timer is
+    /// late. Some of them ask from inside this controller's own notification, and there
+    /// nothing happens: the change being told may be a stop for sleep or for quitting, and
+    /// a start from inside it would leave the cores running behind that stop. The timer,
+    /// the wake or the next look ends the pause.
     func endPauseIfDue() {
+        guard !isTellingOfAChange else { return }
         if clearPauseIfDue() {
             start(.pauseEnded, showingWelcomeGuide: false)
         }
@@ -501,6 +513,9 @@ final class AppRunController {
     }
 
     private func postChange() {
+        let wasTelling = isTellingOfAChange
+        isTellingOfAChange = true
+        defer { isTellingOfAChange = wasTelling }
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
     }
 }

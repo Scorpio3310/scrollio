@@ -124,9 +124,11 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
     }
 
     /// Dims the icon while Scrollio is paused, waits for the access or could not start, and
-    /// says why.
+    /// says why. A pause whose time is up ends first (`AppRunController.endPauseIfDue`;
+    /// not when the controller's own change is what called this).
     func updateIcon() {
         let controller = AppRunController.shared
+        controller.endPauseIfDue()
         let look = StatusMenu.IconLook(
             hasAccess: Utils.isHadAccessibilityPermissions(),
             coresActive: controller.coresActive,
@@ -149,15 +151,18 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
         button.setAccessibilityLabel(badge.accessibilityLabel)
     }
 
-    /// The state the menu is built from, read when it opens.
-    static func liveState() -> StatusMenu.State {
+    /// The state the menu is built from, read when it opens. A pause whose time is up ends
+    /// first: its end hangs on one timer, which macOS may fire late in an idle menu bar
+    /// app, and the menu must not say "paused until 14:30" after 14:30. `controller` is
+    /// the app's; a test hands in one with a clock of its own.
+    static func liveState(of controller: AppRunController = .shared) -> StatusMenu.State {
+        controller.endPauseIfDue()
         let hasAccess = Utils.isHadAccessibilityPermissions()
         #if DEBUG
         let showsDiagnostics = true
         #else
         let showsDiagnostics = NSEvent.modifierFlags.contains(.option)
         #endif
-        let controller = AppRunController.shared
         return StatusMenu.State(
             hasAccess: hasAccess,
             isPaused: controller.isPaused,
