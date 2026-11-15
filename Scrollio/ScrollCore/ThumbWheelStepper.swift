@@ -133,10 +133,16 @@ enum ThumbWheelTuning {
     static let followFullStopRest: TimeInterval = 0.15
     /// After an end where a switch is expected (half a Space or more), no swipe begins until
     /// macOS says the Space changed or this long (s) has passed; no change by then: the
-    /// desktop was the first or the last that way...
-    static let followSpaceChangeTimeout: TimeInterval = 0.5
+    /// desktop was the first or the last that way. Measured on the owner's Mac (2026-11-15,
+    /// MX Master 4, the `scroll` log's "+N ms"): the change came 23 to 36 ms after a chained
+    /// end and 23 to 66 ms after a full stop, so this is three times the slowest. (It was
+    /// 0.5 s before there were numbers: a stroke at the end of the row waited that long
+    /// before it could turn back.) One chained end's change took 449 ms: its swipe had begun
+    /// while a swipe that ended a quarter of the way was still sliding back...
+    static let followSpaceChangeTimeout: TimeInterval = 0.2
     /// ...this long (s) after an end at the rest (part of the way, which macOS settles without
-    /// speed, more slowly than a swipe it was handed at a full Space).
+    /// speed, more slowly than a swipe it was handed at a full Space: 479 to 551 ms after
+    /// ends at 0.58 to 0.93 of a Space in the same measurement).
     static let followSettleSpaceChangeTimeout: TimeInterval = 1.0
     /// A gate that timed out keeps its swipe this long (s) more: a change meanwhile is logged
     /// as late ("late +N ms"), none as "no change".

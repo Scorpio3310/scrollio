@@ -528,7 +528,7 @@ final class ThumbWheelFollowTests: XCTestCase {
     /// another runs.
     func testOneLongRollChainsSwipes_eachBegunOnceTheSpaceChanged() throws {
         Options.shared.thumbWheel = ThumbWheelSettings(function: .desktops, speed: 0.7, followsWheel: true)
-        changeTheSpace(after: 0.2)
+        changeTheSpace(after: 0.1)
         for index in 0..<42 { try turn(at: Double(index) * 0.05, lines: -1, fixed: -1.5) }
         rig.advance(to: 505)
 
@@ -553,7 +553,7 @@ final class ThumbWheelFollowTests: XCTestCase {
         XCTAssertEqual(rig.lines.count, 1, "one roll")
         XCTAssertEqual(roll.swipes.count, begins.count)
         XCTAssertEqual(roll.swipes.dropLast().map(\.ending), Array(repeating: .chained, count: begins.count - 1))
-        XCTAssertTrue(roll.swipes.dropLast().allSatisfy { ($0.spaceChangedAfter ?? 0) > 0.19 && $0.expectsSwitch }, "\(roll.swipes)")
+        XCTAssertTrue(roll.swipes.dropLast().allSatisfy { ($0.spaceChangedAfter ?? 0) > 0.09 && $0.expectsSwitch }, "\(roll.swipes)")
         XCTAssertEqual(roll.pendingSwipes, 0)
     }
 
@@ -581,8 +581,8 @@ final class ThumbWheelFollowTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(dock.updates.last), 0.6 * Self.space, accuracy: 1e-9)
     }
 
-    /// No Space change within 0.5 s of an end (the last desktop: the Dock let the swipe
-    /// bounce back): no swipe begins that way again in the stroke; turning the other way
+    /// No Space change within 0.2 s of a chained end (the last desktop: the Dock let the
+    /// swipe bounce back): no swipe begins that way again in the stroke; turning the other way
     /// begins one; the next stroke begins as usual.
     func testNoSpaceChangeInTime_noFurtherSwipeThatWay_theOtherWayBegins() throws {
         var time = 0.0
@@ -623,36 +623,36 @@ final class ThumbWheelFollowTests: XCTestCase {
     }
 
     /// Two events at the gate after a chained end, then the wheel stops; the Space changes
-    /// 200 ms later: a third of a Space could not switch a desktop, nothing begins.
+    /// 100 ms later: a third of a Space could not switch a desktop, nothing begins.
     func testLittleTravelKeptAtTheGate_theWheelStopped_beginsNothing() throws {
         for index in 0..<8 { try turn(at: Double(index) * 0.05) }
         rig.advance(to: 500.38)
         let end = try XCTUnwrap(endTimes.first, "chained in the frame of the eighth event")
         try turn(at: end + 0.02)
         try turn(at: end + 0.04)
-        rig.advance(to: 500 + end + 0.24)
+        rig.advance(to: 500 + end + 0.14)
         rig.engine.follower.spaceDidChange()
         rig.advance(to: 503)
         XCTAssertEqual(beginCount, 1, "\(dock.calls)")
         XCTAssertFalse(rig.hasPendingWork)
     }
 
-    /// A Space of travel kept at the gate, the wheel stopped, the Space changes 400 ms later
-    /// (just before the stroke's rest): the swipe begins and is shown sliding, several
+    /// A Space of travel kept at the gate, the wheel stopped, the Space changes 120 ms later
+    /// (just before the gate's timeout): the swipe begins and is shown sliding, several
     /// frames, and ends at the full Space 150 ms after its begin, not in the same turn.
     func testAFullSpaceKeptAtTheGate_theWheelStopped_slidesBeforeItEnds() throws {
         for index in 0..<8 { try turn(at: Double(index) * 0.05) }
         rig.advance(to: 500.38)
         let end = try XCTUnwrap(endTimes.first, "chained in the frame of the eighth event")
         for offset in [0.01, 0.02, 0.03] { try turn(at: end + offset, lines: -12) }
-        rig.advance(to: 500 + end + 0.43)
+        rig.advance(to: 500 + end + 0.15)
         rig.engine.follower.spaceDidChange()
         rig.advance(to: 505)
         let begins = dock.calls.indices.filter { dock.calls[$0] == .begin }
         XCTAssertEqual(begins.count, 2, "\(dock.calls)")
         let secondEnd = try XCTUnwrap(dock.calls.indices.first { $0 > begins[1] && dock.calls[$0] == .end(0) })
         let began = dock.times[begins[1]]
-        XCTAssertEqual(began, end + 0.43, accuracy: 1e-6)
+        XCTAssertEqual(began, end + 0.15, accuracy: 1e-6)
         XCTAssertGreaterThanOrEqual(dock.times[secondEnd] - began, 0.15 - 1e-6)
         let slide = dock.calls[(begins[1] + 1)..<secondEnd].compactMap { call -> Double? in
             if case .update(let progress) = call { return progress } else { return nil }
@@ -768,14 +768,14 @@ final class ThumbWheelFollowTests: XCTestCase {
         XCTAssertEqual(beginCount, 2)
         XCTAssertLessThan(try firstUpdate(afterBegin: 1), 0)
         let leftEnd = try XCTUnwrap(endTimes.dropFirst().first)
-        rig.advance(to: 500 + leftEnd + 0.2)
+        rig.advance(to: 500 + leftEnd + 0.1)
         rig.engine.follower.spaceDidChange()
         for offset in [0.25, 0.3, 0.35, 0.4] { try turn(at: leftEnd + offset) }
         rig.advance(to: 508)
         XCTAssertEqual(beginCount, 3, "\(dock.calls)")
         XCTAssertGreaterThan(try firstUpdate(afterBegin: 2), 0, "right again")
         let line = try XCTUnwrap(rig.lines.first)
-        XCTAssertTrue(ScrollSystemLog.followMessage(for: line).hasPrefix("swipes 1.00 chained no change, 1.00 chained +200 ms, "),
+        XCTAssertTrue(ScrollSystemLog.followMessage(for: line).hasPrefix("swipes 1.00 chained no change, 1.00 chained +100 ms, "),
                       ScrollSystemLog.followMessage(for: line))
     }
 
@@ -874,7 +874,7 @@ final class ThumbWheelFollowTests: XCTestCase {
     /// A stroke of chained swipes longer than the swipe's 10 s limit is not cut off: each
     /// swipe has its own start.
     func testALongStrokeOfChainedSwipesIsNotCutOffAfter10Seconds() throws {
-        changeTheSpace(after: 0.2)
+        changeTheSpace(after: 0.1)
         for index in 0..<230 { try turn(at: Double(index) * 0.05) }
         rig.advance(to: 520)
         XCTAssertFalse(dock.calls.contains(.cancel), "no swipe cancelled")
@@ -906,13 +906,13 @@ final class ThumbWheelFollowTests: XCTestCase {
         return lifetimes
     }
 
-    /// A hard roll at 0.7× (40 events of 12 lines, 16 ms apart), the Space changing 250 ms
-    /// after each end: every swipe after the first begins with the travel kept at the gate,
-    /// half a Space or more on, and the wheel is past the chain point a frame later. None is
-    /// ended sooner than 150 ms after its begin: each is shown sliding.
+    /// A hard roll at 0.7× (40 events of 12 lines, 16 ms apart), the Space changing 30 ms
+    /// after each end (as measured): every swipe after the first begins half a Space or more
+    /// on, with the travel kept meanwhile, and the wheel is past the chain point a frame or
+    /// two later. None is ended sooner than 150 ms after its begin: each is shown sliding.
     func testAChainedSwipeIsShownFor150Milliseconds_aHardRoll() throws {
         Options.shared.thumbWheel = ThumbWheelSettings(function: .desktops, speed: 0.7, followsWheel: true)
-        changeTheSpace(after: 0.25)
+        changeTheSpace(after: 0.03)
         for index in 0..<40 { try turn(at: Double(index) * 0.016, lines: -12) }
         rig.advance(to: 505)
         XCTAssertGreaterThanOrEqual(beginCount, 3, "\(dock.calls)")
@@ -1011,7 +1011,7 @@ final class ThumbWheelFollowTests: XCTestCase {
         for index in 0..<11 { try turn(at: Double(index) * 0.06, lines: -4) }
         let end = try XCTUnwrap(endTimes.first)
         XCTAssertEqual(end, 0.48, accuracy: 1.0 / 60 + 1e-6, "chained at the ninth event")
-        rig.advance(to: 500 + end + 0.25)
+        rig.advance(to: 500 + end + 0.15)
         rig.engine.follower.spaceDidChange()
         rig.advance(to: 500.79)
         XCTAssertEqual(beginCount, 1, "0.29 of a Space begins nothing: \(dock.calls)")
@@ -1101,7 +1101,7 @@ final class ThumbWheelFollowTests: XCTestCase {
         follower.onSwipeEnd = { [unowned self] tag, swipe in
             told.append((tag, ScrollSystemLog.swipeMessage(swipe), self.rig.now - 500))
         }
-        // Roll 1: chained at about 0.35 s, no Space change: it waits as late until about 2.35 s.
+        // Roll 1: chained at about 0.35 s, no Space change: it waits as late until about 2.05 s.
         for index in 0..<8 {
             rig.advance(to: 500 + Double(index) * 0.05)
             _ = follower.add(1, at: rig.now, seenAt: rig.now, tag: 1)
