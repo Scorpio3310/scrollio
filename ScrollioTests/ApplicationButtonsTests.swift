@@ -522,6 +522,36 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertNil(action(40, type: .keyboard, in: Self.safari))
     }
 
+    /// An app's own "Default" on a key runs nothing (the row "+" recorded, its menu closed
+    /// without a choice): it does not keep the keys tap alive by itself, so no keystroke
+    /// passes through Scrollio for it. Where it stands in for a key Buttons binds, Buttons'
+    /// binding keeps the tap for the other apps, and the key still does nothing in the app.
+    func testAnAppsOwnDefaultOnAKeyNeedsNoKeyTap() {
+        let command = UInt(CGEventFlags.maskCommand.rawValue)
+        set(general: [binding(3, "copy")], safari: [binding(40, "", modifiers: command, type: .keyboard)])
+        XCTAssertFalse(ButtonUtils.shared.hasKeyboardTriggers, "nothing runs on a key anywhere")
+
+        set(general: [binding(3, "copy")], safari: [
+            binding(40, "", modifiers: command, type: .keyboard), binding(38, "undo", modifiers: command, type: .keyboard),
+        ])
+        XCTAssertTrue(ButtonUtils.shared.hasKeyboardTriggers, "another key of the app's has an action")
+
+        set(general: [binding(40, "undo", modifiers: command, type: .keyboard)], safari: [
+            binding(40, "", modifiers: command, type: .keyboard),
+        ])
+        XCTAssertTrue(ButtonUtils.shared.hasKeyboardTriggers, "Buttons' binding of the key, for every other app")
+        XCTAssertEqual(action(40, modifiers: .maskCommand, type: .keyboard, in: Self.safari), "", "the app's own Default")
+        XCTAssertEqual(action(40, modifiers: .maskCommand, type: .keyboard, in: Self.textEdit), "undo")
+
+        // An app's own key that opens something is an action.
+        let opens = ButtonBinding(
+            triggerEvent: RecordedEvent(type: .keyboard, code: 40, modifiers: command, deviceFilter: nil),
+            openTarget: OpenTargetPayload(path: "/Applications/Notes.app", bundleID: nil, arguments: "", kind: .application)
+        )
+        set(general: [], safari: [opens])
+        XCTAssertTrue(ButtonUtils.shared.hasKeyboardTriggers)
+    }
+
     // MARK: - An entry stored under a symbolic link
 
     /// "Choose in Finder…" stores the path the panel hands over. For Safari that is
