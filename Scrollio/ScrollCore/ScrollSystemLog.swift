@@ -298,15 +298,41 @@ enum ScrollSystemLog {
         /// dropped (the other way came, or they grew older than its window).
         var ticksHeld = 0
         var ticksDropped = 0
-        /// Follow the wheel: how its strokes ended (`ThumbWheelFollower.Outcome`), the
-        /// furthest a swipe went (a share of one desktop), and the strokes not ended yet
-        /// (the line waits for them, as for steps).
-        var swipesEnded = 0
-        var swipesBack = 0
-        var swipesInterrupted = 0
-        var strokesWaited = 0
+        /// Follow the wheel: its swipes in order (the first `listedSwipes`), how all of them
+        /// ended and of those past the list, the furthest one went (a share of one desktop),
+        /// the strokes that waited for another swipe all along, and the strokes and swipes not
+        /// ended yet (the line waits for them, as for steps; a swipe ends once its Space
+        /// changed or the time for that passed).
+        var swipes: [ThumbWheelFollower.Swipe] = []
+        var swipeTally = SwipeTally()
+        var unlistedSwipes = SwipeTally()
         var furthestSwipe = 0.0
+        var strokesWaited = 0
         var pendingSwipes = 0
+
+        /// Swipes listed one by one in the line; the others are summed.
+        static let listedSwipes = 8
+
+        /// How many swipes ended each way.
+        struct SwipeTally: Equatable {
+            var chained = 0
+            var fullStop = 0
+            var ended = 0
+            var back = 0
+            var interrupted = 0
+
+            var total: Int { return chained + fullStop + ended + back + interrupted }
+
+            mutating func count(_ ending: ThumbWheelFollower.Ending) {
+                switch ending {
+                case .chained: chained += 1
+                case .fullStop: fullStop += 1
+                case .ended: ended += 1
+                case .back: back += 1
+                case .interrupted: interrupted += 1
+                }
+            }
+        }
 
         init(id: Int, settings: ThumbWheelSettings, at time: TimeInterval, seenAt: TimeInterval? = nil) {
             self.id = id
@@ -360,15 +386,22 @@ enum ScrollSystemLog {
         }
 
         /// A stroke of Follow the wheel ended (it was pending).
-        mutating func strokeEnded(_ outcome: ThumbWheelFollower.Outcome, furthest: Double) {
+        mutating func strokeEnded(waited: Bool) {
             pendingSwipes = max(0, pendingSwipes - 1)
-            switch outcome {
-            case .ended: swipesEnded += 1
-            case .wentBack: swipesBack += 1
-            case .interrupted: swipesInterrupted += 1
-            case .waited: strokesWaited += 1
+            if waited { strokesWaited += 1 }
+        }
+
+        /// A swipe's ending is final (it was pending). Main queue: the list grows here, never
+        /// in the tap callback.
+        mutating func swipeEnded(_ swipe: ThumbWheelFollower.Swipe) {
+            pendingSwipes = max(0, pendingSwipes - 1)
+            swipeTally.count(swipe.ending)
+            if swipes.count < Self.listedSwipes {
+                swipes.append(swipe)
+            } else {
+                unlistedSwipes.count(swipe.ending)
             }
-            if furthest.isFinite { furthestSwipe = max(furthestSwipe, furthest) }
+            if swipe.furthest.isFinite { furthestSwipe = max(furthestSwipe, swipe.furthest) }
         }
 
         /// Steps or swipes are still to come: the line waits for them.
@@ -448,9 +481,12 @@ enum ScrollSystemLog {
     /// back", "1 interrupted", "1 stroke waited for another swipe", with the furthest one.
     static func followMessage(for roll: ThumbWheelRoll) -> String {
         var parts: [String] = []
-        if roll.swipesEnded > 0 { parts.append("\(roll.swipesEnded) \(roll.swipesEnded == 1 ? "swipe" : "swipes") ended") }
-        if roll.swipesBack > 0 { parts.append("\(roll.swipesBack) went back") }
-        if roll.swipesInterrupted > 0 { parts.append("\(roll.swipesInterrupted) interrupted") }
+        let tally = roll.swipeTally
+        if tally.ended > 0 { parts.append("\(tally.ended) \(tally.ended == 1 ? "swipe" : "swipes") ended") }
+        if tally.chained > 0 { parts.append("\(tally.chained) chained") }
+        if tally.fullStop > 0 { parts.append("\(tally.fullStop) at a full stop") }
+        if tally.back > 0 { parts.append("\(tally.back) went back") }
+        if tally.interrupted > 0 { parts.append("\(tally.interrupted) interrupted") }
         if roll.strokesWaited > 0 {
             parts.append("\(roll.strokesWaited) \(roll.strokesWaited == 1 ? "stroke" : "strokes") waited for another swipe")
         }

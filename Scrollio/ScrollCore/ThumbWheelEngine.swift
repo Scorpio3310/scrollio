@@ -183,8 +183,6 @@ final class ThumbWheelEngine {
     /// Switch Desktops with "Follow the wheel": the swipe of a stroke. Its clock and main
     /// queue are the engine's.
     let follower = ThumbWheelFollower()
-    /// The roll the stroke under way began in (its line counts how the stroke ended).
-    private var strokeRollID: Int?
     /// A look at the pacer is scheduled: one at a time, none while no step waits.
     private var paceScheduled = false
     /// Runs a step's action this many times, on the main queue (tests replace it).
@@ -212,8 +210,15 @@ final class ThumbWheelEngine {
     private var nextRollID = 0
 
     init() {
-        follower.onStrokeEnd = { [weak self] outcome, furthest in
-            self?.strokeEnded(outcome, furthest: furthest)
+        // A roll's line waits for its strokes and swipes (by its id, the tag of their events).
+        follower.onStrokeEnd = { [weak self] tag, waited in
+            self?.changeRoll(tag) { $0.strokeEnded(waited: waited) }
+        }
+        follower.onSwipeBegin = { [weak self] tag in
+            self?.changeRoll(tag) { $0.pendingSwipes += 1 }
+        }
+        follower.onSwipeEnd = { [weak self] tag, swipe in
+            self?.changeRoll(tag) { $0.swipeEnded(swipe) }
         }
     }
 
@@ -288,7 +293,7 @@ final class ThumbWheelEngine {
             )
             // A held tick reaches neither the stepper nor the swipe.
             tick = tickFilter.filter(travel: travel, lines: lines, at: time)
-            if tick.travel != 0, case .yes(let begins) = follower.add(tick.travel, at: time, seenAt: seenAt) {
+            if tick.travel != 0, case .yes(let begins) = follower.add(tick.travel, at: time, seenAt: seenAt, tag: roll?.id ?? 0) {
                 newStroke = begins
             }
         } else {
@@ -310,8 +315,8 @@ final class ThumbWheelEngine {
         roll?.ticksFiltered(tick)
         scheduleRollLook()
         if newStroke {
+            // The roll waits for the stroke to end.
             roll?.pendingSwipes += 1
-            strokeRollID = roll?.id
         }
         guard steps != 0, roll != nil else { return steps }
         if let pacing = settings.function.pacing {
@@ -431,22 +436,26 @@ final class ThumbWheelEngine {
         schedule(0) { [weak self] in self?.writeEndedRoll(id: id) }
     }
 
-    /// Writes the ended roll (only that one, when `id` is given).
+    /// Writes the ended roll (only that one, when `id` is given; then not while a stroke or
+    /// a swipe of it is still to end: its last end writes it).
     private func writeEndedRoll(id: Int? = nil) {
         guard let done = ended, id == nil || done.id == id else { return }
+        if id != nil, done.pendingSwipes > 0 { return }
         ended = nil
         writeLog(done)
     }
 
-    /// A stroke of Follow the wheel ended: the roll it began in counts it (written, it is
-    /// not counted again).
-    private func strokeEnded(_ outcome: ThumbWheelFollower.Outcome, furthest: Double) {
-        let rollID = strokeRollID
-        strokeRollID = nil
-        if roll != nil, roll?.id == rollID {
-            roll?.strokeEnded(outcome, furthest: furthest)
-        } else if ended != nil, ended?.id == rollID {
-            ended?.strokeEnded(outcome, furthest: furthest)
+    /// What Follow the wheel did goes to the roll whose id its events carried, open or
+    /// ended (written, it is not counted again); an ended roll with nothing more to wait
+    /// for is written after the callback.
+    private func changeRoll(_ id: Int, _ change: (inout Roll) -> Void) {
+        if roll != nil, roll?.id == id {
+            change(&roll!)
+        } else if ended != nil, ended?.id == id {
+            change(&ended!)
+            if ended?.pendingSwipes == 0 {
+                schedule(0) { [weak self] in self?.writeEndedRoll(id: id) }
+            }
         }
     }
 
@@ -483,7 +492,8 @@ final class ThumbWheelEngine {
             let nextPaced = pacedFunction?.pacing.flatMap { pacer.nextRunAt(pacing: $0) }
             delay = max(ThumbWheelTuning.pendingRecheck, (nextPaced ?? now) - now)
             if open.pendingSteps == 0 {
-                // Only a stroke of Follow the wheel to end: it ends at the wheel's rest.
+                // Only Follow the wheel to end: a stroke at the wheel's rest, a swipe once its
+                // Space changed (or the time for that passed).
                 delay = max(delay, ThumbWheelTuning.followRest / 4)
             }
         }

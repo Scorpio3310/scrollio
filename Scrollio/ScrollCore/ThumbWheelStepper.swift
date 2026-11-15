@@ -116,6 +116,20 @@ enum ThumbWheelTuning {
     static let followEasePerFrame = 0.5
     /// Closer than this (progress) it stands where the wheel put it.
     static let followEaseSnap = 0.002
+    /// A swipe this close to a full Space (a share of one) is at a full Space...
+    static let followFullShare = 0.98
+    /// ...and ends at once (so the next desktop can come in the same stroke) once the wheel
+    /// has turned on that way this many units past that point (a quarter of a Space)...
+    static let followChainOverflowUnits = 1.5
+    /// ...or once the wheel has been still this long (s): a full swipe is committed at the
+    /// hand's stop, not only at the rest.
+    static let followFullStopRest: TimeInterval = 0.15
+    /// After an end where a switch is expected (half a Space or more), no swipe begins until
+    /// macOS says the Space changed or this long (s) has passed; no change by then: the
+    /// desktop was the first or the last that way.
+    static let followSpaceChangeTimeout: TimeInterval = 0.5
+    /// Travel kept meanwhile for the next swipe, at most this many units either way (a Space).
+    static let followGatePendingCap = 6.0
 }
 
 extension ThumbWheelFunction {
