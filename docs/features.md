@@ -68,8 +68,8 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   may take it over.
 - Removing a button or an app can be undone (Edit › Undo), and so can every change of a
   button's row, in Buttons and in an app's Buttons part: its action ("Undo Change
-  Action"), the name or icon of its keys ("Undo Rename") and "Which Button Is This?"
-  ("Undo Which Button"); Undo, of a removal too, selects the row it changes and shows
+  Action"), the name or icon of its keys ("Undo Rename") and, in Buttons, "Which Button
+  Is This?" ("Undo Which Button"); Undo, of a removal too, selects the row it changes and shows
   it: Buttons comes forward from another pane, or Apps with the app's page on its
   Buttons part (also after that page closed); an app removed from Apps comes back
   selected in the list, which comes forward too. On a button of your mouse,

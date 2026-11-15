@@ -202,6 +202,23 @@ final class ReleaseReadinessTests: XCTestCase {
                        "the app's Release configuration, and only it, leaves DGCharts out")
     }
 
+    // MARK: - The changelog
+
+    /// The newest part of CHANGELOG.md is what the update window shows next. It keeps the
+    /// form of the released parts: "New" and "Fixed" (a "Changed" list described steps
+    /// between two unreleased states, which nobody with the last release ever saw), in the
+    /// window's own words (AGENTS.md, "Words in the interface").
+    func testTheNewestPartOfTheChangelogKeepsTheReleasedForm() throws {
+        let parts = try text("CHANGELOG.md").components(separatedBy: "\n## ")
+        let newest = try XCTUnwrap(parts.dropFirst().first, "CHANGELOG.md has no version part")
+        let headings = newest.components(separatedBy: "\n").filter { $0.hasPrefix("### ") }
+        XCTAssertTrue(Set(headings).isSubset(of: ["### New", "### Fixed"]), "\(headings)")
+        for words in ["(pane|part)s?", "everywhere", "in front"] {
+            let found = newest.range(of: "\\b\(words)\\b", options: [.regularExpression, .caseInsensitive])
+            XCTAssertNil(found, "the newest part of the changelog says \"\(found.map { String(newest[$0]) } ?? "")\"")
+        }
+    }
+
     // MARK: - The test classes the agent files name
 
     /// `-only-testing:ScrollioTests/<name>` with a name that is no test class runs nothing

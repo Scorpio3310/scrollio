@@ -66,7 +66,11 @@ these rules anywhere.
   `sign_update` or `generate_keys` against the keychain (macOS then asks the owner for
   the key). `CHANGELOG.md` has one part per released version; the update window and the
   release notes show it. What is merged between releases goes under `## Unreleased`
-  above them, which becomes the next version's part.
+  above them, which becomes the next version's part. A part is written for the people
+  who use the app, in the form of 1.0.5's: one bold line that sums it up, then `### New`
+  and `### Fixed` (no `### Changed`: a step between two unreleased states is no news),
+  short bullets, about 25 at most, in the interface's words (below: no "pane", "part" or
+  "in front"). `ReleaseReadinessTests` reads the newest part for the headings and words.
 - A release is made by hand with `scripts/release.sh` (see Commands)
   and published by the owner, from a commit that carries the tag `v<version>` (`v1.0.0`);
   the version of a release is its tag's. Never create, move, delete or push a tag unless
