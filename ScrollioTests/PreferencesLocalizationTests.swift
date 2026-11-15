@@ -305,6 +305,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-gesture-line-app", "general-settings-import-launch-trigger-app",
         "general-settings-import-gesture-defaults-app", "general-settings-import-gesture-invert-app",
         "ring-undo-reset",
+        "ring-panel-label-app",
     ]
 
     static let keys = mouseKeys + scrollingKeys + buttonsKeys + gesturesKeys + ringKeys + appsKeys
@@ -464,6 +465,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-default-with": "@",
         "apps-buttons-same-as-other-apps": "@",
         "buttons-trigger-choice-recorded-replaces": "@",
+        "ring-panel-label-app": "@",
     ]
 
     /// The arguments `format` reads, in argument order: "%2$d of %1$@" -> "@d"; "@" an

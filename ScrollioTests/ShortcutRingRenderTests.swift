@@ -299,20 +299,149 @@ final class ShortcutRingRenderTests: XCTestCase {
     /// are flat discs, and the lit glass drop's tint, which is the glass's, is not there
     /// at all.
     func testRenderThePanelsOwnViews() throws {
-        var cells: [(caption: String, appearance: ShortcutRingAppearance, elapsed: TimeInterval, lit: Int?)] = [
-            ("Drawn, 60 ms after it opened", ShortcutRingAppearance(reducesTransparency: true), 0.06, nil),
-            ("Drawn, 60 ms, the top right place already lit", ShortcutRingAppearance(reducesTransparency: true), 0.06, 1),
-            ("Drawn, at rest, a place lit", ShortcutRingAppearance(reducesTransparency: true), 1, 5),
-            ("Increase contrast, at rest, a place lit", ShortcutRingAppearance(increasesContrast: true), 1, 0),
-            ("Blur: the material is a flat grey here; the mask of nine circles and the lit colour are real",
-             ShortcutRingAppearance(), 1, 5),
+        var cells: [PanelCell] = [
+            PanelCell("Drawn, 60 ms after it opened", ShortcutRingAppearance(reducesTransparency: true), 0.06, nil),
+            PanelCell("Drawn, 60 ms, the top right place already lit", ShortcutRingAppearance(reducesTransparency: true), 0.06, 1),
+            PanelCell("Drawn, at rest, a place lit", ShortcutRingAppearance(reducesTransparency: true), 1, 5),
+            PanelCell("Increase contrast, at rest, a place lit", ShortcutRingAppearance(increasesContrast: true), 1, 0),
+            PanelCell("Blur: the material is a flat grey here; the mask of nine circles and the lit colour are real",
+                      ShortcutRingAppearance(), 1, 5),
         ]
         if #available(macOS 26.0, *) {
-            cells.append((
+            cells.append(PanelCell(
                 "Glass: flat discs here, and the lit drop's tint is missing; where the drops and symbols are is real",
                 ShortcutRingAppearance(hasLiquidGlass: true), 1, 5
             ))
         }
+        try renderPanelViews(
+            cells, to: "drops-views.png",
+            header: "The panel's own views, drawn in-process and laid over the painted desktop (light above, dark below). A check "
+                + "of where the views are, NOT how glass or the blur look on a screen: both are flat discs here."
+        )
+    }
+
+    // MARK: - An app's own ring: the app's icon in the middle
+
+    /// The icon an app's own ring shows in its middle while nothing is lit (Safari's, made
+    /// as the app makes it), on the panel's own views: the general ring beside it, a place
+    /// lit, and the icon whole under Reduce transparency and Increase contrast
+    /// (`drops-views-app-icon.png`).
+    func testRenderTheAppsIconInTheMiddleOfItsOwnRing() throws {
+        let safari = ShortcutRingAppMark.make(forPath: "/Applications/Safari.app")
+        let app = ShortcutRingOwner.app(name: safari.name, icon: safari.icon)
+        var cells: [PanelCell] = [
+            PanelCell("General ring: the middle stays empty", ShortcutRingAppearance(), 1, nil),
+            PanelCell("Safari's own ring: its icon, half faint (blur stand-in)", ShortcutRingAppearance(), 1, nil, owner: app),
+            PanelCell("A place lit: its name instead of the icon", ShortcutRingAppearance(), 1, 2, owner: app),
+            PanelCell("While it opens (60 ms): the icon grows with the hub", ShortcutRingAppearance(), 0.06, nil, owner: app),
+            PanelCell("Reduce transparency: the icon whole", ShortcutRingAppearance(reducesTransparency: true), 1, nil, owner: app),
+            PanelCell("Increase contrast: the icon whole", ShortcutRingAppearance(increasesContrast: true), 1, nil, owner: app),
+            PanelCell("Increase contrast, a place lit", ShortcutRingAppearance(increasesContrast: true), 1, 6, owner: app),
+        ]
+        if #available(macOS 26.0, *) {
+            cells.append(PanelCell(
+                "Glass stand-in: the icon in the hub's glass view", ShortcutRingAppearance(hasLiquidGlass: true), 1, nil, owner: app
+            ))
+        }
+        try renderPanelViews(
+            cells, to: "drops-views-app-icon.png",
+            header: "An app's own ring: the app's icon in the middle while nothing is lit (light above, dark below). "
+                + "The blur and the glass are flat stand-ins here; the icon, its size and its opacity are the app's."
+        )
+    }
+
+    /// The drawing of the ring in Settings (`ring-preview-app-icon.png`): the Shortcut Ring
+    /// pane's (the general ring, its middle empty) and Safari › Shortcut Ring's (Safari's
+    /// icon), at rest and with a place pointed at, light above and dark below.
+    func testRenderTheDrawingOfAnAppsOwnRing() throws {
+        let safari = ShortcutRingAppMark.make(forPath: "/Applications/Safari.app")
+        let cells: [(caption: String, icon: NSImage?, lit: Int?)] = [
+            ("Shortcut Ring pane: the general ring", nil, nil),
+            ("Safari › Shortcut Ring: Safari's icon", safari.icon, nil),
+            ("Safari › Shortcut Ring, a place pointed at", safari.icon, 3),
+        ]
+        let size = CGSize(width: 460, height: ShortcutRingPreviewView.preferredHeight)
+        let margin: CGFloat = 24, gap: CGFloat = 14, captionHeight: CGFloat = 26
+        let names: [NSAppearance.Name] = [.aqua, .darkAqua]
+        let sheet = CGSize(
+            width: margin * 2 + CGFloat(cells.count) * size.width + CGFloat(cells.count - 1) * gap,
+            height: margin * 2 + CGFloat(names.count) * (size.height + captionHeight) + gap
+        )
+        var pictures: [[NSBitmapImageRep]] = []
+        for name in names {
+            var row: [NSBitmapImageRep] = []
+            for cell in cells {
+                let preview = ShortcutRingPreviewView(frame: NSRect(origin: .zero, size: size))
+                preview.reducesTransparency = { false }
+                preview.face = ShortcutRingFace(.default)
+                preview.appIcon = cell.icon
+                preview.lit = cell.lit
+                let appearance = try XCTUnwrap(NSAppearance(named: name))
+                preview.appearance = appearance
+                let rep = try XCTUnwrap(NSBitmapImageRep(
+                    bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
+                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+                ))
+                rep.size = size
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+                appearance.performAsCurrentDrawingAppearance { preview.draw(preview.bounds) }
+                NSGraphicsContext.restoreGraphicsState()
+                row.append(rep)
+            }
+            pictures.append(row)
+        }
+        try render(size: sheet, scale: 2, appearance: .aqua, to: directory.appendingPathComponent("ring-preview-app-icon.png")) {
+            // The light row's window ground above, the dark row's below.
+            let half = sheet.height - margin - size.height - captionHeight - gap / 2
+            NSColor(white: 0.93, alpha: 1).setFill()
+            CGRect(x: 0, y: half, width: sheet.width, height: sheet.height - half).fill()
+            NSColor(white: 0.16, alpha: 1).setFill()
+            CGRect(x: 0, y: 0, width: sheet.width, height: half).fill()
+            for (row, name) in names.enumerated() {
+                for (column, cell) in cells.enumerated() {
+                    let rect = CGRect(
+                        x: margin + CGFloat(column) * (size.width + gap),
+                        y: sheet.height - margin - CGFloat(row + 1) * size.height - CGFloat(row) * (captionHeight + gap),
+                        width: size.width, height: size.height
+                    )
+                    pictures[row][column].draw(
+                        in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil
+                    )
+                    RingMock.drawText(
+                        cell.caption, in: CGRect(x: rect.minX, y: rect.minY - captionHeight, width: rect.width, height: captionHeight - 6),
+                        size: 12, weight: .medium, alignment: .center, dark: name == .darkAqua
+                    )
+                }
+            }
+        }
+    }
+
+    /// One picture of the panel's views: how the system draws it, how long after the
+    /// opening, which place is lit and whose ring it is.
+    private struct PanelCell {
+        var caption: String
+        var appearance: ShortcutRingAppearance
+        var elapsed: TimeInterval
+        var lit: Int?
+        var owner: ShortcutRingOwner
+
+        init(
+            _ caption: String, _ appearance: ShortcutRingAppearance, _ elapsed: TimeInterval, _ lit: Int?,
+            owner: ShortcutRingOwner = .general
+        ) {
+            self.caption = caption
+            self.appearance = appearance
+            self.elapsed = elapsed
+            self.lit = lit
+            self.owner = owner
+        }
+    }
+
+    /// The panel's own views of each cell, light above and dark below, laid over the painted
+    /// desktop, into `file`.
+    private func renderPanelViews(_ cells: [PanelCell], to file: String, header: String) throws {
         let margin: CGFloat = 24, gap: CGFloat = 14, captionHeight: CGFloat = 50, headerHeight: CGFloat = 30
         let side = ShortcutRingGeometry.canvasSide
         let cell = CGSize(width: side + 12, height: side + 12)
@@ -335,7 +464,10 @@ final class ShortcutRingRenderTests: XCTestCase {
                 presenter.after = { _, _ in }
                 presenter.clock = { now }
                 presenter.appearance = { item.appearance }
-                presenter.show(ShortcutRingFace(.default), centre: CGPoint(x: 600, y: 400), screen: screen, lit: item.lit, takesClicks: false)
+                presenter.show(
+                    ShortcutRingFace(.default), owner: item.owner, centre: CGPoint(x: 600, y: 400), screen: screen,
+                    lit: item.lit, takesClicks: false
+                )
                 now = item.elapsed
                 presenter.step()
                 let drops = try XCTUnwrap(presenter.stage?.dropsView)
@@ -355,13 +487,12 @@ final class ShortcutRingRenderTests: XCTestCase {
             }
             pictures.append(row)
         }
-        try render(size: size, scale: 2, appearance: .aqua, to: directory.appendingPathComponent("drops-views.png")) {
+        try render(size: size, scale: 2, appearance: .aqua, to: directory.appendingPathComponent(file)) {
             NSColor(white: 0.95, alpha: 1).setFill()
             CGRect(origin: .zero, size: size).fill()
             guard let context = NSGraphicsContext.current?.cgContext else { return }
             RingMock.drawText(
-                "The panel's own views, drawn in-process and laid over the painted desktop (light above, dark below). A check "
-                    + "of where the views are, NOT how glass or the blur look on a screen: both are flat discs here.",
+                header,
                 in: CGRect(x: margin, y: size.height - margin - headerHeight, width: size.width - margin * 2, height: headerHeight - 8),
                 size: 13, weight: .semibold, alignment: .left, dark: false
             )

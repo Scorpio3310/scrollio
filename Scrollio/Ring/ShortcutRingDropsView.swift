@@ -10,7 +10,8 @@
 //  What stands in it is the same for every material: one small view per drop
 //  (`ShortcutRingDropContentView`) that draws a place's symbol, icon or keys, or the hub's
 //  name, once per look. While a drop travels its view is only moved and scaled; nothing is
-//  drawn again until the lighting changes.
+//  drawn again until the lighting changes. In an app's own ring the hub shows the app's
+//  icon, faint, while nothing is lit (`appIcon`), and the lit action's name over it.
 //
 //  The bodies are one of three, each on its own and small:
 //  - `.drawn`: opaque drops painted by `ShortcutRingArtwork.drawBodies` in one view
@@ -46,6 +47,11 @@ final class ShortcutRingDropContentView: NSView {
         /// The hub's name of the lit action; `keys` under it for a key combination that
         /// has a name (empty: nothing under it).
         case name(String, keys: String)
+        /// The hub of an app's own ring while nothing is lit: the app's icon,
+        /// `ShortcutRingArtwork.appIconSide` wide and `opacity` of it. Not part of the
+        /// face (faces are shared by rings with the same places), and nothing VoiceOver
+        /// reads: the ring's own label names the app.
+        case appIcon(NSImage, opacity: CGFloat)
     }
 
     /// The side of a place's content at rest: room for its symbol when lit.
@@ -99,6 +105,12 @@ final class ShortcutRingDropContentView: NSView {
         return nil
     }
 
+    /// What a drop shows is drawn, not read: the ring's label says whose ring it is, and
+    /// the lit action is announced (`ShortcutRingController.announce`).
+    override func isAccessibilityElement() -> Bool {
+        return false
+    }
+
     /// Puts the content with its middle at `middle` of its superview, `grow` times as
     /// large as it is drawn.
     func put(middle: CGPoint, grow: CGFloat, opacity: CGFloat) {
@@ -150,6 +162,8 @@ final class ShortcutRingDropContentView: NSView {
                 width: ShortcutRingArtwork.titleWidth, pointSize: ShortcutRingArtwork.titleFont.pointSize,
                 increasesContrast: increasesContrast
             )
+        case .appIcon(let icon, let opacity):
+            ShortcutRingArtwork.drawAppIcon(icon, centre: middle, side: ShortcutRingArtwork.appIconSide, opacity: opacity)
         }
     }
 }
@@ -298,9 +312,27 @@ final class ShortcutRingDropsView: NSView {
         }
     }
 
+    /// The app's icon in the hub while no name is there (an app's own ring); nil: the hub
+    /// stays empty then.
+    var appIcon: NSImage? {
+        didSet {
+            guard appIcon !== oldValue else { return }
+            showName()
+        }
+    }
+
+    /// What the hub shows: the lit action's name, else the app's icon, else nothing.
     private func showName() {
-        contents[ShortcutRingDrops.placeCount].content = (title?.isEmpty ?? true)
-            ? .nothing : .name(title ?? "", keys: titleKeys)
+        let hub = contents[ShortcutRingDrops.placeCount]
+        if let title, !title.isEmpty {
+            hub.content = .name(title, keys: titleKeys)
+        } else if let appIcon {
+            hub.content = .appIcon(appIcon, opacity: ShortcutRingArtwork.appIconOpacity(
+                increasesContrast: increasesContrast, reducesTransparency: reducesTransparency
+            ))
+        } else {
+            hub.content = .nothing
+        }
     }
 
     var increasesContrast = false {
@@ -308,6 +340,15 @@ final class ShortcutRingDropsView: NSView {
             guard increasesContrast != oldValue else { return }
             bodiesView?.style.increasesContrast = increasesContrast
             contents[ShortcutRingDrops.placeCount].increasesContrast = increasesContrast
+            showName()
+        }
+    }
+
+    /// "Reduce transparency": the app's icon in the hub is not faint.
+    var reducesTransparency = false {
+        didSet {
+            guard reducesTransparency != oldValue else { return }
+            showName()
         }
     }
 
@@ -320,6 +361,10 @@ final class ShortcutRingDropsView: NSView {
         } + [ShortcutRingDropContentView(side: ShortcutRingDropContentView.hubSide)]
         super.init(frame: frame)
         wantsLayer = true
+        // VoiceOver finds the ring by its label (whose ring it is: `ShortcutRingOwner`).
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityLabel(ShortcutRingOwner.general.accessibilityLabel)
 
         switch material {
         case .glass:

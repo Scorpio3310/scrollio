@@ -41,7 +41,11 @@
 //  What a place that opens an app shows (its name, its icon) takes a look on disk. That
 //  never happens in the turn in which a ring is shown: the face is made at a quiet moment
 //  (`preparedFaces`, one per ring: the general one and each app's own), and a ring for
-//  which none is there yet shows the file's name and a plain symbol once.
+//  which none is there yet shows the file's name and a plain symbol once. So does the
+//  app's icon that an app's own ring shows in its middle while nothing is lit (and the
+//  app's name, which VoiceOver hears in the ring's label): it is made as the faces are,
+//  one per app (`preparedAppMarks`), and a ring for which none is there yet has an empty
+//  middle. The general ring's middle is always empty.
 //
 //  Nothing is drawn and nothing is posted inside an event callback: the panel is shown on
 //  the next turn of the main queue, and so is the chosen action, after the panel is gone.
@@ -119,10 +123,24 @@ final class ShortcutRingController {
     /// open it. So a ring that only an app's own button or key opens has its face too, and
     /// an app whose own bindings take the ring's button away does not need one.
     static func ringsToPrepareAtLaunch(options: Options = .shared) -> [ShortcutRingSettings] {
+        let canOpen = ringsThatCanOpen(options: options)
+        var distinct: [ShortcutRingSettings] = []
+        for ring in (canOpen.general ? [options.ring] : []) + canOpen.own.map(\.ring)
+        where ring.opensSomething && !distinct.contains(where: { $0.places == ring.places }) {
+            distinct.append(ring)
+        }
+        return Array(distinct.prefix(preparedFaceLimit))
+    }
+
+    /// The rings that can open (`ringsToPrepareAtLaunch`): whether the general ring can,
+    /// and each app whose own ring can, by the path of its entry, with that ring.
+    private static func ringsThatCanOpen(
+        options: Options
+    ) -> (general: Bool, own: [(path: String, ring: ShortcutRingSettings)]) {
         let general = options.buttons.binding
         let generalOpens = opensTheRing(general)
         var generalCanOpen = generalOpens
-        var own: [ShortcutRingSettings] = []
+        var own: [(path: String, ring: ShortcutRingSettings)] = []
         let applications = options.application.applications
         for index in 0..<applications.count {
             // Of two entries of one path, the one a press finds (`get(by:)`, the last).
@@ -132,23 +150,67 @@ final class ShortcutRingController {
                 : generalOpens
             guard opens else { continue }
             if entry.ownRingPlaces != nil {
-                own.append(entry.ringThatOpens(general: options.ring))
+                own.append((entry.path, entry.ringThatOpens(general: options.ring)))
             } else {
                 generalCanOpen = true
             }
         }
-        var distinct: [ShortcutRingSettings] = []
-        for ring in (generalCanOpen ? [options.ring] : []) + own
-        where ring.opensSomething && !distinct.contains(where: { $0.places == ring.places }) {
-            distinct.append(ring)
-        }
-        return Array(distinct.prefix(preparedFaceLimit))
+        return (generalCanOpen, own)
     }
 
     /// An enabled binding of `bindings` opens the ring.
     private static func opensTheRing(_ bindings: [ButtonBinding]) -> Bool {
         return bindings.contains { $0.isEnabled && $0.systemShortcutName == SystemShortcut.shortcutRing.identifier }
     }
+
+    // MARK: The apps' marks, made at a quiet moment
+
+    /// What an app's own ring shows of the app (`ShortcutRingAppMark`: its icon for the
+    /// middle, its name for VoiceOver), by the stored path of the app's entry, the newest
+    /// first. Made where the faces are made and as they are, one app per turn of the main
+    /// queue: after the faces at launch and after a change of the settings, for the apps
+    /// whose own ring can open (`appMarksToPrepare`); by an app's page that shows its ring;
+    /// after an app's own ring closed that had none. Never at a press: a ring whose mark is
+    /// not there has an empty middle. Dropped when the app leaves the list; at most
+    /// `preparedFaceLimit` (an app beyond them takes the oldest one's place).
+    private(set) static var preparedAppMarks: [(path: String, mark: ShortcutRingAppMark)] = []
+
+    /// The mark made for the app stored at `path`; nil when there is none.
+    static func preparedAppMark(forPath path: String) -> ShortcutRingAppMark? {
+        return preparedAppMarks.first { $0.path == path }?.mark
+    }
+
+    /// Keeps `mark` for the next own ring of the app stored at `path`.
+    static func prepare(_ mark: ShortcutRingAppMark, forAppAt path: String) {
+        preparedAppMarks.removeAll { $0.path == path }
+        preparedAppMarks.insert((path, mark), at: 0)
+        if preparedAppMarks.count > preparedFaceLimit {
+            preparedAppMarks.removeLast(preparedAppMarks.count - preparedFaceLimit)
+        }
+    }
+
+    /// Drops the marks of apps that are no longer on the per-app list.
+    static func dropAppMarks(notOn applications: EnhanceArray<Application>) {
+        preparedAppMarks.removeAll { applications.get(by: $0.path) == nil }
+    }
+
+    /// The apps whose mark is made at launch and after a change: those whose own ring can
+    /// open, by the paths of their entries, in the list's order; at most
+    /// `preparedFaceLimit`.
+    static func appMarksToPrepare(options: Options = .shared) -> [String] {
+        return Array(ringsThatCanOpen(options: options).own.map(\.path).prefix(preparedFaceLimit))
+    }
+
+    /// Whose ring `choice` opens, with what was made of the app at a quiet moment: no look
+    /// on disk. Without a mark the app's name is the one its path has, and the middle stays
+    /// empty.
+    static func owner(of choice: ShortcutRingChoice) -> ShortcutRingOwner {
+        guard let path = choice.appPath else { return .general }
+        let mark = preparedAppMark(forPath: path)
+        return .app(name: mark?.name ?? ShortcutRingAppMark.plainName(ofPath: path), icon: mark?.icon)
+    }
+
+    // MARK: The passes of faces and marks
 
     /// How long a face that was due at launch waits while a ring is open.
     static let launchFaceWait: TimeInterval = 0.5
@@ -159,7 +221,8 @@ final class ShortcutRingController {
     /// queue), a ring's face kept once its last place is in, and never while a ring is
     /// open, so that the first ring already has the icons. For everyone else: one pass
     /// over the bindings and the apps, nothing more. `after` runs a block on the main
-    /// queue after a delay; `makePlace` makes one place with its look on disk.
+    /// queue after a delay; `makePlace` makes one place with its look on disk. (The apps'
+    /// marks follow from `prepareFacesAfterChanges`, once these faces are made.)
     static func prepareFaceAtLaunch(
         options: Options = .shared,
         after: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, block in
@@ -168,71 +231,159 @@ final class ShortcutRingController {
         makePlace: @escaping (ShortcutRingPlace) -> ShortcutRingFace.Place = { ShortcutRingFace.place($0) }
     ) {
         // The general ring last, so that it is the newest.
-        prepareFaces(of: ringsToPrepareAtLaunch(options: options).reversed(), after: after, makePlace: makePlace)
+        prepareQuietly(
+            faces: ringsToPrepareAtLaunch(options: options).reversed(), marks: [],
+            after: after, makePlace: makePlace, makeMark: { ShortcutRingAppMark.make(forPath: $0) }
+        )
     }
 
     /// After every change of the bindings (Buttons and the apps' own), of the per-app list
-    /// or of the general ring, the faces of the rings that can open now and have none yet
-    /// (`prepareMissingFaces`): a binding of an app's own that opens the ring, made while
-    /// no pane showed that ring, gets its face before its first ring. Called once, at
-    /// launch, after `prepareFaceAtLaunch`. (Options keeps its observers for the app's life.)
+    /// or of the general ring, the faces of the rings that can open now and have none yet,
+    /// and the marks of the apps whose own ring can open now (`prepareMissingFaces`): a
+    /// binding of an app's own that opens the ring, made while no pane showed that ring,
+    /// gets its face and its mark before its first ring. Called once, at launch, after
+    /// `prepareFaceAtLaunch`: the apps' marks are made then too, after the launch's faces.
+    /// (Options keeps its observers for the app's life.)
     static func prepareFacesAfterChanges(options: Options = .shared) {
         options.observe([.buttons, .application, .ring]) { [weak options] _ in
             guard let options else { return }
             prepareMissingFaces(options: options)
         }
+        prepareMissingFaces(options: options)
     }
 
     /// A pass of `prepareMissingFaces` waits for its turn: a burst of changes (a slider of
     /// an app's page dragged) asks for one.
     private static var missingFacesAreDue = false
+    /// The passes of faces and marks under way (`prepareQuietly`): `prepareMissingFaces`
+    /// decides only while none is, so that two passes never take turns together.
+    private static var quietPasses = 0
+    /// Counts `forgetPreparedFaces` (tests): a turn of a pass from before it does nothing.
+    private static var quietGeneration = 0
 
     /// The faces of the rings that can open (`ringsToPrepareAtLaunch`) and have none yet,
-    /// made as at launch: decided on the next turn of the main queue (what a pane made in
-    /// the meantime is not made again), then one place that opens something per turn,
-    /// never while a ring is open. Nothing more for a change that leaves every face there.
+    /// and the marks of the apps whose own ring can open (`appMarksToPrepare`) that have
+    /// none yet, made as at launch: decided on the next turn of the main queue, or once
+    /// the pass under way is over (what a pane made in the meantime is not made again;
+    /// the marks of apps that left the list are dropped then), then one place that opens
+    /// something or one app's mark per turn, never while a ring is open. Nothing more for a
+    /// change that leaves every face and mark there. `makeMark`: one app's mark with its
+    /// look on disk.
     static func prepareMissingFaces(
         options: Options = .shared,
         after: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, block in
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: block)
         },
-        makePlace: @escaping (ShortcutRingPlace) -> ShortcutRingFace.Place = { ShortcutRingFace.place($0) }
+        makePlace: @escaping (ShortcutRingPlace) -> ShortcutRingFace.Place = { ShortcutRingFace.place($0) },
+        makeMark: @escaping (String) -> ShortcutRingAppMark = { ShortcutRingAppMark.make(forPath: $0) }
     ) {
         guard !missingFacesAreDue else { return }
         missingFacesAreDue = true
+        let generation = quietGeneration
         after(0) {
-            missingFacesAreDue = false
-            let missing = ringsToPrepareAtLaunch(options: options).filter { preparedFace(for: $0) == nil }
-            prepareFaces(of: missing.reversed(), after: after, makePlace: makePlace)
+            decideMissing(generation: generation, options: options, after: after, makePlace: makePlace, makeMark: makeMark)
         }
+    }
+
+    private static func decideMissing(
+        generation: Int, options: Options,
+        after: @escaping (TimeInterval, @escaping () -> Void) -> Void,
+        makePlace: @escaping (ShortcutRingPlace) -> ShortcutRingFace.Place,
+        makeMark: @escaping (String) -> ShortcutRingAppMark
+    ) {
+        guard generation == quietGeneration else { return }
+        guard quietPasses == 0 else {
+            // (The launch's faces: what they make is not missing any more when they are done.)
+            after(launchFaceWait) {
+                decideMissing(generation: generation, options: options, after: after, makePlace: makePlace, makeMark: makeMark)
+            }
+            return
+        }
+        missingFacesAreDue = false
+        dropAppMarks(notOn: options.application.applications)
+        let faces = ringsToPrepareAtLaunch(options: options).filter { preparedFace(for: $0) == nil }
+        let marks = appMarksToPrepare(options: options).filter { preparedAppMark(forPath: $0) == nil }
+        prepareQuietly(faces: faces.reversed(), marks: marks, after: after, makePlace: makePlace, makeMark: makeMark)
+    }
+
+    /// A pass: the faces of `faces` in order, then the marks of the apps at `marks`.
+    private static func prepareQuietly(
+        faces: [ShortcutRingSettings], marks: [String],
+        after: @escaping (TimeInterval, @escaping () -> Void) -> Void,
+        makePlace: @escaping (ShortcutRingPlace) -> ShortcutRingFace.Place,
+        makeMark: @escaping (String) -> ShortcutRingAppMark
+    ) {
+        guard !faces.isEmpty || !marks.isEmpty else { return }
+        quietPasses += 1
+        prepareFaces(
+            of: faces, then: marks, generation: quietGeneration, after: after, makePlace: makePlace, makeMark: makeMark
+        )
     }
 
     /// One turn: the next place of the first of `rings` (whose face `steps` holds once it
     /// is begun), then a turn for what is left. A ring whose face was made meanwhile (by a
-    /// pane, after a ring closed) is left out before its first place.
+    /// pane, after a ring closed) is left out before its first place. After the last ring
+    /// the marks of `marks`.
     private static func prepareFaces(
-        of rings: [ShortcutRingSettings], steps: ShortcutRingFace.InSteps? = nil,
+        of rings: [ShortcutRingSettings], then marks: [String], steps: ShortcutRingFace.InSteps? = nil,
+        generation: Int,
         after: @escaping (TimeInterval, @escaping () -> Void) -> Void,
-        makePlace: @escaping (ShortcutRingPlace) -> ShortcutRingFace.Place
+        makePlace: @escaping (ShortcutRingPlace) -> ShortcutRingFace.Place,
+        makeMark: @escaping (String) -> ShortcutRingAppMark
     ) {
-        guard let ring = rings.first else { return }
+        func next(_ rings: [ShortcutRingSettings], _ steps: ShortcutRingFace.InSteps? = nil) {
+            prepareFaces(
+                of: rings, then: marks, steps: steps, generation: generation, after: after, makePlace: makePlace,
+                makeMark: makeMark
+            )
+        }
+        guard let ring = rings.first else {
+            return prepareMarks(marks, generation: generation, after: after, makeMark: makeMark)
+        }
         after(0) {
+            guard generation == quietGeneration else { return }
             guard existing?.isOpen != true else {
-                after(launchFaceWait) { prepareFaces(of: rings, steps: steps, after: after, makePlace: makePlace) }
+                after(launchFaceWait) { next(rings, steps) }
                 return
             }
             if steps == nil, preparedFace(for: ring) != nil {
-                prepareFaces(of: Array(rings.dropFirst()), after: after, makePlace: makePlace)
+                next(Array(rings.dropFirst()))
                 return
             }
             var steps = steps ?? ShortcutRingFace.InSteps(ring)
             steps.step(makePlace)
             guard let whole = steps.whole else {
-                prepareFaces(of: rings, steps: steps, after: after, makePlace: makePlace)
+                next(rings, steps)
                 return
             }
             prepare(whole, for: ring)
-            prepareFaces(of: Array(rings.dropFirst()), after: after, makePlace: makePlace)
+            next(Array(rings.dropFirst()))
+        }
+    }
+
+    /// One turn: the mark of the first app of `paths` that has none yet, then a turn for
+    /// what is left. The pass is over when none is left.
+    private static func prepareMarks(
+        _ paths: [String], generation: Int,
+        after: @escaping (TimeInterval, @escaping () -> Void) -> Void,
+        makeMark: @escaping (String) -> ShortcutRingAppMark
+    ) {
+        // (A page, or a ring that closed, may have made some meanwhile.)
+        let waiting = paths.filter { preparedAppMark(forPath: $0) == nil }
+        guard let path = waiting.first else {
+            quietPasses = max(0, quietPasses - 1)
+            return
+        }
+        after(0) {
+            guard generation == quietGeneration else { return }
+            guard existing?.isOpen != true else {
+                after(launchFaceWait) { prepareMarks(waiting, generation: generation, after: after, makeMark: makeMark) }
+                return
+            }
+            if preparedAppMark(forPath: path) == nil {
+                prepare(makeMark(path), forAppAt: path)
+            }
+            prepareMarks(Array(waiting.dropFirst()), generation: generation, after: after, makeMark: makeMark)
         }
     }
 
@@ -244,11 +395,14 @@ final class ShortcutRingController {
         existing = controller
     }
 
-    /// Tests: no face is prepared, as before the first ring (and no pass after a change is
-    /// waiting for its turn).
+    /// Tests: no face and no app's mark is prepared, as before the first ring (and no pass
+    /// is under way or waiting for its turn).
     static func forgetPreparedFaces() {
         preparedFaces = []
+        preparedAppMarks = []
         missingFacesAreDue = false
+        quietPasses = 0
+        quietGeneration += 1
     }
     #endif
 
@@ -279,6 +433,9 @@ final class ShortcutRingController {
         /// One place of a ring's face with its look on disk (an app's or a file's name
         /// and icon, the icon drawn). Only called while no ring is open.
         var makePlace: (ShortcutRingPlace) -> ShortcutRingFace.Place
+        /// The mark of the app stored at a path (its icon drawn, its name), with its look
+        /// on disk. Only called while no ring is open.
+        var makeAppMark: (String) -> ShortcutRingAppMark = { ShortcutRingAppMark.make(forPath: $0) }
         /// Runs a place's action.
         var run: (ShortcutRingPlace) -> Void
         /// Whether a ring may ask a mouse for pulses: Gestures › Haptic feedback, the one
@@ -397,6 +554,11 @@ final class ShortcutRingController {
     private var openedBy = ""
     /// The ring that opened is the own one of the app in front, for the log.
     private var isAppsOwnRing = false
+    /// Whose ring opened: its label, and an app's icon for the middle when one was made.
+    private(set) var owner = ShortcutRingOwner.general
+    /// The stored path of the app whose own ring opened (nil: the general ring): its mark
+    /// is made after the ring closed when there was none.
+    private var ownerPath: String?
     private var lastTick = -TimeInterval.infinity
     /// When a place's action was last started.
     private var lastRun = -TimeInterval.infinity
@@ -476,6 +638,9 @@ final class ShortcutRingController {
             let choice = environment.choice(environment.ring())
             let stored = choice.ring
             isAppsOwnRing = choice.isAppsOwn
+            // The app's icon only if it was made at a quiet moment: nothing is loaded now.
+            owner = Self.owner(of: choice)
+            ownerPath = choice.appPath
             if stored != ring {
                 // Another ring than last time (changed in Settings, or another app in
                 // front): the face of the last one is not this one's.
@@ -646,7 +811,9 @@ final class ShortcutRingController {
                     guard let self, self.showGeneration == generation, self.session.isOpen else { return }
                     let face = self.faceForShowing()
                     // Held or left open, a click on its screen is the ring's.
-                    self.presenter.show(face, centre: centre, screen: self.screen, lit: self.session.lit, takesClicks: true)
+                    self.presenter.show(
+                        face, owner: self.owner, centre: centre, screen: self.screen, lit: self.session.lit, takesClicks: true
+                    )
                     self.isShown = true
                 }
                 // A hand that stopped between the dead zone and twice of it lights its
@@ -688,7 +855,10 @@ final class ShortcutRingController {
             let how = closesByAHeldClick ? " (a click during the hold)" : ""
             environment.log((ran.map { "Shortcut Ring: closed, ran \($0)" } ?? "Shortcut Ring: closed, nothing ran") + how)
             if !faceIsComplete {
+                // (The app's mark after it.)
                 completeFaceLater()
+            } else {
+                completeAppMarkLater()
             }
         }
         followTheSession()
@@ -726,6 +896,18 @@ final class ShortcutRingController {
             self.face = whole
             self.faceIsComplete = true
             Self.prepare(whole, for: wanted)
+            self.completeAppMarkLater()
+        }
+    }
+
+    /// After an app's own ring that was shown without the app's mark has closed: the mark
+    /// is made on the next turn of the main queue, for the app's next ring, unless a ring
+    /// is open by then or the mark was made meanwhile.
+    private func completeAppMarkLater() {
+        guard let path = ownerPath, Self.preparedAppMark(forPath: path) == nil else { return }
+        environment.schedule { [weak self] in
+            guard let self, !self.session.isOpen, Self.preparedAppMark(forPath: path) == nil else { return }
+            Self.prepare(self.environment.makeAppMark(path), forAppAt: path)
         }
     }
 

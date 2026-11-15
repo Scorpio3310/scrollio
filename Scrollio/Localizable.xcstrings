@@ -10836,6 +10836,18 @@
           }
         }
       }
+    },
+    "ring-panel-label-app": {
+      "comment": "VoiceOver label of the Shortcut Ring on screen while it is an app's own ring (the app's name)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shortcut Ring for %@"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

@@ -39,8 +39,9 @@
 //
 //  The pane only edits Options.shared.ring.
 //
-//  An app's page under Apps shows the same drawing of the ring, across the whole width, the
-//  same freeze switch and the same eight rows under "Shortcuts" (which the app's part folds
+//  An app's page under Apps shows the same drawing of the ring, across the whole width and
+//  with the app's icon faint in its middle while nothing is lit (as the app's own ring shows
+//  it on screen; the pane's middle stays empty), the same freeze switch and the same eight rows under "Shortcuts" (which the app's part folds
 //  while nothing opens the ring with the app in front), in the pane's order, for the app's own ring
 //  (`init(application:)`, as the Scrolling settings there get a target application): then
 //  they edit only that app's ring, and what is not the ring's is left out: what opens the
@@ -148,6 +149,16 @@ final class ShortcutRingPreviewView: NSView {
             needsDisplay = true
         }
     }
+    /// An app's own ring (on its page): the app's icon in the middle while nothing is lit,
+    /// as the ring shows it on screen. Nil in the pane: the general ring's middle is empty.
+    var appIcon: NSImage? {
+        didSet {
+            guard appIcon !== oldValue else { return }
+            needsDisplay = true
+        }
+    }
+    /// "Reduce transparency", under which the app's icon is not faint. Tests replace it.
+    var reducesTransparency: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -215,7 +226,10 @@ final class ShortcutRingPreviewView: NSView {
         style.backdrop = .drawn
         style.scale = Self.ringScale
         style.increasesContrast = PreferencesGroupedForm.isHighContrast(effectiveAppearance)
-        ShortcutRingArtwork.draw(face, lit: lit, centre: CGPoint(x: bounds.midX, y: bounds.midY), style: style)
+        style.reducesTransparency = appIcon != nil && reducesTransparency()
+        ShortcutRingArtwork.draw(
+            face, lit: lit, centre: CGPoint(x: bounds.midX, y: bounds.midY), style: style, appIcon: appIcon
+        )
     }
 }
 
@@ -284,6 +298,9 @@ final class RingPreferencesViewController: NSViewController {
     }
     /// Takes Undo and Redo of "Reset to Defaults"; the window's when nil.
     var paneUndoManager: UndoManager?
+    /// On an app's page: the app's mark (its icon for the drawing's middle) with its look
+    /// on disk, when the ring on screen has none made yet. Tests replace it.
+    var makeAppMark: (String) -> ShortcutRingAppMark = { ShortcutRingAppMark.make(forPath: $0) }
     /// "Open App or File" while it is open for a place.
     private(set) var openTargetPopover: OpenTargetConfigPopover?
     /// The pull-downs' stand-in bindings keep their identity while the pane lives.
@@ -500,6 +517,7 @@ final class RingPreferencesViewController: NSViewController {
         previewView.face = ShortcutRingFace(ring)
         // The ring on screen shows this face too: it is made here, not at a press.
         ShortcutRingController.prepare(previewView.face, for: ring)
+        previewView.appIcon = appMarkOfOwnRing()?.icon
         showLitPlace()
         resetToDefaults?.settingsDidChange()
         // (On an app's page the rows never change their height, and the page sizes itself.)
@@ -507,6 +525,29 @@ final class RingPreferencesViewController: NSViewController {
             PreferencesForm.fitToContent(self)
         }
     }
+
+    /// The app's mark while the drawing is the app's own ring (its page, the app's own ring
+    /// in use); nil for the general ring, whose middle stays empty. The one the ring on
+    /// screen has, else made here, once, and handed on to the ring on screen when that app's
+    /// own ring can open (a page that is only browsed pushes out no other app's mark).
+    private func appMarkOfOwnRing() -> ShortcutRingAppMark? {
+        guard let application, application.ownRingPlaces != nil else { return nil }
+        let path = application.path
+        if let prepared = ShortcutRingController.preparedAppMark(forPath: path) {
+            madeAppMark = prepared
+            return prepared
+        }
+        if madeAppMark == nil {
+            madeAppMark = makeAppMark(path)
+        }
+        if let made = madeAppMark, ShortcutRingController.appMarksToPrepare().contains(path) {
+            ShortcutRingController.prepare(made, forAppAt: path)
+        }
+        return madeAppMark
+    }
+
+    /// The app's mark this page made or found (`appMarkOfOwnRing`).
+    private var madeAppMark: ShortcutRingAppMark?
 
     // MARK: - The row under the pointer
 

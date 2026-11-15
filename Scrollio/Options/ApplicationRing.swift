@@ -190,6 +190,16 @@ struct ShortcutRingChoice: Equatable {
     let ring: ShortcutRingSettings
     /// The ring is the own one of the app in front (for the log, which never names an app).
     let isAppsOwn: Bool
+    /// The stored path of that app's entry, for its icon in the ring's middle (looked up
+    /// among the icons made at a quiet moment, never on disk); nil for the general ring.
+    /// Never written to the log.
+    let appPath: String?
+
+    init(ring: ShortcutRingSettings, isAppsOwn: Bool, appPath: String? = nil) {
+        self.ring = ring
+        self.isAppsOwn = isAppsOwn
+        self.appPath = isAppsOwn ? appPath : nil
+    }
 
     /// The app in front, as far as the choice needs it.
     struct FrontApp: Equatable {
@@ -228,6 +238,6 @@ struct ShortcutRingChoice: Equatable {
         guard let front, !front.isScrollio,
               let entry = applications.get(by: front.bundlePath) ?? applications.get(by: front.executablePath),
               entry.ownRingPlaces != nil else { return .general(general) }
-        return ShortcutRingChoice(ring: entry.ringThatOpens(general: general), isAppsOwn: true)
+        return ShortcutRingChoice(ring: entry.ringThatOpens(general: general), isAppsOwn: true, appPath: entry.path)
     }
 }

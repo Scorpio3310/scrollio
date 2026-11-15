@@ -9,7 +9,8 @@
 //  each is and how large); the sizes of the places are `ShortcutRingGeometry`'s.
 //
 //  A drop has a body and what stands in it (a place's symbol, icon or keys; the hub's
-//  name of the lit action). The body depends on the material (`Backdrop`): drawn opaque
+//  name of the lit action, or, in an app's own ring while nothing is lit, the app's icon,
+//  faint: `ShortcutRingAppMark`). The body depends on the material (`Backdrop`): drawn opaque
 //  by `drawBodies`; or the system's blurred material, which only the window server can
 //  draw, with `drawBodies` adding its rim and the lit colour and `drawMask` cutting it to
 //  the drops; or Liquid Glass, which is views of its own (`ShortcutRingPanel`) and gets
@@ -113,7 +114,7 @@ struct ShortcutRingFace {
             let shown = resolver.resolve(state: CellActionState(binding: place.asBinding()))
             return Place(
                 title: shown.title, symbolName: shown.symbolName ?? "arrow.up.forward.app",
-                image: shown.image.map(Self.drawnIcon), isEmpty: false
+                image: shown.image.map { Self.drawnIcon($0) }, isEmpty: false
             )
         }
     }
@@ -150,11 +151,10 @@ struct ShortcutRingFace {
     }
 
     /// An app's or a file's icon as pixels drawn now, at the size a lit place shows it on
-    /// a Retina screen. The workspace's icon renders its pixels only when it is first
-    /// drawn at a size (about 17 ms an icon, measured): drawn here, while the face is made
-    /// at a quiet moment, the ring that is held only scales a bitmap.
-    static func drawnIcon(_ icon: NSImage) -> NSImage {
-        let side = ShortcutRingArtwork.iconSide * ShortcutRingDrops.litContentScale
+    /// a Retina screen (or at `side`). The workspace's icon renders its pixels only when it
+    /// is first drawn at a size (about 17 ms an icon, measured): drawn here, while the face
+    /// is made at a quiet moment, the ring that is held only scales a bitmap.
+    static func drawnIcon(_ icon: NSImage, side: CGFloat = ShortcutRingArtwork.iconSide * ShortcutRingDrops.litContentScale) -> NSImage {
         let pixels = Int((side * 2).rounded(.up))
         guard let blank = NSBitmapImageRep(
             bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8, samplesPerPixel: 4,
@@ -206,6 +206,62 @@ struct ShortcutRingFace {
     }
 }
 
+/// What an app's own ring shows of the app: its icon in the middle while nothing is lit,
+/// and its name for VoiceOver. Made with a look on disk at a quiet moment
+/// (`ShortcutRingController.prepareAppMarks`), never at a press, and not part of a face:
+/// two apps whose rings have the same places share one face, never an icon.
+struct ShortcutRingAppMark {
+    /// The app's icon as pixels drawn at the size the middle shows it.
+    var icon: NSImage
+    /// The app's name, as the Apps list shows it.
+    var name: String
+
+    /// The mark of the app stored at `path` (an app's bundle, or its program), with its
+    /// look on disk: the icon by `NSWorkspace.icon(forFile:)`, drawn now.
+    static func make(forPath path: String) -> ShortcutRingAppMark {
+        let icon = Utils.getApplicationIcon(fromPath: path)
+        return ShortcutRingAppMark(
+            icon: ShortcutRingFace.drawnIcon(icon, side: ShortcutRingArtwork.appIconSide),
+            name: Utils.getApplicationName(fromPath: path)
+        )
+    }
+
+    /// The app's name without a look on disk, for a ring whose mark is not made yet: the
+    /// name of the app's bundle in its path, without ".app", else the path's last part.
+    static func plainName(ofPath path: String) -> String {
+        let parts = (path as NSString).pathComponents
+        if let bundle = parts.last(where: { $0.lowercased().hasSuffix(".app") }) {
+            return (bundle as NSString).deletingPathExtension
+        }
+        return (path as NSString).lastPathComponent
+    }
+}
+
+/// Whose ring is on the screen.
+enum ShortcutRingOwner: Equatable {
+    /// The general ring: its middle is empty while nothing is lit.
+    case general
+    /// The own ring of an app: `name` for VoiceOver, `icon` in the middle while nothing is
+    /// lit (nil while it is not made yet: the middle stays empty).
+    case app(name: String, icon: NSImage?)
+
+    /// The icon the middle shows while nothing is lit.
+    var hubIcon: NSImage? {
+        guard case .app(_, let icon) = self else { return nil }
+        return icon
+    }
+
+    /// What VoiceOver calls the ring: "Shortcut Ring", or "Shortcut Ring for Safari".
+    var accessibilityLabel: String {
+        switch self {
+        case .general:
+            return NSLocalizedString("ring-tab-title", comment: "")
+        case .app(let name, _):
+            return String(format: NSLocalizedString("ring-panel-label-app", comment: ""), name)
+        }
+    }
+}
+
 enum ShortcutRingArtwork {
 
     /// What the drops' bodies are.
@@ -224,6 +280,8 @@ enum ShortcutRingArtwork {
         var backdrop = Backdrop.material
         /// "Increase contrast": firmer outlines.
         var increasesContrast = false
+        /// "Reduce transparency": the app's icon in the middle is not faint.
+        var reducesTransparency = false
         /// Drawn `scale` times as large (the pane shows the ring smaller than the screen).
         var scale: CGFloat = 1
     }
@@ -248,6 +306,17 @@ enum ShortcutRingArtwork {
     /// keys came to about 3.8:1 on the light hub).
     static let titleKeysShrink: CGFloat = 0.84
     static let titleKeysOpacity: CGFloat = 0.6
+    /// The app's icon in the middle of the app's own ring, while nothing is lit: this
+    /// large, and this faint, so that it says whose ring it is and never reads as a place
+    /// to choose (no outline, no shadow, no accent).
+    static let appIconSide: CGFloat = 40
+    static let appIconOpacity: CGFloat = 0.5
+
+    /// How faint the app's icon is: whole where transparency is not wanted or contrast is
+    /// asked for.
+    static func appIconOpacity(increasesContrast: Bool, reducesTransparency: Bool) -> CGFloat {
+        return increasesContrast || reducesTransparency ? 1 : appIconOpacity
+    }
 
     // MARK: Colours
 
@@ -305,20 +374,24 @@ enum ShortcutRingArtwork {
 
     /// Draws the ring at rest with its middle at `centre` into the current context (y
     /// upwards), in the current drawing appearance: the Settings pane and still pictures.
-    static func draw(_ face: ShortcutRingFace, lit: Int?, centre: CGPoint, style: Style = Style()) {
+    /// `appIcon`: an app's own ring, whose middle shows the app's icon while nothing is lit.
+    static func draw(
+        _ face: ShortcutRingFace, lit: Int?, centre: CGPoint, style: Style = Style(), appIcon: NSImage? = nil
+    ) {
         let lit = lit.flatMap { face.places.indices.contains($0) && !face.places[$0].isEmpty ? $0 : nil }
         draw(
             face, drops: ShortcutRingDrops.settled(filled: face.filled, lit: lit),
             title: lit.map { face.places[$0].title }, keys: lit.map { face.places[$0].keys } ?? "",
-            centre: centre, style: style
+            centre: centre, style: style, appIcon: appIcon
         )
     }
 
     /// Draws the ring as `drops` has it: the bodies, what stands in the places and
-    /// `title` in the hub, with `keys` under it when the title is a key combination's name.
+    /// `title` in the hub, with `keys` under it when the title is a key combination's name;
+    /// without a title, `appIcon` (an app's own ring) in the hub.
     static func draw(
         _ face: ShortcutRingFace, drops: ShortcutRingDrops.Frame, title: String?, keys: String = "",
-        centre: CGPoint, style: Style = Style()
+        centre: CGPoint, style: Style = Style(), appIcon: NSImage? = nil
     ) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         let dark = isDark()
@@ -341,7 +414,25 @@ enum ShortcutRingArtwork {
                 title, keys: keys, centre: centre, colour: ink(dark: dark), width: titleWidth * scale * grow,
                 pointSize: titleFont.pointSize * scale * grow, increasesContrast: style.increasesContrast
             )
+        } else if let appIcon, drops.hub.opacity > 0 {
+            drawAppIcon(
+                appIcon, centre: centre, side: appIconSide * scale * drops.hub.contentScale,
+                opacity: drops.hub.opacity * appIconOpacity(
+                    increasesContrast: style.increasesContrast, reducesTransparency: style.reducesTransparency
+                )
+            )
         }
+    }
+
+    /// The app's icon in the middle of its own ring: `side` wide about `centre`, `opacity`
+    /// of it, and nothing around it.
+    static func drawAppIcon(_ icon: NSImage, centre: CGPoint, side: CGFloat, opacity: CGFloat) {
+        guard side > 0, opacity > 0 else { return }
+        icon.draw(
+            in: CGRect(x: centre.x - side / 2, y: centre.y - side / 2, width: side, height: side),
+            from: .zero, operation: .sourceOver, fraction: min(opacity, 1), respectFlipped: true,
+            hints: [.interpolation: NSNumber(value: NSImageInterpolation.high.rawValue)]
+        )
     }
 
     /// Where a drop's middle is in a drawing with its ring's middle at `centre`.
