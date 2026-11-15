@@ -37,6 +37,12 @@
 //  Shortcut Ring their own items, "Default" or "No Action" without an action. Nothing
 //  else, "Same as Other Apps (…)" never. The order of the menu stays.
 //
+//  The owner of a row can end the menu with an item of its own, after a separator
+//  (`trailingItem`: "Swap With" of a place of the ring), and open the menu away from the
+//  pull-down (`popUpMenu`: at a drop of the ring's drawing). It is the same menu, without
+//  the title item, and what it then opens (the recorder, the name and icon) stands where
+//  the menu was opened (`popoverAnchor`), until the pull-down opens its menu itself again.
+//
 
 import Cocoa
 
@@ -146,6 +152,34 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     /// Tests replace it with one that opens no window.
     var makeDetailsPopover: () -> KeyPopover = { KeyPopover() }
 
+    /// An item of the row's owner that ends the menu, after a separator ("Swap With" of a
+    /// place of the ring); nil: none. It is never ticked and never the row's action.
+    var trailingItem: NSMenuItem? {
+        didSet {
+            guard trailingItem !== oldValue, let menu else { return }
+            if let oldValue, oldValue.menu === menu {
+                // (With its separator.)
+                let index = menu.index(of: oldValue)
+                menu.removeItem(at: index)
+                menu.removeItem(at: index - 1)
+            }
+            appendTrailingItem(to: menu)
+        }
+    }
+    /// Shows the menu at a point of a view (`popUpMenu`). The menu runs until it closes,
+    /// so tests replace it.
+    var presentMenu: (NSMenu, NSPoint, NSView) -> Void = { menu, point, view in
+        menu.popUp(positioning: nil, at: point, in: view)
+    }
+    /// Where the menu was opened away from the pull-down, until the pull-down opens it.
+    private weak var awayAnchor: NSView?
+    private var isOpeningAway = false
+    /// What the recorder and the name-and-icon popover stand at: the pull-down, or the
+    /// view the menu was last opened at (`popUpMenu`).
+    var popoverAnchor: NSView {
+        return awayAnchor ?? self
+    }
+
     /// What the pull-down shows now.
     var actionState: CellActionState {
         if isCustomRecordingActive { return .recordingPrompt }
@@ -235,6 +269,7 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         if menu.items.count > 1, menu.items[1].isSeparatorItem {
             menu.items[1].isHidden = true
         }
+        appendTrailingItem(to: menu)
         // Key equivalents only show while the menu is open: a shortcut a button sends
         // must never pick an item of a closed menu.
         disableKeyEquivalents(in: menu)
@@ -242,6 +277,13 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         applyNoActionTitle()
         applySameAsOtherApps()
         applyShowInTitles()
+    }
+
+    private func appendTrailingItem(to menu: NSMenu) {
+        guard let trailingItem else { return }
+        trailingItem.menu?.removeItem(trailingItem)
+        menu.addItem(.separator())
+        menu.addItem(trailingItem)
     }
 
     /// "Show in Gestures" (`paneKey`), or on an app's page that app's part: "Show in
@@ -402,7 +444,7 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
                 let recorder = self.customRecorder ?? KeyRecorder()
                 recorder.delegate = self
                 self.customRecorder = recorder
-                recorder.startRecording(from: self, mode: .adaptive, in: openPopover)
+                recorder.startRecording(from: self.popoverAnchor, mode: .adaptive, in: openPopover)
             }
         }
     }
@@ -441,10 +483,10 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         guard holdsRecordedKeys, detailsPopover == nil else { return }
         let popover = makeDetailsPopover()
         adoptDetails(popover)
-        presentShortcutDetails(popover, self, Self.keyComponents(of: binding.systemShortcutName), binding.label)
+        presentShortcutDetails(popover, popoverAnchor, Self.keyComponents(of: binding.systemShortcutName), binding.label)
     }
 
-    /// Shows the details at the pull-down. Tests replace it: nothing opens.
+    /// Shows the details at the pull-down (`popoverAnchor`). Tests replace it: nothing opens.
     var presentShortcutDetails: (KeyPopover, NSView, [String], ShortcutLabel?) -> Void = { popover, anchor, keys, label in
         guard anchor.window != nil else { return }
         popover.showDetails(at: anchor, keys: keys, label: label)
@@ -537,7 +579,25 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         onShortcutSelected?(shortcut)
     }
 
+    /// Opens the pull-down's own menu at `point` of `view` (a drop of the ring's drawing):
+    /// the same items, tick and actions, without the title item, which a pull-down never
+    /// lists. What the menu then opens stands at `anchor`. Returns when the menu closed.
+    func popUpMenu(at point: NSPoint, in view: NSView, anchor: NSView) {
+        guard let menu, let titleItem = menu.items.first else { return }
+        awayAnchor = anchor
+        isOpeningAway = true
+        titleItem.isHidden = true
+        presentMenu(menu, point, view)
+        titleItem.isHidden = false
+        isOpeningAway = false
+    }
+
     func menuWillOpen(_ menu: NSMenu) {
+        // Opened by the pull-down itself: what it opens stands at the pull-down again. (Not
+        // when `popUpMenu` returns: the recorder starts a moment after the menu closed.)
+        if !isOpeningAway {
+            awayAnchor = nil
+        }
         tickShownAction(in: menu)
         enableKeyEquivalents(in: menu)
     }

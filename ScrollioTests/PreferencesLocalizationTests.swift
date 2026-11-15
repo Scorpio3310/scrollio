@@ -325,6 +325,10 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-import-gesture-defaults-app", "general-settings-import-gesture-invert-app",
         "ring-undo-reset",
         "ring-panel-label-app",
+        // Round 4 D6: the drawing as an editor ("Swap With", "Clear", "Undo Swap")
+        "ring-menu-swap-with", "ring-menu-swap-item", "ring-menu-clear", "ring-undo-swap",
+        "ring-menu-place-top", "ring-menu-place-top-right", "ring-menu-place-right", "ring-menu-place-bottom-right",
+        "ring-menu-place-bottom", "ring-menu-place-bottom-left", "ring-menu-place-left", "ring-menu-place-top-left",
     ]
 
     static let keys = mouseKeys + scrollingKeys + buttonsKeys + gesturesKeys + ringKeys + appsKeys
@@ -497,6 +501,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         // Round 4 D4: "Different in Safari and Figma", "3 more"
         "apps-different-in": "@",
         "apps-different-more": "d",
+        // Round 4 D6: "Top Right (Copy)" in a place's "Swap With"
+        "ring-menu-swap-item": "@@",
     ]
 
     /// The arguments `format` reads, in argument order: "%2$d of %1$@" -> "@d"; "@" an

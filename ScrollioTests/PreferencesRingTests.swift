@@ -4,9 +4,11 @@
 //
 //  The Shortcut Ring pane: its row for what opens the ring and its way to the Buttons
 //  pane, the eight places with their pull-downs, what the pull-downs offer and store, the
-//  drawing that follows the row pointed at, "Reset to Defaults" with its Undo; and the
+//  drawing that follows the row pointed at and edits a place where it is drawn (its menu at
+//  the drop, "Swap With" and "Clear"), "Reset to Defaults" with its Undo; and the
 //  Buttons pane's side: the action in its menu, for a button and for a key. Nothing is
-//  shown on screen.
+//  shown on screen (one test sends a click through a window that is out of sight, as the
+//  Welcome Guide's tests do).
 //
 
 import XCTest
@@ -113,11 +115,12 @@ final class PreferencesRingTests: XCTestCase {
     /// A place's menu is the Buttons row's menu with what a place can hold: the listed
     /// keyboard shortcuts by category, Back and Forward of the mouse buttons, "Open App or
     /// File…" and "Keyboard Shortcut…". Not: the left, right and middle click, what is
-    /// only held, the Logitech actions, Gesture Navigation, the ring itself.
+    /// only held, the Logitech actions, Gesture Navigation, the ring itself. ("Swap With",
+    /// which ends the menu, is the pane's own: `testEveryPlacesOwnMenuEndsWithSwapWith`.)
     func testAPullDownOffersWhatAPlaceCanHoldAndNothingElse() throws {
         let controller = makeController()
         let menu = try XCTUnwrap(controller.placePopUps[0].menu)
-        let top = menu.items.dropFirst().filter { !$0.isSeparatorItem }
+        let top = menu.items.dropFirst().filter { !$0.isSeparatorItem && $0 !== controller.placePopUps[0].trailingItem }
         XCTAssertEqual(top.first?.title, "No Action")
         let categories = top.filter { $0.submenu != nil }
         XCTAssertEqual(
@@ -416,17 +419,47 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(opened, 1)
     }
 
-    /// A click on a place of the drawing while the places are folded opens them and
-    /// selects that place's row.
-    func testAClickOnThePlaceOfTheDrawingOpensFoldedPlaces() throws {
+    /// A click on a place of the drawing while the places are folded opens that place's
+    /// menu at its drop and leaves them folded: the tick is what the place holds, and a
+    /// listed action chosen there changes the store, the (hidden) row and the drawing, with
+    /// one "Undo Change Action".
+    func testAClickOnADropLeavesFoldedPlacesFolded() throws {
         let controller = makeController()
+        _ = show(controller)
         let places = try XCTUnwrap(controller.placesSection)
-        places.prefersReducedMotion = { true }
+        XCTAssertFalse(places.showsBody, "nothing opens the ring: folded")
+        let size = controller.view.frame.size
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        controller.paneUndoManager = undo
+        let popUp = controller.placePopUps[4]
+        let chosen = try XCTUnwrap(item("undo", in: popUp))
+        var ticked: [String?] = []
+        controller.presentPlaceMenu = { menu, _, _ in
+            // As AppKit runs a menu: it opens, an item is chosen, it closes.
+            popUp.menuWillOpen(menu)
+            ticked = [popUp.shownActionItem?.item, popUp.shownActionItem?.category].map { item in
+                item.flatMap { $0.state == .off ? nil : ($0.representedObject as? SystemShortcut.Shortcut)?.identifier ?? $0.title }
+            }
+            undo.beginUndoGrouping()
+            popUp.shortcutSelected(chosen)
+            undo.endUndoGrouping()
+            popUp.menuDidClose(menu)
+        }
         controller.previewView.onPlaceClicked?(4)
-        XCTAssertTrue(places.showsBody)
+        XCTAssertEqual(ticked.first, "appExpose", "the tick is what the place holds")
+        XCTAssertNotNil(ticked.last ?? nil, "and the dash its category")
+        XCTAssertFalse(places.showsBody, "still folded")
+        XCTAssertEqual(controller.view.frame.size, size)
+        XCTAssertTrue(popUp.isHiddenOrHasHiddenAncestor)
         XCTAssertEqual(controller.selectedPlace, 4)
-        XCTAssertFalse(controller.placePopUps[4].isHiddenOrHasHiddenAncestor)
-        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+        XCTAssertEqual(Options.shared.ring[4].action, "undo")
+        XCTAssertEqual(popUp.menu?.items.first?.title, "Undo", "the row follows, unseen")
+        XCTAssertEqual(controller.previewView.face.places[4].title, "Undo", "the drawing follows")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        undo.undo()
+        XCTAssertEqual(Options.shared.ring, .default)
+        XCTAssertFalse(undo.canUndo, "one step")
     }
 
     /// An app's page decides itself when its rows fold (`ApplicationRingPartViewController`):
@@ -744,14 +777,11 @@ final class PreferencesRingTests: XCTestCase {
     }
 
     /// The other way round: a place of the drawing under the pointer is lit, and a click
-    /// on it selects its row (the pull-down takes the keyboard, the place stays lit).
+    /// on it opens its menu there and selects its row (the place stays lit; the keyboard
+    /// stays where it was).
     func testAPlaceOfTheDrawingCanBePointedAtAndClicked() throws {
         let controller = makeController()
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 900), styleMask: [.titled], backing: .buffered, defer: true)
-        window.isReleasedWhenClosed = false
-        window.contentViewController = controller
-        addTeardownBlock { window.close() }
-        controller.view.layoutSubtreeIfNeeded()
+        let window = show(controller)
         let preview = try XCTUnwrap(controller.previewView)
         XCTAssertEqual(preview.bounds.size, NSSize(width: 234, height: 206), "the right card of the two")
 
@@ -772,10 +802,14 @@ final class PreferencesRingTests: XCTestCase {
         preview.onPlaceHovered?(nil)
         XCTAssertNil(preview.lit)
 
+        var menus: [NSMenu] = []
+        controller.presentPlaceMenu = { menu, _, _ in menus.append(menu) }
         preview.onPlaceClicked?(6)
         XCTAssertEqual(controller.selectedPlace, 6)
         XCTAssertEqual(preview.lit, 6, "the selected row's place stays lit")
-        XCTAssertTrue(window.firstResponder === controller.placePopUps[6], "its pull-down has the keyboard")
+        XCTAssertEqual(menus.count, 1)
+        XCTAssertTrue(menus.first === controller.placePopUps[6].menu, "its menu opened")
+        XCTAssertFalse(window.firstResponder === controller.placePopUps[6], "the keyboard stays where it was")
         // Pointing elsewhere shows that place, and then the selected one again.
         controller.placeHoverChanged(1, inside: true)
         XCTAssertEqual(preview.lit, 1)
@@ -786,6 +820,556 @@ final class PreferencesRingTests: XCTestCase {
         other.shortcutSelected(try XCTUnwrap(item("undo", in: other)))
         XCTAssertEqual(controller.selectedPlace, 3)
         XCTAssertEqual(preview.lit, 3)
+    }
+
+    // MARK: The drawing as an editor
+
+    /// The pane in a window that is never shown, laid out.
+    private func show(_ controller: NSViewController) -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 900), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        addTeardownBlock { window.close() }
+        controller.view.layoutSubtreeIfNeeded()
+        return window
+    }
+
+    private func middle(ofPlace place: Int, in preview: ShortcutRingPreviewView) -> NSPoint {
+        let drop = preview.dropRect(ofPlace: place)
+        return NSPoint(x: drop.midX, y: drop.midY)
+    }
+
+    private func mouse(
+        _ type: NSEvent.EventType, at point: NSPoint, in view: NSView, flags: NSEvent.ModifierFlags = []
+    ) throws -> NSEvent {
+        return try XCTUnwrap(NSEvent.mouseEvent(
+            with: type, location: view.convert(point, to: nil), modifierFlags: flags,
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: view.window?.windowNumber ?? 0, context: nil,
+            eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+    }
+
+    /// The items of "Swap With", filled as AppKit fills them before the submenu shows.
+    private func swaps(of item: NSMenuItem?) throws -> [NSMenuItem] {
+        let submenu = try XCTUnwrap(item?.submenu)
+        submenu.delegate?.menuNeedsUpdate?(submenu)
+        return submenu.items
+    }
+
+    private func choose(_ item: NSMenuItem) throws {
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
+    }
+
+    private func picture(of view: NSView) throws -> Data {
+        let rep = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: rep)
+        return try XCTUnwrap(rep.representation(using: .png, properties: [:]))
+    }
+
+    /// What "Swap With" and "Clear" offer, from a ring and a place alone: the seven other
+    /// places clockwise from the top, named in Title Case with what each holds ("No Action"
+    /// for none); a swap that would show nothing new is off, and so is Clear on a place
+    /// that holds nothing.
+    func testTheMenuModelNamesTheSevenOtherPlacesAndKnowsWhatChangesNothing() {
+        var ring = ShortcutRingSettings(places: [])
+        ring[0] = ShortcutRingPlace(SystemShortcut.copy)
+        ring[3] = ShortcutRingPlace(SystemShortcut.copy)
+        ring[4] = ShortcutRingPlace(action: "somethingNewer")
+        ring[7] = ShortcutRingPlace(SystemShortcut.paste)
+        let names: (ShortcutRingPlace) -> String? = { $0.runs ? $0.action.uppercased() : nil }
+
+        let top = RingPlaceMenuModel.make(for: 0, in: ring, name: names)
+        XCTAssertEqual(top.place, 0)
+        XCTAssertEqual(top.swaps.map(\.place), [1, 2, 3, 4, 5, 6, 7])
+        XCTAssertEqual(top.swaps.map(\.title), [
+            "Top Right (No Action)", "Right (No Action)", "Bottom Right (COPY)", "Bottom (No Action)",
+            "Bottom Left (No Action)", "Left (No Action)", "Top Left (PASTE)",
+        ])
+        XCTAssertEqual(top.swaps.map(\.isEnabled), [true, true, false, true, true, true, true], "Bottom Right holds the same")
+        XCTAssertTrue(top.canClear)
+
+        let empty = RingPlaceMenuModel.make(for: 1, in: ring, name: names)
+        XCTAssertEqual(empty.swaps.map(\.place), [0, 2, 3, 4, 5, 6, 7])
+        XCTAssertEqual(empty.swaps.first?.title, "Top (COPY)")
+        XCTAssertEqual(empty.swaps.map(\.isEnabled), [true, false, true, false, false, false, true], "only with a place that holds something")
+        XCTAssertFalse(empty.canClear)
+        XCTAssertFalse(RingPlaceMenuModel.make(for: 4, in: ring, name: names).canClear, "what this version does not run shows as nothing")
+
+        XCTAssertEqual((0..<8).map(RingPlaceMenuModel.menuTitle(ofPlace:)), [
+            "Top", "Top Right", "Right", "Bottom Right", "Bottom", "Bottom Left", "Left", "Top Left",
+        ])
+        // What a row shows: the action's name, a named shortcut's name without its keys.
+        XCTAssertEqual(RingPlaceMenuModel.shownName(of: ring[0]), "Copy")
+        XCTAssertNil(RingPlaceMenuModel.shownName(of: .empty))
+        XCTAssertNil(RingPlaceMenuModel.shownName(of: ring[4]))
+        let named = ShortcutRingPlace(action: "custom::1:1048576", label: ShortcutLabel(name: "Save All", icon: nil))
+        XCTAssertEqual(RingPlaceMenuModel.shownName(of: named), "Save All")
+    }
+
+    /// A click on a drop opens that place's own menu under the drop's circle at rest: the
+    /// row's menu object, without its title item while it is open. The place is selected
+    /// and lit; nothing takes the keyboard.
+    func testAClickOnAPlaceOfTheDrawingOpensItsRowsMenuAtTheDrop() throws {
+        summary = ShortcutRingBindingSummary(triggerTitles: ["Thumb panel"])
+        let controller = makeController()
+        let window = show(controller)
+        let preview = try XCTUnwrap(controller.previewView)
+        var opened: [(menu: NSMenu, point: NSPoint, view: NSView, titleHidden: Bool?)] = []
+        controller.presentPlaceMenu = { menu, point, view in
+            opened.append((menu, point, view, menu.items.first?.isHidden))
+        }
+        XCTAssertTrue(window.makeFirstResponder(controller.placePopUps[2]))
+
+        let drop = preview.dropRect(ofPlace: 6)
+        let offset = ShortcutRingGeometry.offset(ofPlace: 6)
+        let scale = ShortcutRingPreviewView.ringScale
+        XCTAssertEqual(drop.midX, preview.bounds.midX + offset.x * scale, accuracy: 0.01)
+        XCTAssertEqual(drop.midY, preview.bounds.midY - offset.y * scale, accuracy: 0.01)
+        XCTAssertEqual(drop.size, NSSize(width: 37, height: 37), "the drop at rest, drawn smaller")
+        XCTAssertTrue(preview.bounds.contains(drop))
+
+        preview.mouseDown(with: try mouse(.leftMouseDown, at: middle(ofPlace: 6, in: preview), in: preview))
+        XCTAssertEqual(opened.count, 1)
+        let menu = try XCTUnwrap(controller.placePopUps[6].menu)
+        XCTAssertTrue(opened.first?.menu === menu, "the row's own menu, not a copy")
+        XCTAssertTrue(opened.first?.view === preview)
+        XCTAssertEqual(opened.first?.point, NSPoint(x: drop.minX, y: drop.minY - 4), "under the drop")
+        XCTAssertEqual(opened.first?.titleHidden, true, "a menu lists no title")
+        XCTAssertEqual(menu.items.first?.isHidden, false, "the pull-down has it back")
+        XCTAssertEqual(controller.selectedPlace, 6)
+        XCTAssertEqual(preview.lit, 6)
+        XCTAssertEqual(controller.placeRows[6].titleLabel.textColor, NSColor.controlAccentColor)
+        XCTAssertTrue(window.firstResponder === controller.placePopUps[2], "the keyboard stays where it was")
+
+        // An empty place and a lit one have their menu in the same spot.
+        controller.setPlace(.empty, at: 6)
+        controller.placePointedAt(6)
+        XCTAssertEqual(preview.dropRect(ofPlace: 6), drop)
+    }
+
+    /// While a place's menu is open at its drop the title item is hidden: the row's
+    /// pull-down goes on showing its action, also when it is drawn again meanwhile and
+    /// when the action changes under the open menu.
+    func testTheRowKeepsItsTitleWhileItsMenuIsOpenAtADrop() throws {
+        summary = ShortcutRingBindingSummary(triggerTitles: ["Thumb panel"])
+        let controller = makeController()
+        _ = show(controller)
+        let popUp = controller.placePopUps[0]
+        let other = controller.placePopUps[3]
+        controller.setPlace(.empty, at: 3)
+        let before = try picture(of: popUp)
+        XCTAssertNotEqual(before, try picture(of: other), "the pictures show the titles")
+        let chosen = try XCTUnwrap(item("paste", in: popUp))
+
+        var whileOpen: Data?
+        var afterChoice: Data?
+        var shownTitles: [String] = []
+        controller.presentPlaceMenu = { menu, _, _ in
+            popUp.menuWillOpen(menu)
+            XCTAssertEqual(menu.items.first?.isHidden, true)
+            popUp.needsDisplay = true
+            whileOpen = try? self.picture(of: popUp)
+            shownTitles.append(popUp.title)
+            popUp.shortcutSelected(chosen)
+            popUp.needsDisplay = true
+            afterChoice = try? self.picture(of: popUp)
+            shownTitles.append(popUp.title)
+            popUp.menuDidClose(menu)
+        }
+        controller.previewView.onPlaceClicked?(0)
+        XCTAssertEqual(whileOpen, before, "drawn as before while its menu is open at the drop")
+        XCTAssertEqual(shownTitles, ["Mission Control", "Paste"])
+        XCTAssertEqual(Options.shared.ring[0].action, "paste")
+        XCTAssertEqual(afterChoice, try picture(of: popUp), "and the new action at once, as after the menu closed")
+        XCTAssertNotEqual(afterChoice, before)
+    }
+
+    /// What a menu opened at a drop opens stands at that drop: "Open App or File…", the
+    /// recorder of "Keyboard Shortcut…" and the name and icon of recorded keys. From the
+    /// row's own menu afterwards they stand at the pull-down again. The rows stay folded
+    /// through it all: a hidden pull-down still has its window.
+    func testWhatAMenuAtADropOpensStandsAtTheDrop() throws {
+        Options.shared.ring[5] = ShortcutRingPlace(
+            action: "custom::1:1048576", label: try XCTUnwrap(ShortcutLabel(name: "Save All", icon: .symbol("square.and.arrow.down")))
+        )
+        let controller = makeController()
+        _ = show(controller)
+        let preview = try XCTUnwrap(controller.previewView)
+        let places = try XCTUnwrap(controller.placesSection)
+        var targets: [NSView] = []
+        controller.presentOpenTarget = { _, anchor, _ in targets.append(anchor) }
+        var recorders: [NSView] = []
+        var recorderStarted: XCTestExpectation?
+        controller.startShortcutRecorder = { pullDown in
+            recorders.append(pullDown.popoverAnchor)
+            recorderStarted?.fulfill()
+        }
+        var details: [(anchor: NSView, popover: KeyPopover)] = []
+        controller.placePopUps[5].presentShortcutDetails = { popover, anchor, _, _ in details.append((anchor, popover)) }
+
+        /// A click on the drop of `place`, and `marker`'s item chosen in the menu that opens.
+        func chooseAtDrop(_ marker: String, place: Int) throws {
+            let popUp = controller.placePopUps[place]
+            let chosen = try XCTUnwrap(item(marked: marker, in: popUp))
+            controller.presentPlaceMenu = { menu, _, _ in
+                popUp.menuWillOpen(menu)
+                popUp.shortcutSelected(chosen)
+                popUp.menuDidClose(menu)
+            }
+            preview.mouseDown(with: try mouse(.leftMouseDown, at: middle(ofPlace: place, in: preview), in: preview))
+        }
+        /// The same item from the row's own menu, as the pull-down opens it.
+        func chooseAtRow(_ marker: String, place: Int) throws {
+            let popUp = controller.placePopUps[place]
+            popUp.menuWillOpen(try XCTUnwrap(popUp.menu))
+            popUp.shortcutSelected(try XCTUnwrap(item(marked: marker, in: popUp)))
+            popUp.menuDidClose(try XCTUnwrap(popUp.menu))
+        }
+        func waitForRecorder(_ body: () throws -> Void) rethrows {
+            let started = expectation(description: "the recorder starts a moment after the menu")
+            recorderStarted = started
+            try body()
+            wait(for: [started], timeout: 5)
+            recorderStarted = nil
+        }
+
+        // "Open App or File…"
+        try chooseAtDrop(ShortcutManager.MenuMarker.openTarget, place: 3)
+        let anchor = try XCTUnwrap(targets.first)
+        XCTAssertTrue(anchor.superview === preview)
+        XCTAssertEqual(anchor.frame, preview.dropRect(ofPlace: 3), "the drop's circle at rest")
+        XCTAssertTrue(anchor.isFlipped, "a popover that asks for .maxY stands under it, as under a pull-down")
+        XCTAssertTrue(controller.placePopUps[3].isFlipped)
+        try XCTUnwrap(controller.openTargetPopover).onCancel?()
+        try chooseAtRow(ShortcutManager.MenuMarker.openTarget, place: 3)
+        XCTAssertTrue(targets.last === controller.placePopUps[3], "from the row: at the row")
+        try XCTUnwrap(controller.openTargetPopover).onCancel?()
+
+        // The recorder of "Keyboard Shortcut…", which starts a moment after the menu closed.
+        XCTAssertNotNil(controller.placePopUps[3].window, "the folded pull-down has its window: the recorder starts")
+        try waitForRecorder { try chooseAtDrop(ShortcutManager.MenuMarker.keyboardShortcut, place: 3) }
+        XCTAssertTrue(recorders.last === anchor)
+        controller.placePopUps[3].cancelShortcutRecording()
+        try waitForRecorder { try chooseAtRow(ShortcutManager.MenuMarker.keyboardShortcut, place: 3) }
+        XCTAssertTrue(recorders.last === controller.placePopUps[3])
+        controller.placePopUps[3].cancelShortcutRecording()
+
+        // The name and icon of keys that are there, at another place's drop.
+        try chooseAtDrop(ShortcutManager.MenuMarker.keyboardShortcut, place: 5)
+        XCTAssertEqual(details.count, 1)
+        XCTAssertFalse(details[0].anchor === anchor, "each place has its own")
+        XCTAssertEqual(details[0].anchor.frame, preview.dropRect(ofPlace: 5))
+        XCTAssertEqual(anchor.frame, preview.dropRect(ofPlace: 3), "the other place's stays where it is")
+        details[0].popover.onClose?()
+        try chooseAtRow(ShortcutManager.MenuMarker.keyboardShortcut, place: 5)
+        XCTAssertTrue(details.last?.anchor === controller.placePopUps[5])
+        details.last?.popover.onClose?()
+
+        XCTAssertFalse(places.showsBody, "folded all the while")
+        XCTAssertEqual(Options.shared.ring[3], ShortcutRingSettings.default[3], "nothing was stored")
+    }
+
+    /// A secondary click on a drop offers "Swap With" (the seven other places clockwise
+    /// from the top, each with what its row shows) and "Clear". A swap that would show
+    /// nothing new is disabled, and so is Clear on a place that holds nothing. A
+    /// Control-click that arrives as a click shows the same menu, never the place's own.
+    func testASecondaryClickOffersSwapWithAndClear() throws {
+        var ring = ShortcutRingSettings.default
+        ring[2] = .empty
+        ring[4] = ShortcutRingPlace(action: "somethingNewer")
+        ring[5] = ShortcutRingPlace(
+            action: "custom::1:1048576", label: try XCTUnwrap(ShortcutLabel(name: "Save All", icon: .symbol("square.and.arrow.down")))
+        )
+        ring[6] = ShortcutRingPlace(SystemShortcut.missionControl)
+        Options.shared.ring = ring
+        let controller = makeController()
+        _ = show(controller)
+        let preview = try XCTUnwrap(controller.previewView)
+        controller.presentPlaceMenu = { _, _, _ in XCTFail("the place's own menu is the primary click's") }
+        func menu(ofPlace place: Int) throws -> NSMenu {
+            return try XCTUnwrap(preview.menu(for: try mouse(.rightMouseDown, at: middle(ofPlace: place, in: preview), in: preview)))
+        }
+
+        let top = try menu(ofPlace: 0)
+        XCTAssertEqual(top.items.map(\.title), ["Swap With", "Clear"])
+        XCTAssertEqual(controller.selectedPlace, 0, "the place is the selected one: it stays lit under the menu")
+        XCTAssertEqual(preview.lit, 0)
+        let offered = try swaps(of: top.items.first)
+        XCTAssertEqual(offered.map(\.title), [
+            "Top Right (Screenshot Selection)", "Right (No Action)", "Bottom Right (Paste)", "Bottom (No Action)",
+            "Bottom Left (Save All)", "Left (Mission Control)", "Top Left (Show Desktop)",
+        ], "Title Case, what the row shows; a named shortcut without its keys")
+        XCTAssertEqual(offered.map(\.isEnabled), [true, true, true, true, true, false, true], "Left holds the same")
+        XCTAssertTrue(offered.allSatisfy { $0.state == .off })
+        XCTAssertEqual(top.items.last?.isEnabled, true)
+
+        // An empty place: nothing to clear, and no swap with a place that shows as empty.
+        let right = try menu(ofPlace: 2)
+        XCTAssertEqual(right.items.last?.isEnabled, false, "Clear")
+        let fromEmpty = try swaps(of: right.items.first)
+        XCTAssertEqual(fromEmpty.map(\.title).first, "Top (Mission Control)")
+        XCTAssertEqual(fromEmpty.map(\.isEnabled), [true, true, true, false, true, true, true], "Bottom shows as empty too")
+        // A place whose action this version does not run holds nothing either.
+        let bottom = try menu(ofPlace: 4)
+        XCTAssertEqual(bottom.items.last?.isEnabled, false)
+        XCTAssertEqual(try swaps(of: bottom.items.first).map(\.isEnabled), [true, true, false, true, true, true, true])
+
+        // Control held: the same menu, through the click.
+        var shown: [NSMenu] = []
+        preview.presentContextMenu = { menu, _, view in
+            XCTAssertTrue(view === preview)
+            shown.append(menu)
+        }
+        preview.mouseDown(with: try mouse(.leftMouseDown, at: middle(ofPlace: 3, in: preview), in: preview, flags: .control))
+        XCTAssertEqual(shown.count, 1)
+        XCTAssertEqual(shown.first?.items.map(\.title), ["Swap With", "Clear"])
+        XCTAssertEqual(try swaps(of: shown.first?.items.first).first?.title, "Top (Mission Control)")
+        XCTAssertEqual(controller.selectedPlace, 3)
+
+        // The items do what they say.
+        try choose(offered[0])
+        XCTAssertEqual(Options.shared.ring[0], ring[1])
+        XCTAssertEqual(Options.shared.ring[1], ring[0])
+        XCTAssertEqual(controller.selectedPlace, 0, "the place whose menu was used")
+        try choose(try XCTUnwrap(shown.first?.items.last))
+        XCTAssertTrue(Options.shared.ring[3].isEmpty, "Clear")
+    }
+
+    /// How a Control-click reaches a view when it comes through its window, as a real one
+    /// does, and that the drawing answers it as the secondary click whichever way AppKit
+    /// takes (`menu(for:)`, or the click itself with Control held): it is asked for the
+    /// secondary menu of that place and never opens the place's own menu.
+    func testAControlClickThroughTheWindowAsksForTheSecondaryMenu() throws {
+        // What AppKit does with a Control-click on a view: a probe that hands out no menu
+        // (AppKit would show it and wait for a choice) writes down what it is sent. A window
+        // hands a click on only once it exists for the system: this one does, out of sight.
+        let probe = ControlClickProbe(frame: NSRect(x: 0, y: 0, width: 80, height: 80))
+        let probeWindow = OutOfSightWindow(contentRect: probe.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        probeWindow.isReleasedWhenClosed = false
+        probeWindow.contentView = probe
+        probeWindow.putOutOfSight()
+        addTeardownBlock {
+            probeWindow.orderOut(nil)
+            probeWindow.close()
+        }
+        let onProbe = NSPoint(x: 40, y: 40)
+        probeWindow.sendEvent(try mouse(.leftMouseDown, at: onProbe, in: probe))
+        XCTAssertEqual(probe.calls, ["down"], "a plain click arrives as a click")
+        probe.calls = []
+        probeWindow.sendEvent(try mouse(.leftMouseDown, at: onProbe, in: probe, flags: .control))
+        // (On macOS 27.2: `menu(for:)` first, and the click itself when no menu came.)
+        let route = probe.calls
+        XCTAssertFalse(route.isEmpty, "the Control-click arrived")
+        XCTAssertTrue(Set(route).isSubset(of: ["menu", "down", "right down"]))
+
+        // The drawing, sent the same: no menu is handed out here either.
+        let controller = makeController()
+        _ = show(controller)
+        let preview = try XCTUnwrap(controller.previewView)
+        var asked: [Int] = []
+        var other: [String] = []
+        preview.menuForPlace = { place in
+            asked.append(place)
+            return nil
+        }
+        preview.onPlaceClicked = { _ in other.append("the place's own menu") }
+        preview.presentContextMenu = { _, _, _ in other.append("a menu shown by the click") }
+        let click = try mouse(.leftMouseDown, at: middle(ofPlace: 1, in: preview), in: preview, flags: .control)
+        for step in route {
+            switch step {
+            case "menu": XCTAssertNil(preview.menu(for: click))
+            case "right down": preview.rightMouseDown(with: click)
+            default: preview.mouseDown(with: click)
+            }
+        }
+        XCTAssertFalse(asked.isEmpty, "asked for the secondary menu")
+        XCTAssertEqual(Set(asked), [1], "of the place under the pointer")
+        XCTAssertEqual(other, [], "never the place's own menu")
+    }
+
+    /// The ring's middle is no target, with an app's icon drawn there or not, and neither
+    /// is the card beside the ring: no click gives a menu or selects a place.
+    func testTheMiddleOfAnAppsOwnRingIsNoClickTarget() throws {
+        let notes = Application(path: "/System/Applications/Notes.app")
+        notes.setUsesGeneralRing(false, general: .default)
+        let page = RingPreferencesViewController(application: notes)
+        page.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: []) }
+        page.makeAppMark = { _ in RingHarness.mark(named: "Notes") }
+        _ = page.view
+        _ = show(page)
+        let preview = try XCTUnwrap(page.previewView)
+        XCTAssertNotNil(preview.appIcon, "the app's icon is drawn in the middle")
+        page.presentPlaceMenu = { _, _, _ in XCTFail("no menu") }
+        preview.presentContextMenu = { _, _, _ in XCTFail("no menu") }
+        var asked = 0
+        let menuForPlace = preview.menuForPlace
+        preview.menuForPlace = { place in
+            asked += 1
+            return menuForPlace?(place)
+        }
+        let hub = NSPoint(x: preview.bounds.midX, y: preview.bounds.midY)
+        let hubEdge = NSPoint(x: hub.x + (ShortcutRingGeometry.hubRadius - 2) * ShortcutRingPreviewView.ringScale, y: hub.y)
+        for point in [hub, hubEdge, NSPoint(x: 12, y: 12), NSPoint(x: preview.bounds.maxX - 6, y: hub.y)] {
+            XCTAssertNil(preview.place(at: point))
+            preview.mouseDown(with: try mouse(.leftMouseDown, at: point, in: preview))
+            preview.mouseDown(with: try mouse(.leftMouseDown, at: point, in: preview, flags: .control))
+            XCTAssertNil(preview.menu(for: try mouse(.rightMouseDown, at: point, in: preview)))
+        }
+        XCTAssertEqual(asked, 0)
+        XCTAssertNil(page.selectedPlace)
+        XCTAssertNil(preview.lit)
+
+        // A place of the app's ring is one: its own menu, for the app's ring alone.
+        var opened: [NSMenu] = []
+        page.presentPlaceMenu = { menu, _, _ in opened.append(menu) }
+        preview.mouseDown(with: try mouse(.leftMouseDown, at: middle(ofPlace: 2, in: preview), in: preview))
+        XCTAssertTrue(opened.first === page.placePopUps[2].menu)
+        XCTAssertEqual(page.selectedPlace, 2)
+        var changes = 0
+        page.onPlaceChange = { changes += 1 }
+        let menu = try XCTUnwrap(preview.menu(for: try mouse(.rightMouseDown, at: middle(ofPlace: 2, in: preview), in: preview)))
+        try choose(try XCTUnwrap(try swaps(of: menu.items.first).first))
+        XCTAssertEqual(notes.ownRingPlaces?[2], ShortcutRingSettings.default[0])
+        XCTAssertEqual(notes.ownRingPlaces?[0], ShortcutRingSettings.default[2])
+        XCTAssertEqual(changes, 1, "the page hears of it: its line and its reset follow")
+        XCTAssertEqual(Options.shared.ring, .default, "the general ring stays")
+    }
+
+    /// Every place's own menu ends with "Swap With", after a separator: the keyboard's and
+    /// VoiceOver's way to it. Before it the menu is what a place's menu always was, and
+    /// "Swap With" is never the ticked item. The pull-downs of Buttons and Gestures have none.
+    func testEveryPlacesOwnMenuEndsWithSwapWith() throws {
+        var ring = ShortcutRingSettings.default
+        ring[2] = .empty
+        ring[3] = ShortcutRingPlace(action: "custom::1:1048576")
+        ring[4] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: "/System/Applications/Calculator.app", bundleID: "com.apple.calculator", arguments: "", kind: .application
+        ))
+        Options.shared.ring = ring
+        let controller = makeController()
+        let reference = NSMenu()
+        ShortcutManager.buildShortcutMenu(
+            into: reference, target: self, action: #selector(ButtonActionPullDown.shortcutSelected(_:)),
+            showsGestureSettings: true, forRingPlace: true
+        )
+        for (place, popUp) in controller.placePopUps.enumerated() {
+            let menu = try XCTUnwrap(popUp.menu)
+            let last = try XCTUnwrap(menu.items.last)
+            XCTAssertEqual(last.title, "Swap With", "\(place)")
+            XCTAssertTrue(last === popUp.trailingItem)
+            XCTAssertTrue(menu.items[menu.items.count - 2].isSeparatorItem)
+            XCTAssertEqual(
+                menu.items.dropFirst().dropLast(2).map(\.title), reference.items.dropFirst().map(\.title),
+                "the menu's own items and their order stay"
+            )
+            popUp.menuWillOpen(menu)
+            XCTAssertEqual(last.state, .off, "never ticked")
+            let shown = try XCTUnwrap(popUp.shownActionItem)
+            XCTAssertFalse(shown.item === last)
+            XCTAssertFalse(shown.category === last)
+            XCTAssertEqual(shown.item.state, .on)
+            let offered = try swaps(of: last)
+            XCTAssertEqual(offered.count, 7)
+            XCTAssertEqual(offered.compactMap { ($0.representedObject as? RingPlaceSwap)?.place }, Array(repeating: place, count: 7))
+            XCTAssertEqual(
+                offered.compactMap { ($0.representedObject as? RingPlaceSwap)?.other }, (0..<8).filter { $0 != place },
+                "clockwise from the top, without the place itself"
+            )
+            popUp.menuDidClose(menu)
+        }
+        // A key press in the window never fills the submenu: it has no key equivalents.
+        let submenu = try XCTUnwrap(controller.placePopUps[0].trailingItem?.submenu)
+        let key = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0, context: nil,
+            characters: "c", charactersIgnoringModifiers: "c", isARepeat: false, keyCode: 8
+        ))
+        var target: AnyObject?
+        var action: Selector?
+        XCTAssertEqual(submenu.delegate?.menuHasKeyEquivalent?(submenu, for: key, target: &target, action: &action), false)
+
+        // From the row's menu, as the keyboard reaches it: the two places change over.
+        let fromRow = try swaps(of: controller.placePopUps[1].trailingItem)
+        XCTAssertEqual(fromRow.first?.title, "Top (Mission Control)")
+        try choose(try XCTUnwrap(fromRow.first))
+        XCTAssertEqual(Options.shared.ring[1], ring[0])
+        XCTAssertEqual(Options.shared.ring[0], ring[1])
+        XCTAssertEqual(controller.selectedPlace, 1)
+        XCTAssertEqual(controller.placePopUps[0].menu?.items.first?.title, "Screenshot Selection", "the rows follow")
+        XCTAssertEqual(try swaps(of: controller.placePopUps[1].trailingItem).first?.title, "Top (Screenshot Selection)", "made anew each time")
+
+        let trigger = RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil)
+        let binding = ButtonBinding(triggerEvent: trigger, systemShortcutName: "copy")
+        for pullDown in [ButtonActionPullDown(binding: binding), ButtonActionPullDown(binding: binding, use: .gesture(showsLogiActions: false))] {
+            XCTAssertNil(pullDown.trailingItem)
+            XCTAssertEqual(pullDown.menu?.items.contains { $0.title == "Swap With" }, false)
+        }
+    }
+
+    /// "Clear" empties the place as "No Action" of its menu does, with the same Undo; on a
+    /// place that holds nothing it writes nothing and leaves no step.
+    func testClearEmptiesThePlaceAsNoActionDoes() throws {
+        Options.shared.ring[2] = .empty
+        let controller = makeController()
+        _ = show(controller)
+        let preview = try XCTUnwrap(controller.previewView)
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        controller.paneUndoManager = undo
+        var writes = 0
+        let observers = Options.shared.observerCountForTests
+        Options.shared.observe([.ring]) { _ in writes += 1 }
+        defer { Options.shared.removeNewestObserversForTests(Options.shared.observerCountForTests - observers) }
+        func clear(_ place: Int) throws {
+            let menu = try XCTUnwrap(preview.menu(for: try mouse(.rightMouseDown, at: middle(ofPlace: place, in: preview), in: preview)))
+            try choose(try XCTUnwrap(menu.items.last))
+        }
+
+        // (The manager would take a step here by itself: an empty group of the test's is one.)
+        undo.groupsByEvent = true
+        try clear(2)
+        XCTAssertEqual(writes, 0, "nothing to clear")
+        XCTAssertFalse(undo.canUndo)
+        XCTAssertEqual(undo.groupingLevel, 0, "no step")
+        undo.groupsByEvent = false
+
+        undo.beginUndoGrouping()
+        try clear(3)
+        undo.endUndoGrouping()
+        XCTAssertEqual(writes, 1)
+        XCTAssertEqual(Options.shared.ring[3], .empty)
+        XCTAssertEqual(controller.placePopUps[3].menu?.items.first?.title, "No Action")
+        XCTAssertTrue(controller.previewView.face.places[3].isEmpty)
+        XCTAssertEqual(controller.selectedPlace, 3)
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action", "as No Action of its menu")
+        undo.undo()
+        XCTAssertEqual(Options.shared.ring[3], ShortcutRingSettings.default[3])
+        XCTAssertFalse(undo.canUndo)
+    }
+
+    /// To VoiceOver the drawing stays one image, outside the key loop: the rows hold what
+    /// the drops open, so the drops are no buttons (each place would be read twice). What
+    /// stands over a drop for a popover is nothing to VoiceOver and takes no click.
+    func testTheDrawingStaysOneImageToVoiceOver() throws {
+        let controller = makeController()
+        _ = show(controller)
+        let preview = try XCTUnwrap(controller.previewView)
+        controller.presentPlaceMenu = { _, _, _ in }
+        for place in 0..<8 {
+            preview.onPlaceClicked?(place)
+        }
+        XCTAssertEqual(preview.subviews.count, 8, "one view per drop, for the popovers")
+        XCTAssertTrue(preview.isAccessibilityElement())
+        XCTAssertEqual(preview.accessibilityRole(), .image)
+        XCTAssertEqual(preview.accessibilityLabel(), "The ring as it opens at the pointer")
+        XCTAssertTrue(NSAccessibility.unignoredChildren(from: preview.accessibilityChildren() ?? []).isEmpty, "no children")
+        XCTAssertTrue(preview.subviews.allSatisfy { !$0.isAccessibilityElement() })
+        XCTAssertFalse(preview.acceptsFirstResponder)
+        XCTAssertFalse(preview.canBecomeKeyView)
+        // (`hitTest` takes a point of the superview.)
+        let onDrop = preview.convert(middle(ofPlace: 2, in: preview), to: preview.superview)
+        XCTAssertTrue(preview.hitTest(onDrop) === preview, "a click on a drop goes to the drawing")
+        // The eight rows are the way of the keyboard and of VoiceOver, with the same menu.
+        XCTAssertEqual(controller.placePopUps.map { $0.accessibilityLabel() }, controller.placeRows.map { $0.title })
     }
 
     // MARK: The picture of what opens it
@@ -1412,6 +1996,50 @@ final class PreferencesRingTests: XCTestCase {
     }
 }
 
+/// Writes down how a click reaches a view: `menu(for:)`, `mouseDown` and `rightMouseDown`,
+/// in order. It hands out no menu, so nothing opens. It takes a click in a window that is
+/// not the key one (the test's never is).
+private final class ControlClickProbe: NSView {
+    var calls: [String] = []
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        calls.append("menu")
+        return nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        calls.append("down")
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        calls.append("right down")
+        super.rightMouseDown(with: event)
+    }
+}
+
+/// A window that exists for the system and is never seen: clear, far off every screen,
+/// behind everything, taking no click of the user's and never the key or main window (as
+/// the Welcome Guide's tests have one for their real clicks).
+private final class OutOfSightWindow: NSWindow {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        return frameRect
+    }
+
+    override var canBecomeKey: Bool { return false }
+    override var canBecomeMain: Bool { return false }
+
+    func putOutOfSight() {
+        alphaValue = 0
+        ignoresMouseEvents = true
+        setFrameOrigin(NSPoint(x: -30_000, y: -30_000))
+        orderBack(nil)
+    }
+}
+
 // MARK: - The Buttons pane's side
 
 final class ShortcutRingButtonsTests: XCTestCase {
@@ -1849,6 +2477,262 @@ final class RingPlaceUndoTests: XCTestCase {
         XCTAssertEqual(w.apps.applications.map(\.path), [textEdit.path])
         XCTAssertNil(w.apps.detailController, "the list, where the change is")
         XCTAssertNil(w.apps.list.rows.first { $0.id == AnyHashable(id) })
+    }
+
+    // MARK: - Swap
+
+    private func calculatorPlace() -> ShortcutRingPlace {
+        return ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: Self.calculator, bundleID: "com.apple.calculator", arguments: "", kind: .application
+        ))
+    }
+
+    /// A swap exchanges two places whole, in one write: recorded keys with their name and
+    /// icon change over with an app to open, nothing is recorded or typed again. The other
+    /// six places and the freeze switch stay. An action this version does not run moves as
+    /// it is stored. A swap that would change nothing writes nothing and leaves no step.
+    func testSwapMovesANamedShortcutWithItsNameAndIcon() throws {
+        let saved = ShortcutRingPlace(action: Self.keys, label: try label("Save All"))
+        let opens = calculatorPlace()
+        let newer = ShortcutRingPlace(action: "somethingNewer")
+        var ring = ShortcutRingSettings.default
+        ring[1] = saved
+        ring[5] = opens
+        ring[3] = newer
+        ring[6] = .empty
+        ring.freezePointer = true
+        Options.shared.ring = ring
+        let controller = RingPreferencesViewController()
+        controller.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: []) }
+        _ = controller.view
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        controller.paneUndoManager = undo
+        var writes = 0
+        let observers = Options.shared.observerCountForTests
+        Options.shared.observe([.ring]) { _ in writes += 1 }
+        defer { Options.shared.removeNewestObserversForTests(Options.shared.observerCountForTests - observers) }
+
+        step(undo) { controller.swapPlace(1, with: 5) }
+        XCTAssertEqual(writes, 1, "one write")
+        XCTAssertEqual(Options.shared.ring[1], opens)
+        XCTAssertEqual(Options.shared.ring[5], saved, "the keys with their name and icon")
+        var expected = ring
+        expected[1] = opens
+        expected[5] = saved
+        XCTAssertEqual(Options.shared.ring, expected, "the other six places and the freeze switch stay")
+        XCTAssertTrue(Options.shared.ring.freezePointer)
+        XCTAssertEqual(controller.placePopUps[5].binding.label, saved.label, "the row shows them")
+        XCTAssertEqual(controller.placePopUps[1].binding.openTarget, opens.openTarget)
+        XCTAssertEqual(controller.previewView.face.places[5].title, "Save All", "and so does the drawing")
+        XCTAssertEqual(controller.selectedPlace, 1)
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Swap")
+
+        // What this version does not run moves as stored, and shows as empty where it lands.
+        step(undo) { controller.swapPlace(3, with: 0) }
+        XCTAssertEqual(Options.shared.ring[0], newer)
+        XCTAssertEqual(Options.shared.ring[3], ShortcutRingPlace(SystemShortcut.missionControl))
+        XCTAssertEqual(controller.placePopUps[0].menu?.items.first?.title, "No Action")
+        XCTAssertEqual(writes, 2)
+
+        // Nothing to see: two places that show as empty, a place with itself, the same twice.
+        Options.shared.ring[2] = ShortcutRingPlace(SystemShortcut.missionControl)
+        controller.reload()
+        writes = 0
+        // (The manager would take a step here by itself: an empty group of the test's is one.)
+        undo.groupsByEvent = true
+        controller.swapPlace(0, with: 6)
+        controller.swapPlace(4, with: 4)
+        controller.swapPlace(2, with: 3)
+        controller.swapPlace(1, with: 12)
+        XCTAssertEqual(writes, 0)
+        XCTAssertEqual(undo.groupingLevel, 0, "no new step")
+        undo.groupsByEvent = false
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Swap")
+        undo.undo()
+        XCTAssertEqual(Options.shared.ring[0], ShortcutRingPlace(SystemShortcut.missionControl), "the step before")
+    }
+
+    /// "Undo Swap" is one step that puts both places back, and "Redo Swap" swaps them again.
+    /// It writes the two places as they were, whatever happened to the ring in between, as
+    /// a place's Undo writes one.
+    func testUndoSwapPutsBothPlacesBackAndRedoSwapsAgain() throws {
+        let saved = ShortcutRingPlace(action: Self.keys, label: try label("Save All"))
+        Options.shared.ring[1] = saved
+        let before = Options.shared.ring
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: RingPreferencesViewController.tabIdentifier))
+        // From the row's own menu, as the keyboard reaches it.
+        let submenu = try XCTUnwrap(w.ring.placePopUps[1].trailingItem?.submenu)
+        submenu.delegate?.menuNeedsUpdate?(submenu)
+        let item = try XCTUnwrap(submenu.items.first { ($0.representedObject as? RingPlaceSwap)?.other == 4 })
+        XCTAssertEqual(item.title, "Bottom (\(SystemShortcut.appExpose.localizedName))")
+        try step(w.undo) { XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item)) }
+        XCTAssertEqual(Options.shared.ring[4], saved)
+        XCTAssertEqual(Options.shared.ring[1], before[4])
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Swap")
+
+        w.ring.selectPlace(7)
+        w.window.makeFirstResponder(nil)
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.ring, before, "both places back")
+        XCTAssertFalse(w.undo.canUndo, "one step")
+        XCTAssertEqual(w.undo.redoMenuItemTitle, "Redo Swap")
+        XCTAssertEqual(w.ring.placePopUps[1].binding.label, saved.label, "the rows show it")
+        XCTAssertEqual(w.ring.selectedPlace, 1, "the row of the place whose menu was used")
+        XCTAssertTrue(w.window.firstResponder === w.ring.placePopUps[1])
+
+        w.undo.redo()
+        XCTAssertEqual(Options.shared.ring[4], saved)
+        XCTAssertEqual(Options.shared.ring[1], before[4])
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Swap")
+        XCTAssertFalse(w.undo.canRedo)
+
+        // The ring changed in between (an import, "Reset to Defaults"): the two remembered
+        // places come back all the same, and Redo puts back what Undo found there.
+        Options.shared.ring[1] = ShortcutRingPlace(SystemShortcut.copy)
+        Options.shared.ring[6] = .empty
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.ring[1], saved)
+        XCTAssertEqual(Options.shared.ring[4], before[4])
+        XCTAssertEqual(Options.shared.ring[6], .empty, "the others are left alone")
+        w.undo.redo()
+        XCTAssertEqual(Options.shared.ring[1], ShortcutRingPlace(SystemShortcut.copy))
+        XCTAssertEqual(Options.shared.ring[4], saved)
+    }
+
+    /// From another pane: the Shortcut Ring pane comes forward, its folded places open and
+    /// the row of the place whose menu was used is selected.
+    func testUndoSwapFromAnotherPaneShowsTheRingPaneWithTheRowSelected() throws {
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: RingPreferencesViewController.tabIdentifier))
+        let places = try XCTUnwrap(w.ring.placesSection)
+        XCTAssertFalse(places.showsBody, "nothing opens the ring: the places are folded")
+        try step(w.undo) { w.ring.swapPlace(6, with: 2) }
+        XCTAssertEqual(Options.shared.ring[6], ShortcutRingSettings.default[2])
+        XCTAssertFalse(places.showsBody, "a swap at the drawing leaves them folded")
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        XCTAssertNil(w.ring.view.window, "the pane is out of the window")
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.ring, .default)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, RingPreferencesViewController.tabIdentifier)
+        XCTAssertTrue(places.showsBody, "the places open")
+        XCTAssertEqual(w.ring.selectedPlace, 6)
+        XCTAssertTrue(w.window.firstResponder === w.ring.placePopUps[6])
+        XCTAssertEqual(w.ring.placePopUps[2].binding.systemShortcutName, ShortcutRingSettings.default[2].action)
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.redo()
+        XCTAssertEqual(Options.shared.ring[6], ShortcutRingSettings.default[2])
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, RingPreferencesViewController.tabIdentifier)
+        XCTAssertEqual(w.ring.selectedPlace, 6)
+    }
+
+    /// A swap in an app's own ring changes that ring alone. Its Undo works after the page
+    /// closed and shows the page on its Shortcut Ring part, the row selected; for an app
+    /// that is no longer on the list it does nothing.
+    func testSwapInAnAppsOwnRingLeavesTheGeneralRingAndUndoWorksAfterThePageClosed() throws {
+        let calculator = Application(path: Self.calculator)
+        Options.shared.application.applications.append(calculator)
+        calculator.setUsesGeneralRing(false, general: Options.shared.ring)
+        let saved = ShortcutRingPlace(action: Self.keys, label: try label("Save All"))
+        calculator.ring?[5] = saved
+        let before = try XCTUnwrap(calculator.ownRingPlaces)
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: calculator)), part: .ring)
+        let ring = try XCTUnwrap(w.apps.detailController?.ringPart.ringController)
+        let preview = try XCTUnwrap(ring.previewView)
+        // The secondary click on the drop of "Bottom left", then "Swap With ▸ Top (…)".
+        let drop = preview.dropRect(ofPlace: 5)
+        let click = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: preview.convert(NSPoint(x: drop.midX, y: drop.midY), to: nil), modifierFlags: [],
+            timestamp: 0, windowNumber: w.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let menu = try XCTUnwrap(preview.menu(for: click))
+        let submenu = try XCTUnwrap(menu.items.first?.submenu)
+        submenu.delegate?.menuNeedsUpdate?(submenu)
+        let item = try XCTUnwrap(submenu.items.first)
+        XCTAssertEqual(item.title, "Top (Mission Control)")
+        try step(w.undo) { XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item)) }
+        XCTAssertEqual(calculator.ownRingPlaces?[0], saved, "with its name and icon")
+        XCTAssertEqual(calculator.ownRingPlaces?[5], before[0])
+        XCTAssertEqual(Options.shared.ring, .default, "the general ring is untouched")
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Swap")
+        XCTAssertEqual(ring.placePopUps[0].binding.label, saved.label)
+
+        w.apps.showList(focusList: false)
+        XCTAssertNil(w.apps.detailController, "the page closed")
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(calculator.ownRingPlaces, before)
+        XCTAssertEqual(Options.shared.ring, .default)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application)
+        let page = try XCTUnwrap(w.apps.detailController)
+        XCTAssertTrue(page.application === calculator)
+        XCTAssertEqual(page.shownPart, .ring)
+        let shown = try XCTUnwrap(page.ringPart.ringController)
+        XCTAssertEqual(shown.placePopUps[5].binding.label, saved.label)
+        XCTAssertEqual(shown.selectedPlace, 5, "the row of the place whose menu was used")
+        XCTAssertTrue(w.window.firstResponder === shown.placePopUps[5])
+
+        w.undo.redo()
+        XCTAssertEqual(calculator.ownRingPlaces?[0], saved)
+        XCTAssertEqual(shown.placePopUps[0].binding.label, saved.label, "the page on show follows")
+        XCTAssertEqual(Options.shared.ring, .default)
+
+        // The app was removed: nothing happens, and nothing of another ring is touched.
+        let swapped = calculator.ring
+        Options.shared.application.applications = EnhanceArray<Application>(
+            withArray: [], matchKey: "path", forObserver: { Options.shared.markChanged(.application) }
+        )
+        w.undo.undo()
+        XCTAssertEqual(calculator.ring, swapped)
+        XCTAssertEqual(Options.shared.ring, .default)
+    }
+
+    // MARK: - The drops in the window
+
+    /// Where a popover of a drop stands, in the window as the app makes it (720 × 500): the
+    /// view over each drop is the drop's circle at rest, wholly inside the card and wholly
+    /// in sight (an app's page cuts the ring's view at its margins, not the card), in the
+    /// pane and on an app's Shortcut Ring part. (A popover is a window of its own: under the
+    /// pane's right-hand drops, 58 pt from the window's edge, it stands past that edge.)
+    func testEveryDropsAnchorIsItsCircleInSightInThePaneAndOnAnAppsPage() throws {
+        let calculator = Application(path: Self.calculator)
+        Options.shared.application.applications.append(calculator)
+        calculator.setUsesGeneralRing(false, general: Options.shared.ring)
+        let w = try makeWindow()
+        func check(_ ring: RingPreferencesViewController, _ name: String) throws {
+            let preview = try XCTUnwrap(ring.previewView)
+            w.window.contentView?.layoutSubtreeIfNeeded()
+            XCTAssertFalse(preview.isHiddenOrHasHiddenAncestor, name)
+            for place in 0..<8 {
+                let anchor = preview.anchor(forPlace: place)
+                XCTAssertEqual(anchor.frame, preview.dropRect(ofPlace: place), "\(name) \(place)")
+                XCTAssertTrue(preview.bounds.contains(anchor.frame), "\(name) \(place): inside the card")
+                // Nothing cuts it: it lies inside every view above it that clips, and the window.
+                var above = anchor.superview
+                while let view = above {
+                    let isContent = view === w.window.contentView
+                    if view.clipsToBounds || view is NSClipView || isContent {
+                        XCTAssertTrue(
+                            view.bounds.contains(anchor.convert(anchor.bounds, to: view)),
+                            "\(name) \(place): cut by \(type(of: view)) \(view.identifier?.rawValue ?? "")"
+                        )
+                    }
+                    above = isContent ? nil : view.superview
+                }
+                XCTAssertEqual(anchor.frame.size, NSSize(width: 37, height: 37))
+            }
+            XCTAssertEqual(preview.subviews.count, 8)
+        }
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: RingPreferencesViewController.tabIdentifier))
+        try check(w.ring, "pane")
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: calculator)), part: .ring)
+        try check(try XCTUnwrap(w.apps.detailController?.ringPart.ringController), "app's page")
     }
 
     /// The pane on its own (no window's panes): Undo and Redo go to the pane's undo manager

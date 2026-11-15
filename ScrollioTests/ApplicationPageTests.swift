@@ -2996,7 +2996,7 @@ final class ApplicationPageTests: XCTestCase {
         let fold = try XCTUnwrap(part.ownRingFold)
         XCTAssertFalse(fold.isExpanded, "folded, and left so")
         XCTAssertTrue(try XCTUnwrap(part.ringController).placeRows[0].isHiddenOrHasHiddenAncestor)
-        // A click on a place of the drawing opens the rows, and the page measures again.
+        // An Undo that shows a place opens the rows, and the page measures again.
         var heightChanges = 0
         pane.detailController?.onHeightChange = { heightChanges += 1 }
         try XCTUnwrap(part.ringController).selectPlace(2)
