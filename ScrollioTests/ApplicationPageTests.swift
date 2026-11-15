@@ -158,6 +158,12 @@ final class ApplicationPageTests: XCTestCase {
         return menu.items.map { $0.isSeparatorItem ? "—" : $0.title }
     }
 
+    /// What an app has of its own, as the list and the header say it: the catalog's form
+    /// ("Own %@") with the items joined as the locale joins a list.
+    private static func own(_ items: String...) -> String {
+        return String(format: NSLocalizedString("apps-summary-own", comment: ""), ListFormatter.localizedString(byJoining: items))
+    }
+
     // MARK: - The parts
 
     /// The page shows the app's box, then the control with the four parts in the sidebar's
@@ -492,7 +498,7 @@ final class ApplicationPageTests: XCTestCase {
         pane.reloadRows()
         let again = try XCTUnwrap(pane.list.rows.compactMap { $0 as? ApplicationListRow }.first { $0.id == AnyHashable(own.path) })
         XCTAssertEqual(again.marks, [.buttons])
-        XCTAssertEqual(again.accessibilityLabel(), "Calculator, Own 1 button, Own button settings")
+        XCTAssertEqual(again.accessibilityLabel(), "Calculator, " + Self.own("1 button") + ", Own button settings")
     }
 
     /// The list and the page's header say in words what an app has of its own, in the
@@ -505,17 +511,15 @@ final class ApplicationPageTests: XCTestCase {
         calculator.setOwnButtonBindings([binding(3, "copy"), binding(4, "paste")])
         calculator.setUsesGeneralRing(false, general: .default)
         let textEdit = addApp(Self.textEdit)
-        // (Joined as the locale joins a list.)
-        func own(_ items: String...) -> String { return "Own " + ListFormatter.localizedString(byJoining: items) }
-        let three = own("scrolling", "2 buttons", "ring")
+        let three = Self.own("scrolling", "2 buttons", "ring")
         XCTAssertEqual(ApplicationPagePart.summary(of: calculator), three)
         XCTAssertEqual(ApplicationPagePart.summary(of: textEdit), "Nothing of its own yet")
         textEdit.setUsesGeneralRing(false, general: .default)
-        XCTAssertEqual(ApplicationPagePart.summary(of: textEdit), "Own ring")
+        XCTAssertEqual(ApplicationPagePart.summary(of: textEdit), Self.own("ring"))
         textEdit.setOwnButtonBindings([binding(3, "copy")])
         textEdit.setOwnThumbWheelFunction(.tabs)
         textEdit.setUsesGeneralGestures(false, general: .default)
-        XCTAssertEqual(ApplicationPagePart.summary(of: textEdit), own("1 button", "thumb wheel", "gestures", "ring"))
+        XCTAssertEqual(ApplicationPagePart.summary(of: textEdit), Self.own("1 button", "thumb wheel", "gestures", "ring"))
         textEdit.setOwnButtonBindings([])
         textEdit.setOwnThumbWheelFunction(nil)
         textEdit.setUsesGeneralGestures(true, general: .default)
@@ -543,14 +547,14 @@ final class ApplicationPageTests: XCTestCase {
         let part = try XCTUnwrap(page.buttonsPart)
         part.paneUndoManager = UndoManager()
         part.removeOwnBinding(id: calculator.ownButtonBindings[0].id)
-        XCTAssertEqual(page.headerRow.explanation, own("scrolling", "1 button", "ring"))
+        XCTAssertEqual(page.headerRow.explanation, Self.own("scrolling", "1 button", "ring"))
         page.show(.ring)
         page.generalRingSwitch.state = .on
         send(page.generalRingSwitch)
-        XCTAssertEqual(page.headerRow.explanation, "Own scrolling and 1 button")
+        XCTAssertEqual(page.headerRow.explanation, Self.own("scrolling", "1 button"))
         XCTAssertEqual(dotted(), [true, true, false, false])
         XCTAssertEqual(page.partControl.image(forSegment: 1)?.isTemplate, false, "Buttons is not selected any more")
-        XCTAssertEqual(pane.list.rows.first?.explanation, "Own scrolling and 1 button")
+        XCTAssertEqual(pane.list.rows.first?.explanation, Self.own("scrolling", "1 button"))
 
         // "Show in Finder" selects the app's bundle.
         var revealed: [URL] = []
