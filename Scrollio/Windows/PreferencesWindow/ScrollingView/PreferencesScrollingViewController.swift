@@ -9,7 +9,8 @@
 //  On top a preview, then a box with what most people need: smooth scrolling, its feel,
 //  the speed and the direction. Under it "Thumb wheel": what the sideways wheel of a mouse
 //  does, the chosen action's own "Reverse direction" (each action keeps its own), for
-//  Switch Desktops "Follow the wheel", and the speed, with a line under the box on which wheel that is
+//  Switch Desktops "Follow the wheel", and the chosen action's own Speed (each action keeps
+//  its own: choosing another action shows that action's), with a line under the box on which wheel that is
 //  (VoiceOver hears it as a group of that name, so its "Speed" is not taken for the main
 //  wheel's). On an app's page (which shows these settings only while the app has its own,
 //  `ApplicationScrollingPartViewController`) the same box edits the app's own: its speed,
@@ -543,7 +544,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// On an app's page the speed, the reverse and the follow switch are on while the app's
     /// own settings are (as every other scroll value), and the action always: it is the
     /// app's own either way. "Reverse direction" is the chosen action's own, its line says
-    /// what it does for that action; "Follow the wheel" shows for Switch Desktops only.
+    /// what it does for that action; so is the Speed (`ThumbWheelSettings.speed`: the speed
+    /// of the action that runs), with the action's own line under it; "Follow the wheel"
+    /// shows for Switch Desktops only.
     private func syncThumbWheel() {
         let general = Options.shared.thumbWheel
         let settings = currentTargetApplication?.thumbWheelThatRuns(general: general) ?? general
@@ -637,8 +640,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
     /// True while the options differ from the defaults (an app that inherits has none of its
     /// own), on an app's page from a copy of the Scrolling settings. The thumb wheel counts
-    /// too: on the tab its settings, on an app's page the speed, reverses and follow switch
-    /// a turn runs with there (against Scrolling › Thumb wheel's) and the app's own action.
+    /// too: on the tab its settings (every action's speed and reverse, also of an action
+    /// that is not shown), on an app's page the speeds, reverses and follow switch a turn
+    /// runs with there (against Scrolling › Thumb wheel's) and the app's own action.
     var hasSettingsToReset: Bool {
         guard !isTargetApplicationInheritOptions() else { return false }
         if let application = currentTargetApplication {
@@ -905,10 +909,11 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         syncViewWithOptions()
     }
 
-    /// The thumb wheel's speed, on the slider's grid of 0.05. The slider sends nothing for a
-    /// press that does not move its knob, and a value it already has is not written again.
-    /// On an app's page the app's own speed (with the reverses and follow switch it shows:
-    /// all of them become its own).
+    /// The Speed of the action shown (the one that runs), on the slider's grid of 0.05: the
+    /// other actions keep theirs. The slider sends nothing for a press that does not move
+    /// its knob, and a value it already has is not written again. On an app's page the
+    /// app's own speed of that action (with every action's speed, the reverses and the
+    /// follow switch it runs with: all of them become its own).
     @objc func thumbWheelSpeedChanged(_ sender: NSSlider) {
         let value = ThumbWheelPresentation.speedSetting.snapped(sender.doubleValue)
         if let application = currentTargetApplication {
@@ -942,7 +947,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         syncViewWithOptions()
     }
 
-    /// The app's own speed, reverses and follow switch, changed by `change` from what a turn
+    /// The app's own speeds, reverses and follow switch, changed by `change` from what a turn
     /// runs with there now. Only while the app's own settings are in use (the page shows the
     /// rows only then).
     private func setOwnThumbWheelScrolling(of application: Application, _ change: (inout ThumbWheelSettings) -> Void) {

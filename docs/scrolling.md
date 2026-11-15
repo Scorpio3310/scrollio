@@ -27,7 +27,7 @@
   still acts). "Change scrolling only in these apps" leaves every app not on the list to
   macOS; buttons, gestures and the Shortcut Ring work in every app. "Smooth Scrolling in
   …" in the menu bar menu turns smoothing on or off for the app in front. An app's own settings include the thumb wheel's speed and
-  direction, and its action ([Thumb wheel](features.md#thumb-wheel)); the two switches
+  direction (each action's own), and its action ([Thumb wheel](features.md#thumb-wheel)); the two switches
   under "Trackpad-style scrolling" stay those of every app, and apply where an app's own
   switch is on. An app's page there also holds the app's own buttons
   ([Buttons and keys](features.md#buttons-and-keys)), its own gestures

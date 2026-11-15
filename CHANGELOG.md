@@ -36,7 +36,9 @@ it for the people who use the app, and give the version its part before you tag 
   Safari has its own, as Safari › Gestures and Safari › Shortcut Ring do; each of them
   has a button that puts it back.
 - **Thumb wheel, your way round.** Each thumb wheel action has its own "Reverse
-  direction", and Switch Desktops can follow the wheel like a trackpad swipe.
+  direction" and its own Speed (Switch Desktops can be slower without shortening a
+  sideways scroll; your one speed stays every action's until you move a slider), and
+  Switch Desktops can follow the wheel like a trackpad swipe.
 - **Pause for a while.** In the menu bar, "Pause For" under "Pause Scrollio" pauses
   Scrollio for 15 minutes or an hour; the menu and General say until when, and Scrollio
   starts again by itself.

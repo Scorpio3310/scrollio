@@ -148,7 +148,7 @@ class OPTIONS_SCROLL_DEFAULT: Codable {
     var smoothHorizontal = true {
         didSet {Options.shared.markChanged(scrollContainer: self)}
     }
-    /// An app's own thumb wheel speed and "Swap direction" (`ApplicationThumbWheel.swift`),
+    /// An app's own thumb wheel speeds, reverses and follow switch (`ApplicationThumbWheel.swift`),
     /// stored inside the app's "scroll" as "thumbWheel" once it has them; nil: the general
     /// ones. Always nil in the global container: the general values are
     /// `Options.thumbWheel`, stored under a key of their own. Not part of `==`, which says

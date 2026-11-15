@@ -84,12 +84,12 @@ final class ThumbWheelOptionsStoredTests: XCTestCase {
             return try JSONDecoder().decode(ApplicationThumbWheelScrolling.self, from: Data(json.utf8))
         }
         XCTAssertEqual(try scrolling(#"{"speed":1.5,"swapsDirection":true}"#),
-                       ApplicationThumbWheelScrolling(speed: 1.5, reverses: .all, followsWheel: nil))
-        XCTAssertEqual(try scrolling(#"{"speed":1.5}"#), ApplicationThumbWheelScrolling(speed: 1.5, reverses: nil, followsWheel: nil))
+                       ApplicationThumbWheelScrolling(speeds: ThumbWheelSpeeds(all: 1.5), reverses: .all, followsWheel: nil))
+        XCTAssertEqual(try scrolling(#"{"speed":1.5}"#), ApplicationThumbWheelScrolling(speeds: ThumbWheelSpeeds(all: 1.5), reverses: nil, followsWheel: nil))
 
         var reverses = ThumbWheelReversal.none
         reverses[.zoom] = true
-        let own = ApplicationThumbWheelScrolling(speed: 1, reverses: reverses, followsWheel: true)
+        let own = ApplicationThumbWheelScrolling(speeds: ThumbWheelSpeeds(all: 1), reverses: reverses, followsWheel: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(own)
@@ -103,7 +103,132 @@ final class ThumbWheelOptionsStoredTests: XCTestCase {
         XCTAssertFalse(mine.reverses[.desktops])
         XCTAssertTrue(mine.followsWheelNow)
         XCTAssertEqual(mine.speed, 2)
-        XCTAssertEqual(ThumbWheelOwn(speed: 1).settings(general: general).reverses, .all, "nothing of its own: the general")
+        XCTAssertEqual(ThumbWheelOwn(speeds: ThumbWheelSpeeds(all: 1)).settings(general: general).reverses, .all, "nothing of its own: the general")
+    }
+
+    // MARK: A Speed for each action
+
+    /// Stored data from before (one "speed", as 1.0.5 and every build up to this one wrote
+    /// it) gives EVERY action that speed: nothing changes until a slider moves. A new
+    /// installation has 1× for each.
+    func testTheOldSingleSpeedBecomesTheSpeedOfEveryAction() throws {
+        // What 1.0.5 stores (`git show v1.0.5:Scrollio/Options/ThumbWheelSettings.swift`).
+        let from105 = try decode(#"{"function":"desktops","speed":0.75,"swapsDirection":false}"#)
+        // And a build with each action's own Reverse direction and Follow the wheel.
+        let fromYesterday = try decode(#"{"followsWheel":true,"function":"desktops","#
+            + #""reverseDirection":{"backForward":false,"desktops":true,"scroll":false,"tabs":false,"volume":false,"zoom":false},"#
+            + #""speed":0.75,"swapsDirection":true}"#)
+        for function in ThumbWheelFunction.allCases {
+            XCTAssertEqual(from105.speeds[function], 0.75, "\(function)")
+            XCTAssertEqual(fromYesterday.speeds[function], 0.75, "\(function)")
+        }
+        XCTAssertEqual(from105.speed, 0.75)
+        XCTAssertEqual(from105, ThumbWheelSettings(function: .desktops, speed: 0.75))
+        var changed = from105
+        changed.function = .scroll
+        XCTAssertEqual(changed.speed, 0.75, "today's behaviour, kept: another action, the same speed")
+
+        XCTAssertEqual(ThumbWheelSettings.default.speeds, ThumbWheelSpeeds(all: 1))
+        XCTAssertEqual(try decode(#"{"function":"zoom"}"#).speeds, .default, "no speed stored: 1× for each")
+        XCTAssertEqual(try decode(#"{"speed":40}"#).speeds, ThumbWheelSpeeds(all: 3), "brought into the slider's range")
+        XCTAssertEqual(try decode(#"{"speed":"fast"}"#).speeds, .default)
+    }
+
+    /// The slider's value is the chosen action's speed: setting it leaves the others, and
+    /// changing the action shows that action's own.
+    func testTheSpeedIsTheChosenActionsOwn() {
+        var settings = ThumbWheelSettings(function: .desktops, speed: 1)
+        settings.speed = 0.75
+        XCTAssertEqual(settings.speeds[.desktops], 0.75)
+        for function in ThumbWheelFunction.allCases where function != .desktops {
+            XCTAssertEqual(settings.speeds[function], 1, "\(function)")
+        }
+        settings.function = .scroll
+        XCTAssertEqual(settings.speed, 1)
+        settings.speed = 9
+        XCTAssertEqual(settings.speed, 3, "inside the range")
+        settings.speed = .nan
+        XCTAssertEqual(settings.speed, 1, "not a number: the default")
+        settings.function = .desktops
+        XCTAssertEqual(settings.speed, 0.75)
+        XCTAssertFalse(settings.speeds.isUniform)
+        XCTAssertTrue(ThumbWheelSpeeds(all: 2).isUniform)
+    }
+
+    /// Settings whose actions all have one speed are written exactly as before. Speeds
+    /// that differ are written by name under "speeds", and the old "speed" stays beside
+    /// them as the chosen action's: what 1.0.5 (and every build before this one) reads.
+    func testTheSpeedsAreStoredByNameOnlyWhileTheyDifferAndTheOldSpeedIsAlwaysWritten() throws {
+        var settings = ThumbWheelSettings(function: .desktops, speed: 1.5)
+        XCTAssertEqual(try encode(settings), #"{"function":"desktops","speed":1.5,"swapsDirection":false}"#)
+        settings.speed = 0.75
+        let stored = try encode(settings)
+        XCTAssertEqual(stored, #"{"function":"desktops","speed":0.75,"#
+            + #""speeds":{"backForward":1.5,"desktops":0.75,"scroll":1.5,"tabs":1.5,"volume":1.5,"zoom":1.5},"#
+            + #""swapsDirection":false}"#)
+        XCTAssertEqual(try decode(stored), settings)
+
+        // Another action chosen: the old field is that action's speed.
+        settings.function = .scroll
+        XCTAssertTrue(try encode(settings).contains(#""speed":1.5,"#))
+        XCTAssertEqual(try decode(try encode(settings)), settings)
+
+        // What a build from before makes of it (it reads "speed" and knows no "speeds"): one
+        // speed, the chosen action's.
+        struct Before: Decodable { let function: String; let speed: Double }
+        let before = try JSONDecoder().decode(Before.self, from: Data(stored.utf8))
+        XCTAssertEqual(before.speed, 0.75)
+        XCTAssertEqual(before.function, "desktops")
+    }
+
+    /// An action missing in "speeds" takes the old single speed; a map that cannot be read
+    /// is none (the single speed for all); each value is brought into the range.
+    func testAMissingOrUnreadableSpeedTakesTheSingleOne() throws {
+        let partial = try decode(#"{"function":"tabs","speed":2,"speeds":{"zoom":0.5,"volume":40,"later":7}}"#)
+        XCTAssertEqual(partial.speeds[.zoom], 0.5)
+        XCTAssertEqual(partial.speeds[.volume], 3)
+        XCTAssertEqual(partial.speeds[.tabs], 2)
+        XCTAssertEqual(partial.speeds[.scroll], 2)
+        XCTAssertEqual(try decode(#"{"function":"tabs","speed":2,"speeds":{"zoom":"fast"}}"#).speeds, ThumbWheelSpeeds(all: 2))
+        XCTAssertEqual(try decode(#"{"function":"tabs","speed":2,"speeds":3}"#).speeds, ThumbWheelSpeeds(all: 2))
+        XCTAssertEqual(try decode(#"{"function":"tabs","speeds":{"zoom":0.5}}"#).speeds[.tabs], 1, "no single speed: the default")
+    }
+
+    /// An app's own values: from before (one "speed") every action takes it; the speeds by
+    /// name only while they differ, with the single speed beside them (the action the
+    /// app's page showed when it set them); no speed at all: the general ones.
+    func testAnAppsOwnSpeedsAreStoredAndSeededTheSameWay() throws {
+        func scrolling(_ json: String) throws -> ApplicationThumbWheelScrolling {
+            return try JSONDecoder().decode(ApplicationThumbWheelScrolling.self, from: Data(json.utf8))
+        }
+        func stored(_ values: ApplicationThumbWheelScrolling) throws -> String {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            return String(decoding: try encoder.encode(values), as: UTF8.self)
+        }
+        let before = try scrolling(#"{"speed":0.75,"swapsDirection":true,"followsWheel":false}"#)
+        XCTAssertEqual(before.speeds, ThumbWheelSpeeds(all: 0.75))
+        XCTAssertEqual(try stored(before), #"{"followsWheel":false,"speed":0.75,"swapsDirection":true}"#, "written back as it was")
+        XCTAssertNil(try scrolling(#"{"swapsDirection":true}"#).speeds, "no speed of its own: the general ones")
+        XCTAssertNil(try scrolling(#"{"speed":"fast"}"#).speeds)
+
+        var zoom = ThumbWheelSettings(function: .zoom, speed: 1)
+        zoom.speed = 2.5
+        let own = ApplicationThumbWheelScrolling(zoom)
+        let text = try stored(own)
+        XCTAssertEqual(text, #"{"followsWheel":false,"speed":2.5,"#
+            + #""speeds":{"backForward":1,"desktops":1,"scroll":1,"tabs":1,"volume":1,"zoom":2.5},"swapsDirection":false}"#)
+        let again = try scrolling(text)
+        XCTAssertEqual(again, own)
+        XCTAssertEqual(try stored(again), text, "the single speed is written back as it was")
+        XCTAssertEqual(try scrolling(#"{"speed":2,"speeds":{"zoom":0.5}}"#).speeds?[.tabs], 2, "a missing action: the single speed")
+
+        // What runs in the app: its own speeds where it has them, else Scrolling's.
+        var general = ThumbWheelSettings(function: .desktops, speed: 2)
+        general.speeds[.zoom] = 0.25
+        XCTAssertEqual(ThumbWheelOwn(function: .zoom, speeds: own.speeds).settings(general: general).speed, 2.5)
+        XCTAssertEqual(ThumbWheelOwn(function: .zoom).settings(general: general).speed, 0.25)
+        XCTAssertEqual(ThumbWheelOwn(speeds: own.speeds).settings(general: general).speed, 1, "the general action at the app's speed")
     }
 
     /// A settings file carries every action's switch and the follow switch, general and an
@@ -137,6 +262,81 @@ final class ThumbWheelOptionsStoredTests: XCTestCase {
         XCTAssertFalse(imported.thumbWheelThatRuns(general: general).followsWheel, "the app's own: off")
         XCTAssertFalse(imported.thumbWheelThatRuns(general: general).reverses[.tabs])
         XCTAssertTrue(imported.thumbWheelThatRuns(general: general).reverses[.volume])
+    }
+
+    /// A settings file exported before each action had its own speed (as 1.0.5 writes the
+    /// thumb wheel, and an app's own values as the builds after it did): an import gives
+    /// every action the file's one speed, general and the app's.
+    func testAnOldSettingsFileGivesEveryActionItsOneSpeed() throws {
+        let scroll = StoredDataCanaryTests.readableApp.components(separatedBy: #""scroll":"#)[1].dropLast()
+        let file = Data((#"{"format":"scrollio-settings","formatVersion":1,"settings":{"#
+            + #""thumbWheelSettings":{"function":"desktops","speed":0.75,"swapsDirection":false},"#
+            + #""applications":[{"path":"/Applications/A.app","inherit":false,"scroll":"#
+            + scroll.replacingOccurrences(of: #""speed":2.5,"#, with: #""speed":2.5,"thumbWheel":{"speed":2,"swapsDirection":true},"#)
+            + #","thumbWheel":{"function":"zoom"}}]}}"#).utf8)
+        let contents = try SettingsFile.read(file).get()
+        XCTAssertEqual(contents.thumbWheel, ThumbWheelSettings(function: .desktops, speed: 0.75))
+        XCTAssertEqual(contents.thumbWheel?.speeds, ThumbWheelSpeeds(all: 0.75))
+
+        let target = Options()
+        target.defaults = TestDefaults.make(for: self)
+        target.readOptions()
+        target.thumbWheel.speeds[.volume] = 3
+        XCTAssertTrue(SettingsFile.apply(contents, to: target))
+        for function in ThumbWheelFunction.allCases {
+            XCTAssertEqual(target.thumbWheel.speeds[function], 0.75, "\(function): the file's one speed")
+        }
+        let app = try XCTUnwrap(target.application.applications.get(by: "/Applications/A.app"))
+        XCTAssertEqual(app.scroll.thumbWheel?.speeds, ThumbWheelSpeeds(all: 2))
+        XCTAssertEqual(app.thumbWheelThatRuns(general: target.thumbWheel).speed, 2, "Zoom, at the app's one speed")
+    }
+
+    /// A file of this version carries every action's speed, general and an app's own, and
+    /// an import puts them back as they were. The old single "speed" is in the file too
+    /// (the speed of the action in use), so a version from before imports a sensible one.
+    func testTheSettingsFileCarriesEveryActionsSpeedAndStillTheOldOne() throws {
+        let source = Options()
+        source.defaults = TestDefaults.make(for: self)
+        var general = ThumbWheelSettings(function: .desktops, speed: 1)
+        general.speeds[.desktops] = 0.75
+        general.speeds[.scroll] = 1.5
+        source.thumbWheel = general
+        let figma = Application(path: "/Applications/Figma.app")
+        figma.inherit = false
+        figma.setOwnThumbWheelFunction(.zoom)
+        var own = figma.thumbWheelThatRuns(general: general)
+        own.speed = 2.5
+        figma.setOwnThumbWheelScrolling(own)
+        source.application.applications.append(figma)
+
+        let data = try SettingsFile.export(from: source, now: Date(timeIntervalSince1970: 1_794_476_527)).get()
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let settings = try XCTUnwrap(object["settings"] as? [String: Any])
+        let thumbWheel = try XCTUnwrap(settings["thumbWheelSettings"] as? [String: Any])
+        XCTAssertEqual(thumbWheel["speed"] as? Double, 0.75, "the old field: the action in use")
+        XCTAssertEqual(thumbWheel["speeds"] as? [String: Double],
+                       ["scroll": 1.5, "zoom": 1, "tabs": 1, "desktops": 0.75, "backForward": 1, "volume": 1])
+        let apps = try XCTUnwrap(settings["applications"] as? [[String: Any]])
+        let appsThumbWheel = try XCTUnwrap((apps.first?["scroll"] as? [String: Any])?["thumbWheel"] as? [String: Any])
+        XCTAssertEqual(appsThumbWheel["speed"] as? Double, 2.5, "the app's action in use: Zoom")
+        XCTAssertEqual(appsThumbWheel["speeds"] as? [String: Double],
+                       ["scroll": 1.5, "zoom": 2.5, "tabs": 1, "desktops": 0.75, "backForward": 1, "volume": 1])
+
+        let contents = try SettingsFile.read(data).get()
+        XCTAssertEqual(contents.thumbWheel, general)
+        XCTAssertEqual(contents.leftOutCount, 0)
+        let target = Options()
+        target.defaults = TestDefaults.make(for: self)
+        target.readOptions()
+        XCTAssertTrue(SettingsFile.apply(contents, to: target))
+        XCTAssertEqual(target.thumbWheel, general)
+        let imported = try XCTUnwrap(target.application.applications.get(by: figma.path))
+        XCTAssertEqual(imported.scroll.thumbWheel, ApplicationThumbWheelScrolling(own))
+        XCTAssertEqual(imported.thumbWheelThatRuns(general: general).speed, 2.5)
+        // Exported again: the same file (the single speeds are written back as they were).
+        let again = try SettingsFile.export(from: target, now: Date(timeIntervalSince1970: 1_794_476_527)).get()
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: again) as? NSDictionary,
+                       try JSONSerialization.jsonObject(with: data) as? NSDictionary)
     }
 }
 
@@ -454,7 +654,9 @@ final class ThumbWheelFollowTests: XCTestCase {
         rig.advance(to: 500.1)
         Options.shared.thumbWheel.followsWheel = false
         try turn(at: 0.15)
-        XCTAssertEqual(dock.terminals, [.end(0)])
+        XCTAssertTrue(dock.terminals.isEmpty, "nothing is sent to the Dock inside the tap callback")
+        rig.advance(to: 500.15)
+        XCTAssertEqual(dock.terminals, [.end(0)], "on the main queue, right after it")
         try turn(at: 0.2)
         try turn(at: 0.25)
         rig.advance(to: 502)
@@ -687,7 +889,9 @@ final class ThumbWheelFollowTests: XCTestCase {
         try turn(at: 0.05)
         rig.advance(to: 500.1)
         try turn(at: 0.6, busy: true)
-        XCTAssertEqual(dock.terminals, [.end(0)], "the stroke ended in the callback")
+        XCTAssertTrue(dock.terminals.isEmpty, "the stroke is over, but nothing is sent to the Dock inside the callback")
+        rig.advance(to: 500.6)
+        XCTAssertEqual(dock.terminals, [.end(0)], "it ended on the main queue, right after the callback")
         rig.advance(to: 503)
         XCTAssertEqual(rig.lines.first?.swipes.map(ScrollSystemLog.swipeMessage), ["0.33 ended", "0.17 ended"], "the new stroke's too")
 
@@ -1076,6 +1280,125 @@ final class ThumbWheelFollowTests: XCTestCase {
 
     /// A follower of its own on the rig's clock and queue, with the fake Dock's swipe, fed
     /// by hand (the engine's own stays idle).
+    // MARK: The gate right after a bounce or a slide back
+
+    /// Rolls toward "next" (2 lines every 50 ms) from `start` until the first swipe ended at a
+    /// full Space, with no Space change afterwards: the last desktop, where the Dock lets
+    /// the swipe bounce back. Returns when it ended.
+    private func rollIntoABounce(from start: Double = 0) throws -> Double {
+        dock.calls = []
+        var time = start
+        while endTimes.isEmpty, time < start + 1 {
+            try turn(at: time)
+            time += 0.05
+        }
+        return try XCTUnwrap(endTimes.first, "\(dock.calls)")
+    }
+
+    /// A hard roll (10 lines every 30 ms; positive lines: back) from `start` until the
+    /// `count`th swipe ended at a full Space, then two more events, which wait at its gate
+    /// (two thirds of a Space). Returns when the swipe ended.
+    private func rollHard(lines: Int64, from start: Double, untilEnd count: Int) throws -> Double {
+        var time = start
+        while endTimes.count < count, time < start + 1 {
+            try turn(at: time, lines: lines)
+            time += 0.03
+        }
+        XCTAssertEqual(endTimes.count, count, "\(dock.calls)")
+        let end = try XCTUnwrap(endTimes.last)
+        try turn(at: max(time, end + 0.01), lines: lines)
+        try turn(at: max(time, end + 0.01) + 0.03, lines: lines)
+        return end
+    }
+
+    /// The Space changes `delay` after `end`: the follower is told, as macOS tells it.
+    private func changeTheSpace(_ delay: Double, after end: Double) {
+        rig.advance(to: 500 + end + delay)
+        dock.record(.spaceChanged)
+        rig.engine.follower.spaceDidChange()
+    }
+
+    /// At the end of the row a chained swipe bounces back (no Space change in 0.2 s). The
+    /// wheel turns back at once, and that swipe ends 0.4 to 0.65 s after the bounce's end:
+    /// the Dock still draws the bounce and tells this change late (+337 ms and +340 ms on
+    /// the owner's Mac). Its gate waits the settle timeout, so the change 340 ms after the
+    /// end opens it as any other: the travel kept at the gate begins the next swipe at the
+    /// change, the way back was never barred, and the line does not say "late".
+    func testASwipeRightAfterABounceWaitsLongerForItsSpaceChange() throws {
+        let bounce = try rollIntoABounce()
+        let end = try rollHard(lines: 10, from: bounce + 0.25, untilEnd: 2)
+        XCTAssertLessThan(end - bounce, ThumbWheelTuning.followAfterNoSwitchWindow, "right after the bounce")
+        XCTAssertEqual(beginCount, 2)
+        XCTAssertLessThan(try firstUpdate(afterBegin: 1), 0, "back")
+        changeTheSpace(0.34, after: end)
+        XCTAssertEqual(beginCount, 3, "the gate was still closed: the travel it kept begins the next swipe at the change")
+        XCTAssertLessThan(try firstUpdate(afterBegin: 2), 0, "back again")
+        rig.advance(to: 510)
+        let swipes = rig.lines.flatMap(\.swipes)
+        XCTAssertEqual(swipes.first.map(ScrollSystemLog.swipeMessage), "1.00 chained no change", "the bounce")
+        let back = try XCTUnwrap(swipes.dropFirst().first)
+        XCTAssertFalse(back.late, ScrollSystemLog.swipeMessage(back))
+        XCTAssertEqual(back.spaceChangedAfter ?? 0, 0.34, accuracy: 1e-6)
+    }
+
+    /// The ordinary case stays at 0.2 s: the same turn back, but its swipe ends more than
+    /// 0.7 s after the bounce's end (the Dock is done with it). A change 340 ms after the
+    /// end is late then: the gate timed out at 0.2 s, the travel kept was dropped (the
+    /// stroke is barred that way), and nothing begins at the change.
+    func testASwipeLongAfterABounceKeepsTheShortGate() throws {
+        let bounce = try rollIntoABounce()
+        let end = try rollHard(lines: 10, from: bounce + 0.75, untilEnd: 2)
+        XCTAssertGreaterThan(end - bounce, ThumbWheelTuning.followAfterNoSwitchWindow)
+        rig.advance(to: 500 + end + ThumbWheelTuning.followSpaceChangeTimeout - 0.001)
+        XCTAssertEqual(rig.engine.follower.state, .gated, "the gate holds for 0.2 s")
+        rig.advance(to: 500 + end + ThumbWheelTuning.followSpaceChangeTimeout)
+        XCTAssertNotEqual(rig.engine.follower.state, .gated, "and no longer")
+        changeTheSpace(0.34, after: end)
+        XCTAssertEqual(beginCount, 2, "timed out at 0.2 s: nothing waits for the change")
+        rig.advance(to: 510)
+        let back = try XCTUnwrap(rig.lines.flatMap(\.swipes).dropFirst().first)
+        XCTAssertTrue(back.late, ScrollSystemLog.swipeMessage(back))
+
+        // So does a first swipe with nothing before it, and the bounce's own gate.
+        let again = try rollIntoABounce(from: 20)
+        rig.advance(to: 500 + again + ThumbWheelTuning.followSpaceChangeTimeout - 0.001)
+        XCTAssertEqual(rig.engine.follower.state, .gated)
+        rig.advance(to: 500 + again + ThumbWheelTuning.followSpaceChangeTimeout)
+        XCTAssertNotEqual(rig.engine.follower.state, .gated)
+    }
+
+    /// A swipe that ended a third of the way slides back. A hard roll right after it ends
+    /// at a full Space 0.3 s later, while the Dock still draws the slide: its change comes
+    /// late (+295 ms on the owner's Mac). Its gate waits the settle timeout: the change
+    /// 300 ms after the end opens it, and the travel kept begins the next swipe then.
+    func testASwipeRightAfterASlideBackWaitsLongerForItsSpaceChange() throws {
+        try turn(at: 0)
+        try turn(at: 0.05)
+        rig.advance(to: 500.05 + ThumbWheelTuning.followRest)
+        XCTAssertEqual(dock.terminals, [.end(0)], "a third of a Space, at the rest: it slides back")
+        let slideBack = try XCTUnwrap(endTimes.first)
+        let end = try rollHard(lines: -10, from: slideBack + 0.1, untilEnd: 2)
+        XCTAssertLessThan(end - slideBack, ThumbWheelTuning.followAfterNoSwitchWindow)
+        rig.advance(to: 500 + end + 0.25)
+        XCTAssertEqual(rig.engine.follower.state, .gated, "past 0.2 s: the gate still waits")
+        changeTheSpace(0.3, after: end)
+        XCTAssertEqual(beginCount, 3, "the travel kept at the gate begins the next swipe at the change")
+        XCTAssertGreaterThan(try firstUpdate(afterBegin: 2), 0, "the same way")
+        rig.advance(to: 510)
+        let swipes = rig.lines.flatMap(\.swipes)
+        XCTAssertEqual(swipes.first.map(ScrollSystemLog.swipeMessage), "0.33 ended")
+        let full = try XCTUnwrap(swipes.dropFirst().first)
+        XCTAssertFalse(full.late, ScrollSystemLog.swipeMessage(full))
+        XCTAssertEqual(full.spaceChangedAfter ?? 0, 0.3, accuracy: 1e-6)
+
+        // The Space changed: the Dock draws no slide any more, and the next end's gate is
+        // the short one again.
+        dock.calls = []
+        let later = try rollIntoABounce(from: 30)
+        rig.advance(to: 500 + later + ThumbWheelTuning.followSpaceChangeTimeout)
+        XCTAssertNotEqual(rig.engine.follower.state, .gated)
+    }
+
     private func bareFollower() -> ThumbWheelFollower {
         let follower = ThumbWheelFollower(spaceChanges: nil)
         follower.synthesizer = synthesizer
@@ -1118,6 +1441,87 @@ final class ThumbWheelFollowTests: XCTestCase {
         XCTAssertEqual(dock.terminals, [.end(0)], "ended by its rest, not kept alive")
         XCTAssertEqual(follower.state, .idle)
         follower.cancel()
+    }
+
+    /// Nothing is sent to the Dock from inside the tap callback (a synthetic event posted
+    /// there re-enters the event pipeline and can time the tap out). The wheel is taken
+    /// again 0.46 s after a stop, before the rest's look came (it is scheduled with
+    /// leeway): the event finds the stroke over, and the stroke's end (the swipe's last
+    /// update and its end) goes out on the main queue, right after the callback; the
+    /// events that came meanwhile begin the next stroke after it, in order, with all their
+    /// travel. The same when the turn stops following in the middle of a stroke, and a stop
+    /// meanwhile cancels at once and runs nothing later.
+    func testAStrokeAnEventFindsOverEndsOnTheMainQueueNotInTheTapCallback() throws {
+        let follower = bareFollower()
+        var strokesEnded: [Int] = []
+        follower.onStrokeEnd = { tag, _ in strokesEnded.append(tag) }
+        func add(at time: Double, tag: Int) -> ThumbWheelFollower.Taken {
+            return follower.add(1, at: time, seenAt: time, tag: tag)
+        }
+        rig.advance(to: 500)
+        XCTAssertEqual(add(at: 500, tag: 1), .yes(newStroke: true))
+        rig.advance(to: 500.44)
+        let sliding = dock.calls
+        XCTAssertEqual(sliding.first, .begin)
+        XCTAssertTrue(dock.terminals.isEmpty)
+
+        // 0.46 s after the stop: the rest's look, due at 0.45 s, has not run.
+        rig.now = 500.46
+        XCTAssertEqual(add(at: 500.46, tag: 2), .yes(newStroke: true), "the next stroke's first event")
+        rig.now = 500.48
+        XCTAssertEqual(add(at: 500.48, tag: 2), .yes(newStroke: false))
+        XCTAssertEqual(dock.calls, sliding, "no call to the Dock inside the tap callback")
+        XCTAssertTrue(follower.isInStroke)
+        XCTAssertTrue(strokesEnded.isEmpty)
+
+        rig.advance(to: 500.48)
+        XCTAssertEqual(dock.terminals, [.end(0)], "the main queue ran: the stroke that rested ended")
+        XCTAssertEqual(strokesEnded, [1])
+        rig.advance(to: 500.7)
+        let end = try XCTUnwrap(dock.calls.firstIndex { if case .end = $0 { return true } else { return false } })
+        let begins = dock.calls.indices.filter { dock.calls[$0] == .begin }
+        XCTAssertEqual(begins.count, 2, "\(dock.calls)")
+        XCTAssertLessThan(end, try XCTUnwrap(begins.last), "the end first, then the next stroke's swipe")
+        XCTAssertEqual(try XCTUnwrap(dock.updates.last), 2.0 / 6 * Self.space, accuracy: 1e-9, "both events' travel")
+        rig.advance(to: 502)
+        XCTAssertEqual(strokesEnded, [1, 2])
+        XCTAssertEqual(dock.terminals.count, 2)
+        XCTAssertFalse(follower.isInStroke)
+
+        // The turn stops following in the middle of a stroke (`endStroke(at:)`, in the tap
+        // callback too, asked by every event until the stroke is over): once, on the main queue.
+        dock.calls = []
+        rig.advance(to: 510)
+        XCTAssertEqual(add(at: 510, tag: 3), .yes(newStroke: true))
+        rig.advance(to: 510.05)
+        let running = dock.calls
+        rig.now = 510.1
+        follower.endStroke(at: 510.1)
+        rig.now = 510.12
+        follower.endStroke(at: 510.12)
+        XCTAssertEqual(dock.calls, running, "no call to the Dock inside the tap callback")
+        XCTAssertTrue(follower.isInStroke)
+        rig.advance(to: 510.12)
+        XCTAssertEqual(dock.terminals, [.end(0)])
+        XCTAssertEqual(follower.state, .idle)
+        XCTAssertEqual(strokesEnded, [1, 2, 3])
+
+        // A stop while an end waits for the main queue and events wait behind it: the swipe
+        // is cancelled at once (a stop does not wait for the queue), the kept events begin
+        // nothing, and both strokes are over for their rolls.
+        dock.calls = []
+        rig.advance(to: 520)
+        XCTAssertEqual(add(at: 520, tag: 4), .yes(newStroke: true))
+        rig.advance(to: 520.44)
+        rig.now = 520.46
+        XCTAssertEqual(add(at: 520.46, tag: 5), .yes(newStroke: true))
+        follower.cancel()
+        XCTAssertEqual(dock.terminals, [.cancel])
+        XCTAssertEqual(Set(strokesEnded.suffix(2)), [4, 5])
+        XCTAssertFalse(follower.isInStroke)
+        rig.advance(to: 523)
+        XCTAssertEqual(dock.calls.filter { $0 == .begin }.count, 1, "nothing began later: \(dock.calls)")
+        XCTAssertEqual(dock.terminals, [.cancel])
     }
 
     /// A swipe that waits as late holds back only the later endings of its own roll (their
@@ -1224,7 +1628,7 @@ final class ThumbWheelFollowTests: XCTestCase {
         ]
         var start = 0.0
         func firstStep(_ function: ThumbWheelFunction, reverses: ThumbWheelReversal) throws -> ThumbWheelAction? {
-            Options.shared.thumbWheel = ThumbWheelSettings(function: function, speed: 1, reverses: reverses, followsWheel: false)
+            Options.shared.thumbWheel = ThumbWheelSettings(function: function, speeds: .default, reverses: reverses, followsWheel: false)
             let ran = rig.performed.count
             for offset in [0, 0.05, 0.1] { try turn(at: start + offset, lines: -12) }
             start += 2
@@ -1247,7 +1651,7 @@ final class ThumbWheelFollowTests: XCTestCase {
         scrollOthers[.scroll] = false
         // (Relative to the event as "Reverse wheel direction" leaves it.)
         func sign(_ reverses: ThumbWheelReversal) throws -> FloatingPointSign {
-            Options.shared.thumbWheel = ThumbWheelSettings(function: .scroll, speed: 1, reverses: reverses, followsWheel: false)
+            Options.shared.thumbWheel = ThumbWheelSettings(function: .scroll, speeds: .default, reverses: reverses, followsWheel: false)
             let event = try XCTUnwrap(try turn(at: start, lines: -12), "it scrolls: goes on")
             start += 2
             return event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2).sign

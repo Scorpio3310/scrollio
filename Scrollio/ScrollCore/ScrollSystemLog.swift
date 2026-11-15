@@ -253,13 +253,14 @@ enum ScrollSystemLog {
         var id: Int
         /// The settings of the roll's events (a change ends the roll).
         var function: ThumbWheelFunction
+        /// The function's Speed (each function has its own; the line's `x0.70`).
         var speed: Double
         /// The function's "Reverse direction".
         var swapsDirection: Bool
         /// Switch Desktops follows the wheel (`ThumbWheelSettings.followsWheelNow`): the roll
         /// drove swipes, not steps.
         var follows = false
-        /// The settings are the app in front's own (its function, or its speed and swap:
+        /// The settings are the app in front's own (its function, or its speeds and reverses:
         /// `ThumbWheelTurn`); the line never names the app.
         var isAppsOwn = false
         /// The events' own times of the first and the last event (the line's duration, gaps).

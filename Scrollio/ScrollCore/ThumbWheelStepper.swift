@@ -159,6 +159,14 @@ enum ThumbWheelTuning {
     /// speed, more slowly than a swipe it was handed at a full Space: 479 to 551 ms after
     /// ends at 0.58 to 0.93 of a Space in the same measurement).
     static let followSettleSpaceChangeTimeout: TimeInterval = 1.0
+    /// A swipe that ends within this long (s) of the end of one that brought no switch (it
+    /// bounced at the end of the row: no change in time; or it ended short of half a Space
+    /// and slides back) waits `followSettleSpaceChangeTimeout` for its change too: the Dock
+    /// is still drawing that bounce or slide, and tells the change late. Measured on the
+    /// owner's Mac (2026-11-15, 13:13 to 13:16): +22 to +85 ms after an ordinary full end,
+    /// +295 to +563 ms after ends 0.4 to 0.65 s behind a bounce or a slide back, which the
+    /// 0.2 s gate took for "no change" and barred the stroke that way for a moment.
+    static let followAfterNoSwitchWindow: TimeInterval = 0.7
     /// A gate that timed out keeps its swipe this long (s) more: a change meanwhile is logged
     /// as late ("late +N ms"), none as "no change".
     static let followLateSpaceChangeWindow: TimeInterval = 1.5
