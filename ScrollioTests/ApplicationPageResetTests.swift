@@ -609,9 +609,11 @@ final class ApplicationPageResetTests: XCTestCase {
         XCTAssertEqual(marks(in: pane), [])
     }
 
-    /// The Buttons part's reset changes what opens the ring with the app in front: an Undo
-    /// while the Shortcut Ring part shows says so there.
-    func testUndoOfTheButtonsResetShowsOnTheRingPartShownNow() throws {
+    /// The Buttons part's reset changes what opens the ring with the app in front. An Undo
+    /// while the Shortcut Ring part shows brings the Buttons part back, where the buttons
+    /// came back (QA B4: the page stayed on the other part); the Shortcut Ring part says
+    /// what holds then once it is shown. Redo the same way.
+    func testUndoOfTheButtonsResetShowsTheButtonsPartAgain() throws {
         Options.shared.buttons.binding = [binding(5, SystemShortcut.shortcutRing.identifier)]
         let calculator = addCalculator()
         calculator.setOwnButtonBindings([binding(5, "copy")])
@@ -623,8 +625,14 @@ final class ApplicationPageResetTests: XCTestCase {
         let five = ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 5, modifiers: 0, deviceFilter: nil))
         XCTAssertEqual(page.ringPart.triggerRow.explanation, Self.catalog("apps-trigger-everywhere", five))
         undo.undo()
+        XCTAssertEqual(page.shownPart, .buttons, "Undo shows where it acts")
+        XCTAssertEqual(page.buttonsPart.rows.map(\.binding.systemShortcutName), ["copy"])
+        page.show(.ring)
         XCTAssertEqual(page.ringPart.triggerRow.explanation, "None in Calculator")
         undo.redo()
+        XCTAssertEqual(page.shownPart, .buttons, "and Redo")
+        XCTAssertTrue(page.buttonsPart.rows.isEmpty)
+        page.show(.ring)
         XCTAssertEqual(page.ringPart.triggerRow.explanation, Self.catalog("apps-trigger-everywhere", five))
     }
 }

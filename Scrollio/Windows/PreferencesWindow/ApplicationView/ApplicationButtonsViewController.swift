@@ -62,17 +62,33 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     var partShowing: ((Application) -> ApplicationButtonsViewController?)?
 
     /// Where a change of the rows or of the thumb wheel, its Undo and its Redo show: the
-    /// part `partShowing` gives (this one, without it); when no page of the app is open
-    /// (it closed, another pane shows), Apps comes forward with the app's page on its
-    /// Buttons part, as an Undo of a place of the ring shows itself. Holds neither the page
-    /// nor the window's panes.
+    /// part `partShowing` gives (this one, without it), on a page that shows its Buttons
+    /// part (a page that shows another part shows Buttons again, where the row came back or
+    /// went: every Undo shows where it acts); when no page of the app is open (it closed,
+    /// another pane shows), Apps comes forward with the app's page on its Buttons part, as
+    /// an Undo of a place of the ring shows itself. Holds neither the page nor the
+    /// window's panes.
     var undoShowing: (Application) -> ApplicationButtonsViewController? {
+        return undoShowing(madeOn: nil)
+    }
+
+    /// `home`: the part the change was made on when that is not Buttons ("Set Up…" of the
+    /// Gestures or Shortcut Ring part, whose first row says what was set up): a page that
+    /// shows that part stays on it, and a page that has to be shown, or shows neither,
+    /// shows it.
+    func undoShowing(madeOn home: ApplicationPagePart?) -> (Application) -> ApplicationButtonsViewController? {
         let showing = partShowing ?? { [weak self] entry in
             self?.application === entry ? self : nil
         }
         weak var split = PreferencesButtonsViewController.splitViewController(of: self)
         return { entry in
-            showing(entry) ?? split?.bringForward(pageOf: entry, part: .buttons)?.buttonsPart
+            guard let part = showing(entry) else {
+                return split?.bringForward(pageOf: entry, part: home ?? .buttons)?.buttonsPart
+            }
+            if let page = part.parent as? ApplicationDetailViewController, page.shownPart != .buttons, page.shownPart != home {
+                page.show(home ?? .buttons)
+            }
+            return part
         }
     }
     /// "Show in Safari › Gestures" was chosen in a row's menu: the page shows the app's
@@ -426,9 +442,12 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// The action of the app's binding `id`: a listed one (the Shortcut Ring and Gesture
     /// Navigation among them), a recorded key combination (with its name and icon), or ""
     /// ("Default": the button does what it does by itself here). `undoName`: what Edit ›
-    /// Undo calls it ("Change Action" when nil).
-    func setAction(of id: UUID, named name: String, label: ShortcutLabel? = nil, undoName: String? = nil) {
-        change(id, undoName: undoName) { old in
+    /// Undo calls it ("Change Action" when nil); `home`: the part it was made on when that
+    /// is not this one (`undoShowing(madeOn:)`).
+    func setAction(
+        of id: UUID, named name: String, label: ShortcutLabel? = nil, undoName: String? = nil, madeOn home: ApplicationPagePart? = nil
+    ) {
+        change(id, undoName: undoName, madeOn: home) { old in
             ButtonBinding(
                 id: old.id, triggerEvent: old.triggerEvent, systemShortcutName: name, isEnabled: true,
                 createdAt: old.createdAt, label: label
@@ -446,7 +465,9 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// Rename" when only the name or icon of its keys changed; `undoName` when given) puts
     /// the one before back, with an undo target that outlives the page, as a removal's
     /// (`registerOwnRowUndo`).
-    private func change(_ id: UUID, undoName: String? = nil, _ transform: (ButtonBinding) -> ButtonBinding) {
+    private func change(
+        _ id: UUID, undoName: String? = nil, madeOn home: ApplicationPagePart? = nil, _ transform: (ButtonBinding) -> ButtonBinding
+    ) {
         var own = ownBindings
         guard let index = own.firstIndex(where: { $0.id == id }) else { return }
         let old = own[index]
@@ -455,13 +476,14 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         store(own)
         guard !ButtonRowChange.isSame(old, new) else { return }
         registerOwnRowUndo(
-            ButtonRowChange(kind: .of(old, to: new), states: [.init(id: id, binding: old, index: index)]), name: undoName
+            ButtonRowChange(kind: .of(old, to: new), states: [.init(id: id, binding: old, index: index)]), name: undoName, madeOn: home
         )
     }
 
-    /// Registers Undo of `change` on the undo target, for this part's app.
-    private func registerOwnRowUndo(_ change: ButtonRowChange, name: String?) {
-        let showing = undoShowing
+    /// Registers Undo of `change` on the undo target, for this part's app. `home`: the part
+    /// the change was made on when that is not this one (`undoShowing(madeOn:)`).
+    private func registerOwnRowUndo(_ change: ButtonRowChange, name: String?, madeOn home: ApplicationPagePart? = nil) {
+        let showing = undoShowing(madeOn: home)
         Self.registerOwnRowUndo(
             change, name: name, of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange
         )
@@ -590,18 +612,23 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     }
 
     /// Adds a binding of the app's own for `trigger` with the action the button has
-    /// everywhere (so nothing changes until another one is chosen), selects it and opens
-    /// its menu. A trigger the app has already is selected and flashes. With `action`
-    /// ("Set Up…" of the Gestures or Shortcut Ring part) the new binding has that action
-    /// and no menu opens; a row of the trigger with "Default" takes it too; either has
-    /// Undo, named as the panes' choice of the button ("Undo Change Button to Hold").
+    /// everywhere (so nothing changes until another one is chosen), selects it, gives the
+    /// list the keyboard and opens its menu. A trigger the app has already is selected and
+    /// flashes. With `action` ("Set Up…" of the Gestures or Shortcut Ring part) the new
+    /// binding has that action and no menu opens; a row of the trigger takes it too, in
+    /// place of what it had ("Default" or an action, as the panes' choice of the button
+    /// replaces one). Every one of these has its Undo: "Undo Add Button" for "+" (without
+    /// it ⌘Z right after "+" took back an older change somewhere else), and for "Set Up…"
+    /// the name of the panes' choice of the button ("Undo Change Button to Hold"), shown
+    /// on the part it was set up on.
     @discardableResult
     func addOwnBinding(for trigger: RecordedEvent, action: SystemShortcut.Shortcut? = nil) -> UUID? {
         defer { focusList() }
         let undoName = action.map(Self.setUpUndoName(for:))
+        let home = action.map(Self.setUpPart(for:))
         if let existing = ownBinding(for: trigger) {
             if let action, Self.takesAction(existing, action) {
-                setAction(of: existing.id, named: action.identifier, undoName: undoName)
+                setAction(of: existing.id, named: action.identifier, undoName: undoName, madeOn: home)
                 list.select(AnyHashable(existing.id))
             } else {
                 list.flash(AnyHashable(existing.id))
@@ -620,7 +647,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         // (Undo takes the new row away again; Redo puts it back.)
         registerOwnRowUndo(
             ButtonRowChange(kind: .action, states: [.init(id: added.id, binding: nil, index: own.count)]),
-            name: undoName ?? text("buttons-undo-add")
+            name: undoName ?? text("buttons-undo-add"), madeOn: home
         )
         guard action == nil else { return added.id }
         // The new row's menu opens by itself, once the "+" menu or the recorder is gone.

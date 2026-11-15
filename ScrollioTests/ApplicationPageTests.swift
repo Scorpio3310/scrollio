@@ -1561,9 +1561,12 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// "−" in the Buttons part, then the Gestures or Shortcut Ring part, then Edit › Undo
-    /// or Redo: the part shown now says what the app's buttons make of the gestures or the
+    /// or Redo: the page shows its Buttons part again, where the row came back (selected)
+    /// or went (QA B4: the page stayed on the other part and the change was unseen, though
+    /// Undo is said to show the app's Buttons with the row selected); the Gestures and
+    /// Shortcut Ring parts then say what the app's buttons make of the gestures or the
     /// ring after the change, not what they made before.
-    func testUndoOfARemovedRowShowsOnTheGesturesAndRingPartsShownNow() throws {
+    func testUndoOfARemovedRowShowsTheButtonsPartAgain() throws {
         let gestures = SystemShortcut.mouseGestureNavigation.identifier
         let ringAction = SystemShortcut.shortcutRing.identifier
         let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
@@ -1573,36 +1576,67 @@ final class ApplicationPageTests: XCTestCase {
         let (page, part) = try buttonsPart()
         let undo = try XCTUnwrap(part.paneUndoManager)
         undo.groupsByEvent = false
-        func remove(_ index: Int) {
+        @discardableResult
+        func remove(_ index: Int) -> UUID {
+            let id = calculator.ownButtonBindings[index].id
             undo.beginUndoGrouping()
-            part.removeOwnBinding(id: calculator.ownButtonBindings[index].id)
+            part.removeOwnBinding(id: id)
             undo.endUndoGrouping()
+            return id
+        }
+        func show(_ shown: ApplicationPagePart) {
+            choose(ApplicationPagePart.all.firstIndex(of: shown)!, on: page)
         }
 
         // The Gestures part: the thumb panel runs the gestures again once its row is gone.
         let thumb = ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: thumbPanel, modifiers: 0, deviceFilter: nil))
         let noButton = "None in Calculator"
         let generalGestures = Self.catalog("apps-trigger-everywhere", thumb)
-        remove(0)
-        choose(ApplicationPagePart.all.firstIndex(of: .gestures)!, on: page)
+        let panelRow = remove(0)
+        show(.gestures)
         XCTAssertEqual(page.gesturesPart.holdRow.explanation, generalGestures)
         undo.undo()
-        XCTAssertEqual(page.gesturesPart.holdRow.explanation, noButton, "Undo shows on the part shown now")
+        XCTAssertEqual(page.shownPart, .buttons, "Undo shows where it acts")
+        XCTAssertNotNil(part.view.superview, "the Buttons part is on the page again")
+        XCTAssertEqual(part.list.selectedID, AnyHashable(panelRow), "with the row that came back selected")
+        show(.gestures)
+        XCTAssertEqual(page.gesturesPart.holdRow.explanation, noButton, "the Gestures part says what holds after the Undo")
         undo.redo()
-        XCTAssertEqual(page.gesturesPart.holdRow.explanation, generalGestures, "and Redo")
+        XCTAssertEqual(page.shownPart, .buttons, "and Redo")
+        XCTAssertEqual(part.rows.count, 1)
+        show(.gestures)
+        XCTAssertEqual(page.gesturesPart.holdRow.explanation, generalGestures)
 
         // The Shortcut Ring part: Buttons' ring button does something else here, and back.
-        choose(ApplicationPagePart.all.firstIndex(of: .buttons)!, on: page)
+        show(.buttons)
         let copyRow = try XCTUnwrap(calculator.ownButtonBindings.firstIndex { $0.systemShortcutName == "copy" })
-        remove(copyRow)
-        choose(ApplicationPagePart.all.firstIndex(of: .ring)!, on: page)
+        let copyID = remove(copyRow)
+        show(.ring)
         let five = ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 5, modifiers: 0, deviceFilter: nil))
         let generalRing = Self.catalog("apps-trigger-everywhere", five)
         XCTAssertEqual(page.ringPart.triggerRow.explanation, generalRing)
         undo.undo()
+        XCTAssertEqual(page.shownPart, .buttons)
+        XCTAssertEqual(part.list.selectedID, AnyHashable(copyID))
+        show(.ring)
         XCTAssertEqual(page.ringPart.triggerRow.explanation, "None in Calculator")
         undo.redo()
+        XCTAssertEqual(page.shownPart, .buttons)
+        show(.ring)
         XCTAssertEqual(page.ringPart.triggerRow.explanation, generalRing)
+
+        // A change of a row's action the same way.
+        undo.undo()
+        let kept = try XCTUnwrap(calculator.ownButtonBindings.first)
+        undo.beginUndoGrouping()
+        part.setAction(of: kept.id, named: "paste")
+        undo.endUndoGrouping()
+        show(.scrolling)
+        part.list.select(nil)
+        undo.undo()
+        XCTAssertEqual(calculator.ownButtonBindings.first?.systemShortcutName, kept.systemShortcutName)
+        XCTAssertEqual(page.shownPart, .buttons, "a row's change shows itself too")
+        XCTAssertEqual(part.list.selectedID, AnyHashable(kept.id))
     }
 
     /// "−" on the page, the page closes and the app's page opens again, then Edit › Undo:

@@ -1360,9 +1360,11 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
     }
 
     /// "−" on the Buttons part's thumb wheel row, then the Scrolling part, then Edit › Undo:
-    /// the action comes back, and the Scrolling part shown now shows it at once (with its
-    /// reset button), not only after another part was shown; Redo the same way.
-    func testUndoOfTheRemovedRowShowsOnTheScrollingPartShownNow() throws {
+    /// the action comes back and the page shows its Buttons part again, the wheel's row
+    /// selected (QA B4: Undo shows where it acts; the page stayed on Scrolling). The
+    /// Scrolling part shows the action too once it is shown (with its reset button); Redo
+    /// the same way.
+    func testUndoOfTheRemovedRowShowsTheButtonsPartAgain() throws {
         let calculator = addCalculator()
         calculator.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
         calculator.setOwnThumbWheelScrolling(Options.shared.thumbWheel)
@@ -1381,12 +1383,33 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
 
         undo.undo()
         XCTAssertEqual(calculator.ownThumbWheelFunction, .zoom)
+        XCTAssertEqual(page.shownPart, .buttons, "Undo shows where it acts")
+        XCTAssertEqual(page.buttonsPart.thumbWheelRow?.function, .zoom)
+        XCTAssertEqual(page.buttonsPart.list.selectedID, ButtonsListLayout.thumbWheelRowID, "with the wheel's row selected")
+        page.show(.scrolling)
         XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .zoom)
         XCTAssertEqual(tab.thumbWheelFunctionRow.explanation, ThumbWheelFunction.zoom.localizedHint)
         XCTAssertTrue(tab.resetToDefaultsButton.isEnabled, "the app's own action can be reset")
         undo.redo()
+        XCTAssertEqual(page.shownPart, .buttons, "and Redo")
+        XCTAssertNil(page.buttonsPart.thumbWheelRow)
+        page.show(.scrolling)
         XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .tabs)
         XCTAssertFalse(tab.resetToDefaultsButton.isEnabled)
+
+        // A function chosen in the row's pull-down the same way.
+        undo.undo()
+        let row = try XCTUnwrap(page.buttonsPart.thumbWheelRow)
+        undo.beginUndoGrouping()
+        row.pullDown.functionChosen(try XCTUnwrap(row.pullDown.functionItems.first { ThumbWheelPresentation.function(of: $0) == .volume }))
+        undo.endUndoGrouping()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .volume)
+        page.show(.scrolling)
+        page.buttonsPart.list.select(nil)
+        undo.undo()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .zoom)
+        XCTAssertEqual(page.shownPart, .buttons)
+        XCTAssertEqual(page.buttonsPart.list.selectedID, ButtonsListLayout.thumbWheelRowID)
     }
 
     /// The part's "Copy from Scrolling" with the app's own settings: the Scrolling settings'
