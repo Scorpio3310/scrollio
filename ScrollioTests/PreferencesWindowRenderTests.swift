@@ -4908,3 +4908,77 @@ private final class Round4D6Outline: NSView {
         circle.stroke()
     }
 }
+
+// MARK: - Thumb wheel speed per action
+
+extension PreferencesWindowRenderTests {
+
+    /// The Thumb wheel box with a Speed for each action (`tw-speed-<case>-<appearance>.png`),
+    /// cut from the pane with the line under it. `scroll` and `desktops` are Scrolling ›
+    /// Thumb wheel with the SAME settings, only the action chosen differs: Scroll Sideways
+    /// at 1.0×, Switch Desktops (Follow the wheel on) at 0.7×, each with its own line under
+    /// Speed. `app-zoom` is Safari › Scrolling with Own Settings: Safari's own action, Zoom,
+    /// at Safari's own 2.5×.
+    func testRenderThumbWheelSpeedPerAction() throws {
+        let stored = Options.shared.application.applications
+        addTeardownBlock { Options.shared.application.applications = stored }
+        var settings = ThumbWheelSettings(function: .scroll)
+        settings.speeds[.desktops] = 0.7
+        settings.followsWheel = true
+
+        func cut(_ name: String, pane identifier: String, afterLoad: (NSViewController) -> Void = { _ in },
+                 box: (NSViewController) -> PreferencesScrollingViewController?) throws {
+            let defaults = uiDefaults(advanced: false)
+            for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                let (window, preferences) = try makeWindow(appearance: appearanceName) { preferences in
+                    (preferences.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)?
+                        .uiStateDefaults = defaults
+                    (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                        .uiStateDefaults = defaults
+                }
+                XCTAssertTrue(preferences.selectPane(withIdentifier: identifier), identifier)
+                let controller = try XCTUnwrap(preferences.host.currentController)
+                afterLoad(controller)
+                let content = try XCTUnwrap(window.contentView)
+                content.layoutSubtreeIfNeeded()
+                // Tall enough for the whole pane, so the box is never cut by the window.
+                let top = preferences.host.view.safeAreaInsets.top
+                let paneHeight = max(controller.view.frame.height, controller.view.fittingSize.height)
+                let height = max(PreferencesWindowLayout.defaultContentHeight, ceil(paneHeight + top))
+                window.setContentSize(NSSize(width: content.frame.width, height: height))
+                content.layoutSubtreeIfNeeded()
+                let scrolling = try XCTUnwrap(box(controller))
+                let section = try XCTUnwrap(scrolling.thumbWheelSection)
+                let note = try XCTUnwrap(scrolling.thumbWheelNote)
+                let rect = section.convert(section.bounds, to: content)
+                    .union(note.convert(note.bounds, to: content))
+                    .insetBy(dx: -16, dy: -12)
+                    .intersection(content.bounds)
+                let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+                try write(content, rect: rect, appearance: appearance, to: directory.appendingPathComponent("tw-speed-\(name)-\(suffix).png"))
+            }
+        }
+
+        settings.function = .scroll
+        Options.shared.thumbWheel = settings
+        try cut("scroll", pane: PANEL_IDENTIFIER.scrolling) { $0 as? PreferencesScrollingViewController }
+        settings.function = .desktops
+        Options.shared.thumbWheel = settings
+        try cut("desktops", pane: PANEL_IDENTIFIER.scrolling) { $0 as? PreferencesScrollingViewController }
+
+        // Safari with its own settings and its own action: Zoom at its own 2.5×, while
+        // Scrolling's Zoom stays at 1.0× and the wheel switches desktops in other apps.
+        let safari = Application(path: "/Applications/Safari.app")
+        safari.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: settings)
+        safari.setOwnThumbWheelFunction(.zoom)
+        var own = safari.thumbWheelThatRuns(general: settings)
+        own.speed = 2.5
+        safari.setOwnThumbWheelScrolling(own)
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [safari], matchKey: "path")
+        try cut("app-zoom", pane: PANEL_IDENTIFIER.application, afterLoad: { controller in
+            (controller as? PreferencesApplicationViewController)?.openApplication(withID: safari.path, part: .scrolling)
+        }, box: { controller in
+            (controller as? PreferencesApplicationViewController)?.detailController?.scrollingController
+        })
+    }
+}
