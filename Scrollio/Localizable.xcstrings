@@ -11379,6 +11379,54 @@
           }
         }
       }
+    },
+    "key-recorder-needs-access-hint": {
+      "comment": "Key recorder popover that opens instead of a recording while Scrollio has no Accessibility access: the small line under \"Scrollio needs Accessibility access\"; General is the Settings pane",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow it under General."
+          }
+        }
+      }
+    },
+    "key-recorder-could-not-start": {
+      "comment": "Key recorder popover that opens instead of a recording that could not start although Scrollio has Accessibility access",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording couldn't start"
+          }
+        }
+      }
+    },
+    "key-recorder-try-again": {
+      "comment": "Key recorder popover: the small line under \"Recording couldn't start\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again in a moment."
+          }
+        }
+      }
+    },
+    "key-recorder-paused": {
+      "comment": "Key recorder popover, the small line while Scrollio is paused: the buttons only Scrollio reads from a Logitech mouse (gesture button, thumb panel) do not arrive",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio is paused:\nsome Logitech buttons cannot be recorded now"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

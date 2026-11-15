@@ -133,9 +133,18 @@ class KeyRecorder: NSObject {
     /// it used to tell the delegate "stopped" and end the Logitech recording twice.
     private var isStopping = false
     private var recordTimeoutTimer: Timer? // 超时保护定时器
-    /// Looks once a second whether another app switched secure keyboard entry on or off.
+    /// Looks once a second whether another app switched secure keyboard entry on or off,
+    /// and whether Scrollio was paused or resumed.
     private var secureInputTimer: Timer?
-    private var isShowingSecureInputHint = false
+    /// What the small line under the key slot says while the recording waits.
+    private enum StandingHint {
+        case escape
+        /// Another app has secure keyboard entry on: no key arrives.
+        case secureInput
+        /// Scrollio is paused: a Logitech mouse's own buttons do not arrive.
+        case paused
+    }
+    private var standingHint: StandingHint = .escape
     /// The popover closing by itself and the app going to the background end the recording.
     private var closeObservers: [NSObjectProtocol] = []
     private var invalidKeyPressCount = 0 // 无效按键计数
@@ -186,6 +195,7 @@ class KeyRecorder: NSObject {
         // Without the delayed reset: no weak reference can be made to an object that is
         // going away.
         stopRecording(isDeallocating: true)
+        hideNotice()
     }
     
     // MARK: - Event Masks
@@ -209,17 +219,20 @@ class KeyRecorder: NSObject {
     func startRecording(from sourceView: NSView, mode: KeyRecordingMode = .combination, in openPopover: KeyPopover? = nil) {
         // Guard: 防止重复执行
         guard !isRecording else { return }
+        hideNotice()
         // The event tap first. Without it nothing can be recorded (no Accessibility access):
-        // then nothing is shown and no Logitech button is diverted for recording (that divert
-        // would never be ended, and every Logitech button would stay swallowed until the app
-        // quits). The delegate only hears that nothing was recorded, so a "Press a key" prompt
-        // goes away.
+        // then no Logitech button is diverted for recording (that divert would never be
+        // ended, and every Logitech button would stay swallowed until the app quits). The
+        // delegate only hears that nothing was recorded, so a "Press a key" prompt goes
+        // away, and the popover opens to say why (`showNotice`): "+", "Record a Button…"
+        // and "Set Up…" used to do nothing at all then, without a word.
         let tap: KeyRecordingTap
         do {
             tap = try makeEventTap(eventMask, Self.recordingCallback)
         } catch {
             // (Interceptor wrote the reason to the app's log.)
             delegate?.onRecordingStopped(self, didRecord: false)
+            showNotice(at: sourceView, in: openPopover)
             return
         }
         interceptor = tap
@@ -290,6 +303,61 @@ class KeyRecorder: NSObject {
     /// recorded. The seam for tests.
     var isSecureInputOn: () -> Bool = { IsSecureEventInputEnabled() }
 
+    /// Whether Scrollio has the Accessibility access its event taps need; asked only after
+    /// the recording's tap could not be made, for what the popover then says. The seam for
+    /// tests.
+    var hasAccess: () -> Bool = { Utils.isHadAccessibilityPermissions() }
+
+    /// Whether Scrollio is paused ("Pause Scrollio"): the Logitech part is stopped then, so
+    /// no button is diverted for the recording and the buttons only Scrollio reads from a
+    /// Logitech mouse (the gesture button, the thumb panel) never arrive; keys and the
+    /// standard buttons still do. The seam for tests.
+    var isPaused: () -> Bool = { AppRunController.shared.isPaused }
+
+    // MARK: - When nothing can be recorded
+
+    /// How long the popover that says why nothing can be recorded stays by itself (a click
+    /// elsewhere closes it sooner).
+    static let noticeDuration: TimeInterval = 5
+    /// That popover, while it shows.
+    private var noticePopover: KeyPopover?
+    private var noticeTimer: Timer?
+
+    /// The recording's tap could not be made: the popover opens at `sourceView` to say why
+    /// instead of nothing happening, in General's words for the missing access (General is
+    /// where it is allowed), else that the recording could not start. Nothing is recorded.
+    private func showNotice(at sourceView: NSView, in openPopover: KeyPopover?) {
+        let popover = openPopover ?? makePopover()
+        if hasAccess() {
+            popover.showNotice(
+                at: sourceView,
+                title: NSLocalizedString("key-recorder-could-not-start", comment: ""),
+                detail: NSLocalizedString("key-recorder-try-again", comment: "")
+            )
+        } else {
+            popover.showNotice(
+                at: sourceView,
+                title: NSLocalizedString("status-menu-title-needs-access", comment: ""),
+                detail: NSLocalizedString("key-recorder-needs-access-hint", comment: "")
+            )
+        }
+        noticePopover = popover
+        noticeTimer = CommonModesTimer.scheduled(withTimeInterval: Self.noticeDuration, repeats: false) { [weak self] _ in
+            self?.hideNotice()
+        }
+    }
+
+    /// (A popover its owner uses for something else by now, the details of a recorded
+    /// shortcut, is left alone.)
+    private func hideNotice() {
+        noticeTimer?.invalidate()
+        noticeTimer = nil
+        if let popover = noticePopover, popover.isShowingNotice {
+            popover.hide()
+        }
+        noticePopover = nil
+    }
+
     // MARK: - Ending by itself
 
     /// The recording's tap swallows every key and click of the whole Mac, so it must not go
@@ -330,7 +398,7 @@ class KeyRecorder: NSObject {
         closeObservers = []
     }
 
-    // MARK: - Secure keyboard entry
+    // MARK: - Secure keyboard entry, and Scrollio paused
 
     private func startSecureInputWatch() {
         stopSecureInputWatch()
@@ -343,19 +411,24 @@ class KeyRecorder: NSObject {
     private func stopSecureInputWatch() {
         secureInputTimer?.invalidate()
         secureInputTimer = nil
-        isShowingSecureInputHint = false
+        standingHint = .escape
     }
 
-    /// Says so while keys cannot arrive, instead of waiting silently; "Press Esc to cancel"
-    /// comes back when the other app lets go.
+    /// Says so while keys cannot arrive (another app has secure keyboard entry on), or
+    /// while a Logitech mouse's own buttons cannot (Scrollio is paused), instead of
+    /// waiting silently; "Press Esc to cancel" comes back when the other app lets go, or
+    /// Scrollio is resumed.
     private func updateSecureInputHint() {
         guard isRecording, !isRecorded, !isStopping else { return }
-        let isOn = isSecureInputOn()
-        guard isOn != isShowingSecureInputHint else { return }
-        isShowingSecureInputHint = isOn
-        if isOn {
+        let wanted: StandingHint = isSecureInputOn() ? .secureInput : isPaused() ? .paused : .escape
+        guard wanted != standingHint else { return }
+        standingHint = wanted
+        switch wanted {
+        case .secureInput:
             keyPopover?.showRefusalHint(NSLocalizedString("key-recorder-secure-input", comment: "Key recorder: another app has secure keyboard entry on"))
-        } else {
+        case .paused:
+            keyPopover?.showRefusalHint(NSLocalizedString("key-recorder-paused", comment: "Key recorder: Scrollio is paused"))
+        case .escape:
             keyPopover?.showEscHint()
         }
     }
