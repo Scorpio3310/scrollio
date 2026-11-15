@@ -10439,6 +10439,66 @@
           }
         }
       }
+    },
+    "buttons-undo-change-action": {
+      "comment": "Buttons pane and an app's Buttons part: the Undo menu item reads \"Undo Change Action\" after a row's action changed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change Action"
+          }
+        }
+      }
+    },
+    "buttons-undo-rename": {
+      "comment": "Buttons pane and an app's Buttons part: the Undo menu item reads \"Undo Rename\" after the name or icon of a row's recorded keys changed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename"
+          }
+        }
+      }
+    },
+    "buttons-undo-which-button": {
+      "comment": "Buttons pane: the Undo menu item reads \"Undo Which Button\" after \"Which Button Is This?\" placed a numbered button",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Which Button"
+          }
+        }
+      }
+    },
+    "buttons-undo-clear-action": {
+      "comment": "Buttons pane: the Undo menu item reads \"Undo Clear Action\" after a button of the mouse was set back to Default",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear Action"
+          }
+        }
+      }
+    },
+    "buttons-clear-action": {
+      "comment": "Buttons pane: tooltip and VoiceOver name of the − button while a button of the mouse with an action is selected; − sets it back to Default",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear Action"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

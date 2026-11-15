@@ -1053,6 +1053,69 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [])
     }
 
+    /// A row's action and the name of its keys changed on the page, then the page closes:
+    /// Edit › Undo ("Undo Rename", "Undo Change Action") still takes each change back on
+    /// the app's own list, and Redo makes it again; with the page open again the changed
+    /// row shows there, selected. Buttons is not touched.
+    func testUndoOfARowsChangeWorksAfterThePageClosedAndShowsOnThePageOpenedAgain() throws {
+        Options.shared.buttons.binding = [binding(3, "copy")]
+        let general = Options.shared.buttons.binding
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(3, "appExpose")])
+        let id = calculator.ownButtonBindings[0].id
+        let keys = "custom::40:1048576"
+        let pane = makePane()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        func step(_ body: () -> Void) {
+            undo.beginUndoGrouping()
+            body()
+            undo.endUndoGrouping()
+        }
+        weak var closedPart: ApplicationButtonsViewController?
+        try autoreleasepool {
+            pane.openApplication(withID: Self.calculator, part: .buttons)
+            let part = try XCTUnwrap(pane.detailController?.buttonsPart)
+            part.paneUndoManager = undo
+            let row = try XCTUnwrap(part.rows.first)
+            step { row.pullDown.onShortcutSelected?(SystemShortcut.paste) }
+            XCTAssertEqual(undo.undoActionName, "Change Action")
+            step { row.pullDown.onCustomShortcutRecorded?(keys, nil) }
+            step { row.pullDown.onCustomShortcutRecorded?(keys, ShortcutLabel(name: "Find", icon: nil)) }
+            XCTAssertEqual(undo.undoActionName, "Rename")
+            // The same name again asks for no Undo (a manager that groups by itself opens a
+            // group only for what is registered).
+            let quiet = UndoManager()
+            part.paneUndoManager = quiet
+            row.pullDown.onCustomShortcutRecorded?(keys, ShortcutLabel(name: "Find", icon: nil))
+            XCTAssertFalse(quiet.canUndo)
+            part.paneUndoManager = undo
+            closedPart = part
+            pane.leaveSubpage()
+        }
+        XCTAssertNil(closedPart, "the page and its parts are gone")
+
+        undo.undo()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), [keys])
+        XCTAssertNil(calculator.ownButtonBindings[0].label)
+        XCTAssertEqual(undo.undoActionName, "Change Action")
+        undo.undo()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), ["paste"])
+        undo.undo()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), ["appExpose"])
+        XCTAssertEqual(calculator.ownButtonBindings[0].id, id)
+        XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.buttons])
+
+        pane.openApplication(withID: Self.calculator, part: .buttons)
+        let part = try XCTUnwrap(pane.detailController?.buttonsPart)
+        part.list.select(nil)
+        undo.redo()
+        XCTAssertEqual(part.rows.map(\.binding.systemShortcutName), ["paste"], "the open page shows the change")
+        XCTAssertEqual(part.list.selectedID, AnyHashable(id))
+        XCTAssertEqual(undo.redoActionName, "Change Action")
+        XCTAssertEqual(Options.shared.buttons.binding, general, "Buttons is not touched")
+    }
+
     /// "Record a Button or Key…": the Buttons pane's recorder; what it caught is added when
     /// it closes. A button the app has already is a duplicate; one that opens the ring or
     /// runs Gesture Navigation in Buttons is taken as any other, and starts with that action.

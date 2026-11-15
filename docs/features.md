@@ -61,7 +61,12 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   wheel mode, change the pointer speed, or switch the mouse to another computer.
 - A row says when its button is also a scroll key, or when another app (Logi Options+)
   may take it over.
-- Removing a button or an app can be undone (Edit › Undo).
+- Removing a button or an app can be undone (Edit › Undo), and so can every change of a
+  button's row, in Buttons and in an app's Buttons part: its action ("Undo Change
+  Action"), the name or icon of its keys ("Undo Rename") and "Which Button Is This?"
+  ("Undo Which Button"); Undo selects the row it changes. On a button of your mouse,
+  "−" and Delete set it back to "Default" ("Clear Action"), as "Default" in its menu
+  does; on a row that reads "Default" already "−" is off.
 - Buttons for one app: an app's page in Apps (add the app there, or open it in the list)
   has four parts, chosen at its top: Scrolling, Buttons, Gestures and Shortcut Ring; the page
   opens on the part you looked at last, for any app. In Buttons the app holds only the

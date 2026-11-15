@@ -1148,6 +1148,17 @@ final class PreferencesWindowRenderTests: XCTestCase {
         try renderButtons(name: "buttons-all-mx4-bound-default-selected", source: source("MX Master 4")) { buttons in
             buttons.list.select(ButtonsMousePart.forward)
         }
+        // A button of the mouse with an action selected: "−" clears it ("Clear Action");
+        // after it, the row reads "Default" and "−" is off.
+        try renderButtons(name: "buttons-all-mx4-bound-selected", source: source("MX Master 4")) { buttons in
+            buttons.list.select(ButtonsMousePart.back)
+        }
+        let bound = Options.shared.buttons.binding
+        try renderButtons(name: "buttons-all-mx4-cleared", source: source("MX Master 4")) { buttons in
+            buttons.list.select(ButtonsMousePart.back)
+            buttons.list.removeButton.performClick(nil)
+        }
+        Options.shared.buttons.binding = bound
         try renderButtons(name: "buttons-all-mx3s", source: source("MX Master 3S"))
         try renderButtons(name: "buttons-all-plain", source: source(nil))
     }

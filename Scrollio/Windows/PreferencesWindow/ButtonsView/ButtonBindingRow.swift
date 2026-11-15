@@ -292,8 +292,12 @@ final class ButtonBindingRow: PreferencesListRow {
             placeButton.target = self
             placeButton.action = #selector(placeClicked(_:))
         }
-        // A button of the mouse is cleared with "Default", never removed.
-        isRemovable = part == nil
+        // A button of the mouse is never removed: "−" clears its action ("Clear Action"),
+        // while it has one.
+        if part != nil {
+            removeTitle = NSLocalizedString("buttons-clear-action", comment: "")
+        }
+        isRemovable = part == nil || isStored
         applyNote()
     }
 
@@ -311,6 +315,7 @@ final class ButtonBindingRow: PreferencesListRow {
         self.isStored = isStored
         self.note = note
         self.mouse = mouse
+        isRemovable = part == nil || isStored
         // "Use Standard Button" gives the row another trigger.
         picture = ButtonTriggerPicture.make(for: binding.triggerEvent, mouse: mouse)
         if self.title != title {

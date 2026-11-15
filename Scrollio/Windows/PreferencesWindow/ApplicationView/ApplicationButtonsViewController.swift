@@ -10,7 +10,8 @@
 //  connected mouse, "Record a Button or Key…" (the Buttons pane's recorder) and the
 //  buttons the Buttons pane has an action for; a new row starts with the action it has
 //  everywhere, and its menu opens. "−" (or Delete) gives the button back to Buttons, and
-//  the window's Undo takes it again. Nothing stays general: every button of Buttons is
+//  the window's Undo takes it again; Undo also takes back a change of a row's action or of
+//  the name or icon of its keys (`ButtonRowChange`). Nothing stays general: every button of Buttons is
 //  offered, the one that opens the Shortcut Ring or runs Gesture Navigation there too, and
 //  a row's menu is the Buttons pane's ("Show Gesture Settings" shows the app's Gestures
 //  part).
@@ -137,7 +138,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
             guard let self, let id = id as? UUID else { return }
             // A name still typed in the row's popover goes into the binding first, so that
             // Undo brings it back with the row.
-            self.row(for: id)?.pullDown.cancelShortcutRecording()
+            self.withoutUndoRegistration { self.row(for: id)?.pullDown.cancelShortcutRecording() }
             self.removeOwnBinding(id: id)
         }
         list.onOpen = { [weak self] id in
@@ -216,9 +217,21 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
                 recorder.stopRecording()
             }
         }
-        for row in rows {
-            row.pullDown.cancelShortcutRecording()
+        withoutUndoRegistration {
+            for row in rows {
+                row.pullDown.cancelShortcutRecording()
+            }
         }
+    }
+
+    /// Runs `body`, which stores a name still typed in a row's popover because something
+    /// else ends the editing ("−", "Reset to Defaults", the page going away): that is no
+    /// change of its own in Edit › Undo (a row removed or reset comes back with the name).
+    private func withoutUndoRegistration(_ body: () -> Void) {
+        guard isViewLoaded, let undo = undoTarget else { return body() }
+        undo.disableUndoRegistration()
+        defer { undo.enableUndoRegistration() }
+        body()
     }
 
     // MARK: - Data
@@ -318,22 +331,63 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// Navigation among them), a recorded key combination (with its name and icon), or ""
     /// ("Default": the button does what it does by itself here).
     func setAction(of id: UUID, named name: String, label: ShortcutLabel? = nil) {
-        var own = ownBindings
-        guard let index = own.firstIndex(where: { $0.id == id }) else { return }
-        let old = own[index]
-        own[index] = ButtonBinding(
-            id: old.id, triggerEvent: old.triggerEvent, systemShortcutName: name, isEnabled: true,
-            createdAt: old.createdAt, label: label
-        )
-        store(own)
+        change(id) { old in
+            ButtonBinding(
+                id: old.id, triggerEvent: old.triggerEvent, systemShortcutName: name, isEnabled: true,
+                createdAt: old.createdAt, label: label
+            )
+        }
     }
 
     func setAction(of id: UUID, toOpen payload: OpenTargetPayload) {
+        change(id) { old in
+            ButtonBinding(id: old.id, triggerEvent: old.triggerEvent, openTarget: payload, isEnabled: true, createdAt: old.createdAt)
+        }
+    }
+
+    /// Changes the app's binding `id`; the window's Undo ("Undo Change Action", or "Undo
+    /// Rename" when only the name or icon of its keys changed) puts the one before back,
+    /// with an undo target that outlives the page, as a removal's (`registerOwnRowUndo`).
+    private func change(_ id: UUID, _ transform: (ButtonBinding) -> ButtonBinding) {
         var own = ownBindings
         guard let index = own.firstIndex(where: { $0.id == id }) else { return }
         let old = own[index]
-        own[index] = ButtonBinding(id: old.id, triggerEvent: old.triggerEvent, openTarget: payload, isEnabled: true, createdAt: old.createdAt)
+        let new = transform(old)
+        own[index] = new
         store(own)
+        guard !ButtonRowChange.isSame(old, new) else { return }
+        let showing = partShowing ?? { [weak self] entry in
+            self?.application === entry ? self : nil
+        }
+        Self.registerOwnRowUndo(
+            ButtonRowChange(kind: .of(old, to: new), states: [.init(id: id, binding: old, index: index)]),
+            of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange
+        )
+    }
+
+    /// As a removal's (`removeOwnBinding`): the undo target is the settings, not the page;
+    /// Undo and Redo find the app's entry by its path when they run, show the change on
+    /// the part `showing` gives for it, with the changed row selected, and tell the list
+    /// of apps (its marks).
+    private static func registerOwnRowUndo(
+        _ change: ButtonRowChange, of application: Application, undoManager undo: UndoManager?,
+        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?
+    ) {
+        guard let undo, !change.states.isEmpty else { return }
+        let path = application.path
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            guard let entry = Self.entry(storedAs: path),
+                  let result = change.applied(to: entry.ownButtonBindings, sameTrigger: { $0.identity == $1.identity })
+            else { return }
+            entry.setOwnButtonBindings(result.bindings)
+            showing(entry)?.showUndoableChange(selecting: change.states.first?.id)
+            listDidChange?()
+            Self.registerOwnRowUndo(
+                ButtonRowChange(kind: change.kind, states: result.replaced),
+                of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange
+            )
+        }
+        undo.setActionName(change.kind.actionName)
     }
 
     private func presentOpenTargetPopover(forRow id: UUID) {

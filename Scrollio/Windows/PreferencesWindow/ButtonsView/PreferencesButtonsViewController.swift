@@ -13,7 +13,10 @@
 //  ("Button 5") is found by asking the mouse: "+" and pressing it makes the card say
 //  "That's Button 5"; a click on its picture then says where it is ("Which Button Is
 //  This?"), and from then on it is named and lit as that part. "+" records a button (or a
-//  key with a modifier), "−" removes one, and the window's Undo puts it back. Only
+//  key with a modifier), "−" removes one (on a button of the mouse it clears the action:
+//  the row reads "Default"), and the window's Undo puts it back; a row's other changes
+//  (its action, the name or icon of its keys, "Which Button Is This?") have their Undo on
+//  the same manager (`ButtonRowChange`). Only
 //  Options.shared.buttons.binding is edited, in the format it always had; a placed button
 //  adds the trigger's optional `mousePart`. The one row that is no button, the MX Master's
 //  thumb wheel (after the mode shift button), edits what the sideways wheel does instead
@@ -176,11 +179,16 @@ class PreferencesButtonsViewController: NSViewController {
         list.rowsView.setAccessibilityLabel(text("buttons-list-label"))
         list.onAdd = { [weak self] _ in self?.beginAddingBinding() }
         list.onRemove = { [weak self] id in
-            guard let self, let id = id as? UUID else { return }
+            guard let self else { return }
             // A name still typed in the row's popover goes into the binding first, so that
             // Undo brings it back with the row.
-            self.row(for: id)?.pullDown.cancelShortcutRecording()
-            self.removeBinding(id: id)
+            self.withoutUndoRegistration { self.row(for: id)?.pullDown.cancelShortcutRecording() }
+            if let part = id as? ButtonsMousePart {
+                // A button of the mouse stays in the list: "−" clears its action.
+                self.clearAction(of: part)
+            } else if let id = id as? UUID {
+                self.removeBinding(id: id)
+            }
         }
         list.onOpen = { [weak self] id in
             guard let self else { return }
@@ -272,9 +280,22 @@ class PreferencesButtonsViewController: NSViewController {
                 recorder.stopRecording()
             }
         }
-        for row in rows {
-            row.pullDown.cancelShortcutRecording()
+        withoutUndoRegistration {
+            for row in rows {
+                row.pullDown.cancelShortcutRecording()
+            }
         }
+    }
+
+    /// Runs `body`, which stores a name still typed in a row's popover because something
+    /// else ends the editing ("−", the pane going away): that is no change of its own in
+    /// Edit › Undo, and what follows takes it back or keeps it whole (a removed row comes
+    /// back with the name).
+    private func withoutUndoRegistration(_ body: () -> Void) {
+        guard isViewLoaded, let undo = undoTarget else { return body() }
+        undo.disableUndoRegistration()
+        defer { undo.enableUndoRegistration() }
+        body()
     }
 
     deinit {
@@ -577,11 +598,12 @@ class PreferencesButtonsViewController: NSViewController {
 
     /// The action chosen in the pull-down of the row with `id`. On a button of the mouse
     /// without a binding an action stores one (the trigger the row shows) and "Default"
-    /// does nothing; on one with a binding "Default" removes it, with Undo.
+    /// does nothing; on one with a binding "Default" removes it ("Clear Action"). Each
+    /// change has its Undo.
     func setAction(ofRow id: AnyHashable, to shortcut: SystemShortcut.Shortcut?) {
         if let stored = storedBinding(ofRow: id) {
-            if shortcut == nil, id is ButtonsMousePart {
-                removeBinding(id: stored.id)
+            if shortcut == nil, let part = id as? ButtonsMousePart {
+                clearAction(of: part)
             } else {
                 setAction(of: stored.id, to: shortcut)
             }
@@ -620,11 +642,14 @@ class PreferencesButtonsViewController: NSViewController {
     }
 
     /// Stores the binding `make` builds for a button of the mouse that has none, from the
-    /// trigger its row shows.
+    /// trigger its row shows. Undo ("Undo Change Action") makes the row "Default" again.
     private func addBinding(toPart part: ButtonsMousePart, _ make: (RecordedEvent) -> ButtonBinding) {
         guard layout.row(of: part)?.binding == nil, let shown = row(for: part)?.binding else { return }
-        append(make(placedLikeItsButton(shown.triggerEvent)))
+        let added = make(placedLikeItsButton(shown.triggerEvent))
+        let index = buttonBindings.count
+        append(added)
         updateHeader()
+        registerUndo(of: ButtonRowChange(kind: .action, states: [.init(id: added.id, binding: nil, index: index)]))
     }
 
     /// Adds `binding` at the end and saves; a Logitech button that may stop working over
@@ -639,12 +664,18 @@ class PreferencesButtonsViewController: NSViewController {
         }
     }
 
+    /// Changes a stored binding; Undo ("Undo Change Action", or "Undo Rename" when only the
+    /// name or icon of its keys changed) puts the one before back.
     private func update(_ id: UUID, _ transform: (ButtonBinding) -> ButtonBinding) {
         guard let index = buttonBindings.firstIndex(where: { $0.id == id }) else { return }
-        buttonBindings[index] = transform(buttonBindings[index])
+        let old = buttonBindings[index]
+        let new = transform(old)
+        buttonBindings[index] = new
         save()
         reloadRows()
         updateHeader()
+        guard !ButtonRowChange.isSame(old, new) else { return }
+        registerUndo(of: ButtonRowChange(kind: .of(old, to: new), states: [.init(id: id, binding: old, index: index)]))
     }
 
     /// Replaces a binding (its trigger may change: "Use Standard Button"); a binding of the
@@ -693,26 +724,30 @@ class PreferencesButtonsViewController: NSViewController {
 
     /// Says that `id`'s numbered button is `part` of the mouse (nil: not on the list), for
     /// every row of that button number: they are the same button with other modifiers.
-    /// Only the display changes; nothing is saved when nothing changes.
+    /// Only the display changes; nothing is saved when nothing changes. Undo ("Undo Which
+    /// Button") puts every row of that number back where it was.
     func setPlace(of id: UUID, to part: PlacedMousePart?) {
         guard let trigger = binding(for: id)?.triggerEvent, ButtonTriggerPicture.number(for: trigger) != nil else { return }
         // Said to be a button of the mouse, it may move to that button's row (or back): the
         // selection goes with it.
         let wasSelected = list.selectedID != nil && list.selectedID == rowID(forBinding: id)
-        var changed = false
-        buttonBindings = buttonBindings.map { binding in
+        var before: [ButtonRowChange.State] = []
+        buttonBindings = buttonBindings.enumerated().map { index, binding in
             let other = binding.triggerEvent
             guard Self.isSameButton(other, as: trigger), other.mousePart != part else { return binding }
-            changed = true
+            before.append(.init(id: binding.id, binding: binding, index: index))
             return binding.replacingTriggerEvent(other.placed(at: part))
         }
-        guard changed else { return }
+        guard !before.isEmpty else { return }
         save()
         reloadRows()
         if wasSelected {
             list.select(rowID(forBinding: id))
         }
         updateHeader()
+        // The row it was asked of first: Undo shows that one.
+        let asked = before.filter { $0.id == id } + before.filter { $0.id != id }
+        registerUndo(of: ButtonRowChange(kind: .whichButton, states: asked))
     }
 
     /// `trigger` placed as the list's rows of its button number are (the same button with
@@ -783,6 +818,61 @@ class PreferencesButtonsViewController: NSViewController {
             controller.removeBinding(id: binding.id, undoManager: undo)
         }
         undo.setActionName(text("buttons-undo-remove"))
+    }
+
+    // MARK: - Changing a row, with Undo
+
+    /// "−", Delete or "Default" on a button of the mouse: its binding goes and the row
+    /// reads "Default"; Undo ("Undo Clear Action") gives the action back.
+    func clearAction(of part: ButtonsMousePart) {
+        guard let stored = layout.row(of: part)?.binding,
+              let index = buttonBindings.firstIndex(where: { $0.id == stored.id }) else { return }
+        buttonBindings.remove(at: index)
+        save()
+        reloadRows()
+        updateHeader()
+        registerUndo(of: ButtonRowChange(kind: .clear, states: [.init(id: stored.id, binding: stored, index: index)]))
+    }
+
+    /// Edit › Undo of a change of rows, on the manager a removal uses (`undoTarget` for a
+    /// change made here). The target is this pane, which lives as long as the window (as a
+    /// removal's).
+    private func registerUndo(of change: ButtonRowChange) {
+        registerUndo(of: change, undoManager: undoTarget)
+    }
+
+    private func registerUndo(of change: ButtonRowChange, undoManager undo: UndoManager?) {
+        guard let undo, !change.states.isEmpty else { return }
+        undo.registerUndo(withTarget: self) { [weak undo] controller in
+            controller.takeBack(change, undoManager: undo)
+        }
+        undo.setActionName(change.kind.actionName)
+    }
+
+    /// Undo or Redo of a change of rows: the bindings it touched as they were, the changed
+    /// row selected and the list given the keyboard (as the Undo of a removal); the change
+    /// the other way round goes to the undo manager.
+    private func takeBack(_ change: ButtonRowChange, undoManager undo: UndoManager?) {
+        let placed: (ButtonBinding) -> ButtonBinding = { [self] binding in
+            let trigger = placedLikeItsButton(binding.triggerEvent, except: binding.id)
+            return trigger.mousePart == binding.triggerEvent.mousePart ? binding : binding.replacingTriggerEvent(trigger)
+        }
+        guard let result = change.applied(to: buttonBindings, sameTrigger: { $0.triggerEvent == $1.triggerEvent }, place: placed) else { return }
+        buttonBindings = result.bindings
+        save()
+        reloadRows()
+        if let first = change.states.first {
+            if rows.contains(where: { $0.isStored && $0.binding.id == first.id }) {
+                list.select(rowID(forBinding: first.id))
+            } else if let cleared = result.replaced.first(where: { $0.id == first.id })?.binding,
+                      let part = layout.part(for: cleared.triggerEvent) {
+                // A button of the mouse back to "Default": its row.
+                list.select(part)
+            }
+        }
+        focusList()
+        updateHeader()
+        registerUndo(of: ButtonRowChange(kind: change.kind, states: result.replaced), undoManager: undo)
     }
 
     /// The list takes the keyboard (after an add or an Undo), when the pane is shown.

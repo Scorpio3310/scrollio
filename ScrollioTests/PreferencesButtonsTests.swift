@@ -106,6 +106,14 @@ final class PreferencesButtonsTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(seconds))
     }
 
+    /// `body` as one step of Edit › Undo on a manager that groups by hand
+    /// (`groupsByEvent` off): a change of a row registers its Undo.
+    private func step(_ undo: UndoManager, _ body: () throws -> Void) rethrows {
+        undo.beginUndoGrouping()
+        defer { undo.endUndoGrouping() }
+        try body()
+    }
+
     /// The pane in a window of its own, inside a container (so it can be taken out, as the
     /// window does when another pane shows). The window's undo manager takes Undo. Never shown.
     private func makeWindow(for pane: PreferencesButtonsViewController) -> (NSWindow, NSView) {
@@ -749,8 +757,14 @@ final class PreferencesButtonsTests: XCTestCase {
 
         pane.list.select(bindings[6].id)
         XCTAssertTrue(pane.list.removeButton.isEnabled)
+        XCTAssertEqual(pane.list.removeButton.accessibilityLabel(), "Remove")
+        XCTAssertNil(pane.list.removeButton.toolTip)
         pane.list.select(ButtonsMousePart.back)
-        XCTAssertFalse(pane.list.removeButton.isEnabled, "a button of the mouse is cleared with Default")
+        XCTAssertTrue(pane.list.removeButton.isEnabled, "a button of the mouse with an action: − clears it")
+        XCTAssertEqual(pane.list.removeButton.accessibilityLabel(), "Clear Action")
+        XCTAssertEqual(pane.list.removeButton.toolTip, "Clear Action")
+        pane.list.select(ButtonsMousePart.modeShift)
+        XCTAssertFalse(pane.list.removeButton.isEnabled, "nothing to clear on a Default row")
         pane.list.select(nil)
         XCTAssertEqual(pane.headerView.content.subtitle, "6 buttons have actions", "the seven with an action, less ⌃ K")
         XCTAssertEqual(PreferencesButtonsViewController.boundButtonCount(in: bindings), 6)
@@ -772,7 +786,7 @@ final class PreferencesButtonsTests: XCTestCase {
         undo.groupsByEvent = false
         let back = try XCTUnwrap(pane.row(for: ButtonsMousePart.back))
         let menu = try XCTUnwrap(back.pullDown.menu)
-        back.pullDown.shortcutSelected(try XCTUnwrap(item("copy", in: menu)))
+        try step(undo) { back.pullDown.shortcutSelected(try XCTUnwrap(item("copy", in: menu))) }
 
         XCTAssertEqual(Options.shared.buttons.binding.count, 1)
         let stored = try XCTUnwrap(Options.shared.buttons.binding.first)
@@ -795,7 +809,7 @@ final class PreferencesButtonsTests: XCTestCase {
         let expected: [(ButtonsMousePart, UInt16)] = [(.gesture, 1000), (.modeShift, 1001), (.thumbPanel, 2000 + 0x01A0), (.middle, 2), (.forward, 4)]
         for (part, code) in expected {
             let row = try XCTUnwrap(pane.row(for: part))
-            row.pullDown.shortcutSelected(try XCTUnwrap(item("paste", in: row.pullDown.menu)))
+            try step(undo) { row.pullDown.shortcutSelected(try XCTUnwrap(item("paste", in: row.pullDown.menu))) }
             XCTAssertEqual(pane.row(for: part)?.binding.triggerEvent, RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil), "\(part)")
             XCTAssertTrue(pane.row(for: part) === row)
         }
@@ -814,7 +828,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertFalse(back.isStored)
         XCTAssertEqual(shown(back.pullDown), "Default")
         XCTAssertEqual(back.explanation, "Goes back in apps that support it.")
-        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Remove Button")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Clear Action")
         undo.undo()
         XCTAssertEqual(Options.shared.buttons.binding.first, stored, "back where it was, unchanged")
         XCTAssertEqual(shown(back.pullDown), "Copy")
@@ -2005,7 +2019,9 @@ final class PreferencesButtonsTests: XCTestCase {
             binding(3, "paste"),
         ]
         let pane = makePane(bindings)
-        pane.setPlace(of: bindings[1].id, to: .gestureButton)
+        let undo = try XCTUnwrap(pane.paneUndoManager)
+        undo.groupsByEvent = false
+        step(undo) { pane.setPlace(of: bindings[1].id, to: .gestureButton) }
         XCTAssertEqual(try rows(of: bindings, in: pane).map(\.title), ["Gesture button (button 6)", "⌥ Gesture button (button 6)", "Button 5", "Back button"])
         XCTAssertEqual(pane.row(for: bindings[0].id)?.id, AnyHashable(ButtonsMousePart.gesture), "now the gesture button's row")
         XCTAssertEqual(Options.shared.buttons.binding.map(\.triggerEvent.mousePart), [.gestureButton, .gestureButton, nil, nil])
@@ -2024,8 +2040,6 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(Options.shared.buttons.binding.last?.triggerEvent.mousePart, .gestureButton)
 
         // Removed and put back: its part comes back with it.
-        let undo = try XCTUnwrap(pane.paneUndoManager)
-        undo.groupsByEvent = false
         let removed = bindings[1].id
         undo.beginUndoGrouping()
         pane.removeBinding(id: removed)
@@ -2036,7 +2050,7 @@ final class PreferencesButtonsTests: XCTestCase {
 
         // The last row of its number, removed and put back alone, keeps its part too.
         let five = bindings[2].id
-        pane.setPlace(of: five, to: .thumbPanel)
+        step(undo) { pane.setPlace(of: five, to: .thumbPanel) }
         undo.beginUndoGrouping()
         pane.removeBinding(id: five)
         undo.endUndoGrouping()
@@ -2044,7 +2058,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(pane.binding(for: five)?.triggerEvent.mousePart, .thumbPanel)
 
         // "Not on This List" from any row clears the whole button number.
-        pane.setPlace(of: added.binding.id, to: nil)
+        step(undo) { pane.setPlace(of: added.binding.id, to: nil) }
         XCTAssertEqual(Options.shared.buttons.binding.filter { $0.triggerEvent.code == 6 }.map(\.triggerEvent.mousePart), [nil, nil, nil])
         XCTAssertEqual(Options.shared.buttons.binding.first { $0.id == five }?.triggerEvent.mousePart, .thumbPanel, "another number keeps its own")
     }
@@ -2693,6 +2707,230 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(pane.list.selectedID, AnyHashable(second.id))
         XCTAssertTrue(window.firstResponder === pane.list, "the list has the keyboard")
         XCTAssertEqual(undo.redoMenuItemTitle, "Redo Remove Button")
+    }
+
+    // MARK: - Changing a row, with Undo
+
+    /// A wrong click in a row's menu is no longer for good: Edit › Undo ("Undo Change
+    /// Action") puts the action before back, selects the row and gives the list the
+    /// keyboard, also while another pane shows (the pane is the target, as for a
+    /// removal); Redo makes the change again. "No Action" is a change like any other.
+    func testChangingAnActionCanBeUndoneAndRedone() throws {
+        deviceName = nil
+        let first = binding(3, "copy")
+        let second = binding(4, "paste")
+        let pane = makePane([first, second])
+        let (window, container) = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        let row = try XCTUnwrap(pane.row(for: second.id))
+
+        try step(undo) { row.pullDown.shortcutSelected(try XCTUnwrap(item("selectAll", in: row.pullDown.menu))) }
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.systemShortcutName), ["copy", "selectAll"])
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        pane.list.select(first.id)
+        window.makeFirstResponder(nil)
+
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [first, second], "the binding as it was, in its place")
+        XCTAssertEqual(shown(row.pullDown), "Paste")
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(second.id), "the changed row is selected")
+        XCTAssertTrue(window.firstResponder === pane.list, "the list has the keyboard")
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Change Action")
+        undo.redo()
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.systemShortcutName), ["copy", "selectAll"])
+
+        // "No Action", then Undo while another pane shows.
+        try step(undo) { row.pullDown.shortcutSelected(try XCTUnwrap(row.pullDown.noActionItem)) }
+        XCTAssertEqual(Options.shared.buttons.binding[1].isEnabled, false)
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        pane.view.removeFromSuperview()
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding[1].systemShortcutName, "selectAll")
+        XCTAssertTrue(Options.shared.buttons.binding[1].isEnabled)
+        container.addSubview(pane.view)
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [first, second])
+
+        // Choosing the action the row has already changes nothing and asks for no Undo (a
+        // manager that groups by itself: it opens a group only for what is registered).
+        let quiet = UndoManager()
+        pane.paneUndoManager = quiet
+        row.pullDown.shortcutSelected(try XCTUnwrap(item("paste", in: row.pullDown.menu)))
+        XCTAssertFalse(quiet.canUndo)
+    }
+
+    /// A button of the mouse that read "Default" and got an action: Undo makes it "Default"
+    /// again (its binding goes, the row stays and is selected), Redo gives it the action
+    /// back with the same binding.
+    func testADefaultRowGivenAnActionIsDefaultAgainWithUndo() throws {
+        let pane = makePane()
+        let undo = try XCTUnwrap(pane.paneUndoManager)
+        undo.groupsByEvent = false
+        let back = try XCTUnwrap(pane.row(for: ButtonsMousePart.back))
+        try step(undo) { back.pullDown.shortcutSelected(try XCTUnwrap(item("copy", in: back.pullDown.menu))) }
+        let stored = try XCTUnwrap(Options.shared.buttons.binding.first)
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+
+        undo.undo()
+        XCTAssertTrue(Options.shared.buttons.binding.isEmpty)
+        XCTAssertTrue(pane.row(for: ButtonsMousePart.back) === back, "the same row")
+        XCTAssertTrue(back.isDefault)
+        XCTAssertEqual(shown(back.pullDown), "Default")
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.back))
+        undo.redo()
+        XCTAssertEqual(Options.shared.buttons.binding, [stored])
+        XCTAssertEqual(shown(back.pullDown), "Copy")
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.back))
+    }
+
+    /// "−" and Delete on a button of the mouse with an action clear it ("Clear Action"):
+    /// the row stays and reads "Default"; Undo gives the action back. On a "Default" row
+    /// "−" is off and Delete does nothing; the other rows are still removed.
+    func testMinusAndDeleteClearAButtonOfTheMouse() throws {
+        let other = binding(5, "paste", modifiers: option)
+        let backBinding = binding(3, "copy")
+        let pane = makePane([backBinding, other])
+        let (window, _) = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        let back = try XCTUnwrap(pane.row(for: ButtonsMousePart.back))
+        XCTAssertTrue(back.isRemovable)
+        pane.list.select(ButtonsMousePart.back)
+        XCTAssertTrue(pane.list.removeButton.isEnabled)
+        XCTAssertEqual(pane.list.removeButton.accessibilityLabel(), "Clear Action")
+
+        step(undo) { pane.list.removeButton.performClick(nil) }
+        XCTAssertEqual(Options.shared.buttons.binding, [other], "only its binding goes")
+        XCTAssertTrue(pane.row(for: ButtonsMousePart.back) === back)
+        XCTAssertTrue(back.isDefault)
+        XCTAssertFalse(back.isRemovable)
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.back), "still selected")
+        XCTAssertFalse(pane.list.removeButton.isEnabled, "nothing left to clear")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Clear Action")
+
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [backBinding, other], "back in its place")
+        XCTAssertEqual(shown(back.pullDown), "Copy")
+        XCTAssertTrue(pane.list.removeButton.isEnabled)
+
+        // Delete, while the list has the keyboard.
+        window.makeFirstResponder(pane.list)
+        try step(undo) { pane.list.keyDown(with: try key("\u{7F}", keyCode: 51)) }
+        XCTAssertEqual(Options.shared.buttons.binding, [other])
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Clear Action")
+        let quiet = UndoManager()
+        pane.paneUndoManager = quiet
+        pane.list.keyDown(with: try key("\u{7F}", keyCode: 51))
+        XCTAssertEqual(Options.shared.buttons.binding, [other], "a Default row: Delete does nothing")
+        XCTAssertFalse(quiet.canUndo, "and asks for no Undo")
+        pane.paneUndoManager = nil
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [backBinding, other])
+
+        // Any other row is removed, as before.
+        pane.list.select(other.id)
+        XCTAssertEqual(pane.list.removeButton.accessibilityLabel(), "Remove")
+        step(undo) { pane.list.removeButton.performClick(nil) }
+        XCTAssertEqual(Options.shared.buttons.binding, [backBinding])
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Remove Button")
+    }
+
+    /// The name or icon of a row's recorded keys changed: "Undo Rename" puts the one
+    /// before back. Other keys recorded are a change of the action.
+    func testRenamingRecordedKeysCanBeUndone() throws {
+        deviceName = nil
+        let keys = "custom::40:1048576"
+        let find = ShortcutLabel(name: "Find", icon: nil)
+        let original = ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 5, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: keys, isEnabled: true, label: find
+        )
+        let pane = makePane([original])
+        let undo = try XCTUnwrap(pane.paneUndoManager)
+        undo.groupsByEvent = false
+        let row = try XCTUnwrap(pane.row(for: original.id))
+
+        step(undo) { row.pullDown.onCustomShortcutRecorded?(keys, ShortcutLabel(name: "Search", icon: nil)) }
+        XCTAssertEqual(Options.shared.buttons.binding.first?.label?.name, "Search")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Rename")
+        step(undo) { row.pullDown.onCustomShortcutRecorded?("custom::41:1048576", ShortcutLabel(name: "Search", icon: nil)) }
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding.first?.systemShortcutName, keys)
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [original])
+        XCTAssertEqual(Options.shared.buttons.binding.first?.label, find)
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(original.id))
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Rename")
+    }
+
+    /// "Which Button Is This?": Undo ("Undo Which Button") puts every row of the button
+    /// number back where it was said to be, with the row it was asked of selected.
+    func testWhichButtonCanBeUndone() throws {
+        let gesture = binding(6, SystemShortcut.mouseGestureNavigation.identifier)
+        let withOption = binding(6, "copy", modifiers: option)
+        let five = binding(5, "copy")
+        let pane = makePane([gesture, withOption, five])
+        let undo = try XCTUnwrap(pane.paneUndoManager)
+        undo.groupsByEvent = false
+
+        step(undo) { pane.setPlace(of: withOption.id, to: .gestureButton) }
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.triggerEvent.mousePart), [.gestureButton, .gestureButton, nil])
+        XCTAssertEqual(pane.row(for: gesture.id)?.id, AnyHashable(ButtonsMousePart.gesture))
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Which Button")
+        pane.list.select(nil)
+
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.triggerEvent.mousePart), [nil, nil, nil])
+        XCTAssertEqual(pane.row(for: gesture.id)?.id, AnyHashable(gesture.id), "below again, as a numbered button")
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(withOption.id))
+        undo.redo()
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.triggerEvent.mousePart), [.gestureButton, .gestureButton, nil])
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Which Button")
+    }
+
+    /// The change a row's Undo holds touches only its own bindings: one removed meanwhile
+    /// stays removed, one added meanwhile stays, and a binding to put back whose trigger is
+    /// in the list again stays out.
+    func testARowChangeTouchesOnlyItsOwnBindings() throws {
+        let a = binding(3, "copy")
+        let b = binding(4, "paste")
+        let changedA = ButtonBinding(id: a.id, triggerEvent: a.triggerEvent, systemShortcutName: "selectAll", isEnabled: true, createdAt: a.createdAt)
+        let sameTrigger: (ButtonBinding, ButtonBinding) -> Bool = { $0.triggerEvent == $1.triggerEvent }
+
+        let change = ButtonRowChange(kind: .action, states: [.init(id: a.id, binding: a, index: 0)])
+        let added = binding(5, "copy")
+        let result = try XCTUnwrap(change.applied(to: [changedA, b, added], sameTrigger: sameTrigger))
+        XCTAssertEqual(result.bindings, [a, b, added])
+        XCTAssertEqual(result.replaced, [.init(id: a.id, binding: changedA, index: 0)])
+        XCTAssertNil(change.applied(to: [a, b], sameTrigger: sameTrigger), "nothing to change")
+
+        // Put back (a cleared button), unless its trigger is there again.
+        let back = ButtonRowChange(kind: .clear, states: [.init(id: a.id, binding: a, index: 0)])
+        XCTAssertEqual(try XCTUnwrap(back.applied(to: [b], sameTrigger: sameTrigger)).bindings, [a, b])
+        let again = binding(3, "undo")
+        XCTAssertNil(back.applied(to: [b, again], sameTrigger: sameTrigger), "recorded again meanwhile: that one stays")
+
+        // Taken out (an action given to a Default row), its Redo puts it back.
+        let out = ButtonRowChange(kind: .action, states: [.init(id: a.id, binding: nil, index: 1)])
+        let removed = try XCTUnwrap(out.applied(to: [b, a], sameTrigger: sameTrigger))
+        XCTAssertEqual(removed.bindings, [b])
+        XCTAssertEqual(removed.replaced, [.init(id: a.id, binding: a, index: 1)])
+
+        // Where a numbered button is counts, though `==` leaves it out.
+        let placed = a.replacingTriggerEvent(a.triggerEvent.placed(at: .gestureButton))
+        XCTAssertEqual(placed, a)
+        XCTAssertFalse(ButtonRowChange.isSame(placed, a))
+        XCTAssertNotNil(ButtonRowChange(kind: .whichButton, states: [.init(id: a.id, binding: a, index: 0)])
+            .applied(to: [placed], sameTrigger: sameTrigger))
+
+        // What a change is called.
+        let labelled = ButtonBinding(triggerEvent: a.triggerEvent, systemShortcutName: "custom::40:1048576", isEnabled: true, label: ShortcutLabel(name: "Find", icon: nil))
+        XCTAssertEqual(ButtonRowChange.Kind.of(labelled, to: labelled.labelled(nil)), .rename)
+        XCTAssertEqual(ButtonRowChange.Kind.of(a, to: changedA), .action)
+        XCTAssertEqual(ButtonRowChange.Kind.rename.actionName, "Rename")
     }
 
     // MARK: - The action menu
