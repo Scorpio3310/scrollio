@@ -2343,7 +2343,11 @@ final class PreferencesScrollingTests: XCTestCase {
         // The offer ends by itself; Edit › Undo still takes the reset back.
         click()
         XCTAssertEqual(button.title, "Undo Reset")
-        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        // (Waited for, not timed: after a fixed 0.4 s a busy main queue had not ended it yet.)
+        let deadline = Date().addingTimeInterval(10)
+        while controller.offersUndoOfReset, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
         XCTAssertFalse(controller.offersUndoOfReset)
         XCTAssertEqual(button.title, "Reset to Defaults")
         XCTAssertFalse(button.isEnabled, "nothing differs from the defaults")
