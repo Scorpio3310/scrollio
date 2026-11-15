@@ -11511,6 +11511,30 @@
           }
         }
       }
+    },
+    "intro-access-no-display-frames-title": {
+      "comment": "Welcome Guide, Accessibility step: the status box's title while access is allowed and Scrollio runs, but its display links send no frames (the line under it is general-no-display-frames-hint)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allowed, but smooth scrolling is off: no display frames"
+          }
+        }
+      }
+    },
+    "intro-feel-no-display-frames": {
+      "comment": "Welcome Guide, feel step: the line over the sample page while Scrollio's display links send no frames, so the page is not smoothed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not smoothed: no display frames"
+          }
+        }
+      }
     }
   },
   "version": "1.1"
