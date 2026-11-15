@@ -82,6 +82,16 @@ it for the people who use the app, and give the version its part before you tag 
   own Shortcut Ring until a place lights.
 - **Record a Button… says what it replaces** ("Replaces: Copy"), and "Show in Buttons"
   selects the row it names.
+- **Menus show what is set.** An action menu ticks the action in use (its group shows a
+  dash), and every jump inside Settings reads "Show in …": Show in Gestures, Show in
+  Scrolling, Show in Mouse, Show in Shortcut Ring, "Show in Safari › Gestures".
+- **Pause from Settings.** The top of General always says whether Scrollio works, in the
+  menu bar's words, with Pause (or Resume, Try Again, Open System Settings).
+- **Restore by date.** Restore… in General lists the kept settings by date and time.
+- **Settings for the app in front.** The menu bar menu has "Settings for Safari…": it
+  opens that app's page in Apps, or offers "Add Safari" there.
+- **Mouse starts with your mouse.** With a Logitech mouse, the Mouse pane starts with "Let
+  Scrollio manage this mouse" and that mouse's settings; "All mice (macOS)" comes last.
 - **The thumb wheel reaches the next desktop.** Switch Desktops moves a desktop every few
   notches of one roll (at most one each quarter second), Follow the wheel chains swipes so
   one long roll moves several desktops, and a single stray tick of the wheel does nothing.
