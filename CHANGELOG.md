@@ -22,7 +22,7 @@ it for the people who use the app, and give the version its part before you tag 
 - **An app's page has everything the panes have.** The thumb wheel's speed and
   direction, the gestures' mode, swipe speed and switches, and the ring's "Freeze
   pointer" can be set for each app too.
-- **Suggested shortcuts for 100 apps.** Turn off "Use the general ring" for Figma,
+- **Suggested shortcuts for 100 apps.** Turn off "Use settings from Shortcut Ring" for Figma,
   Photoshop, Safari, Word, Discord, Zed and many more, and the app's ring starts with
   its most used shortcuts, on your keyboard layout.
 - **Name your shortcuts.** A key combination you record can have a name and an icon: the
@@ -65,6 +65,23 @@ it for the people who use the app, and give the version its part before you tag 
 - **A click while you hold the ring's button belongs to the ring.** It runs the shortcut
   that is lit (nothing lit: the ring closes), and nothing reaches the app under the ring.
   A click right as you press the button does nothing.
+- **Scrolling in an app is one choice.** An app's Scrolling part asks "Scrolling in
+  Safari": Same as Scrolling, Own Settings or Left to macOS (not smoothed, not reversed).
+  Nothing you set changes; an app whose own settings already had both off reads Left to
+  macOS.
+- **"Default" means one thing.** Every button without an action says "Default", with what
+  it then does where that is certain ("Default (Back)", "Default (Switch Wheel Mode)"); an
+  app's Buttons part says "In other apps: …" under each row, and each row's menu starts
+  with "Same as Other Apps (…)", which gives the button back to Buttons.
+- **One set of words.** An app's Gestures and Shortcut Ring parts say "Use settings from
+  Gestures" and "Use settings from Shortcut Ring", and their first line "…, as in other
+  apps".
+- **The Welcome Guide says where to go next.** Its last step leads on to Buttons, Gestures
+  or the Shortcut Ring.
+- **An app's own ring shows whose it is.** The app's icon sits faintly in the middle of its
+  own Shortcut Ring until a place lights.
+- **Record a Button… says what it replaces** ("Replaces: Copy"), and "Show in Buttons"
+  selects the row it names.
 - **The thumb wheel reaches the next desktop.** Switch Desktops moves a desktop every few
   notches of one roll (at most one each quarter second), Follow the wheel chains swipes so
   one long roll moves several desktops, and a single stray tick of the wheel does nothing.
