@@ -236,13 +236,18 @@ name) shows that app's Buttons part. The pane also sets what the eight places ho
     runs. Back in the middle and let go: the ring closes and nothing runs.
     While you hold the button a click is the ring's, never the app's under it: the lit
     shortcut runs when the click comes up (nothing lit, or another mouse button: the
-    ring closes and nothing runs); a click right as you press the button does nothing.
+    ring closes and nothing runs); a click right as you press the button does nothing
+    to the ring (in the very first moment, before the ring is on the screen, the app
+    under the pointer still gets that click).
   - Click: press the button and let go without moving. The ring stays open: point at a
     shortcut and click it. A click anywhere else (an empty place too), Esc, the button
     again, or ten seconds without moving the pointer close the ring; nothing runs.
 - Letting go with a shortcut lit runs it; letting go with nothing lit leaves the ring
-  open, however long you pressed. Right after the press a shortcut lights only after a
-  longer movement, so that the press itself does not choose.
+  open, however long you pressed, up to ten seconds: a ring held longer than that
+  closes by itself and runs nothing (a button's release can get lost, as for a gesture
+  hold), so read a new ring's names with the ring left open rather than held. Right
+  after the press a shortcut lights only after a longer movement, so that the press
+  itself does not choose.
 - The ring never takes the keyboard: the app you are in stays in front, so Copy, Paste
   and the other shortcuts go to it. The ring is gone before its shortcut runs (a
   screenshot does not show it).
@@ -303,13 +308,20 @@ name) shows that app's Buttons part. The pane also sets what the eight places ho
   takes that back); while your keyboard layout leaves places of them empty, a quiet line
   under the switch says how many. They are ordinary
   places afterwards: change any of them. No suggested place deletes what cannot be
-  brought back or changes something outside the Mac at one flick (a git app fetches
-  rather than pushes, a terminal splits its pane rather than clearing what it showed,
-  and a call app never turns your microphone or camera on), and a place whose key the app does not document stays empty. The keys are those of your keyboard layout at
-  that moment (on a German or Slovenian keyboard ⌘Z is still Undo and zoom is the + and
-  − keys); a shortcut whose key your layout types only with Option ("[" on those
-  layouts) takes Scrollio's own Back or Forward in a browser, or other keys the app has
-  for it, and else its place stays empty (the page says how many). So does a shortcut
+  brought back, pushes or sends anything, or turns your microphone or camera on (a git
+  app fetches rather than pushes, a terminal splits its pane rather than clearing what
+  it showed). A few do act outside your Mac at one flick: Raise Hand in Teams and Zoom
+  (everyone in the call sees it), Archive in Mail and Outlook (the message moves on the
+  server) and Save in Postman. A place whose key the app does not document stays empty. The keys are those of your keyboard
+  layout (on a German or Slovenian keyboard ⌘Z is still Undo and zoom is the + and
+  − keys), and they follow it: after a switch to another layout a suggested place sends
+  the same shortcut with that layout's keys, and the ring and its rows show those (a
+  key combination you recorded yourself keeps its keys; a suggested place you only gave
+  another name still follows). A shortcut whose key your layout types only with Option
+  ("[" on those layouts) takes Scrollio's own Back or Forward in a browser, or other keys
+  the app has for it, and else its place is empty (the page says how many): filled on
+  such a layout it stays empty, filled on another one it is empty, and sends nothing,
+  only while such a layout is in use. So is a shortcut
   that would be ⌘ or ⇧⌘ with the key beside the left Shift, which switches windows
   there (⌘<): zoom in Notes, Pages, Keynote, Numbers and TextEdit, and Excel's font
   size. Mail's arrow and

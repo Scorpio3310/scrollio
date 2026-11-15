@@ -18,8 +18,10 @@
 //    lit when its button goes down, and when it comes up that place runs and the ring
 //    closes, as letting go would (nothing lit, or another button: it closes, nothing
 //    runs). A click that goes down in the first `quickRelease` seconds is the squeeze of
-//    the hand pressing the trigger: it means nothing and the hold goes on. A trigger let
-//    go while a click of the ring is down waits for that click: its up decides, once.
+//    the hand pressing the trigger: it means nothing and the hold goes on, also when it
+//    went to the app under the pointer because the ring was not on the screen yet
+//    (`isSqueeze`). A trigger let go while a click of the ring is down waits for that
+//    click: its up decides, once.
 //  - Click. The trigger goes up and nothing was ever lit, however long the press lasted:
 //    the ring stays open. Once the pointer has moved a little (`latchSlack`: a ring that
 //    was drawn away from the pointer at a screen edge must not light, or run, the place
@@ -277,7 +279,7 @@ struct ShortcutRingSession {
             // Held, the hand chose, not the pointer (it may stand still in the middle, or
             // off the ring): the left button takes what is lit, anything else closes. In
             // the first moments a click is the squeeze of the press and means nothing.
-            if time - pressTime < Self.quickRelease {
+            if isSqueeze(at: time) {
                 pressedButtons[button] = .nothing
             } else if button == 0, let place = lit {
                 pressedButtons[button] = .choose(place)
@@ -300,6 +302,13 @@ struct ShortcutRingSession {
         }
         pressedButtons[button] = .choose(place)
         return relight(place)
+    }
+
+    /// Whether a click that went down at `time` is the squeeze of the hand that presses
+    /// the trigger: during a hold, in its first `quickRelease` seconds. Such a click means
+    /// nothing to the ring, wherever it went.
+    func isSqueeze(at time: TimeInterval) -> Bool {
+        return phase == .held && time - pressTime < Self.quickRelease
     }
 
     /// A pointer button came up: what its press meant happens now. The up of a press the

@@ -21,9 +21,11 @@
 //    (the window server gives the panel the click's up with its down), so the app
 //    underneath gets neither; on another screen, where a pointer that is not kept still
 //    can carry a held click, that screen's panel takes it. A click that goes to another
-//    app all the same (before the panels are on screen, or should a panel not have taken
-//    it), or to a window of Scrollio's own, closes the ring and runs nothing: while a ring
-//    is open, and only then, two monitors hear of such clicks.
+//    app all the same (should a panel not have taken it), or to a window of Scrollio's
+//    own, closes the ring and runs nothing: while a ring is open, and only then, two
+//    monitors hear of such clicks. The one exception is the squeeze of the hand that
+//    presses the trigger: a click in the first moments of a hold, which the app under the
+//    pointer gets when the panels are not on the screen yet, leaves the hold as it is.
 //  - Esc: the keys tap, which is kept running while a ring is open
 //    (`InputProcessor.needsKeyEvents`).
 //
@@ -83,8 +85,24 @@ final class ShortcutRingController {
     /// settings for the rings that can open and open something, and after a ring closed
     /// that had to be shown without it. Only rings that open something keep one (`prepare`).
     /// The newest first, one per ring: a face belongs to the eight places it was made for
-    /// and is never shown for others, so the ring of one app never shows another's.
+    /// and is never shown for others, so the ring of one app never shows another's. It
+    /// also belongs to the keyboard layout it was made on (the keys it names, and what a
+    /// suggested shortcut is there): the faces of another layout are dropped
+    /// (`dropFacesOfAnotherLayout`).
     private(set) static var preparedFaces: [(ring: ShortcutRingSettings, face: ShortcutRingFace)] = []
+
+    /// The keyboard layout the kept faces were made on (`ShortcutRingSuggestions.layoutID`).
+    private static var preparedFacesLayout: String?
+
+    /// Drops the kept faces when the keyboard layout in use is not the one they were made
+    /// on. Asked wherever a face is looked for or kept: on the main queue, never inside an
+    /// event callback.
+    private static func dropFacesOfAnotherLayout() {
+        let layout = ShortcutRingSuggestions.layoutID()
+        guard layout != preparedFacesLayout else { return }
+        preparedFacesLayout = layout
+        preparedFaces = []
+    }
 
     /// How many faces are kept (the general ring's and those of apps' own rings). A ring
     /// beyond them is shown once without its icons and then takes the oldest one's place.
@@ -98,6 +116,7 @@ final class ShortcutRingController {
     /// The face made for a ring with the places of `ring`; nil when there is none. (A
     /// face shows the places and nothing else: the freeze switch plays no part.)
     static func preparedFace(for ring: ShortcutRingSettings) -> ShortcutRingFace? {
+        dropFacesOfAnotherLayout()
         return preparedFaces.first { $0.ring.places == ring.places }?.face
     }
 
@@ -106,6 +125,7 @@ final class ShortcutRingController {
     /// so that the app pages a user browses never push out a face with an app's icon.
     static func prepare(_ face: ShortcutRingFace, for ring: ShortcutRingSettings) {
         guard ring.opensSomething else { return }
+        dropFacesOfAnotherLayout()
         preparedFaces.removeAll { $0.ring.places == ring.places }
         preparedFaces.insert((ring, face), at: 0)
         if preparedFaces.count > preparedFaceLimit {
@@ -399,6 +419,7 @@ final class ShortcutRingController {
     /// is under way or waiting for its turn).
     static func forgetPreparedFaces() {
         preparedFaces = []
+        preparedFacesLayout = nil
         preparedAppMarks = []
         missingFacesAreDue = false
         quietPasses = 0
@@ -461,9 +482,10 @@ final class ShortcutRingController {
         var logProblem: (String) -> Void
         /// Starts to hear of mouse-downs that did not go to the ring: those that went to
         /// other apps, and those in windows of Scrollio's own (the handler gets that
-        /// window; nil for another app's). The result ends it
-        /// (`stopWatchingClicksElsewhere`). Nil: nothing was started (tests).
-        var watchClicksElsewhere: (@escaping (NSWindow?) -> Void) -> Any?
+        /// window, nil for another app's, and when the button went down, in the time of
+        /// `now`). The result ends it (`stopWatchingClicksElsewhere`). Nil: nothing was
+        /// started (tests).
+        var watchClicksElsewhere: (@escaping (NSWindow?, TimeInterval) -> Void) -> Any?
         var stopWatchingClicksElsewhere: (Any) -> Void
 
         static let system = Environment(
@@ -501,10 +523,11 @@ final class ShortcutRingController {
                 let downs: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
                 // Clicks in other apps, and clicks in Scrollio's own windows (its Settings
                 // on another screen): the global monitor does not hear of the second kind.
+                // (An event's time is the system's uptime, as `now` is.)
                 let monitors: [Any?] = [
-                    NSEvent.addGlobalMonitorForEvents(matching: downs) { _ in handler(nil) },
+                    NSEvent.addGlobalMonitorForEvents(matching: downs) { event in handler(nil, event.timestamp) },
                     NSEvent.addLocalMonitorForEvents(matching: downs) { event in
-                        handler(event.window)
+                        handler(event.window, event.timestamp)
                         return event
                     },
                 ]
@@ -539,7 +562,12 @@ final class ShortcutRingController {
     private(set) var session = ShortcutRingSession()
     /// The ring as it was when it opened: what is shown and what a place runs.
     private var ring = ShortcutRingSettings.default
-    /// Which of its places run something, worked out when the ring changes, not per press.
+    /// The keyboard layout in use when `filled` and `face` were worked out
+    /// (`ShortcutRingSuggestions.layoutID`): on another layout a suggested shortcut is
+    /// other keys, or none, and every key has another name.
+    private var ringLayout: String?
+    /// Which of its places run something, worked out when the ring or the keyboard layout
+    /// changes, not per press.
     private var filled = ShortcutRingSettings.default.filled
     private var face: ShortcutRingFace?
     /// `face` knows everything (an app's name and icon); false while it was made without
@@ -641,10 +669,16 @@ final class ShortcutRingController {
             // The app's icon only if it was made at a quiet moment: nothing is loaded now.
             owner = Self.owner(of: choice)
             ownerPath = choice.appPath
-            if stored != ring {
+            // (The layout's id is read, nothing is translated unless the layout changed
+            // and the ring holds a suggested shortcut.)
+            let layout = ShortcutRingSuggestions.layoutID()
+            if stored != ring || layout != ringLayout {
                 // Another ring than last time (changed in Settings, or another app in
-                // front): the face of the last one is not this one's.
+                // front): the face of the last one is not this one's. Nor is it after a
+                // change of the keyboard layout: the keys have other names there, and a
+                // suggested shortcut is other keys, or none.
                 ring = stored
+                ringLayout = layout
                 filled = stored.filled
                 face = nil
                 faceIsComplete = false
@@ -728,15 +762,27 @@ final class ShortcutRingController {
         }
     }
 
-    /// A mouse button went down and the click went to another app, while a ring is open:
-    /// the ring closes and runs nothing. That is how a click in the moment before a held
-    /// ring is on the screen looks. Once it is there, a panel on every screen should have
-    /// taken the click: it did not, the app underneath got it, and choosing a shortcut on
-    /// top of that would act on a click the user did not make there; the log says so.
-    func clickWentElsewhere(in window: NSWindow? = nil) {
+    /// A mouse button went down (at `time`; nil: now) and the click went to another app,
+    /// while a ring is open: the ring closes and runs nothing. A panel on every screen
+    /// should have taken the click: it did not, the app underneath got it, and choosing a
+    /// shortcut on top of that would act on a click the user did not make there; the log
+    /// says so.
+    ///
+    /// Not so the squeeze: the index finger clicks as the thumb presses the trigger, before
+    /// the ring is on the screen (it is shown a turn of the main queue after the press, and
+    /// built at the first ring of a run), so the app under the pointer gets that click and
+    /// no panel could have taken it. While the trigger is held, a click from before the
+    /// ring was shown, or from the first moments of the hold (`ShortcutRingSession
+    /// .isSqueeze`: by the click's own time, since this is heard of after the ring was
+    /// shown), means nothing here, as the same click on the panel means nothing: the hold
+    /// goes on. (It closed the ring, so a squeeze could end a hold before it was seen.)
+    func clickWentElsewhere(in window: NSWindow? = nil, at time: TimeInterval? = nil) {
         assertMainThread()
         // A click on one of the ring's own panels is the ring's (the panel reports it).
         guard session.isOpen, !presenter.owns(window) else { return }
+        if session.phase == .held, !isShown || session.isSqueeze(at: time ?? environment.now()) {
+            return
+        }
         if isShown, !didLogMissedClick {
             didLogMissedClick = true
             environment.logProblem("Shortcut Ring: a click went to the app under the ring's panels "
@@ -961,8 +1007,8 @@ final class ShortcutRingController {
         stopTimer()
         if phase != .closed {
             if clickWatch == nil {
-                clickWatch = environment.watchClicksElsewhere { [weak self] window in
-                    self?.clickWentElsewhere(in: window)
+                clickWatch = environment.watchClicksElsewhere { [weak self] window, time in
+                    self?.clickWentElsewhere(in: window, at: time)
                 }
             }
         } else if let watch = clickWatch {

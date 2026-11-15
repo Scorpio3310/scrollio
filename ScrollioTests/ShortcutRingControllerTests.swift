@@ -575,6 +575,96 @@ final class ShortcutRingControllerTests: XCTestCase {
         XCTAssertEqual(ShortcutRingFace.plainName(of: OpenTargetPayload(path: "/Users/someone/bin/sync.sh", bundleID: nil, arguments: "", kind: .script)), "sync.sh")
     }
 
+    // MARK: The keyboard layout changes
+
+    /// A ring's face names its keys as the keyboard layout names them, and a place filled
+    /// from a suggested shortcut is other keys on another layout, or none. So after a
+    /// change of the layout the same ring is worked out again at its next press: its face,
+    /// and which of its places run. (It kept the face and the keys of the layout it was
+    /// first shown on until its places changed or Scrollio was started again.)
+    func testAfterAChangeOfTheKeyboardLayoutTheSameRingIsWorkedOutAgain() {
+        let savedLayout = ShortcutRingSuggestions.layout
+        let savedLayoutID = ShortcutRingSuggestions.layoutID
+        defer {
+            ShortcutRingSuggestions.layout = savedLayout
+            ShortcutRingSuggestions.layoutID = savedLayoutID
+        }
+        // Back, ⌘[, as a suggestion fills it on a US keyboard, on top.
+        let command = CGEventFlags.maskCommand
+        var ring = ShortcutRingSettings.default
+        ring[0] = ShortcutRingPlace(
+            action: ButtonBinding.normalizedCustomBindingName(code: 33, modifiers: command.rawValue),
+            label: ShortcutLabel(name: "Back", icon: nil),
+            suggested: .init(keys: .init(character: "[", modifiers: command))
+        )
+        harness.ring = ring
+        ShortcutRingSuggestions.layout = { .us }
+        ShortcutRingSuggestions.layoutID = { "US" }
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertEqual(harness.presenter.shown.last?.face.places[0].title, "Back")
+        XCTAssertEqual(harness.presenter.shown.last?.face.places[0].keys, "⌘[")
+        XCTAssertEqual(harness.presenter.shown.last?.face.filled[0], true)
+        harness.moveHand(by: CGPoint(x: 0, y: -80))
+        XCTAssertEqual(harness.presenter.lit.last, .some(0), "it lights")
+        controller.cancel()
+        harness.runScheduled()
+
+        // The layout types "[" only with Option now (and "]" too): the place is none there.
+        var other = KeyboardLayoutLayers.us
+        for code in [CGKeyCode(33), CGKeyCode(30)] {
+            other.plain[code] = "š"
+            other.shift[code] = "Š"
+            other.command[code] = "š"
+            other.commandShift[code] = "Š"
+        }
+        ShortcutRingSuggestions.layout = { other }
+        ShortcutRingSuggestions.layoutID = { "another" }
+        harness.clearLog()
+        let litBefore = harness.presenter.lit.count
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertEqual(harness.presenter.shown.count, 2)
+        XCTAssertEqual(harness.presenter.shown.last?.face.places[0].isEmpty, true, "an empty place: no name, no keys")
+        XCTAssertEqual(harness.presenter.shown.last?.face.places[0].keys, "")
+        XCTAssertEqual(harness.presenter.shown.last?.face.filled[0], false)
+        XCTAssertEqual(harness.presenter.shown.last?.face.filled[1], true, "the others as they were")
+        harness.moveHand(by: CGPoint(x: 0, y: -80))
+        XCTAssertFalse(harness.presenter.lit.dropFirst(litBefore).contains(.some(0)), "and it never lights")
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertFalse(harness.log.contains { $0.hasPrefix("run") }, "nothing is sent")
+        controller.cancel()
+        harness.runScheduled()
+
+        // Back on the first layout it is itself again.
+        ShortcutRingSuggestions.layout = { .us }
+        ShortcutRingSuggestions.layoutID = { "US" }
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertEqual(harness.presenter.shown.last?.face.places[0].keys, "⌘[")
+        XCTAssertEqual(harness.presenter.shown.last?.face.filled[0], true)
+    }
+
+    /// A face made at a quiet moment belongs to the layout it was made on: on another one
+    /// it is not used (the ring is shown once without its icons and its face made again).
+    func testAFaceMadeOnAnotherKeyboardLayoutIsNotUsed() {
+        let savedLayoutID = ShortcutRingSuggestions.layoutID
+        defer { ShortcutRingSuggestions.layoutID = savedLayoutID }
+        var ring = ShortcutRingSettings.default
+        ring[4] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: "/System/Applications/Calculator.app", bundleID: "com.apple.calculator", arguments: "", kind: .application
+        ))
+        ShortcutRingSuggestions.layoutID = { "US" }
+        ShortcutRingController.prepare(ShortcutRingFace(ring, looksOnDisk: false), for: ring)
+        XCTAssertNotNil(ShortcutRingController.preparedFace(for: ring))
+        ShortcutRingSuggestions.layoutID = { "another" }
+        XCTAssertNil(ShortcutRingController.preparedFace(for: ring))
+        XCTAssertTrue(ShortcutRingController.preparedFaces.isEmpty)
+        ShortcutRingController.prepare(ShortcutRingFace(ring, looksOnDisk: false), for: ring)
+        XCTAssertNotNil(ShortcutRingController.preparedFace(for: ring), "made again there, it is kept")
+    }
+
     // MARK: The taps follow the ring
 
     /// The pointer-movement tap is asked for exactly while the trigger is held, and the
@@ -680,9 +770,7 @@ final class ShortcutRingControllerTests: XCTestCase {
 
     /// During a hold the pointer (when it is not kept still) can reach another screen.
     /// That screen's panel takes the click there: it is the ring's, and the lit place runs
-    /// at its up, once, the trigger's release running nothing more. A click in the moment
-    /// before a held ring is on the screen goes to the app under the pointer: the ring
-    /// closes and runs nothing, and that is no panel's fault.
+    /// at its up, once, the trigger's release running nothing more.
     func testAHeldClickOnAnotherScreenIsTheRingsAndRunsTheLitPlace() {
         controller.triggerPressed(by: RingHarness.button(.down))
         harness.runScheduled()
@@ -697,14 +785,50 @@ final class ShortcutRingControllerTests: XCTestCase {
         harness.runScheduled()
         XCTAssertEqual(harness.log, ["hide", "run copy"], "the lit place runs, once")
         XCTAssertEqual(harness.stoppedClickWatches, ["watch 1"])
+    }
 
-        harness.pointer = CGPoint(x: 700, y: 500)
+    /// The squeeze before the ring is on the screen: the index finger clicks as the thumb
+    /// presses the trigger, the panel is not up yet (it is shown a turn after the press),
+    /// and the app under the pointer gets the click. That is no panel's fault and no
+    /// reason to end the hold: the ring is shown and held, and the hand and the release
+    /// choose as ever. (The click closed the ring, which then never appeared.)
+    func testAClickBeforeTheRingIsOnTheScreenLeavesTheHoldAsItIs() {
         controller.triggerPressed(by: RingHarness.button(.down))
         controller.clickWentElsewhere()
-        XCTAssertFalse(controller.isOpen)
+        XCTAssertTrue(controller.isHeld)
         harness.runScheduled()
-        XCTAssertEqual(harness.presenter.shown.count, 1, "the ring that is gone is not shown")
+        XCTAssertEqual(harness.presenter.shown.count, 1, "the ring is shown")
+        XCTAssertTrue(controller.isHeld)
         XCTAssertTrue(harness.problems.isEmpty)
+
+        // The same click is heard of only after the ring was shown (the show was put on
+        // the main queue first): it is known by its own time, in the hold's first moments.
+        let pressed = harness.now
+        harness.now += 0.5
+        controller.clickWentElsewhere(at: pressed + 0.03)
+        XCTAssertTrue(controller.isHeld, "the squeeze, heard of late")
+        XCTAssertTrue(harness.problems.isEmpty)
+        harness.moveHand(by: CGPoint(x: -50, y: 50), after: 0)
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertEqual(harness.log, ["show", "hide", "run copy"], "and the hold ends as ever")
+
+        // A click that was made later in the hold and reached an app is the panel's miss.
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        harness.now += 0.5
+        controller.clickWentElsewhere(at: harness.now)
+        XCTAssertFalse(controller.isOpen)
+        XCTAssertEqual(harness.problems.count, 1)
+
+        // A ring that was left open is no hold: before its pointer moved or after, a click
+        // elsewhere closes it.
+        controller.triggerPressed(by: RingHarness.button(.down))
+        controller.triggerReleased(isMadeUp: false)
+        XCTAssertTrue(controller.isOpen)
+        controller.clickWentElsewhere(at: harness.now)
+        XCTAssertFalse(controller.isOpen, "left open before it was shown: a click elsewhere closes it")
+        harness.runScheduled()
     }
 
     // MARK: A click while the trigger is held
@@ -1911,24 +2035,173 @@ final class ShortcutRingPanelTests: XCTestCase {
         XCTAssertTrue(stage.takesClicks)
     }
 
-    /// While a ring is shown the panel takes the mouse; when it goes, it lets go.
+    /// While a ring is shown the panel takes the mouse; when it goes, it lets go. Taking
+    /// the mouse is the panel's `ignoresMouseEvents` alone: the stage has no fill for it.
     func testAnOpenRingTakesTheMouseAndAHiddenOneLetsGo() throws {
         let (presenter, _) = shown()
         let panel = try XCTUnwrap(presenter.panel)
         let stage = try XCTUnwrap(presenter.stage)
         XCTAssertFalse(panel.ignoresMouseEvents)
         XCTAssertTrue(stage.takesClicks)
-        XCTAssertNotNil(stage.layer?.backgroundColor, "the clear part is filled, almost invisibly")
+        XCTAssertNil(stage.layer?.backgroundColor, "nothing is drawn to take the clicks")
         XCTAssertTrue(stage.acceptsFirstMouse(for: nil), "the first click on a window that is not key counts")
-        XCTAssertGreaterThan(ShortcutRingStageView.clickFillAlpha, 0.004, "a pixel without alpha lets a click through")
-        XCTAssertLessThanOrEqual(ShortcutRingStageView.clickFillAlpha, 0.02)
         presenter.setTakesClicks(false)
         XCTAssertTrue(panel.ignoresMouseEvents)
         XCTAssertNil(stage.layer?.backgroundColor)
         presenter.setTakesClicks(true)
+        XCTAssertFalse(panel.ignoresMouseEvents)
         presenter.hide()
         XCTAssertTrue(panel.ignoresMouseEvents)
         XCTAssertFalse(panel.isVisible)
+    }
+
+    /// What `view`'s layer tree draws, as premultiplied RGBA bytes (one point, one pixel).
+    private func drawn(_ view: NSView) throws -> [UInt8] {
+        let width = Int(view.bounds.width), height = Int(view.bounds.height)
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let layer = try XCTUnwrap(view.layer)
+        try pixels.withUnsafeMutableBytes { buffer in
+            let context = try XCTUnwrap(CGContext(
+                data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            layer.render(in: context)
+        }
+        return pixels
+    }
+
+    /// With a ring open, held or left open, the screen outside the ring's drops is as it
+    /// is without a ring: the ring's panel and the panels of the other screens are clear
+    /// windows without a shadow, and their stages draw nothing at all, not the faintest
+    /// fill. (The stages were filled with 1.5 % black to take the clicks: the whole screen
+    /// went a shade darker while a ring was open, and lighter again when it closed.)
+    func testWithARingOpenNothingIsDrawnOutsideItsDrops() throws {
+        let right = CGRect(x: 1512, y: 0, width: 800, height: 600)
+        let (presenter, _) = shown(otherScreens: [right])
+        let panel = try XCTUnwrap(presenter.panel)
+        let stage = try XCTUnwrap(presenter.stage)
+        let cover = try XCTUnwrap(presenter.covers.first)
+        for takesClicks in [true, false, true] {
+            presenter.setTakesClicks(takesClicks)
+            for (window, view) in [(panel, stage), (cover.panel, cover.stage)] {
+                XCTAssertEqual(window.backgroundColor, .clear)
+                XCTAssertFalse(window.isOpaque)
+                XCTAssertFalse(window.hasShadow)
+                XCTAssertNil(view.layer?.backgroundColor, "takes clicks: \(takesClicks)")
+                XCTAssertNil(view.layer?.contents)
+                XCTAssertEqual(view.layer?.borderWidth, 0)
+                XCTAssertEqual(view.layer?.shadowOpacity, 0)
+                XCTAssertTrue(view.layer?.filters?.isEmpty ?? true)
+                XCTAssertTrue(view.layer?.backgroundFilters?.isEmpty ?? true)
+                XCTAssertNil(view.layer?.compositingFilter)
+            }
+            // The other screen's whole panel, and the ring's panel without its drops: not
+            // one pixel with any colour or alpha.
+            XCTAssertTrue(cover.stage.subviews.isEmpty)
+            XCTAssertTrue(try drawn(cover.stage).allSatisfy { $0 == 0 }, "takes clicks: \(takesClicks)")
+            let drops = try XCTUnwrap(stage.dropsView)
+            XCTAssertEqual(stage.subviews, [drops as NSView], "the drops are all a stage holds")
+            drops.isHidden = true
+            XCTAssertTrue(try drawn(stage).allSatisfy { $0 == 0 }, "takes clicks: \(takesClicks)")
+            drops.isHidden = false
+            XCTAssertEqual(drops.frame.width, ShortcutRingGeometry.canvasSide, "and the drops stand in the ring's own square")
+            XCTAssertEqual(drops.frame.height, ShortcutRingGeometry.canvasSide)
+        }
+        // (The drawing above does see a fill: the check is not blind.)
+        cover.stage.layer?.backgroundColor = NSColor(white: 0, alpha: 0.015).cgColor
+        XCTAssertFalse(try drawn(cover.stage).allSatisfy { $0 == 0 })
+        cover.stage.layer?.backgroundColor = nil
+        presenter.hide()
+    }
+
+    /// The window server's own answer to "which window gets a mouse-down here?"
+    /// (`NSWindow.windowNumber(at:belowWindowWithWindowNumber:)`; nothing is clicked): the
+    /// ring's panel and another screen's, with nothing drawn in them, get it while they
+    /// take clicks, so the app underneath gets none; not once they let go or are gone.
+    /// For the length of this test two panels of 4 × 4 points with nothing in them, and
+    /// one as large with a fill too faint to see, stand at the bottom left of the main
+    /// screen. Skipped where the window server gives no window a click (no display awake).
+    func testTheWindowServerGivesTheClearPanelsTheClick() throws {
+        guard let main = NSScreen.screens.first else { throw XCTSkip("no screen") }
+        let height = ShortcutRingScreens.mainScreenHeight
+        func spot(_ index: Int) -> CGRect {
+            let cocoa = NSRect(x: main.frame.minX + 300 + CGFloat(index) * 10, y: main.frame.minY + 2, width: 4, height: 4)
+            return ShortcutRingScreens.flipped(cocoa, mainScreenHeight: height)
+        }
+        func gets(_ window: NSWindow, _ spot: CGRect) -> Bool {
+            let centre = ShortcutRingScreens.flipped(CGPoint(x: spot.midX, y: spot.midY), mainScreenHeight: height)
+            return NSWindow.windowNumber(at: centre, belowWindowWithWindowNumber: 0) == window.windowNumber
+        }
+        func wait(_ seconds: TimeInterval = 0.05) {
+            RunLoop.current.run(until: Date().addingTimeInterval(seconds))
+        }
+        /// Whether `window` gets (or, `expected` false, no longer gets) the click at `spot`
+        /// within a second: the window server hears of a change a moment after it is made.
+        func settles(_ window: NSWindow, _ spot: CGRect, gets expected: Bool) -> Bool {
+            for _ in 0..<20 {
+                if gets(window, spot) == expected { return true }
+                wait()
+            }
+            return false
+        }
+
+        // The control: a window that takes clicks by the other rule (its pixels' alpha).
+        let control = NSPanel(
+            contentRect: ShortcutRingScreens.flipped(spot(2), mainScreenHeight: height),
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true
+        )
+        control.level = .popUpMenu
+        control.backgroundColor = .clear
+        control.isOpaque = false
+        control.hasShadow = false
+        control.hidesOnDeactivate = false
+        control.isReleasedWhenClosed = false
+        let filled = NSView(frame: NSRect(x: 0, y: 0, width: 4, height: 4))
+        filled.wantsLayer = true
+        filled.layer?.backgroundColor = NSColor(white: 0, alpha: 0.02).cgColor
+        control.contentView = filled
+
+        let presenter = ShortcutRingPanelPresenter()
+        presenter.orderFront = { $0.orderFrontRegardless() }
+        presenter.appearance = { ShortcutRingAppearance(reducesMotion: true) }
+        presenter.after = { _, _ in }
+        presenter.otherScreens = { _ in [spot(1)] }
+        defer {
+            presenter.hide()
+            control.orderOut(nil)
+        }
+        // The ring itself stands far outside its 4 × 4 "screen": only clear panel is there.
+        presenter.show(
+            ShortcutRingFace(.default), centre: CGPoint(x: spot(0).midX, y: spot(0).midY - 3000),
+            screen: ShortcutRingScreen(frame: spot(0), usable: spot(0)), lit: nil, takesClicks: true
+        )
+        control.orderFrontRegardless()
+        let panel = try XCTUnwrap(presenter.panel)
+        let cover = try XCTUnwrap(presenter.covers.first)
+        XCTAssertNil(presenter.stage?.layer?.backgroundColor)
+        XCTAssertNil(cover.stage.layer?.backgroundColor)
+
+        var controlIsHit = false
+        for _ in 0..<30 where !controlIsHit {
+            wait()
+            controlIsHit = gets(control, spot(2))
+        }
+        guard controlIsHit else {
+            throw XCTSkip("the window server gives no window of this process a click here (no display awake?)")
+        }
+        XCTAssertTrue(settles(panel, spot(0), gets: true), "the ring's panel, clear, takes the click")
+        XCTAssertTrue(settles(cover.panel, spot(1), gets: true), "and so does the panel of another screen")
+
+        presenter.setTakesClicks(false)
+        XCTAssertTrue(settles(panel, spot(0), gets: false), "let go, the click is the app's underneath")
+        XCTAssertTrue(settles(cover.panel, spot(1), gets: false))
+        presenter.setTakesClicks(true)
+        XCTAssertTrue(settles(panel, spot(0), gets: true))
+        XCTAssertTrue(settles(cover.panel, spot(1), gets: true))
+
+        presenter.hide()
+        XCTAssertTrue(settles(panel, spot(0), gets: false), "gone with the ring")
+        XCTAssertTrue(settles(cover.panel, spot(1), gets: false))
     }
 
     /// A click on the panel reaches the ring in event coordinates, down and up.
@@ -1980,7 +2253,7 @@ final class ShortcutRingPanelTests: XCTestCase {
         XCTAssertNil(cover.stage.dropsView, "the ring is drawn on its own screen alone")
         XCTAssertFalse(cover.panel.ignoresMouseEvents)
         XCTAssertTrue(cover.stage.takesClicks)
-        XCTAssertNotNil(cover.stage.layer?.backgroundColor, "filled almost invisibly, as the ring's")
+        XCTAssertNil(cover.stage.layer?.backgroundColor, "as clear as the ring's")
         XCTAssertTrue(presenter.owns(cover.panel), "its clicks are not clicks elsewhere")
         XCTAssertTrue(presenter.owns(panel))
 

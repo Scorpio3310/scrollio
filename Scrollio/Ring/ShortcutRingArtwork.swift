@@ -76,10 +76,12 @@ struct ShortcutRingFace {
         self.init(places: ring.places.map { Self.place($0, looksOnDisk: looksOnDisk, resolver: resolver) })
     }
 
-    /// One place of a ring's face, as `init` makes it.
+    /// One place of a ring's face, as `init` makes it: of a suggested shortcut, what it is
+    /// on the keyboard layout in use (`ShortcutRingPlace.inUse`).
     static func place(
-        _ place: ShortcutRingPlace, looksOnDisk: Bool = true, resolver: ActionDisplayResolver = ActionDisplayResolver()
+        _ stored: ShortcutRingPlace, looksOnDisk: Bool = true, resolver: ActionDisplayResolver = ActionDisplayResolver()
     ) -> Place {
+        let place = stored.inUse
         switch place.content {
         case .nothing:
             return .empty

@@ -2193,17 +2193,39 @@ final class InputProcessorTests: XCTestCase {
         XCTAssertTrue(up.flags.contains(.maskShift))
     }
 
-    func testModifiersLeftSetByAShortcutAreReportedOnce() {
+    /// Modifier keys that a sent shortcut seems to have left set are looked at twice. Only
+    /// what is still reported at the second look, 300 ms after the shortcut, was left set
+    /// (a problem); what is gone by then came through late: this app's own event taps are
+    /// served by the main thread, which can be busy right after a ring closed. (The first
+    /// look alone wrote "left modifier keys set" for a ring's key combination that left
+    /// none.) Each line says when it looked.
+    func testModifiersLeftSetByAShortcutAreLookedAtTwice() {
         let command = CGEventFlags.maskCommand.rawValue
         let shift = CGEventFlags.maskShift.rawValue
-        XCTAssertNil(ShortcutExecutor.leftModifiersLine(session: 0, hardware: 0, expected: 0))
-        XCTAssertNil(ShortcutExecutor.leftModifiersLine(session: shift, hardware: 0, expected: shift), "held before and after")
-        XCTAssertNil(ShortcutExecutor.leftModifiersLine(session: command, hardware: command, expected: 0),
-                     "a key the user pressed meanwhile")
-        XCTAssertEqual(
-            ShortcutExecutor.leftModifiersLine(session: command | shift, hardware: 0, expected: 0),
-            "A sent shortcut left modifier keys set that nobody holds (0x120000)"
-        )
+        XCTAssertEqual(ShortcutExecutor.leftModifiers(session: 0, hardware: 0, expected: 0), 0)
+        XCTAssertEqual(ShortcutExecutor.leftModifiers(session: shift, hardware: 0, expected: shift), 0, "held before and after")
+        XCTAssertEqual(ShortcutExecutor.leftModifiers(session: command, hardware: command, expected: 0), 0,
+                       "a key the user pressed meanwhile")
+        XCTAssertEqual(ShortcutExecutor.leftModifiers(session: command | shift, hardware: 0, expected: 0), command | shift)
+
+        typealias Found = ShortcutExecutor.ModifiersAfterShortcut
+        XCTAssertEqual(Found(first: 0, second: nil), .clear)
+        XCTAssertNil(Found.clear.line())
+        XCTAssertEqual(Found(first: command, second: 0), .late(command))
+        XCTAssertEqual(Found(first: command | shift, second: command), .left(command), "what is still set")
+        XCTAssertEqual(Found(first: command, second: nil), .left(command))
+
+        let left = Found.left(command | shift).line(looks: (0.06, 0.3))
+        XCTAssertEqual(left?.text, "A sent shortcut left modifier keys set that nobody holds (0x120000), 300 ms after it was sent")
+        XCTAssertEqual(left?.isProblem, true)
+        let late = Found.late(command).line(looks: (0.06, 0.3))
+        XCTAssertEqual(late?.text, "A sent shortcut's modifier keys were still reported 60 ms after it (0x100000) "
+            + "and no longer 300 ms after it: its key up came through late, nothing stayed set")
+        XCTAssertEqual(late?.isProblem, false)
+        XCTAssertEqual(ShortcutExecutor.modifierLooks.first, 0.06)
+        XCTAssertEqual(ShortcutExecutor.modifierLooks.second, 0.3)
+        // The tests run in a debug build: there every finding is written.
+        XCTAssertTrue(ShortcutExecutor.writesEveryLeftModifier)
     }
 
     /// What the mark is for: the button tap lets a posted shortcut through untouched. Before,

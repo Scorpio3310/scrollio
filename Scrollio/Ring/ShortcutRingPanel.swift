@@ -12,11 +12,18 @@
 //    Space, and not hidden when Scrollio is not the active app (a panel's default).
 //  - While the ring is on the screen, held or left open, the panel takes the mouse on its
 //    whole screen, so the click that chooses or dismisses reaches the ring and never the
-//    app underneath (the window server sends the click's up where its down went). Its
-//    clear part is filled almost invisibly for that: a pixel without any alpha lets a
-//    click through. A click acts when the button comes up. The movement of a held ring
+//    app underneath (the window server sends the click's up where its down went). It
+//    takes it because its `ignoresMouseEvents` is set, to false. A window for which that
+//    was never set gets a click only where its pixels have some alpha; one for which it
+//    was set gets every click inside its frame, whatever is drawn there. (The window
+//    server's own answer, `NSWindow.windowNumber(at:belowWindowWithWindowNumber:)`, for
+//    panels with nothing in them, macOS 27.2; `ShortcutRingPanelTests` asks it again.)
+//    So the panel draws nothing but the drops: everywhere else the screen is exactly as
+//    it is without a ring. (Its clear part was once filled with 1.5 % black to take the
+//    clicks, which no click needed: the whole screen went a shade darker for as long as a
+//    ring was open.) A click acts when the button comes up. The movement of a held ring
 //    comes from the motion tap, not from the panel; the wheel over the panel does nothing.
-//  - Every other screen gets a panel of its own with the same fill and no ring: a pointer
+//  - Every other screen gets a panel of its own, as clear and with no ring: a pointer
 //    that is not kept still can carry a click of a held ring there, and that click is the
 //    ring's too, reported where it was.
 //
@@ -172,14 +179,10 @@ final class ShortcutRingPanel: NSPanel {
     }
 }
 
-/// The panel's content: the almost invisible fill that takes the clicks, and the ring's
-/// drops where the ring stands. The stage draws nothing itself (it is as large as a
-/// screen: its fill is its layer's colour, which needs no bitmap).
+/// The panel's content: the ring's drops where the ring stands, and nothing else. The
+/// stage draws nothing and has no fill, so the screen under it shows as it is; the clicks
+/// on it are the panel's because the panel takes the mouse (the top of the file).
 final class ShortcutRingStageView: NSView {
-
-    /// The fill of the clear part while the ring takes clicks: enough for the window
-    /// server to give the panel a click there, too little to see.
-    static let clickFillAlpha: CGFloat = 0.015
 
     /// A pointer button went down (true) or came up at a point in event coordinates:
     /// 0 the left button, 1 any other.
@@ -193,11 +196,9 @@ final class ShortcutRingStageView: NSView {
     /// The ring's middle in this view.
     private(set) var ringCentre = CGPoint.zero
 
-    var takesClicks = false {
-        didSet {
-            layer?.backgroundColor = takesClicks ? NSColor(white: 0, alpha: Self.clickFillAlpha).cgColor : nil
-        }
-    }
+    /// The panel takes the mouse (`ShortcutRingPanelPresenter.setTakesClicks`). Nothing
+    /// is drawn for it: never give the stage a fill, however faint (it covers a screen).
+    var takesClicks = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

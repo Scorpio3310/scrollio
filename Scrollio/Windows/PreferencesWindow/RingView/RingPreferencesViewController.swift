@@ -1159,7 +1159,9 @@ final class RingPreferencesViewController: NSViewController {
             self?.setPlace(ShortcutRingPlace(action: shortcut?.identifier ?? ""), at: place)
         }
         popUp.onCustomShortcutRecorded = { [weak self] name, label in
-            self?.setPlace(ShortcutRingPlace(action: name, label: label), at: place)
+            guard let self else { return }
+            // (A suggested shortcut that only got another name goes on following the layout.)
+            self.setPlace(self.shownRing[place].taking(action: name, label: label), at: place)
         }
         popUp.onOpenTargetSelectionRequested = { [weak self] in
             self?.presentOpenTargetPopover(forPlace: place)
