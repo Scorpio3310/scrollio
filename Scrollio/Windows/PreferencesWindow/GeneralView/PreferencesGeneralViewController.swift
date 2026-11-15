@@ -5,8 +5,13 @@
 //  the storyboard scene is a shell. On top a card with the app icon, its name, version and
 //  build, and for a build installed by scripts/install.sh its commit and date
 //  (GeneralHeaderView; the About pane that showed them is gone, and "About Scrollio" in the
-//  app menu shows the standard About panel). Under it, only while Scrollio is paused, "Scrollio is
-//  paused" with "Resume" (with the menu bar icon hidden there is no other way back). Then
+//  app menu shows the standard About panel). Under it, always, one row that says whether
+//  Scrollio works, in the words of the status-bar menu's title and by its rule
+//  (`StatusMenu.title(hasAccess:isPaused:startProblem:)`), with the menu's way out:
+//  "Scrollio is on" with "Pause"; "Scrollio is paused" with "Resume"; "Scrollio couldn't
+//  start and is trying again" with "Try Again" (or "Pause" while an event tap is kept off
+//  and comes back by itself); "Scrollio needs Accessibility access" with "Open System
+//  Settings". With the menu bar icon hidden this is the way to pause and back. Then
 //  two boxes:
 //  - "Open at login" (with a row to approve it in System Settings while macOS waits for
 //    that) and "Show in menu bar";
@@ -21,10 +26,11 @@
 //  - "Settings file": "Export…" writes all settings to a file the user names, "Import…"
 //    reads such a file, says in a sheet what it holds and asks before anything changes
 //    (SettingsFile, SettingsFileCenter, SettingsImportSheet). Under it, once an import
-//    was made, "Settings from before an import" with "Restore…": an open panel on the
-//    folder of the backups the imports wrote (the last five, named by their time); the
-//    chosen one goes through the same sheet. The panels and the sheet are sheets on the
-//    settings window, opened from the click; nothing here is modal for the app.
+//    was made, "Settings from before an import" with "Restore…": a pull-down of the
+//    backups the imports wrote (the last five, newest first, by their local date and
+//    time), then "Show in Finder"; the chosen one goes through the same sheet. The panels
+//    and the sheet are sheets on the settings window, opened from the click; nothing here
+//    is modal for the app.
 //  The developer tools (scroll monitor, Logitech diagnostics) are not in the pane: the
 //  status-bar menu lists them while Option is held.
 //  At the bottom a box with the Welcome Guide and "Scrollio on GitHub" (the repository in the
@@ -61,8 +67,22 @@ class PreferencesGeneralViewController: NSViewController {
     var setMenuBarIconHidden: (Bool) -> Void = { Options.shared.general.hideStatusItem = $0 }
     /// "Pause Scrollio" of the status-bar menu is on.
     var isPaused: () -> Bool = { AppRunController.shared.isPaused }
+    /// Pauses, as "Pause Scrollio" of the status-bar menu does.
+    var pause: () -> Void = { AppRunController.shared.setPaused(true) }
     /// Ends the pause, as "Resume Scrollio" of the status-bar menu does.
     var resume: () -> Void = { AppRunController.shared.setPaused(false) }
+    /// A start that failed, tried at once, as "Try Again Now" of the status-bar menu does.
+    var tryAgain: () -> Void = { AppRunController.shared.tryAgainNow() }
+    /// Why Scrollio does not work although it has the access and is not paused, by the
+    /// status item's rule (a failed start, an event tap kept off); nil while it works.
+    var startProblem: () -> StatusMenu.StartProblem? = {
+        let controller = AppRunController.shared
+        return StatusMenu.startProblem(
+            coresActive: controller.coresActive,
+            startFailed: controller.isRetryingStart,
+            tapRestartsThrottled: Interceptor.hasThrottledTap
+        )
+    }
     /// Opens the Welcome Guide.
     var showWelcomeGuide: () -> Void = IntroductionWindowController.showWelcomeGuide
     /// Opens a web page in the default browser.
@@ -112,24 +132,12 @@ class PreferencesGeneralViewController: NSViewController {
                 panel.begin(completionHandler: finish)
             }
         }
-    /// Asks which of the settings kept before an import to go back to: an open panel, as
-    /// a sheet on the window, that starts in their folder; nil when cancelled. Under
-    /// XCTest nothing is asked unless a test answers.
-    var chooseBackupFile: (NSWindow?, URL, @escaping (URL?) -> Void) -> Void = AppRuntime.isRunningXCTest
-        ? { _, _, completion in completion(nil) }
-        : { window, folder, completion in
-            let panel = PreferencesGeneralViewController.makeRestorePanel(folder: folder)
-            let finish: (NSApplication.ModalResponse) -> Void = { response in
-                // The panel's sheet goes before the sheet about the file comes.
-                panel.orderOut(nil)
-                completion(response == .OK ? panel.url : nil)
-            }
-            if let window {
-                panel.beginSheetModal(for: window, completionHandler: finish)
-            } else {
-                panel.begin(completionHandler: finish)
-            }
-        }
+    /// "Show in Finder" of "Restore…": the kept settings, selected in Finder. Inert under
+    /// XCTest; tests replace it.
+    var revealInFinder: ([URL]) -> Void = { urls in
+        guard !AppRuntime.isRunningXCTest else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
     /// Shows the sheet about a file (what it holds, or why it cannot be used) on the
     /// pane's window, and takes it away again.
     var presentSettingsSheet: (SettingsImportSheetViewController, NSViewController) -> Void = { sheet, pane in
@@ -148,10 +156,11 @@ class PreferencesGeneralViewController: NSViewController {
 
     /// The card on top: the app icon, its name and version.
     private(set) var headerView: GeneralHeaderView!
-    /// The box under the card, shown only while Scrollio is paused.
-    private(set) var pausedSection: PreferencesGroupSection!
-    private(set) var pausedRow: PreferencesGroupRow!
-    private(set) var resumeButton: NSButton!
+    /// The box under the card, always there: whether Scrollio works, and the way out.
+    private(set) var statusSection: PreferencesGroupSection!
+    private(set) var statusRow: PreferencesGroupRow!
+    /// "Pause", "Resume", "Try Again" or "Open System Settings", by `runStatus`.
+    private(set) var statusButton: NSButton!
     private(set) var launchOnLoginRow: PreferencesSwitchRow!
     /// Shown while macOS waits for the login item to be approved in System Settings.
     private(set) var loginApprovalRow: PreferencesGroupRow!
@@ -179,7 +188,8 @@ class PreferencesGeneralViewController: NSViewController {
     private(set) var importSettingsButton: NSButton!
     /// "Settings from before an import" with "Restore…"; shown while a backup is there.
     private(set) var previousSettingsRow: PreferencesGroupRow!
-    private(set) var restoreSettingsButton: NSButton!
+    /// "Restore…": the kept settings by their local date and time, then "Show in Finder".
+    private(set) var restoreSettingsPullDown: RestorePullDown!
     /// The sheet about a file while it is up.
     private(set) var settingsSheet: SettingsImportSheetViewController?
 
@@ -197,10 +207,13 @@ class PreferencesGeneralViewController: NSViewController {
 
     /// What the Accessibility row shows.
     private(set) var hasAccess = false
+    /// What the row under the card shows, and what its button does.
+    private(set) var runStatus = RunStatus(hasAccess: true, isPaused: false, startProblem: nil)
     /// What the login item rows show.
     private(set) var loginItemStatus: LoginItemStatus = .notRegistered
 
     private var observers: [NSObjectProtocol] = []
+    private var distributedObservers: [NSObjectProtocol] = []
 
     // MARK: - Building
 
@@ -221,9 +234,8 @@ class PreferencesGeneralViewController: NSViewController {
         )
         header.identifier = NSUserInterfaceItemIdentifier("general-header")
         headerView = header
-        let paused = PreferencesGroupSection(width: width, rows: [makePausedRow()])
-        paused.isHidden = true
-        pausedSection = paused
+        let status = PreferencesGroupSection(width: width, rows: [makeStatusRow()])
+        statusSection = status
         let startup = PreferencesGroupSection(width: width, rows: [
             makeLaunchOnLoginRow(), makeLoginApprovalRow(), makeShowInMenuBarRow(),
         ])
@@ -240,7 +252,7 @@ class PreferencesGeneralViewController: NSViewController {
         settingsFileSection = settingsFile
         let guide = PreferencesGroupSection(width: width, rows: [makeWelcomeGuideRow(), makeGitHubRow()])
         let credit = makeCreditLabel(width: width)
-        PreferencesGroupedForm.add([header, paused, startup, permissions, updates, settingsFile, guide, credit], to: content)
+        PreferencesGroupedForm.add([header, status, startup, permissions, updates, settingsFile, guide, credit], to: content)
         // The credit sits close under the last box, as the muted lines of the other panes.
         content.setCustomSpacing(PreferencesGroupedForm.noteSpacing, after: guide)
 
@@ -249,26 +261,26 @@ class PreferencesGeneralViewController: NSViewController {
         // the pane is as tall as what it shows.
         syncViewWithOptions()
         refreshAccessState()
-        refreshPauseState()
+        refreshRunStatus()
         refreshUpdateState()
         refreshSettingsFileState()
         root.setFrameSize(root.fittingSize)
     }
 
-    /// "Scrollio is paused", with "Resume".
-    private func makePausedRow() -> PreferencesGroupRow {
+    /// "Scrollio is on" with "Pause", until `refreshRunStatus` says what is.
+    private func makeStatusRow() -> PreferencesGroupRow {
         let button = PreferencesGroupedForm.makePushButton(
-            title: text("general-resume"),
+            title: text(runStatus.buttonKey),
             target: self,
-            action: #selector(resumeClicked(_:))
+            action: #selector(statusButtonClicked(_:))
         )
-        resumeButton = button
+        statusButton = button
         let row = PreferencesGroupRow(
-            title: text("general-paused"),
-            explanation: text("general-paused-hint"),
+            title: text(runStatus.titleKey),
+            explanation: runStatus.explanationKey.map(text),
             accessory: button
         )
-        pausedRow = row
+        statusRow = row
         return row
     }
 
@@ -433,16 +445,15 @@ class PreferencesGeneralViewController: NSViewController {
 
     /// "Settings from before an import" with "Restore…": the backups the imports wrote.
     private func makePreviousSettingsRow() -> PreferencesGroupRow {
-        let button = PreferencesGroupedForm.makePushButton(
-            title: text("general-settings-file-restore"),
-            target: self,
-            action: #selector(restoreSettingsClicked(_:))
-        )
-        restoreSettingsButton = button
+        let pullDown = RestorePullDown()
+        // Read again each time it opens: an import made elsewhere, a folder emptied.
+        pullDown.menu?.delegate = self
+        restoreSettingsPullDown = pullDown
+        fillRestoreMenu(with: [])
         let row = PreferencesGroupRow(
             title: text("general-settings-file-previous"),
             explanation: "",
-            accessory: button
+            accessory: pullDown
         )
         row.isHidden = true
         previousSettingsRow = row
@@ -562,20 +573,40 @@ class PreferencesGeneralViewController: NSViewController {
                       window === self.view.window else { return }
                 self.refreshLaunchAtLoginState()
                 self.refreshAccessState()
+                self.refreshRunStatus()
             },
             // The access was turned off while Scrollio ran, or came back (the cores started).
             center.addObserver(forName: .scrollioAccessibilityPermissionLost, object: nil, queue: .main) { [weak self] _ in
                 self?.refreshAccessState()
+                self?.refreshRunStatus()
             },
             // Paused, resumed, or the cores started or stopped.
             center.addObserver(forName: AppRunController.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 self?.refreshAccessState()
-                self?.refreshPauseState()
+                self?.refreshRunStatus()
+            },
+            // An event tap whose restarts are refused stays off, or runs again: the status
+            // item's "couldn't start" comes and goes with it.
+            center.addObserver(forName: Interceptor.restartThrottleDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.refreshRunStatus()
             },
             // A check started or ended, an update was found or answered, or Sparkle's own
             // question about automatic checks was answered.
             center.addObserver(forName: UpdateCenter.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 self?.refreshUpdateState()
+            },
+        ]
+        // The access taken away or given back while paused changes nothing of the run
+        // state, but the row says it, as the status item's tooltip does (and as late:
+        // macOS answers a moment after the notification).
+        distributedObservers = [
+            DistributedNotificationCenter.default().addObserver(
+                forName: AppDelegate.accessibilityListChangedNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + AppDelegate.accessibilityCheckDelay) {
+                    self?.refreshAccessState()
+                    self?.refreshRunStatus()
+                }
             },
         ]
     }
@@ -584,13 +615,16 @@ class PreferencesGeneralViewController: NSViewController {
         for observer in observers {
             NotificationCenter.default.removeObserver(observer)
         }
+        for observer in distributedObservers {
+            DistributedNotificationCenter.default().removeObserver(observer)
+        }
     }
 
     override func viewWillAppear() {
         super.viewWillAppear()
         refreshLaunchAtLoginState()
         refreshAccessState()
-        refreshPauseState()
+        refreshRunStatus()
         refreshUpdateState()
         refreshSettingsFileState()
     }
@@ -663,21 +697,83 @@ class PreferencesGeneralViewController: NSViewController {
         checkForUpdates()
     }
 
-    // MARK: - Pause
+    // MARK: - Whether Scrollio works
 
-    /// Shows "Scrollio is paused" while it is.
-    func refreshPauseState() {
+    /// What the row under the card says and what its button does. Pure. The title is the
+    /// status-bar menu's, by the menu's rule and in its order (the missing access first,
+    /// also while paused, then the pause, then a start problem); while Scrollio works,
+    /// "Scrollio is on". The button is the menu's way out: Pause, Resume, Try Again (a
+    /// start that failed; an event tap kept off comes back by itself, so Pause there, as
+    /// in the menu), and for the missing access the Permissions row's way to System Settings.
+    struct RunStatus: Equatable {
+        enum Action: Equatable {
+            case pause
+            case resume
+            case tryAgain
+            case allowAccess
+        }
+
+        /// The menu's title; nil while Scrollio works.
+        let title: StatusMenu.Title?
+        let action: Action
+
+        init(hasAccess: Bool, isPaused: Bool, startProblem: StatusMenu.StartProblem?) {
+            title = StatusMenu.title(hasAccess: hasAccess, isPaused: isPaused, startProblem: startProblem)
+            switch title {
+            case .needsAccess?: action = .allowAccess
+            case .paused?: action = .resume
+            case .couldNotStart?: action = startProblem == .retrying ? .tryAgain : .pause
+            case nil: action = .pause
+            }
+        }
+
+        var titleKey: String {
+            return title?.key ?? "general-status-on"
+        }
+
+        /// Only the pause needs a line: what is off until Resume.
+        var explanationKey: String? {
+            return title == .paused ? "general-paused-hint" : nil
+        }
+
+        var buttonKey: String {
+            switch action {
+            case .pause: return "general-pause"
+            case .resume: return "general-resume"
+            case .tryAgain: return "general-try-again"
+            case .allowAccess: return "general-accessibility-open-settings"
+            }
+        }
+    }
+
+    /// Reads whether Scrollio works and shows it in the row under the card.
+    func refreshRunStatus() {
         guard isViewLoaded else { return }
-        let paused = isPaused()
-        guard pausedSection.isHidden == paused else { return }
-        pausedSection.isHidden = !paused
+        let status = RunStatus(hasAccess: isAccessGranted(), isPaused: isPaused(), startProblem: startProblem())
+        runStatus = status
+        let title = text(status.titleKey)
+        let explanation = status.explanationKey.map(text)
+        let buttonTitle = text(status.buttonKey)
+        guard statusRow.title != title || statusRow.explanation != explanation || statusButton.title != buttonTitle else { return }
+        // The button first: the row names it by its title again when the texts change.
+        statusButton.title = buttonTitle
+        statusRow.title = title
+        statusRow.explanation = explanation
         PreferencesForm.fitToContent(self)
     }
 
-    @objc func resumeClicked(_ sender: NSButton) {
-        resume()
-        // The run controller posts its change; this covers a resume that posts nothing.
-        refreshPauseState()
+    /// Does what the button says, through the same seams as the status-bar menu's items.
+    @objc func statusButtonClicked(_ sender: NSButton) {
+        switch runStatus.action {
+        case .pause: pause()
+        case .resume: resume()
+        case .tryAgain: tryAgain()
+        case .allowAccess:
+            openAccessibilitySettings()
+            return
+        }
+        // The run controller posts its change; this covers one that posts nothing.
+        refreshRunStatus()
     }
 
     // MARK: - Login item
@@ -779,27 +875,59 @@ class PreferencesGeneralViewController: NSViewController {
         return panel
     }
 
-    /// The open panel of "Restore…": one JSON file, starting in the backups' folder.
-    static func makeRestorePanel(folder: URL) -> NSOpenPanel {
-        let panel = makeImportPanel()
-        panel.directoryURL = folder
-        panel.message = NSLocalizedString("general-settings-file-restore-message", comment: "")
-        return panel
-    }
-
     /// Shows "Settings from before an import" while a backup is there, with how many are
-    /// kept and the time of the newest.
+    /// kept and the time of the newest, and lists them in "Restore…".
     func refreshSettingsFileState() {
         guard isViewLoaded else { return }
-        let backup = settingsFiles.latestBackup()
-        if let backup {
+        let kept = settingsFiles.keptBackups()
+        fillRestoreMenu(with: kept)
+        if let newest = kept.first {
             previousSettingsRow.explanation = String(
-                format: text("general-settings-file-previous-hint"), SettingsBackups.keepCount, SettingsFileText.moment(backup.date)
+                format: text("general-settings-file-previous-hint"), SettingsBackups.keepCount, SettingsFileText.moment(newest.date)
             )
         }
-        guard previousSettingsRow.isHidden == (backup != nil) else { return }
-        previousSettingsRow.isHidden = backup == nil
+        guard previousSettingsRow.isHidden == !kept.isEmpty else { return }
+        previousSettingsRow.isHidden = kept.isEmpty
         PreferencesForm.fitToContent(self)
+    }
+
+    /// The titles of "Restore…"'s items, in the order of `dates`: each one's local date
+    /// and time (`SettingsFileText.moment`), with the seconds where two would read the
+    /// same (two imports in one minute). Pure.
+    static func restoreTitles(for dates: [Date], locale: Locale = .current, timeZone: TimeZone = .current) -> [String] {
+        let plain = dates.map { SettingsFileText.moment($0, locale: locale, timeZone: timeZone) }
+        let withSeconds = DateFormatter()
+        withSeconds.locale = locale
+        withSeconds.timeZone = timeZone
+        withSeconds.dateStyle = .medium
+        withSeconds.timeStyle = .medium
+        return zip(dates, plain).map { date, title in
+            plain.filter { $0 == title }.count > 1 ? withSeconds.string(from: date) : title
+        }
+    }
+
+    /// "Restore…" (the pull-down's title), the kept settings newest first, a separator and
+    /// "Show in Finder" (dimmed when nothing is kept).
+    private func fillRestoreMenu(with kept: [SettingsBackups.Entry]) {
+        guard let pullDown = restoreSettingsPullDown, let menu = pullDown.menu else { return }
+        menu.removeAllItems()
+        menu.addItem(NSMenuItem(title: text("general-settings-file-restore"), action: nil, keyEquivalent: ""))
+        for (entry, title) in zip(kept, Self.restoreTitles(for: kept.map(\.date))) {
+            let item = NSMenuItem(title: title, action: #selector(restoreBackupChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = entry.url
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let finder = NSMenuItem(
+            title: text("general-settings-file-show-in-finder"), action: #selector(showBackupsInFinder(_:)), keyEquivalent: ""
+        )
+        finder.target = self
+        // A pull-down gives an item without an action its own, so it is dimmed by hand
+        // (the menu does not enable its items by itself, `RestorePullDown`).
+        finder.isEnabled = !kept.isEmpty
+        menu.addItem(finder)
+        pullDown.synchronizeTitleAndSelectedItem()
     }
 
     @objc func exportSettingsClicked(_ sender: NSButton) {
@@ -826,15 +954,20 @@ class PreferencesGeneralViewController: NSViewController {
         }
     }
 
-    @objc func restoreSettingsClicked(_ sender: NSButton) {
-        guard let folder = settingsFiles.backupFolder() else {
+    /// One of the kept settings, chosen in "Restore…": asked about with the import's sheet.
+    @objc func restoreBackupChosen(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        offerImport(of: url)
+    }
+
+    /// "Show in Finder": the kept settings, selected in their folder.
+    @objc func showBackupsInFinder(_ sender: NSMenuItem) {
+        let urls = settingsFiles.keptBackups().map(\.url)
+        guard !urls.isEmpty else {
             refreshSettingsFileState()
             return
         }
-        chooseBackupFile(view.window, folder) { [weak self] url in
-            guard let self, let url else { return }
-            self.offerImport(of: url)
-        }
+        revealInFinder(urls)
     }
 
     /// Reads the file and shows the sheet about it: what it holds, with "Import", or why
@@ -926,5 +1059,44 @@ extension PreferencesGeneralViewController {
         showInMenuBarRow.isOn = !isMenuBarIconHidden()
         // The approval row came or went.
         PreferencesForm.fitToContent(self)
+    }
+}
+
+// MARK: - Restore…
+
+extension PreferencesGeneralViewController: NSMenuDelegate {
+
+    /// "Restore…" is opening: the kept settings as they are now.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === restoreSettingsPullDown?.menu else { return }
+        refreshSettingsFileState()
+    }
+
+    /// "Restore…": a pull-down as wide as its title (its menu is wider, with the dates).
+    final class RestorePullDown: NSPopUpButton {
+
+        init() {
+            super.init(frame: .zero, pullsDown: true)
+            let menu = NSMenu()
+            menu.autoenablesItems = false
+            self.menu = menu
+            translatesAutoresizingMaskIntoConstraints = false
+            setContentHuggingPriority(.required, for: .horizontal)
+            setContentCompressionResistancePriority(.required, for: .horizontal)
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("RestorePullDown is built in code")
+        }
+
+        override var intrinsicContentSize: NSSize {
+            let size = super.intrinsicContentSize
+            // A cell with the title alone: how wide the pull-down is with this title.
+            let probe = NSPopUpButtonCell(textCell: "", pullsDown: true)
+            probe.font = font
+            probe.controlSize = controlSize
+            probe.addItem(withTitle: menu?.items.first?.title ?? "")
+            return NSSize(width: ceil(probe.cellSize.width), height: size.height)
+        }
     }
 }

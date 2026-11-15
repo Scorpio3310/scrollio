@@ -14,8 +14,9 @@
 //  that backup becomes the newest and no second one is written. (Going back and forth
 //  between two states would otherwise fill the five places with copies of those two, and
 //  the user's own settings from before the first import would be the ones deleted.)
-//  General's "Restore…" opens the folder in an open panel; the chosen backup goes through
-//  the same import, with the same sheet before it, so going back can be undone the same way.
+//  General's "Restore…" lists them by their local date and time; the chosen backup goes
+//  through the same import, with the same sheet before it, so going back can be undone
+//  the same way.
 //
 //  Under XCTest nothing real is touched unless a test hands it in: the app's preferences
 //  are closed to settings files (`Options.writesToDefaults`), and `SettingsBackups.live`
@@ -247,9 +248,9 @@ final class SettingsFileCenter {
         return backups.latest
     }
 
-    /// The folder the backups are in, when there is at least one: where "Restore…" opens.
-    func backupFolder() -> URL? {
-        return backups.latest == nil ? nil : backups.directory
+    /// The settings kept from before an import, newest first: what "Restore…" lists.
+    func keptBackups() -> [SettingsBackups.Entry] {
+        return Array(backups.entries().prefix(SettingsBackups.keepCount))
     }
 
     private static func text(of error: Error) -> String {

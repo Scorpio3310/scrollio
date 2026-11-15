@@ -190,7 +190,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-launch-at-login", "general-launch-at-login-hint", "general-launch-at-login-waiting",
         "general-login-approval", "general-open-login-items",
         "general-show-in-menu-bar", "general-show-in-menu-bar-hint",
-        "general-paused", "general-paused-hint", "general-resume",
+        "general-paused-hint", "general-resume",
         "general-permissions-header", "general-accessibility", "general-accessibility-hint",
         "general-accessibility-hint-not-allowed",
         "general-accessibility-allowed", "general-accessibility-not-allowed", "general-accessibility-open-settings",
@@ -232,9 +232,12 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-problem-not-settings", "general-settings-problem-newer", "general-settings-problem-damaged",
         "general-settings-problem-empty", "general-settings-problem-write", "general-settings-problem-backup",
         "general-settings-problem-store",
-        "general-settings-file-restore-message",
         "general-settings-problem-not-imported-title", "general-settings-problem-too-many",
         "general-settings-problem-not-stored",
+        // The row under the card: whether Scrollio works, and its button.
+        "general-status-on", "general-pause", "general-try-again",
+        // "Restore…": the last item under the kept settings.
+        "general-settings-file-show-in-finder",
     ]
 
     /// The window and the kit: the sidebar, the + and − under a list.

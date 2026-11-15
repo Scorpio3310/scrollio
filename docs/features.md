@@ -458,6 +458,8 @@ those controls.
   is trying again" with "Try Again Now" (or, while an event tap is kept off for up to a
   minute and comes back by itself, with "Pause Scrollio" alone).
 - The icon is dimmed in the same three cases; its tooltip says which.
+- General says the same under its card, always: "Scrollio is on" with "Pause", or the
+  menu's title with "Resume", "Try Again" or, for the access, "Open System Settings".
 - The icon can be hidden (General › Show in menu bar). Opening Scrollio again then shows
   its settings, or the Welcome Guide while Accessibility access is missing.
 - General also has "Open at login", the state of the Accessibility access, the
@@ -516,8 +518,8 @@ move to another Mac, to keep a copy, or to pass a setup on.
 - The settings from before each import are kept, the last five (the same settings
   never twice), as settings files named by their time (UTC) in
   `~/Library/Application Support/com.nikklemenc.Scrollio/Settings Backups`.
-  "Restore…" appears under the row and opens that folder: the one you choose comes
-  back through the same sheet.
+  "Restore…" appears under the row and lists them by their date and time, newest first,
+  then "Show in Finder": the one you choose comes back through the same sheet.
 - A file that is not a Scrollio settings file, is damaged, is larger than 2 MB, holds
   more than 1000 buttons and keys or 1000 apps, or was saved in a newer format than
   this version reads, changes nothing; the sheet says which.
