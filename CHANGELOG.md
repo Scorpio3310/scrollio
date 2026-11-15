@@ -8,10 +8,10 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
-## Unreleased
+## 1.1.1
 
-**Nothing gets stuck:** the wheel never goes quiet, hold keys and Logitech buttons recover
-by themselves, and Scrollio says when macOS stops it.
+**Recovers by itself:** the wheel never goes quiet, hold keys and Logitech buttons don't
+get stuck, and Scrollio says when macOS stops it.
 
 ### New
 
