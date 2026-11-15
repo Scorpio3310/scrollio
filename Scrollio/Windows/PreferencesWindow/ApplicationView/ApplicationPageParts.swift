@@ -166,19 +166,14 @@ struct ApplicationPagePart: Equatable {
     /// `name` whole, or cut short at its end with "…", so that every text `texts` makes
     /// with it takes at most two lines `width` wide in the explanations' font (an
     /// explanation fits two lines). Where such a text stands the whole name is at hand: in
-    /// the app's box above it, and in a title's tooltip.
+    /// the app's box above it, and in a title's tooltip. Lines are counted, not measured
+    /// against the height of two Latin lines: a name in Chinese, Thai or with an emoji is
+    /// set in a fallback font whose lines are taller, and fits all the same.
     static func name(_ name: String, fittingTwoLinesOf width: CGFloat, in texts: (String) -> [String]) -> String {
         guard width > 0 else { return name }
-        let measure = NSTextField(wrappingLabelWithString: "")
-        measure.font = PreferencesGroupedForm.explanationFont
-        measure.preferredMaxLayoutWidth = width
-        func height(_ text: String) -> CGFloat {
-            measure.stringValue = text
-            return measure.fittingSize.height
-        }
-        let twoLines = height("A\nA") + 0.5
+        let lines = LineCount(width: width, font: PreferencesGroupedForm.explanationFont)
         func fits(_ candidate: String) -> Bool {
-            return texts(candidate).allSatisfy { height($0) <= twoLines }
+            return texts(candidate).allSatisfy { lines.of($0) <= 2 }
         }
         guard !fits(name) else { return name }
         // The longest beginning of the name that fits, by halves.
@@ -196,6 +191,37 @@ struct ApplicationPagePart: Equatable {
             }
         }
         return fitting
+    }
+
+    /// The lines a text takes `width` wide in `font`, as a wrapping label lays it out (a
+    /// label keeps 2 pt free at each side of its lines), whatever font each character
+    /// falls back to.
+    final class LineCount {
+        private let storage = NSTextStorage()
+        private let layout = NSLayoutManager()
+        private let font: NSFont
+
+        init(width: CGFloat, font: NSFont) {
+            self.font = font
+            let container = NSTextContainer(size: NSSize(width: width, height: .greatestFiniteMagnitude))
+            container.lineFragmentPadding = 2
+            layout.addTextContainer(container)
+            storage.addLayoutManager(layout)
+        }
+
+        func of(_ text: String) -> Int {
+            storage.setAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
+            let glyphs = layout.numberOfGlyphs
+            var lines = 0
+            var index = 0
+            while index < glyphs {
+                var range = NSRange(location: 0, length: 0)
+                layout.lineFragmentRect(forGlyphAt: index, effectiveRange: &range)
+                lines += 1
+                index = max(NSMaxRange(range), index + 1)
+            }
+            return lines
+        }
     }
 }
 

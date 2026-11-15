@@ -2245,7 +2245,7 @@ final class ApplicationPageTests: XCTestCase {
         long.setOwnButtonBindings([])
         let switchLines = [true, false].map { ApplicationDetailViewController.generalGesturesExplanation(on: $0, name: long.displayName!) }
         for (text, label) in switchLines.map({ ($0, part.generalGesturesRow.explanationLabel) }) + holds.map({ ($0, part.holdRow.explanationLabel) }) {
-            XCTAssertTrue(text.contains(long.displayName!))
+            XCTAssertTrue(text.contains("An Application"), text)
             XCTAssertGreaterThan(label.frame.width, 200)
             let height = (text as NSString).boundingRect(
                 with: NSSize(width: label.frame.width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
@@ -2459,13 +2459,90 @@ final class ApplicationPageTests: XCTestCase {
         ]
         let part = try XCTUnwrap(page.ringPart)
         for (text, label) in switchLines.map({ ($0, page.generalRingRow.explanationLabel) }) + rows.map({ ($0, part.triggerRow.explanationLabel) }) {
-            XCTAssertTrue(text.contains(name))
+            XCTAssertTrue(text.contains("An Application"), text)
             XCTAssertGreaterThan(label.frame.width, 200)
             let height = (text as NSString).boundingRect(
                 with: NSSize(width: label.frame.width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
             ).height
             XCTAssertLessThanOrEqual(height, twoLines, text)
         }
+    }
+
+    /// The first row's line of the Shortcut Ring and Gestures parts names the app: a long
+    /// name is cut short so that the line keeps to two lines beside "Show in …" at its
+    /// widest. The mixed line (one button as in other apps, two only in the app) with a
+    /// 45-character name took three; it takes two, on the page too.
+    func testTheTriggerLinesCutALongNameToTwoLines() throws {
+        let long = addApp(Self.calculator)
+        let name = "Remarkably Long Application Name For Its Kind"
+        XCTAssertEqual(name.count, 45)
+        long.displayName = name
+        let ring = SystemShortcut.shortcutRing.identifier
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        let general = [binding(5, ring), binding(6, gestures)]
+        Options.shared.buttons.binding = general
+        long.setOwnButtonBindings([binding(3, ring), binding(4, ring), binding(7, gestures), binding(8, gestures)])
+        let lines = ApplicationPagePart.LineCount(width: ApplicationTriggerRow.lineWidth, font: PreferencesGroupedForm.explanationFont)
+        for rule in [ApplicationTriggerRule.shortcutRing, .gestureNavigation] {
+            let whole = ApplicationTriggerRow.make(rule, application: long, general: general, width: 10_000).text
+            XCTAssertTrue(whole.hasSuffix("only in " + name), whole)
+            XCTAssertGreaterThan(lines.of(whole), 2, "\(rule): the whole name takes three lines")
+            let text = ApplicationTriggerRow.make(rule, application: long, general: general).text
+            XCTAssertLessThanOrEqual(lines.of(text), 2, text)
+            XCTAssertTrue(text.contains("only in Remarkably Long"), text)
+            XCTAssertTrue(text.hasSuffix("…"), text)
+        }
+
+        let pane = makePane()
+        _ = makeWindow(for: pane)
+        pane.openApplication(withID: Self.calculator, part: .ring)
+        let page = try XCTUnwrap(pane.detailController)
+        page.view.layoutSubtreeIfNeeded()
+        let row = try XCTUnwrap(page.ringPart?.triggerRow)
+        XCTAssertEqual(row.explanation, ApplicationTriggerRow.make(.shortcutRing, application: long, general: general).text)
+        let font = PreferencesGroupedForm.explanationFont
+        let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
+        XCTAssertLessThanOrEqual(row.explanationLabel.frame.height, twoLines)
+    }
+
+    /// A name is fitted by the lines its texts take, in any script: a Chinese name and one
+    /// with an emoji that fit are said whole (they were cut to "微…": their fallback fonts
+    /// make taller lines than two Latin ones); a 55-character Latin name is cut where the
+    /// line would take a third line, exactly where a label wraps it.
+    func testANameIsFittedByItsLinesInEveryScript() {
+        let width = PreferencesGroupedForm.boxWidth(paneWidth: ApplicationDetailViewController.paneWidth)
+            - 2 * PreferencesGroupedForm.rowHorizontalInset
+        let note = { (name: String) in [ApplicationDetailViewController.allowlistNoteText(name: name)] }
+        XCTAssertEqual(ApplicationPagePart.name("微信", fittingTwoLinesOf: width, in: note), "微信")
+        XCTAssertEqual(ApplicationDetailViewController.allowlistNoteText(fitting: "微信"), ApplicationDetailViewController.allowlistNoteText(name: "微信"))
+        XCTAssertEqual(ApplicationPagePart.name("企业微信", fittingTwoLinesOf: width, in: note), "企业微信")
+        XCTAssertEqual(ApplicationPagePart.name("🦊 Fox Notes", fittingTwoLinesOf: width, in: note), "🦊 Fox Notes")
+        XCTAssertEqual(ApplicationPagePart.name("ไลน์", fittingTwoLinesOf: width, in: note), "ไลน์")
+
+        // A Latin name that does not fit: cut where a label (measured as before, valid for
+        // Latin) still takes two lines and one more character would take three.
+        let long = "An Application With A Remarkably Long Name For Its Kind"
+        XCTAssertEqual(long.count, 55)
+        let measure = NSTextField(wrappingLabelWithString: "")
+        measure.font = PreferencesGroupedForm.explanationFont
+        measure.preferredMaxLayoutWidth = width
+        func height(_ text: String) -> CGFloat {
+            measure.stringValue = text
+            return measure.fittingSize.height
+        }
+        let twoLines = height("A\nA") + 0.5
+        let fitted = ApplicationPagePart.name(long, fittingTwoLinesOf: width, in: note)
+        XCTAssertTrue(fitted.hasSuffix("…"), fitted)
+        XCTAssertTrue(fitted.hasPrefix("An Application"), fitted)
+        XCTAssertLessThanOrEqual(height(note(fitted)[0]), twoLines, fitted)
+        func cut(_ length: Int) -> String {
+            return String(long.prefix(length)).trimmingCharacters(in: .whitespaces) + "…"
+        }
+        let length = (1..<long.count).last { cut($0) == fitted } ?? 0
+        let longer = cut(length + 1)
+        XCTAssertNotEqual(longer, fitted)
+        XCTAssertGreaterThan(height(note(longer)[0]), twoLines, "one character more takes a third line")
+        XCTAssertEqual(ApplicationPagePart.name(long, fittingTwoLinesOf: 10_000, in: note), long, "whole where it fits")
     }
 
     // MARK: - What opens the ring and runs the gestures, the apps' own buttons counted
