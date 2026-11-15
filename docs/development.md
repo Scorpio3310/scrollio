@@ -163,12 +163,12 @@ release is announced, open the image once on a Mac that never had Scrollio.
 
 | Path | Contents |
 | --- | --- |
-| `Scrollio/` | The app: `ScrollCore`, `ButtonCore`, `InputEvent`, `Shortcut`, `Keys`, `Logi`, `Integration`, `MacPointer`, `Options`, `Managers`, `Update`, `Components`, `Windows`, `Utils` |
+| `Scrollio/` | The app: `ScrollCore`, `ButtonCore`, `InputEvent`, `Ring`, `Shortcut`, `Keys`, `Logi`, `Integration`, `MacPointer`, `Options`, `Managers`, `Update`, `Components`, `Windows`, `Utils`, `Extension` |
 | `ScrollioTests/` | Unit tests (XCTest) |
 | `Scrollio.xcodeproj/` | The Xcode project, schemes `Debug` and `Profile` |
-| `scripts/` | `install.sh`, `release.sh` with `release-lib.sh`, `update-key.sh`, and in `qa/` the Logitech boundary lint (also run by a test) |
+| `scripts/` | `install.sh`, `release.sh` with `release-lib.sh`, `update-key.sh`, in `dmg/` the disk image's picture and window layout, and in `qa/` the Logitech boundary lint (also run by a test) |
 | `tools/` | Hand-run HID++ probes and a small regression harness (see its README before running a probe) |
-| `assets/` | The pictures of this README |
+| `assets/` | The pictures of the README |
 | `AGENTS.md` | Rules for coding agents and contributors: build, tests, signing, module boundaries, strings |
 | `CONTRIBUTING.md`, `SECURITY.md` | What to expect of issues and pull requests; how to report a security problem |
 | `LICENSE`, `Scrollio/Acknowledgements.txt` | The licence with its notices; what Scrollio owes to other projects |

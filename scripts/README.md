@@ -18,8 +18,8 @@ Repeatable automation.
   the notarization, so nothing is uploaded, and needs no tag. It also makes the release
   an update: the build gets its update feed, Sparkle's helper programs are signed with
   the Developer ID, and the finished image is signed with the update key and described
-  in `build/release/appcast.xml`, which is published with the image. The root README,
-  "Making a release", has the steps.
+  in `build/release/appcast.xml`, which is published with the image.
+  `docs/development.md`, "Making a release", has the steps.
 - `release-lib.sh`: the functions of `release.sh` that can be tried without the
   Developer ID (signing Sparkle's helpers, looking at every program's signature, writing
   the appcast, filling and packing the disk image). `release.sh` sources it; it is not

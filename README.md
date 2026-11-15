@@ -218,7 +218,8 @@ product names used here are trademarks of Logitech.
 
 - [Mos](https://github.com/Caldis/Mos), the project Scrollio is built on.
 - [Mac Mouse Fix](https://github.com/noah-nuebling/mac-mouse-fix) by Noah Nübling, the
-  reference for the events behind "Follow the hand". Scrollio's code for it is its own,
+  reference for the events behind "Follow the hand" and the thumb wheel's "Follow the
+  wheel", which makes the same swipe. Scrollio's code for it is its own,
   written from what Mac Mouse Fix's source shows, and so derived from it: the layout of
   the Dock swipe events (the event fields, and the HID event the Dock reads on macOS 27),
   the empty event that follows each of them, the 63 pt gap the Dock draws between two

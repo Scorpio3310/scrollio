@@ -32,7 +32,8 @@ What Scrollio learned from other projects
 Mac Mouse Fix, by Noah Nübling
 https://github.com/noah-nuebling/mac-mouse-fix
     The reference for the events behind the gesture mode "Follow the hand", in
-    which the desktops slide with the hand. Scrollio's code for it is its own,
+    which the desktops slide with the hand, and behind the thumb wheel's "Follow
+    the wheel", which makes the same swipe. Scrollio's code for it is its own,
     written from what Mac Mouse Fix's source shows, and so derived from it: the
     layout of the Dock swipe events (the event fields, and the HID event the
     Dock reads on macOS 27), the empty event that follows each of them, the
