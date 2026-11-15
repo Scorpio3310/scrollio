@@ -999,6 +999,32 @@ final class ThumbWheelFollowTests: XCTestCase {
         }
     }
 
+    /// One desktop and a little more: 11 events of 4 lines 60 ms apart at 0.7× (9.6 units).
+    /// The swipe chains at the ninth event, the last two events' travel (0.29 of a Space) is
+    /// kept at the gate. When the Space changes it begins nothing: a swipe begun with it
+    /// could only peek in and slide back. It waits: an event later in the stroke begins the
+    /// swipe with it (three events' travel, eased).
+    func testLittleTravelKeptAtTheGateWaitsForTheNextEvent() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .desktops, speed: 0.7, followsWheel: true)
+        for index in 0..<11 { try turn(at: Double(index) * 0.06, lines: -4) }
+        let end = try XCTUnwrap(endTimes.first)
+        XCTAssertEqual(end, 0.48, accuracy: 1.0 / 60 + 1e-6, "chained at the ninth event")
+        rig.advance(to: 500 + end + 0.25)
+        rig.engine.follower.spaceDidChange()
+        rig.advance(to: 500.79)
+        XCTAssertEqual(beginCount, 1, "0.29 of a Space begins nothing: \(dock.calls)")
+        XCTAssertEqual(rig.engine.follower.state, .following, "the stroke goes on")
+
+        try turn(at: 0.8, lines: -4)
+        rig.advance(to: 500.8)
+        XCTAssertEqual(beginCount, 2, "the next event begins the swipe")
+        guard case .update(let first)? = dock.calls.last else { return XCTFail("\(dock.calls)") }
+        XCTAssertEqual(first, 0.5 * 3 * 0.875 / 6 * Self.space, accuracy: 1e-9, "with the travel kept")
+        rig.advance(to: 503)
+        XCTAssertEqual(dock.terminals, [.end(0), .end(0)])
+        XCTAssertFalse(rig.hasPendingWork)
+    }
+
     /// A stop while the stroke waits at the gate: nothing scheduled runs, nothing is sent
     /// later, a Space change afterwards begins nothing, and the line says so.
     func testAStopAtTheGateRunsNothingLater() throws {

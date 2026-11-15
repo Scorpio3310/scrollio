@@ -34,15 +34,17 @@
 //  rest, which macOS settles more slowly): a swipe begun while the last one settles can
 //  catch it and take it back. A stroke at the closed gate does not rest: its travel is kept
 //  (`followGatePendingCap` at most) until the gate opens, by the Space change or the
-//  timeout, and begins the next swipe then, whether the wheel still turns or not, unless
-//  the wheel stopped `followFullStopRest` before short of half a Space. When no change
-//  came in time, the desktop was the first or the last that way (the Dock let the swipe
-//  bounce back): the stroke the swipe ended in begins no swipe that way again (travel the
-//  other way does) until it ends or the Space changes after all, so the wheel never sends
-//  the Dock into a loop of bounces; a later stroke is not barred, and the travel it kept at
-//  the gate begins its swipe. A timed-out gate's swipe waits `followLateSpaceChangeWindow`
-//  more as a late record, so a change that comes late is logged as such; a change while a
-//  gate is closed is that gate's. The gate's memory outlives the stroke.
+//  timeout, and begins the next swipe then, whether the wheel still turns or not. Short of
+//  half a Space it begins nothing by itself (with the wheel stopped, the swipe could only
+//  slide out and back): it waits for the stroke's next event, which begins the swipe with
+//  it, and the rest drops it. When no change came in time, the desktop was the first or
+//  the last that way (the Dock let the swipe bounce back): the stroke the swipe ended in
+//  begins no swipe that way again (travel the other way does) until it ends or the Space
+//  changes after all, so the wheel never sends the Dock into a loop of bounces; a later
+//  stroke is not barred, and the travel it kept at the gate begins its swipe. A timed-out
+//  gate's swipe waits `followLateSpaceChangeWindow` more as a late record, so a change that
+//  comes late is logged as such; a change while a gate is closed is that gate's. The gate's
+//  memory outlives the stroke.
 //
 //  Where the work is done: the tap callback only adds an event's travel up (`add`, a few
 //  sums and at most one closure per display frame; a rest or a timeout whose look has not
@@ -603,8 +605,8 @@ final class ThumbWheelFollower {
         schedule(0) { [weak self] in self?.onSwipeEnd?(tag, swipe) }
     }
 
-    /// The stroke at the gate goes on: it follows again (its kept travel begins a swipe),
-    /// or waits for its rest while another swipe runs.
+    /// The stroke at the gate goes on: it follows again (its kept travel begins a swipe,
+    /// when it is half a Space or more), or waits for its rest while another swipe runs.
     private func openGateForTheStroke() {
         if synthesizer.isActive {
             state = .waiting
@@ -612,15 +614,12 @@ final class ThumbWheelFollower {
             pendingTravel = 0
         } else {
             state = .following
-            if pendingTravel != 0, clock() + 1e-9 >= lastSeenAt + ThumbWheelTuning.followFullStopRest,
-               abs(pendingTravel) + ThumbWheelTuning.thresholdSlack
-                < InteractiveGestureSession.switchProgressShare * ThumbWheelTuning.followUnitsPerSpace {
-                // The wheel stopped before the gate opened, short of half a Space: a swipe
-                // begun now could not switch, only slide out and back.
-                pendingTravel = 0
-            }
         }
-        let begins = state == .following && pendingTravel != 0
+        // Travel kept short of half a Space begins nothing by itself: if the wheel has
+        // stopped, the swipe could only slide out and back. It waits for the stroke's next
+        // event, which begins the swipe with it; the rest drops it.
+        let begins = state == .following && abs(pendingTravel) + ThumbWheelTuning.thresholdSlack
+            >= InteractiveGestureSession.switchProgressShare * ThumbWheelTuning.followUnitsPerSpace
         guard !inTapCallback else {
             // An event found the gate timed out: it is the stroke's next, its frame begins
             // the swipe and its rest is looked for.
