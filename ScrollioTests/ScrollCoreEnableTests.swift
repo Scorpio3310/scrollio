@@ -259,6 +259,48 @@ final class ScrollCoreEnableTests: XCTestCase {
         XCTAssertNil(core.mouseEventInterceptor)
     }
 
+    /// A display link taken for silent before a pause or a sleep (no frame ended it): after
+    /// the resume or the wake the first wheel event is smoothed with the link enable() made.
+    /// It went on raw, and that link was thrown away for another before it could send a frame.
+    func testASilentLinkBeforeDisableIsForgottenByEnable() throws {
+        let (display, restore) = standInForTheDisplay()
+        let poster = ScrollPoster.shared
+        var clock = 1_000.0
+        poster.inputClockForTests = { clock }
+        defer {
+            poster.inputClockForTests = nil
+            restore()
+        }
+        var systems: [FakeEventTapSystem] = []
+        let core = ScrollCore()
+        core.makeInterceptor = { mask, callback, options in
+            let system = FakeEventTapSystem()
+            systems.append(system)
+            return try system.makeInterceptor(mask: mask, callback: callback, options: options)
+        }
+        let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0))
+        let input = ScrollPosterInput(y: 40, x: 0, notch: 40, duration: OPTIONS_SCROLL_DEFAULT().durationTransition)
+        core.enable()
+        XCTAssertTrue(poster.smooth(event: event, input: input))
+        clock += 0.2
+        XCTAssertFalse(poster.smooth(event: event, input: input), "silent")
+        let drained = expectation(description: "main queue drained")
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 2)
+
+        core.disable()
+        // Time passes while paused: no cooldown holds anything back.
+        poster.clearRecreateCooldownForTests()
+        core.enable()
+        let made = display.made.count
+        clock += 60
+
+        XCTAssertTrue(poster.smooth(event: event, input: input), "the first event is smoothed")
+        XCTAssertEqual(display.made.count, made, "with the link enable() made")
+        core.disable()
+        XCTAssertEqual(systems.count, 6, "three taps per start")
+    }
+
     /// The second or third tap cannot be started (the access went in between): the taps
     /// already made are switched off again, none is left running behind a core that is off.
     func testATapThatFailsLater_leavesNoEarlierTapRunning() {

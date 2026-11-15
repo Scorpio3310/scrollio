@@ -775,8 +775,27 @@ class ScrollPoster {
     /// The link in place runs and sends no frames: wheel events are not taken until a frame
     /// comes (`linkSendsFrames`, `frameCameLocked`). Guarded by stateLock.
     private var linkIsSilent = false
-    /// A link that sent no frame this long after a wheel event was taken is silent.
+    /// A link that sent no frame this long after a wheel event was taken is silent, at first.
     static let silentLinkLimit: CFTimeInterval = 0.1
+    /// How long a taken wheel event waits for a frame before the link counts as silent:
+    /// `silentLinkLimit`, or twice the longest late first frame seen (`silenceEnded`).
+    /// Main thread.
+    private(set) var silenceLimit: CFTimeInterval = ScrollPoster.silentLinkLimit
+    /// A first frame that came at most this long after its link's start was late, not missing.
+    static let lateFirstFrameLimit: CFTimeInterval = 0.5
+    /// When the link in place was last started (`inputClock`). Main thread.
+    private var linkStartedAt: CFTimeInterval = 0
+    /// When the last wheel event reached `linkSendsFrames` (`inputClock`). Main thread.
+    private var lastWheelEventAt: CFTimeInterval = -.infinity
+    /// When a silent link was last replaced, and when a silence last ended (`inputClock`):
+    /// see `maySilentLinkBeReplaced`. Main thread.
+    private var lastSilentReplacement: CFTimeInterval = -.infinity
+    private var lastSilenceEnd: CFTimeInterval = -.infinity
+    /// When the line about a silent link was last written (`inputClock`). Main thread.
+    private var lastSilentLinkLine: CFTimeInterval = -.infinity
+    static let silentLinkLineInterval: CFTimeInterval = 10
+    /// The link a silence's end left running is stopped once no wheel event came this long.
+    static let silenceEndQuiet: CFTimeInterval = 0.25
     // CVDisplayLink 刷新率自纠 (issue #958):
     // 显示器唤醒/重连时会先短暂报告过渡刷新率 (如先 60Hz 再升 144Hz), 若重建正好落在这个窗口,
     // 就会把 link 绑到偏低的刷新率, 使平滑滚动只按低帧率绘制 (卡顿), 而现有恢复机制识别不了.
@@ -2101,9 +2120,12 @@ extension ScrollPoster {
         make(call)
     }
     /// One display frame at `now`, exactly as the display link runs it but without the hop
-    /// to the main thread: returns the stop request the frame makes, if any.
+    /// to the main thread: returns the stop request the frame makes, if any. (The keeper
+    /// sees the frame's time, as from the link: a keeper's look on the same clock finds the
+    /// link stuck only when no frame came for over 2 s.)
     func displayLinkFrameForTests(frameInterval: Double, now: CFTimeInterval) -> ScrollStopRequest? {
         os_unfair_lock_lock(&stateLock)
+        lastCallbackTime = now
         let silenceEnded = frameCameLocked()
         let request = displayLinkFrameLocked(frameInterval: frameInterval, now: now)
         let call = takeWatchCallLocked()
@@ -2119,9 +2141,14 @@ extension ScrollPoster {
     var isDisplayLinkRunningForTests: Bool {
         return poster?.isRunning ?? false
     }
-    /// Lets the next `recreateDisplayLink` through at once.
+    /// Lets the next `recreateDisplayLink` and a silent link's replacement through at once,
+    /// and forgets what the silent-link rule saw (its line, the late first frames).
     func clearRecreateCooldownForTests() {
         lastRecreateAttempt = 0
+        lastSilentReplacement = -.infinity
+        lastSilenceEnd = -.infinity
+        lastSilentLinkLine = -.infinity
+        silenceLimit = Self.silentLinkLimit
     }
     /// Stops and forgets the display link, as if none had been made yet.
     func dropDisplayLinkForTests() {
@@ -2309,6 +2336,7 @@ extension ScrollPoster {
     /// so does the wait for its first frame (`linkSendsFrames`: from the next event taken).
     private func noteDisplayLinkStarted() {
         let now = Self.monotonicNow()
+        linkStartedAt = inputClock()
         os_unfair_lock_lock(&stateLock)
         lastCallbackTime = now
         lastActivityTime = now
@@ -2323,49 +2351,81 @@ extension ScrollPoster {
     /// that went away under it). Every wheel event was taken and nothing was posted until the
     /// keeper replaced the link: after more than 2 s without a frame, at its next look, up to
     /// 7 s in all, and again when the new link was silent too. Now a link is silent when an
-    /// event was taken and no frame came for `silentLinkLimit` since. Then the scroll that
-    /// waits for frames is ended (its distance would arrive late, all at once), the link is
-    /// replaced at once (whatever the cooldown) and started, so that its first frame can
-    /// tell, one line goes to the log, and this event and the following ones are not taken:
-    /// the tap lets them go on raw, in the user's direction. The first frame that comes ends
-    /// it (`frameCameLocked`): the next event is smoothed again. While the link stays silent
-    /// it is replaced once per `recreateCooldown`, and the keeper leaves it to this.
+    /// event was taken and no frame came for `silenceLimit` since. Then the scroll that
+    /// waits for frames is ended (its distance would arrive late, all at once), and this
+    /// event and the following ones are not taken: the tap lets them go on raw, in the
+    /// user's direction. The link is replaced and started, so that its first frame can tell
+    /// (`replaceSilentLinkSoon`: from the main queue, once the event went on; at most once
+    /// per `recreateCooldown`, and not within that time after a silence ended). One line
+    /// goes to the log, at most one per `silentLinkLineInterval`. The first frame that comes
+    /// ends it (`frameCameLocked`, `silenceEnded`): the next event is smoothed again.
     /// - Returns: false: the event is not taken.
     private func linkSendsFrames() -> Bool {
         let now = inputClock()
+        lastWheelEventAt = now
         os_unfair_lock_lock(&stateLock)
         if linkIsSilent {
             // A wheel event: the keeper does not stop the link as idle while the wheel turns.
             lastActivityTime = Self.monotonicNow()
             os_unfair_lock_unlock(&stateLock)
-            if Self.monotonicNow() - lastRecreateAttempt >= recreateCooldown {
-                replaceSilentLink()
+            if maySilentLinkBeReplaced(at: now) {
+                replaceSilentLinkSoon(at: now)
             }
             return false
         }
-        guard let since = awaitingFrameSince, now - since >= Self.silentLinkLimit else {
+        guard let since = awaitingFrameSince, now - since >= silenceLimit else {
             os_unfair_lock_unlock(&stateLock)
             return true
         }
         linkIsSilent = true
         lastActivityTime = Self.monotonicNow()
         os_unfair_lock_unlock(&stateLock)
-        logHealth(problem: Self.silentLinkLine)
+        if now - lastSilentLinkLine >= Self.silentLinkLineInterval {
+            lastSilentLinkLine = now
+            logHealth(problem: Self.silentLinkLine(after: silenceLimit))
+        }
+        // At once: its closing frames go out before this event goes on raw.
         stop(reason: .silentLink)
-        replaceSilentLink()
+        if maySilentLinkBeReplaced(at: now) {
+            replaceSilentLinkSoon(at: now)
+        }
         return false
     }
 
-    /// The one line for a link that runs and sends no frames, however long that lasts.
-    static let silentLinkLine = "ScrollPoster: the display link runs but sent no frame "
-        + "\(Int(silentLinkLimit * 1000)) ms after a wheel event was taken: replaced it at once; "
-        + "wheel events go through unsmoothed until a frame comes"
+    /// The line for a link that runs and sends no frames.
+    static func silentLinkLine(after limit: CFTimeInterval) -> String {
+        return "ScrollPoster: the display link runs but sent no frame \(Int((limit * 1000).rounded())) ms "
+            + "after a wheel event was taken: wheel events go through unsmoothed until a frame comes; "
+            + "the link is replaced (at most every 3 s; this line at most every 10 s)"
+    }
 
-    /// A new link in the place of a silent one, started. When none can be made the one in
+    /// A silent link is replaced at most once per `recreateCooldown`, and not within that
+    /// time after a silence ended: that link sent frames a moment ago (it is started again by
+    /// the next event's `tryStart`). Main thread.
+    private func maySilentLinkBeReplaced(at now: CFTimeInterval) -> Bool {
+        return now - lastSilentReplacement >= recreateCooldown && now - lastSilenceEnd >= recreateCooldown
+    }
+
+    /// A new link in the place of a silent one, made and started from the main queue: making
+    /// one asks the window server and starts a thread, and the scroll tap's callback, which
+    /// holds every wheel event of the system meanwhile, does not wait for that. The cooldown
+    /// counts from now. Its own cooldown, not `lastRecreateAttempt`'s: the screen change's new
+    /// link a second after a display change (AppDelegate) is not refused by it.
+    private func replaceSilentLinkSoon(at now: CFTimeInterval) {
+        lastSilentReplacement = now
+        DispatchQueue.main.async { [weak self] in
+            self?.replaceSilentLink()
+        }
+    }
+
+    /// Only while the silence lasts: a frame, or a stop or start of the cores
+    /// (`forgetSilence`), may have ended it meanwhile. When none can be made the one in
     /// place stays (`create`), and the next wheel event's `tryStart` starts it again.
     private func replaceSilentLink() {
-        lastRecreateAttempt = Self.monotonicNow()
-        guard create(), let link = poster else { return }
+        os_unfair_lock_lock(&stateLock)
+        let silent = linkIsSilent
+        os_unfair_lock_unlock(&stateLock)
+        guard silent, create(), let link = poster else { return }
         link.followDisplayUnderPointer()
         if link.start() == kCVReturnSuccess {
             noteDisplayLinkStarted()
@@ -2382,17 +2442,49 @@ extension ScrollPoster {
         return true
     }
 
-    /// A silence ended with a frame. The link was started for that frame alone: when no
-    /// scroll has begun since, it is stopped again (the next wheel event starts it), as a
-    /// scroll's stop would leave it. From the link's thread; the stop on the main thread.
+    /// A silence ended with a frame. From the link's thread; the rest on the main thread
+    /// (`silenceEnded`).
     func scheduleSilenceEnd() {
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            os_unfair_lock_lock(&self.stateLock)
-            let nothingScrolls = self.sessionLog.isEmpty
-            os_unfair_lock_unlock(&self.stateLock)
-            if nothingScrolls {
-                self.poster?.stop()
+            self?.silenceEnded()
+        }
+    }
+
+    /// A silence ended with a frame. Main thread.
+    /// - A first frame that came late but came (within `lateFirstFrameLimit` of its link's
+    ///   start) shows how long a start takes here (a 24-30 Hz display, a loaded Mac): a taken
+    ///   event waits twice that from now on (`silenceLimit`). It waited 0.1 s, and every
+    ///   scroll's cold start was taken for a silence again: cut, raw, a new link.
+    /// - The link was started for that frame: when no scroll has begun since and the wheel is
+    ///   still (`silenceEndQuiet`), it is stopped again (the next wheel event starts it), as a
+    ///   scroll's stop would leave it. While the wheel turns it runs on, and the next event is
+    ///   smoothed with it; a stop there made that event start it cold, to wait once more.
+    private func silenceEnded() {
+        let now = inputClock()
+        lastSilenceEnd = now
+        let wait = now - linkStartedAt
+        if wait > 0, wait < Self.lateFirstFrameLimit {
+            silenceLimit = max(silenceLimit, 2 * wait)
+        }
+        stopLinkStartedForAFrame(lookAgain: true)
+    }
+
+    /// Stops the link a silence's end left running when nothing scrolls and the wheel is
+    /// still; while the wheel was turned a moment ago, one more look when it would be still.
+    /// Main thread.
+    private func stopLinkStartedForAFrame(lookAgain: Bool) {
+        os_unfair_lock_lock(&stateLock)
+        let unused = sessionLog.isEmpty && !linkIsSilent
+        os_unfair_lock_unlock(&stateLock)
+        guard unused, let link = poster else { return }
+        let still = inputClock() - lastWheelEventAt
+        if still >= Self.silenceEndQuiet {
+            link.stop()
+        } else if lookAgain {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (Self.silenceEndQuiet - still)) { [weak self, weak link] in
+                // Not a link made since (a screen change, another silence): only this one.
+                guard let self, let link, self.poster === link else { return }
+                self.stopLinkStartedForAFrame(lookAgain: false)
             }
         }
     }
@@ -2582,6 +2674,7 @@ extension ScrollPoster {
     /// back), so the right to post events is read here as well (`checkPostEventAccess`).
     func startKeeper() {
         checkPostEventAccess()
+        forgetSilence()
         keeper?.invalidate()
         keeper = CommonModesTimer.scheduled(withTimeInterval: Self.keeperInterval, repeats: true) { [weak self] _ in
             self?.healthCheck(now: ScrollPoster.monotonicNow())
@@ -2595,6 +2688,7 @@ extension ScrollPoster {
         }
     }
     func stopKeeper() {
+        forgetSilence()
         keeper?.invalidate()
         keeper = nil
         if let observer = screensDidWakeObserver {
@@ -2604,6 +2698,17 @@ extension ScrollPoster {
         rateVerifyTimer?.invalidate()
         rateVerifyTimer = nil
         rateVerifyAttemptsLeft = 0
+    }
+    /// The cores stop or start (launch, Pause and resume, sleep and wake: `startKeeper`,
+    /// `stopKeeper`): a silence from before does not go on (a link taken for silent that no
+    /// frame ended: the wheel was let go, the keeper stopped it as idle). It did, and the
+    /// first wheel event after a resume or a wake went on raw and threw away the link the
+    /// start had made, for another. Main thread.
+    private func forgetSilence() {
+        os_unfair_lock_lock(&stateLock)
+        linkIsSilent = false
+        awaitingFrameSince = nil
+        os_unfair_lock_unlock(&stateLock)
     }
     /// A display is on again: the link that could not be made while none was on is made now
     /// (not started: the next wheel event's `tryStart` starts it). A link in use stays; a
@@ -2694,6 +2799,12 @@ extension ScrollPoster {
         // lastTime > 0 避免首次回调前误判
         if lastCallback > 0 && now - lastCallback > 2.0 {
             logHealth(problem: "ScrollPoster: the keeper found the display link stuck (no frame for over 2 s while running), recreating it")
+            // A scroll that waits for this link's frames (a flick with no wheel event after
+            // it to tell) is ended first: the new link glided its distance out 2 to 5 s after
+            // the hand moved, all at once. (The new link then waits for the next wheel event.)
+            if scrollIsOpen {
+                stop(reason: .silentLink)
+            }
             recreateDisplayLink()
         }
     }
