@@ -11,9 +11,11 @@
 //  mouse can do one of them, as in the pane. They run while the app is in front
 //  (`MouseGestureChoice`). In "Follow the hand" the Left and Right rows say so and the
 //  speed applies, as the pane's do, by the app's own mode. The button to hold is a binding
-//  of Buttons, or of the app's Buttons part: while none runs the gestures with the app in
-//  front, the switch's line says so instead (in both states); while it is another one than
-//  Buttons', a line under the switch's box names it.
+//  of Buttons, or of the app's Buttons part: the first row, "Button to hold", says which
+//  one runs the gestures with the app in front ("Gesture button, as everywhere", "Back
+//  button, only in Figma", "None in Figma", `ApplicationTriggerRow`), and its button goes
+//  there: "Show in Buttons", "Show Buttons" (the app's Buttons part, that row selected) or
+//  "Set Up…", which records a mouse button that runs the gestures only in this app.
 //
 //  "Reset to Defaults" ends the own set, there with it: all of it goes back to a copy of
 //  the general gestures as they are now, the switch stays; the window's Undo takes it
@@ -33,7 +35,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     enum Identifier {
         static let generalGestures = NSUserInterfaceItemIdentifier("apps-detail-general-gestures")
         static let mode = NSUserInterfaceItemIdentifier("apps-detail-gestures-mode")
-        static let buttonNote = NSUserInterfaceItemIdentifier("apps-detail-gestures-button-note")
+        static let holdButton = NSUserInterfaceItemIdentifier("apps-detail-gestures-hold")
         static let reset = NSUserInterfaceItemIdentifier("apps-detail-gestures-reset")
     }
 
@@ -60,12 +62,25 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     var deviceSource: MouseGestureDeviceSource = .live
     /// "Open Mouse": shows the Mouse pane. Tests replace it.
     var openMousePane: (() -> Void)?
+    /// "Show in Buttons" of "Button to hold": the Buttons pane, the gesture button's row
+    /// selected. Tests replace it.
+    var openButtonsPane: (() -> Void)?
+    /// "Show Buttons" of "Button to hold": the app's Buttons part, the row with this id
+    /// selected (the page sets it).
+    var showApplicationButtons: ((UUID) -> Void)?
+    /// "Set Up…" of "Button to hold": records a mouse button at the push button that runs
+    /// the gestures only while the app is in front (the page sets it: the app's Buttons
+    /// part records it).
+    var setUpButton: ((NSView) -> Void)?
 
     private(set) var generalSection: PreferencesGroupSection!
     private(set) var generalGesturesRow: PreferencesSwitchRow!
-    /// The line under the switch's box: in sight only while another button than Buttons'
-    /// runs the gestures with the app in front (`buttonNote(for:general:)`).
-    private(set) var buttonNoteLabel: NSTextField!
+    /// "Button to hold", the first row: which button runs the gestures with the app in
+    /// front, and a push button that goes there.
+    private(set) var holdRow: PreferencesGroupRow!
+    private(set) var holdButton: NSButton!
+    /// What the row says now, and where its button leads.
+    private(set) var shownHold: ApplicationTriggerRow?
     /// The app's own set: there only while "Use the general gestures" is off.
     private(set) var controls: MouseGestureSettingsControls?
     /// "Mode", in a box of its own above the sections (it never folds, as in the pane);
@@ -142,31 +157,18 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         // Room for the longer of the two lines, so switching never moves the rows below.
         general.reservedExplanations = [true, false].map { ApplicationDetailViewController.generalGesturesExplanation(on: $0, name: name) }
         generalGesturesRow = general
-        // (No title: the part's segment names it.)
-        let section = PreferencesGroupSection(width: Self.boxWidth, rows: [general])
+        let hold = PreferencesGroupedForm.makePushButton(
+            title: text("gestures-gesture-button-set-up"), target: self, action: #selector(holdButtonClicked(_:))
+        )
+        hold.identifier = Identifier.holdButton
+        holdButton = hold
+        holdRow = PreferencesGroupRow(title: text("gestures-gesture-button"), explanation: "", accessory: hold)
+        // (No title: the part's segment names it.) The button to hold first, as in the pane.
+        let section = PreferencesGroupSection(width: Self.boxWidth, rows: [holdRow, general])
         generalSection = section
-        let note = NSTextField(wrappingLabelWithString: "")
-        note.identifier = Identifier.buttonNote
-        note.font = PreferencesGroupedForm.explanationFont
-        note.textColor = PreferencesGroupedForm.explanationColor(enabled: true)
-        note.isSelectable = false
-        let inset = PreferencesGroupedForm.rowHorizontalInset
-        note.preferredMaxLayoutWidth = Self.boxWidth - 2 * inset
-        note.translatesAutoresizingMaskIntoConstraints = false
-        buttonNoteLabel = note
-        let holder = NSView()
-        holder.translatesAutoresizingMaskIntoConstraints = false
-        holder.isHidden = true
-        holder.addSubview(note)
-        NSLayoutConstraint.activate([
-            note.topAnchor.constraint(equalTo: holder.topAnchor),
-            note.bottomAnchor.constraint(equalTo: holder.bottomAnchor),
-            note.leadingAnchor.constraint(equalTo: holder.leadingAnchor, constant: inset),
-            note.trailingAnchor.constraint(equalTo: holder.trailingAnchor, constant: -inset),
-        ])
-        PreferencesGroupedForm.add([section, holder], to: content)
-        // A titled section's room above "Directions", under the line too.
-        content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: holder)
+        PreferencesGroupedForm.add([section], to: content)
+        // A titled section's room above the app's own set.
+        content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: section)
         let reset = PreferencesPaneReset(
             undoActionName: Self.resetActionName(for: application),
             hasSettingsToReset: { [weak self] in self?.hasSettingsToReset ?? false },
@@ -199,18 +201,10 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         }
     }
 
-    /// The line under the switch's box while another button than the one of Buttons runs
-    /// Gesture Navigation with the app in front: the app's own buttons gave one Gesture
-    /// Navigation ("Button to hold while Figma is in front: Back button."). nil: the same
-    /// button as in Buttons, or none at all (the switch's own line says that one). Counted
-    /// by the rule the Gestures pane counts by (`ApplicationTriggerRule`).
-    static func buttonNote(for application: Application, general: [ButtonBinding]) -> String? {
-        let rule = ApplicationTriggerRule.gestureNavigation
-        let here = rule.bindings(general: general, own: application.ownButtonBindings)
-        guard !here.isEmpty, here.map(\.identity) != rule.bindings(general: general).map(\.identity) else { return nil }
-        let titles = MouseGestureBindingSummary(bindings: here, isLogitechCode: { _ in false }).buttonTitles
-        let buttons = ListFormatter.localizedString(byJoining: titles)
-        return String(format: NSLocalizedString("apps-detail-gestures-button", comment: ""), application.getName(), buttons)
+    /// What "Button to hold" says and where its button leads, counted by the rule the
+    /// Gestures pane counts by (`ApplicationTriggerRule`).
+    static func hold(for application: Application, general: [ButtonBinding]) -> ApplicationTriggerRow {
+        return ApplicationTriggerRow.make(.gestureNavigation, application: application, general: general)
     }
 
     /// Whether a button runs Gesture Navigation while the app is in front.
@@ -218,18 +212,17 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         return !ApplicationTriggerRule.gestureNavigation.bindings(general: general, own: application.ownButtonBindings).isEmpty
     }
 
-    /// Shows the line, or takes it away: a line sits close under its box; without it the
-    /// titled box of the app's own set keeps its gap. True when it came or went while the
-    /// part is on screen: the page's height follows.
-    private func syncButtonNote() -> Bool {
-        guard let holder = buttonNoteLabel.superview else { return false }
-        let note = Self.buttonNote(for: application, general: Options.shared.buttons.binding)
-        buttonNoteLabel.stringValue = note ?? ""
-        content.setCustomSpacing(
-            note == nil ? PreferencesGroupedForm.sectionSpacing : PreferencesGroupedForm.noteSpacing, after: generalSection
-        )
-        guard holder.isHidden != (note == nil) else { return false }
-        holder.isHidden = note == nil
+    /// Puts what runs the gestures here into "Button to hold". True when its line changed
+    /// while the part is on screen (it may take more or less room).
+    private func syncHold() -> Bool {
+        let hold = Self.hold(for: application, general: Options.shared.buttons.binding)
+        shownHold = hold
+        let title = text(hold.buttonTitleKey)
+        if holdButton.title != title {
+            holdButton.title = title
+        }
+        guard holdRow.explanation != hold.text else { return false }
+        holdRow.explanation = hold.text
         return view.superview != nil
     }
 
@@ -258,12 +251,10 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         let usesGeneral = application.usesGeneralGestures
         generalGesturesRow.isOn = usesGeneral
         let hasButton = Self.hasButton(for: application, general: Options.shared.buttons.binding)
-        let line = ApplicationDetailViewController.generalGesturesExplanation(
-            on: usesGeneral, name: application.getName(), hasButton: hasButton
-        )
+        let line = ApplicationDetailViewController.generalGesturesExplanation(on: usesGeneral, name: application.getName())
         var remeasures = generalGesturesRow.explanation != line && view.superview != nil
         generalGesturesRow.explanation = line
-        remeasures = syncButtonNote() || remeasures
+        remeasures = syncHold() || remeasures
         showOwnSet(!usesGeneral)
         // (Folds when it becomes foldable; the page measures again.)
         for fold in foldingSections where fold.isCollapsible == hasButton {
@@ -513,6 +504,27 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         controls?.setHapticFeedback(sender.state == .on)
         showOwnValues()
         resetToDefaults.settingsDidChange()
+    }
+
+    /// The push button of "Button to hold": where its line leads (what an Undo keeps up to
+    /// date is what the row shows).
+    @objc func holdButtonClicked(_ sender: NSButton) {
+        let hold = shownHold ?? Self.hold(for: application, general: Options.shared.buttons.binding)
+        switch hold.destination {
+        case .setUp:
+            setUpButton?(sender)
+        case .applicationButtons(let id):
+            showApplicationButtons?(id)
+        case .buttonsPane:
+            if let openButtonsPane {
+                openButtonsPane()
+                return
+            }
+            guard let split = PreferencesButtonsViewController.splitViewController(of: self),
+                  split.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons),
+                  let buttons = split.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController else { return }
+            buttons.selectGestureButton()
+        }
     }
 
     /// "Open Mouse", next to the line that says the haptics are off there.

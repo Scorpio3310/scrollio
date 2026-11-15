@@ -40,6 +40,9 @@ it for the people who use the app, and give the version its part before you tag 
 
 ### Changed
 
+- **An app's page says which button runs its gestures and ring.** Its Gestures and
+  Shortcut Ring parts begin with that button ("Back button, only in Figma") and a button
+  that goes there, or sets one up for that app only.
 - **A click while you hold the ring's button belongs to the ring.** It runs the shortcut
   that is lit (nothing lit: the ring closes), and nothing reaches the app under the ring.
   A click right as you press the button does nothing.

@@ -195,3 +195,72 @@ struct ApplicationTriggers: Equatable {
         return String(format: NSLocalizedString(key, comment: ""), names)
     }
 }
+
+/// The first row of an app's Gestures and Shortcut Ring parts ("Button to hold", "Button or
+/// key"): what does it while the app is in front, by the rule above, and where the row's
+/// button leads. "Gesture button, as everywhere" (Buttons' button: "Show in Buttons", the
+/// Buttons pane with its row selected); "Back button, only in Figma" (a button of the app's
+/// own: "Show Buttons", the app's Buttons part with that row selected); "None in Figma"
+/// ("Set Up…", which records a button for this app only; or "Show Buttons" when one of the
+/// app's own rows took what does it everywhere else, that row selected).
+struct ApplicationTriggerRow: Equatable {
+
+    /// Where the row's button leads.
+    enum Destination: Equatable {
+        /// The Buttons pane, the row of what does it everywhere selected.
+        case buttonsPane
+        /// The app's Buttons part, this row of the app's own selected.
+        case applicationButtons(UUID)
+        /// A recording of a button (or key) that does it only while the app is in front.
+        case setUp
+    }
+
+    /// The row's line.
+    let text: String
+    let destination: Destination
+
+    /// The catalog key of the button's title.
+    var buttonTitleKey: String {
+        switch destination {
+        case .buttonsPane: return "apps-trigger-show-in-buttons"
+        case .applicationButtons: return "apps-trigger-show-buttons"
+        case .setUp: return "gestures-gesture-button-set-up"
+        }
+    }
+
+    /// - Parameter titles: what the Buttons pane calls the triggers, in order.
+    static func make(
+        _ rule: ApplicationTriggerRule, application: Application, general: [ButtonBinding],
+        titles: ([RecordedEvent]) -> [String] = { ButtonTriggerNaming.titles(for: $0) }
+    ) -> ApplicationTriggerRow {
+        let name = application.getName()
+        let own = application.ownButtonBindings
+        let everywhere = rule.bindings(general: general)
+        let here = rule.bindings(general: general, own: own)
+        guard !here.isEmpty else {
+            let text = String(format: NSLocalizedString("apps-trigger-none", comment: ""), name)
+            // A row of the app's own on what does it everywhere else: that row is why.
+            if let taken = own.first(where: { ApplicationButtons.generalBinding(for: $0.triggerEvent, in: everywhere) != nil }) {
+                return ApplicationTriggerRow(text: text, destination: .applicationButtons(taken.id))
+            }
+            return ApplicationTriggerRow(text: text, destination: .setUp)
+        }
+        let shared = here.filter { binding in everywhere.contains { $0.identity == binding.identity } }
+        let onlyHere = here.filter { binding in !everywhere.contains { $0.identity == binding.identity } }
+        func joined(_ bindings: [ButtonBinding]) -> String {
+            var unique: [String] = []
+            for title in titles(bindings.map(\.triggerEvent)) where !unique.contains(title) {
+                unique.append(title)
+            }
+            return ListFormatter.localizedString(byJoining: unique)
+        }
+        guard let first = onlyHere.first else {
+            let text = String(format: NSLocalizedString("apps-trigger-everywhere", comment: ""), joined(shared))
+            return ApplicationTriggerRow(text: text, destination: .buttonsPane)
+        }
+        let text = shared.isEmpty
+            ? String(format: NSLocalizedString("apps-trigger-only-here", comment: ""), joined(onlyHere), name)
+            : String(format: NSLocalizedString("apps-trigger-mixed", comment: ""), joined(shared), joined(onlyHere), name)
+        return ApplicationTriggerRow(text: text, destination: .applicationButtons(first.id))
+    }
+}

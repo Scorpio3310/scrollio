@@ -20,7 +20,9 @@
 //  (`LogiUsageBootstrap.refreshButtonUsage`).
 //
 //  Only the app's own list is edited (`Application.setOwnButtonBindings`); Buttons is
-//  never touched.
+//  never touched. "Set Up…" of the app's Gestures and Shortcut Ring parts records here too
+//  (`beginAddingBinding`): the recorder hangs on that button, and what it catches gets
+//  Gesture Navigation or the Shortcut Ring in this app only.
 //
 //  "Reset to Defaults" under the list removes every button of the app's own and its own
 //  thumb wheel function at once: every button does what Buttons says again. The window's
@@ -101,6 +103,10 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// "Open App or File", while it is open.
     private(set) var openTargetPopover: OpenTargetConfigPopover?
     private var pendingRecorded: RecordedEvent?
+    /// "Set Up…" of the app's Gestures or Shortcut Ring part: the action a button recorded
+    /// now gets, and what is told once it has it. Nil for "Record a Button or Key…".
+    private(set) var pendingAction: SystemShortcut.Shortcut?
+    private var pendingActionAdded: (() -> Void)?
     private let recorder = KeyRecorder()
     private let resolver = ActionDisplayResolver()
 
@@ -426,7 +432,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         case .trigger(let trigger)?:
             addOwnBinding(for: trigger)
         case .record?:
-            beginRecording()
+            beginRecording(action: nil)
         case nil:
             break
         }
@@ -434,20 +440,29 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     /// Adds a binding of the app's own for `trigger` with the action the button has
     /// everywhere (so nothing changes until another one is chosen), selects it and opens
-    /// its menu. A trigger the app has already is selected and flashes.
+    /// its menu. A trigger the app has already is selected and flashes. With `action`
+    /// ("Set Up…" of the Gestures or Shortcut Ring part) the new binding has that action
+    /// and no menu opens; a row of the trigger with "Default" takes it too.
     @discardableResult
-    func addOwnBinding(for trigger: RecordedEvent) -> UUID? {
+    func addOwnBinding(for trigger: RecordedEvent, action: SystemShortcut.Shortcut? = nil) -> UUID? {
         if let existing = ownBinding(for: trigger) {
-            list.flash(AnyHashable(existing.id))
+            if let action, Self.takesAction(existing) {
+                setAction(of: existing.id, named: action.identifier)
+                list.select(AnyHashable(existing.id))
+            } else {
+                list.flash(AnyHashable(existing.id))
+            }
             return existing.id
         }
         guard ButtonUtils.isRunnable(trigger) else { return nil }
-        let added = Self.newBinding(for: trigger, general: generalBindings)
+        let added = action.map { ButtonBinding(triggerEvent: trigger, systemShortcutName: $0.identifier, isEnabled: true) }
+            ?? Self.newBinding(for: trigger, general: generalBindings)
         store(ownBindings + [added])
         list.select(AnyHashable(added.id))
         if trigger.type == .mouse, deviceSource.captureStatus(trigger.code) == .bleHIDPPUnstable {
             deviceSource.warnBluetoothButton(trigger.code)
         }
+        guard action == nil else { return added.id }
         // The new row's menu opens by itself, once the "+" menu or the recorder is gone.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.view.window != nil, let row = self.row(for: added.id),
@@ -635,11 +650,29 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     // MARK: - Recording
 
-    /// "Record a Button or Key…": the Buttons pane's recorder, at "+".
-    func beginRecording() {
+    /// A row of the app's own that "Set Up…" gives its action: one with "Default" (no
+    /// action of its own here), as the Buttons pane's Set Up… takes a row without one.
+    static func takesAction(_ binding: ButtonBinding) -> Bool {
+        return !CellActionState(binding: binding).hasBoundAction
+    }
+
+    /// "Set Up…" of the app's Gestures or Shortcut Ring part: the recorder, at `anchor`,
+    /// takes a button (only a mouse button for Gesture Navigation) or a key that does
+    /// `action` while the app is in front; `added` runs once the app has it.
+    func beginAddingBinding(action: SystemShortcut.Shortcut, from anchor: NSView, added: @escaping () -> Void) {
+        guard !isRecorderOpen else { return }
+        beginRecording(action: action, from: anchor)
+        pendingActionAdded = added
+    }
+
+    /// "Record a Button or Key…": the Buttons pane's recorder, at "+" (or at `anchor`), for
+    /// a new row; with `action`, one that gets it.
+    func beginRecording(action: SystemShortcut.Shortcut? = nil, from anchor: NSView? = nil) {
         guard !isRecorderOpen else { return }
         pendingRecorded = nil
-        let anchor = list.addButton
+        pendingAction = action
+        pendingActionAdded = nil
+        let anchor = anchor ?? list.addButton
         if let startRecording {
             startRecording(anchor)
         } else {
@@ -667,16 +700,38 @@ extension ApplicationButtonsViewController: KeyRecorderDelegate {
         isRecorderOpen = true
     }
 
-    /// A button the app has already counts as a duplicate (the recorder says so); every
-    /// other button or key is taken, also one that opens the ring or runs Gesture
-    /// Navigation in Buttons.
+    /// A button the app has already counts as a duplicate (the recorder says so), unless
+    /// "Set Up…" waits and its row has "Default"; every other button or key is taken, also
+    /// one that opens the ring or runs Gesture Navigation in Buttons. A key is never the
+    /// button to hold for the gestures.
     func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool {
-        return ownBinding(for: normalizedTrigger(for: event)) == nil
+        let trigger = normalizedTrigger(for: event)
+        if PreferencesButtonsViewController.needsMouseButton(pendingAction), trigger.type == .keyboard { return false }
+        guard let existing = ownBinding(for: trigger) else { return true }
+        return pendingAction != nil && Self.takesAction(existing)
+    }
+
+    /// The recorder's hint for a refused key while the button to hold is set up, as the
+    /// Buttons pane's.
+    func refusalHint(_ recorder: KeyRecorder, event: InputEvent) -> String? {
+        guard PreferencesButtonsViewController.needsMouseButton(pendingAction),
+              normalizedTrigger(for: event).type == .keyboard else { return nil }
+        return NSLocalizedString("buttons-gesture-needs-mouse-button", comment: "")
+    }
+
+    /// What the recorder asks for while the button to hold is set up: a mouse button.
+    func waitingHint(_ recorder: KeyRecorder, mode: KeyRecordingMode) -> String? {
+        guard PreferencesButtonsViewController.needsMouseButton(pendingAction) else { return nil }
+        return NSLocalizedString("buttons-recorder-waiting-gesture", comment: "")
     }
 
     func onEventRecorded(_ recorder: KeyRecorder, didRecordEvent event: InputEvent, isDuplicate: Bool) {
         let trigger = normalizedTrigger(for: event)
-        if let existing = ownBinding(for: trigger) {
+        if PreferencesButtonsViewController.needsMouseButton(pendingAction), trigger.type == .keyboard {
+            pendingRecorded = nil
+            return
+        }
+        if let existing = ownBinding(for: trigger), !(pendingAction != nil && Self.takesAction(existing)) {
             pendingRecorded = nil
             list.flash(AnyHashable(existing.id))
             return
@@ -687,8 +742,13 @@ extension ApplicationButtonsViewController: KeyRecorderDelegate {
     /// The recorder closed, however: what it caught is added now.
     func onRecordingStopped(_ recorder: KeyRecorder, didRecord: Bool) {
         isRecorderOpen = false
+        let action = pendingAction
+        let added = pendingActionAdded
+        pendingAction = nil
+        pendingActionAdded = nil
         guard didRecord, let trigger = pendingRecorded else { return }
         pendingRecorded = nil
-        addOwnBinding(for: trigger)
+        addOwnBinding(for: trigger, action: action)
+        added?()
     }
 }

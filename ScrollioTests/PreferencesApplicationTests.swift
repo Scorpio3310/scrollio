@@ -1027,20 +1027,21 @@ final class PreferencesApplicationTests: XCTestCase {
         ButtonUtils.shared.invalidateCache()
     }
 
-    /// Without a button or key that opens the ring, the switch's line says so in both
-    /// positions instead of promising a ring, and where to set one up.
+    /// Without a button or key that opens the ring, the first row says so in both
+    /// positions of the switch, with "Set Up…" beside it.
     func testTheRingPartSaysWhenNothingOpensTheRing() throws {
         setGeneralRing(.default, opensWithAButton: false)
         Options.shared.application.applications = Self.makeStore([application(Self.calculator, inherit: true)])
         let controller = makeController()
         controller.openApplication(withID: Self.calculator, part: .ring)
         let page = try XCTUnwrap(controller.detailController)
-        let nothing = "Nothing opens the ring yet: set up a button or key for it in the Shortcut Ring pane."
-        XCTAssertEqual(page.generalRingRow.explanation, nothing)
+        XCTAssertEqual(page.ringPart.triggerRow.explanation, "None in Calculator")
+        XCTAssertEqual(page.ringPart.triggerButton.title, "Set Up…")
         page.generalRingSwitch.state = .off
         send(page.generalRingSwitch)
         XCTAssertNotNil(page.ringController)
-        XCTAssertEqual(page.generalRingRow.explanation, nothing)
+        XCTAssertEqual(page.ringPart.triggerRow.explanation, "None in Calculator")
+        XCTAssertEqual(page.generalRingRow.explanation, "While Calculator is in front, the ring below opens.")
     }
 
     /// While "Change scrolling only in these apps" is on, a muted line under the app's box
@@ -1080,8 +1081,8 @@ final class PreferencesApplicationTests: XCTestCase {
     }
 
     /// The page's "Shortcut Ring" part. While "Use the general ring" is on (as for every
-    /// app until the user turns it off) there is the switch and nothing else: no drawing,
-    /// no rows, and nothing new is stored for the app.
+    /// app until the user turns it off) there is what opens the ring and the switch, and
+    /// nothing else: no drawing, no rows, and nothing new is stored for the app.
     func testTheShortcutRingSectionHasOnlyItsSwitchWhileTheAppUsesTheGeneralRing() throws {
         setGeneralRing(.default)
         let calculator = application(Self.calculator, inherit: true)
@@ -1091,7 +1092,7 @@ final class PreferencesApplicationTests: XCTestCase {
         let page = try XCTUnwrap(controller.detailController)
 
         XCTAssertNil(page.ringSection.titleLabel, "the part's segment names it")
-        XCTAssertEqual(page.ringSection.box.visibleRows.count, 1)
+        XCTAssertEqual(page.ringSection.box.visibleRows, [page.ringPart.triggerRow, page.generalRingRow])
         XCTAssertEqual(page.generalRingRow.title, "Use the general ring")
         XCTAssertEqual(page.generalRingSwitch.state, .on)
         XCTAssertEqual(page.generalRingSwitch.controlSize, PreferencesGroupedForm.switchControlSize)

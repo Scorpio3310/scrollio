@@ -220,8 +220,16 @@ final class ApplicationDetailViewController: NSViewController {
                 buttons.onGestureSettingsRequested = { [weak self] in self?.show(.gestures) }
                 buttons.onThumbWheelSettingsRequested = { [weak self] in self?.showThumbWheelSettings() }
             }
-            (controller as? ApplicationRingPartViewController)?.partShowing = ringPartShowing
-            (controller as? ApplicationGesturesPartViewController)?.partShowing = gesturesPartShowing
+            if let ring = controller as? ApplicationRingPartViewController {
+                ring.partShowing = ringPartShowing
+                ring.showApplicationButtons = { [weak self] id in self?.showButtons(selecting: id) }
+                ring.setUpButton = { [weak self] anchor in self?.setUpButton(SystemShortcut.shortcutRing, from: anchor) }
+            }
+            if let gestures = controller as? ApplicationGesturesPartViewController {
+                gestures.partShowing = gesturesPartShowing
+                gestures.showApplicationButtons = { [weak self] id in self?.showButtons(selecting: id) }
+                gestures.setUpButton = { [weak self] anchor in self?.setUpButton(SystemShortcut.mouseGestureNavigation, from: anchor) }
+            }
             addChild(controller)
             controller.view.translatesAutoresizingMaskIntoConstraints = false
             partControllers[part.id] = controller
@@ -278,6 +286,23 @@ final class ApplicationDetailViewController: NSViewController {
         scrolling.syncViewWithOptions()
         guard scrolling.showsSettings else { return }
         scrolling.scrollingController.revealThumbWheel()
+    }
+
+    /// "Show Buttons" of the Gestures and Shortcut Ring parts' first rows: the Buttons part,
+    /// with the row of the app's own binding `id` selected.
+    func showButtons(selecting id: UUID) {
+        show(.buttons)
+        buttonsPart?.list.select(AnyHashable(id))
+    }
+
+    /// "Set Up…" of the Gestures and Shortcut Ring parts' first rows: the Buttons part's
+    /// recorder, at `anchor`, takes a button (a mouse button for the gestures) or a key
+    /// that does `action` only while the app is in front; the part stays, and its row says
+    /// what was recorded at once.
+    func setUpButton(_ action: SystemShortcut.Shortcut, from anchor: NSView) {
+        buttonsPart?.beginAddingBinding(action: action, from: anchor) { [weak self] in
+            self?.shownController?.syncViewWithOptions()
+        }
     }
 
     /// Shows `part` in place of the one shown, remembers it for every app's page, and tells
@@ -358,7 +383,8 @@ final class ApplicationDetailViewController: NSViewController {
         return Options.shared.application.allowlist
     }
 
-    /// What opens the Shortcut Ring while an app is in front, for the line of its switch.
+    /// What opens the Shortcut Ring while an app is in front: whether the part folds the
+    /// app's own ring.
     enum RingTrigger: Equatable {
         /// A button or key opens it there (Buttons', or one of the app's own).
         case opens
@@ -386,29 +412,16 @@ final class ApplicationDetailViewController: NSViewController {
 
     /// "While Safari is in front, the general ring opens." / "While Safari is in front,
     /// the ring below opens." (The app in front decides, not the one under the pointer.)
-    /// While no button or key opens the ring with the app in front, either way: that
-    /// nothing opens it anywhere yet and where to set that up, or that nothing opens it
-    /// with this app in front (where that is set: its Buttons part).
-    static func generalRingExplanation(on: Bool, name: String, opens: RingTrigger = .opens) -> String {
-        switch opens {
-        case .noTrigger:
-            return NSLocalizedString("apps-detail-ring-no-trigger", comment: "")
-        case .replacedHere:
-            return String(format: NSLocalizedString("apps-detail-ring-replaced", comment: ""), name)
-        case .opens:
-            let format = NSLocalizedString(on ? "apps-detail-ring-general-on" : "apps-detail-ring-general-off", comment: "")
-            return String(format: format, name)
-        }
+    /// What opens it there is the part's first row ("Button or key").
+    static func generalRingExplanation(on: Bool, name: String) -> String {
+        let format = NSLocalizedString(on ? "apps-detail-ring-general-on" : "apps-detail-ring-general-off", comment: "")
+        return String(format: format, name)
     }
 
     /// "While Safari is in front, the general gestures run." / "While Safari is in front,
     /// the gestures below run." (The app in front decides, not the one under the pointer.)
-    /// While no button runs Gesture Navigation with the app in front (`hasButton` false),
-    /// either way: that none does there, and where that is set (its Buttons part).
-    static func generalGesturesExplanation(on: Bool, name: String, hasButton: Bool = true) -> String {
-        guard hasButton else {
-            return String(format: NSLocalizedString("apps-detail-gestures-no-button", comment: ""), name)
-        }
+    /// The button that runs them there is the part's first row ("Button to hold").
+    static func generalGesturesExplanation(on: Bool, name: String) -> String {
         let format = NSLocalizedString(on ? "apps-detail-gestures-general-on" : "apps-detail-gestures-general-off", comment: "")
         return String(format: format, name)
     }

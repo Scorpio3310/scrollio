@@ -123,8 +123,12 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   that is down keeps what it had until it is up). In "Follow the hand" (the app's own
   mode) Left and Right on the app's page say so, as in the pane. The button to hold is
   the Buttons pane's, unless the app's Buttons part gives it another action or gives
-  another button Gesture Navigation: the app's Gestures part then names the button to
-  hold there, or says that none runs the gestures. While only an app's own button runs
+  another button Gesture Navigation. The app's Gestures part begins with "Button to
+  hold", which says which button runs the gestures there ("Gesture button, as
+  everywhere", "Back button, only in Figma", "None in Figma") and has a button that goes
+  there: "Show in Buttons" (the Buttons pane, that row selected), "Show Buttons" (the
+  app's Buttons part, that row selected) or "Set Up…", which records a mouse button
+  right there and gives it Gesture Navigation in that app only. While only an app's own button runs
   Gesture Navigation, the Gestures pane says in which apps and with which button, and
   its "Change" shows that app's Buttons part. "Reset to Defaults" under the app's
   gestures puts them back to a copy of the pane's as they are then (all of them, the
@@ -201,8 +205,11 @@ the eight places hold.
   front, the general ring opens. The ring that opened stays until it closes, with its
   freeze switch. What opens the ring is set in the Buttons pane, or for one app in its
   Buttons part: a button or key can open the ring only in that app, or do something else
-  there; while nothing opens the ring with the app in front, the app's page says so, and
-  "Shortcuts" folds the app's ring away (a click on it opens it). "Reset to Defaults"
+  there. The app's Shortcut Ring part begins with "Button or key", which says what opens
+  the ring there ("Thumb panel, as everywhere", "Back button, only in Figma", "None in
+  Figma") with "Show in Buttons", "Show Buttons" or "Set Up…" beside it, as the Gestures
+  part's "Button to hold" (a key works here too); while nothing opens the ring with the
+  app in front, "Shortcuts" folds the app's ring away (a click on it opens it). "Reset to Defaults"
   under the app's ring puts it back where it started (its suggested shortcuts, see
   below, else a copy of the general ring as it is then, and the general ring's freeze
   switch as it is then); the switch stays off, and Edit › Undo takes it back. Turn the

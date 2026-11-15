@@ -8512,18 +8512,6 @@
         }
       }
     },
-    "apps-detail-ring-no-trigger": {
-      "comment": "App page, Shortcut Ring part: explanation of \"Use the general ring\" while no button or key opens the ring",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nothing opens the ring yet: set up a button or key for it in the Shortcut Ring pane."
-          }
-        }
-      }
-    },
     "apps-detail-allowlist-note": {
       "comment": "App page: muted line under the app's box while \"Change scrolling only in these apps\" is on",
       "extractionState": "manual",
@@ -8568,42 +8556,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Gestures in %@: Invert left and right is on"
-          }
-        }
-      }
-    },
-    "apps-detail-ring-replaced": {
-      "comment": "App page, Shortcut Ring part: explanation of \"Use the general ring\" while what opens the ring elsewhere does something else in this app (its own buttons); %@ is the app's name",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "While %@ is in front, nothing opens the ring: see its Buttons part."
-          }
-        }
-      }
-    },
-    "apps-detail-gestures-no-button": {
-      "comment": "App page, Gestures part: explanation of \"Use the general gestures\", in both states, while no button runs Gesture Navigation with this app in front (whatever Buttons has); %@ is the app's name",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "While %@ is in front, no button runs the gestures: see its Buttons part."
-          }
-        }
-      }
-    },
-    "apps-detail-gestures-button": {
-      "comment": "App page, Gestures part: line under the switch while the button that runs Gesture Navigation in this app is not the one of Buttons; %1$@ is the app's name, %2$@ the buttons, as the Buttons pane names them",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Button to hold while %1$@ is in front: %2$@."
           }
         }
       }
@@ -10272,6 +10224,78 @@
           "stringUnit": {
             "state": "translated",
             "value": "Thumb Wheel Settings…"
+          }
+        }
+      }
+    },
+    "apps-trigger-everywhere": {
+      "comment": "An app's Gestures and Shortcut Ring parts: the first row's line while what runs the gestures (opens the ring) with the app in front is the Buttons pane's; %@ is the button or key",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, as everywhere"
+          }
+        }
+      }
+    },
+    "apps-trigger-only-here": {
+      "comment": "An app's Gestures and Shortcut Ring parts: the first row's line while a button of the app's own does it; %1$@ the button or key, %2$@ the app",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, only in %2$@"
+          }
+        }
+      }
+    },
+    "apps-trigger-mixed": {
+      "comment": "An app's Gestures and Shortcut Ring parts: the first row's line while both a button of the Buttons pane and one of the app's own do it; %1$@ Buttons', %2$@ the app's own, %3$@ the app",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ as everywhere, %2$@ only in %3$@"
+          }
+        }
+      }
+    },
+    "apps-trigger-none": {
+      "comment": "An app's Gestures and Shortcut Ring parts: the first row's line while nothing runs the gestures (opens the ring) with the app in front; %@ the app",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None in %@"
+          }
+        }
+      }
+    },
+    "apps-trigger-show-in-buttons": {
+      "comment": "An app's Gestures and Shortcut Ring parts: the first row's button while the Buttons pane's button does it; shows the Buttons pane with that row selected",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in Buttons"
+          }
+        }
+      }
+    },
+    "apps-trigger-show-buttons": {
+      "comment": "An app's Gestures and Shortcut Ring parts: the first row's button while a row of the app's own does it (or took it); shows the app's Buttons part with that row selected",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Buttons"
           }
         }
       }

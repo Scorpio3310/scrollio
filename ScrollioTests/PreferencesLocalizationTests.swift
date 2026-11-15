@@ -155,8 +155,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-gestures-general", "apps-detail-gestures-general-on", "apps-detail-gestures-general-off",
         "apps-buttons-empty", "apps-buttons-list-label", "apps-buttons-note", "apps-buttons-note-empty", "apps-buttons-everywhere",
         "apps-buttons-add-mouse", "apps-buttons-add-record", "apps-buttons-add-general", "apps-buttons-add-general-item",
-        "apps-detail-ring-no-trigger", "apps-detail-allowlist-note",
-        "apps-detail-ring-replaced", "apps-detail-gestures-no-button", "apps-detail-gestures-button",
+        "apps-detail-allowlist-note",
         "apps-buttons-undo-remove-thumb-wheel",
         "apps-trigger-only-in", "apps-buttons-note-thumb-wheel",
         "apps-detail-ring-suggested", "apps-detail-ring-suggested-in-use",
@@ -168,6 +167,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-trigger-own-ring", "apps-trigger-own-rings", "apps-trigger-own-gestures", "apps-trigger-own-gestures-each",
         "apps-detail-ring-suggested-empty-on-purpose-one", "apps-detail-ring-suggested-empty-on-purpose-other",
         "apps-trigger-only-in-each", "apps-trigger-app-with", "apps-undo-reset-buttons",
+        "apps-trigger-everywhere", "apps-trigger-only-here", "apps-trigger-mixed", "apps-trigger-none",
+        "apps-trigger-show-in-buttons", "apps-trigger-show-buttons",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -339,9 +340,10 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-detail-ring-general-off": "@",
         "apps-detail-gestures-general-on": "@",
         "apps-detail-gestures-general-off": "@",
-        "apps-detail-ring-replaced": "@",
-        "apps-detail-gestures-no-button": "@",
-        "apps-detail-gestures-button": "@@",
+        "apps-trigger-everywhere": "@",
+        "apps-trigger-only-here": "@@",
+        "apps-trigger-mixed": "@@@",
+        "apps-trigger-none": "@",
         "apps-trigger-only-in": "@@",
         "apps-trigger-own-ring": "@",
         "apps-trigger-own-rings": "@",

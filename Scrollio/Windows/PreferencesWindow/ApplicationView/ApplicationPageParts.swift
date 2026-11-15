@@ -321,8 +321,10 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 /// "Use the general ring" and, while it is off, the app's own ring: the drawing, the freeze
 /// switch and the eight rows of the Shortcut Ring pane (RingPreferencesViewController with
 /// this app), which open while the app is in front. What opens the ring is a binding of
-/// Buttons, or of the app's Buttons part (the switch's line says when nothing opens it with
-/// the app in front).
+/// Buttons, or of the app's Buttons part: the first row, "Button or key", says which one
+/// opens it with the app in front ("Thumb panel, as everywhere", "None in Figma",
+/// `ApplicationTriggerRow`), and its button goes there ("Show in Buttons", "Show Buttons")
+/// or, with none, records one that opens it only in this app ("Set Up…").
 ///
 /// For an app with suggested shortcuts (`ShortcutRingSuggestions`) the ring the switch
 /// makes starts with them, and while the app's own ring is in use a second row says so
@@ -347,10 +349,21 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     enum Identifier {
         static let generalRing = NSUserInterfaceItemIdentifier("apps-detail-general-ring")
         static let reset = NSUserInterfaceItemIdentifier("apps-detail-ring-reset")
+        static let triggerButton = NSUserInterfaceItemIdentifier("apps-detail-ring-trigger")
     }
 
     let application: Application
     var onHeightChange: (() -> Void)?
+    /// "Show in Buttons" of "Button or key": the Buttons pane, the row of what opens the
+    /// ring selected. Tests replace it.
+    var openButtonsPane: (() -> Void)?
+    /// "Show Buttons" of "Button or key": the app's Buttons part, the row with this id
+    /// selected (the page sets it).
+    var showApplicationButtons: ((UUID) -> Void)?
+    /// "Set Up…" of "Button or key": records a button or key at the push button that opens
+    /// the ring only while the app is in front (the page sets it: the app's Buttons part
+    /// records it).
+    var setUpButton: ((NSView) -> Void)?
     /// Takes Undo and Redo of "Reset to Defaults"; the window's when nil.
     var paneUndoManager: UndoManager?
     /// The Shortcut Ring part that shows an app's entry now, if any (the pane's answer).
@@ -364,6 +377,12 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
 
     private(set) var ringSection: PreferencesGroupSection!
     private(set) var generalRingRow: PreferencesSwitchRow!
+    /// "Button or key", the first row: what opens the ring with the app in front, and a
+    /// push button that goes there.
+    private(set) var triggerRow: PreferencesGroupRow!
+    private(set) var triggerButton: NSButton!
+    /// What the row says now, and where its button leads.
+    private(set) var shownTrigger: ApplicationTriggerRow?
     /// "Suggested shortcuts" and where the ring started: shown while the app has a
     /// suggestion and its own ring is in use.
     private(set) var suggestionRow: PreferencesGroupRow!
@@ -414,10 +433,15 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         )
         generalRing.toggle.identifier = Identifier.generalRing
         // Room for the longer of the two lines the switch alternates, so switching never
-        // moves what is below; a line on what opens the ring (the same in both states)
-        // takes the room it needs, and the page measures again.
+        // moves what is below.
         generalRing.reservedExplanations = [true, false].map { ApplicationDetailViewController.generalRingExplanation(on: $0, name: name) }
         generalRingRow = generalRing
+        let trigger = PreferencesGroupedForm.makePushButton(
+            title: NSLocalizedString("ring-trigger-set-up", comment: ""), target: self, action: #selector(triggerButtonClicked(_:))
+        )
+        trigger.identifier = Identifier.triggerButton
+        triggerButton = trigger
+        triggerRow = PreferencesGroupRow(title: NSLocalizedString("ring-trigger", comment: ""), explanation: "", accessory: trigger)
         let suggested = PreferencesGroupRow(
             title: NSLocalizedString("apps-detail-ring-suggested", comment: ""),
             explanation: nil
@@ -439,7 +463,8 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         // (No title: the part's segment names it.)
         let section = PreferencesGroupSection(
             width: PreferencesGroupedForm.boxWidth(paneWidth: ApplicationDetailViewController.paneWidth),
-            rows: [generalRing, suggested]
+            // What opens the ring first, as in the pane.
+            rows: [triggerRow, generalRing, suggested]
         )
         ringSection = section
         root.addSubview(section)
@@ -469,15 +494,21 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         guard isViewLoaded else { return false }
         let usesGeneralRing = application.usesGeneralRing
         generalRingRow.isOn = usesGeneralRing
-        // (What opens the ring is a binding of Buttons or of the app's Buttons part, and
-        // this part has no row for it: while nothing opens it with the app in front, the
-        // line says so instead of promising a ring.)
         let opens = ApplicationDetailViewController.RingTrigger.of(application, general: Options.shared.buttons.binding)
-        let line = ApplicationDetailViewController.generalRingExplanation(
-            on: usesGeneralRing, name: application.getName(), opens: opens
-        )
+        let line = ApplicationDetailViewController.generalRingExplanation(on: usesGeneralRing, name: application.getName())
         var remeasures = generalRingRow.explanation != line && view.superview != nil
         generalRingRow.explanation = line
+        // (What opens it here is a binding of Buttons or of the app's Buttons part.)
+        let trigger = ApplicationTriggerRow.make(.shortcutRing, application: application, general: Options.shared.buttons.binding)
+        shownTrigger = trigger
+        let title = NSLocalizedString(trigger.destination == .setUp ? "ring-trigger-set-up" : trigger.buttonTitleKey, comment: "")
+        if triggerButton.title != title {
+            triggerButton.title = title
+        }
+        if triggerRow.explanation != trigger.text {
+            remeasures = remeasures || view.superview != nil
+            triggerRow.explanation = trigger.text
+        }
         if showOwnRing(!usesGeneralRing, folds: opens != .opens) {
             remeasures = remeasures || view.superview != nil
         }
@@ -721,6 +752,28 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         ])
         ownRingBody = body
         return body
+    }
+
+    /// The push button of "Button or key": where its line leads (what an Undo keeps up to
+    /// date is what the row shows).
+    @objc func triggerButtonClicked(_ sender: NSButton) {
+        let trigger = shownTrigger
+            ?? ApplicationTriggerRow.make(.shortcutRing, application: application, general: Options.shared.buttons.binding)
+        switch trigger.destination {
+        case .setUp:
+            setUpButton?(sender)
+        case .applicationButtons(let id):
+            showApplicationButtons?(id)
+        case .buttonsPane:
+            if let openButtonsPane {
+                openButtonsPane()
+                return
+            }
+            guard let split = PreferencesButtonsViewController.splitViewController(of: self),
+                  split.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons),
+                  let buttons = split.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController else { return }
+            buttons.selectRingTrigger()
+        }
     }
 
     /// On: the ring of the Shortcut Ring pane opens while the app is in front; the app's

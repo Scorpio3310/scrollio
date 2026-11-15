@@ -493,11 +493,11 @@ final class ApplicationPageResetTests: XCTestCase {
         let page = try open(.buttons, in: pane, undo: undo)
         click(page.buttonsPart.resetToDefaultsButton, undo: undo)
         page.show(.ring)
-        let generalRing = "While Calculator is in front, the general ring opens."
-        XCTAssertEqual(page.generalRingRow.explanation, generalRing)
+        let five = ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 5, modifiers: 0, deviceFilter: nil))
+        XCTAssertEqual(page.ringPart.triggerRow.explanation, "\(five), as everywhere")
         undo.undo()
-        XCTAssertEqual(page.generalRingRow.explanation, "While Calculator is in front, nothing opens the ring: see its Buttons part.")
+        XCTAssertEqual(page.ringPart.triggerRow.explanation, "None in Calculator")
         undo.redo()
-        XCTAssertEqual(page.generalRingRow.explanation, generalRing)
+        XCTAssertEqual(page.ringPart.triggerRow.explanation, "\(five), as everywhere")
     }
 }
