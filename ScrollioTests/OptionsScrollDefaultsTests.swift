@@ -169,9 +169,12 @@ final class OptionsScrollDefaultsTests: XCTestCase {
         XCTAssertEqual(naturalScrollingQuestions, 0)
     }
 
-    /// Under XCTest the Mac's own setting is never read: the answer is macOS's default.
+    /// Under XCTest the Mac's own setting is never read: the answer is macOS's default, also
+    /// from a store that says Natural scrolling is off (read, it would answer off).
     func testTheTestsDoNotReadTheMacsSetting() {
         XCTAssertTrue(Self.liveNaturalScrollingIsOn())
+        defaults.set(false, forKey: "com.apple.swipescrolldirection")
+        XCTAssertTrue(Options.naturalScrollingIsOn(in: defaults))
     }
 
     // MARK: - Migration: the old Duration lock of "Trackpad-style events"

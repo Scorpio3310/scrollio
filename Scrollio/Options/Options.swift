@@ -376,10 +376,16 @@ extension Options {
     /// Mac's setting is not read: on, macOS's own default, so a test store starts as
     /// before; a test that needs the other answer replaces this.
     static var naturalScrollingIsOn: () -> Bool = {
+        return naturalScrollingIsOn(in: .standard)
+    }
+
+    /// The reader behind `naturalScrollingIsOn`, from `defaults` (the app's: macOS's
+    /// global setting shows through it). Under XCTest it answers on without reading.
+    static func naturalScrollingIsOn(in defaults: UserDefaults) -> Bool {
         guard !AppRuntime.isRunningXCTest else { return true }
         // The key the dock swipe of "Follow the hand" reads too; absent means on (the
         // default since OS X 10.7).
-        return (UserDefaults.standard.object(forKey: "com.apple.swipescrolldirection") as? NSNumber)?.boolValue ?? true
+        return (defaults.object(forKey: "com.apple.swipescrolldirection") as? NSNumber)?.boolValue ?? true
     }
 
     /// The wheel's first direction on a fresh installation: the classic direction for this
