@@ -1879,7 +1879,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(global.thumbWheelNote.stringValue, "For the sideways wheel: an MX Master's thumb wheel, or a wheel that tilts.")
         let name = try XCTUnwrap(perApp.currentTargetApplication).getName()
         XCTAssertEqual(perApp.thumbWheelNote.stringValue,
-                       "The action is also set in \(name) › Buttons. With Same as Scrolling, speed and direction follow Scrolling.")
+                       "The action is also set in \(name) › Buttons. With Same as Scrolling, speed, direction and Follow the wheel follow Scrolling.")
         XCTAssertEqual(perApp.thumbWheelSection.accessibilityHelp(), perApp.thumbWheelNote.stringValue)
         global.view.layoutSubtreeIfNeeded()
         perApp.view.layoutSubtreeIfNeeded()

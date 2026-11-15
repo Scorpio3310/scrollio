@@ -292,6 +292,10 @@ enum ScrollSystemLog {
         var stepsNext = 0
         var stepsPrevious = 0
         var stepsWaited = 0
+        /// Of the steps that ran, those whose action sent nothing: the executor refused it
+        /// (`ThumbWheelActionPerformer.perform`: "Move left a space" or "Move right a
+        /// space" switched off in System Settings). No desktop moved for them.
+        var stepsSentNothing = 0
         /// Steps the pacer dropped (too many waiting, or waiting in the old direction when the
         /// wheel turned back, or when the roll or the function ended).
         var droppedSteps = 0
@@ -383,11 +387,13 @@ enum ScrollSystemLog {
             ticksDropped += tick.dropped
         }
 
-        /// Steps ran (positive toward "next"); `waited`: in the pacer.
-        mutating func stepsRan(_ steps: Int, waited: Bool = false) {
+        /// Steps ran (positive toward "next"); `waited`: in the pacer; `sentNothing`: how
+        /// many of them the executor refused.
+        mutating func stepsRan(_ steps: Int, waited: Bool = false, sentNothing: Int = 0) {
             pendingSteps = max(0, pendingSteps - abs(steps))
             if waited { stepsWaited += abs(steps) }
             if steps > 0 { stepsNext += steps } else { stepsPrevious -= steps }
+            stepsSentNothing += min(abs(steps), max(0, sentNothing))
         }
 
         /// A stroke of Follow the wheel ended (it was pending).
@@ -412,6 +418,11 @@ enum ScrollSystemLog {
         /// Steps or swipes are still to come: the line waits for them.
         var isWaiting: Bool {
             return pendingSteps > 0 || pendingSwipes > 0
+        }
+
+        /// Follow the wheel did something in the roll: a stroke or a swipe began.
+        var hasFollowed: Bool {
+            return swipeTally.total > 0 || strokesWaited > 0 || pendingSwipes > 0
         }
 
         /// Steps the pacer dropped; they were pending.
@@ -441,11 +452,16 @@ enum ScrollSystemLog {
     /// One line per roll, for example
     /// `thumb wheel: 14 events in 620 ms (longest gap 85 ms), lines -9, fixed -9.40 (largest 1.25), points -212 (largest 31), 1 direction change, not continuous, volume x3.00, travel 56.8: 7 steps next, 6 waited, 15 dropped; ticks held 1, dropped 1`
     /// ("waited": steps the pacer held back, then ran; "dropped": steps it did not run; each
-    /// only when there are any; "volume (the app's own) x3.00" when the function was the app
+    /// only when there are any; "1 step next, sent nothing" when the executor refused the
+    /// steps' action, "3 steps next, 1 sent nothing" when some of them: a Spaces shortcut
+    /// switched off in System Settings; "volume (the app's own) x3.00" when the function was the app
     /// in front's own; "ticks": what the stray-tick filter held, and dropped, of a roll that
     /// runs a function). While Switch Desktops follows the wheel the end lists the swipes
     /// instead of steps (`followMessage`), for example
-    /// `switch desktops, following x0.70, travel 29.4: swipes 1.00 chained +240 ms, 0.62 ended no change; ticks held 0, dropped 0`.
+    /// `switch desktops, following x0.70, travel 29.4: swipes 1.00 chained +240 ms, 0.62 ended no change; ticks held 0, dropped 0`;
+    /// where no swipe could be made and the desktops went in steps, the steps
+    /// (`switch desktops, following x0.70, travel 4.9: 1 step next`), after the swipes if the
+    /// roll had both.
     static func thumbWheelMessage(for roll: ThumbWheelRoll) -> String {
         let continuity: String
         if roll.continuousEvents == 0 {
@@ -466,10 +482,30 @@ enum ScrollSystemLog {
         case (let next, let previous):
             steps = "\(next) \(next == 1 ? "step" : "steps") next, \(previous) previous"
         }
+        let ran = roll.stepsNext + roll.stepsPrevious
+        let sentNothing: String
+        if roll.stepsSentNothing == 0 {
+            sentNothing = ""
+        } else if roll.stepsSentNothing >= ran {
+            sentNothing = ", sent nothing"
+        } else {
+            sentNothing = ", \(roll.stepsSentNothing) sent nothing"
+        }
         let waited = roll.stepsWaited > 0 ? ", \(roll.stepsWaited) waited" : ""
         let dropped = roll.droppedSteps > 0 ? ", \(roll.droppedSteps) dropped" : ""
         let ticks = roll.function == .scroll ? "" : "; ticks held \(roll.ticksHeld), dropped \(roll.ticksDropped)"
-        let outcome = (roll.follows ? followMessage(for: roll) : steps + waited + dropped) + ticks
+        let stepsOutcome = steps + sentNothing + waited + dropped
+        let outcome: String
+        if !roll.follows {
+            outcome = stepsOutcome
+        } else if ran + roll.droppedSteps == 0 {
+            outcome = followMessage(for: roll)
+        } else if roll.hasFollowed {
+            outcome = followMessage(for: roll) + ", " + stepsOutcome
+        } else {
+            // Follow the wheel is on, but no swipe could be made here: the desktops went in steps.
+            outcome = stepsOutcome
+        }
         return String(
             format: "thumb wheel: %ld %@ in %.0f ms (longest gap %.0f ms), lines %lld, fixed %.2f (largest %.2f), points %.0f (largest %.0f), %ld %@, %@, %@ x%.2f%@, travel %.1f: %@",
             roll.events, roll.events == 1 ? "event" : "events",
@@ -482,7 +518,7 @@ enum ScrollSystemLog {
                 + (roll.follows ? ", following" : ""),
             roll.speed, roll.swapsDirection ? " swapped" : "",
             roll.travel,
-            outcome
+            outcome + ticks
         )
     }
 
@@ -491,7 +527,9 @@ enum ScrollSystemLog {
     /// time to the Space change ("late" when it came after the gate's timeout), "no change",
     /// or "stopped" when Scrollio stopped first; past `ThumbWheelRoll.listedSwipes` they are
     /// summed. For example `swipes 1.00 chained +240 ms, 0.62 ended no change`, `swipes 0.12
-    /// back`, `+3 more (2 chained, 1 full stop)`, `1 stroke waited for another swipe`.
+    /// back`, `+3 more (2 chained, 1 full stop)`, `1 stroke waited for another swipe`. A line
+    /// written before every stroke and swipe of the roll ended (only when more rolls wait
+    /// than the engine keeps) says how many had not: `1 not ended yet`, never "no swipe".
     static func followMessage(for roll: ThumbWheelRoll) -> String {
         var parts: [String] = []
         if !roll.swipes.isEmpty {
@@ -502,6 +540,9 @@ enum ScrollSystemLog {
         }
         if roll.strokesWaited > 0 {
             parts.append("\(roll.strokesWaited) \(roll.strokesWaited == 1 ? "stroke" : "strokes") waited for another swipe")
+        }
+        if roll.pendingSwipes > 0 {
+            parts.append("\(roll.pendingSwipes) not ended yet")
         }
         if parts.isEmpty { parts.append("no swipe") }
         return parts.joined(separator: ", ")

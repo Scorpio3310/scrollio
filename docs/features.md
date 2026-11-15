@@ -367,14 +367,24 @@ the Buttons pane. They apply to every app, unless an app has settings of its own
 wheel.
 
 - Action: Scroll Sideways (the default), Zoom, Switch Tabs, Switch Desktops, Back and
-  Forward, or Volume.
+  Forward, or Volume. What a step sends: Zoom ⌘+ and ⌘− (the keys that type "+" and "−"
+  on your keyboard layout), Switch Tabs ⌃⇥ and ⌃⇧⇥, Back and Forward ⌘← and ⌘→, Volume
+  the volume keys of an Apple keyboard. Switch Desktops in steps sends the keys that
+  "Move left a space" and "Move right a space" have in System Settings › Keyboard ›
+  Keyboard Shortcuts › Mission Control, so the two must be switched on there: with one
+  off nothing is sent that way, and a note says where to switch it on. Follow the wheel
+  does not need them.
 - Reverse direction, one switch for each action: the box shows the chosen action's, and
   each action keeps its own (Volume can be turned around without Switch Desktops). The
   one "Swap direction" of 1.0.5 and before gives every action its value; 1.0.5 reads the
   chosen action's.
 - Switch Desktops goes in steps: the first desktop after a short turn, each further one
   after a little more, so one long roll moves several. At most one desktop comes each
-  quarter of a second, and after the hand stops at most one more.
+  quarter of a second, and after the hand stops at most one more. Taking the wheel again
+  within 0.6 s goes on with the same roll: what the stroke before had turned still counts.
+- Back and Forward: one stroke is one page, a hard flick too (at speed 1, up to 18
+  events of the wheel in one go); a second stroke after a pause of a quarter of a second
+  is a second page.
 - Follow the wheel, for Switch Desktops (off by default): instead of steps the desktops
   slide with the wheel like a trackpad swipe, as Gestures' "Follow the hand". One swipe
   goes one desktop at most; turned on past a full desktop it ends there, and once macOS
@@ -389,10 +399,20 @@ wheel.
   Where macOS cannot be sent a swipe, the desktops go in steps.
 - For every action but Scroll Sideways, a small tick of the wheel, or a pair of them
   (where the thumb lets go of it or takes it again), does nothing on its own: the ticks
-  that way count once they make half a line or a third comes, one the other way drops
-  them. A deliberate turn back acts a tick or two later.
+  that way count once they make half a line or a third comes, within 0.45 s of the
+  first; one the other way drops them, and so does that time. So ticks of a tenth of a
+  line that come more than about a quarter of a second apart do nothing: a turn that
+  slow has to be a little quicker to count. A deliberate turn back acts a tick or two
+  later. Small ticks that count this way are one step at most, at any speed.
 - Speed: how far a sideways scroll goes, how little of a turn each step needs, or how far
   a turn slides the desktop. It is written as every speed in Settings: "1.0×", "1.25×".
+  There is one Speed for the wheel, whatever its action
+  (Reverse direction is each action's own): changing the action keeps it.
+- With Shift held a turn of the thumb wheel is not the thumb wheel's: macOS sends the
+  main wheel's turns sideways then, the two cannot be told apart, and the turn scrolls
+  sideways as the main wheel does with Shift, whatever the action.
+- While Scrollio is paused, or has no Accessibility access, the thumb wheel does what
+  the mouse does by itself: it scrolls sideways.
 - The Thumb wheel row's menu in Buttons ends with "Show in Scrolling", which opens
   Scrolling › Thumb wheel (on an app's Buttons part "Show in Safari › Scrolling": the app's
   Scrolling part).

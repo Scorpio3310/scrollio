@@ -400,6 +400,13 @@ if [ -e "$BUILT/Contents/Resources/DGCharts_DGCharts.bundle" ] || grep -a -q -F 
     fail "the release app contains DGCharts: is EXCLUDED_SOURCE_FILE_NAMES = DGCharts* still set for Release, and is every use of DGCharts inside #if DEBUG?"
 fi
 
+# The thumb wheel's trace line (every event of a roll, written to the scroll log after the
+# roll's own line) is in every build only while the wheel is being tuned on the owner's
+# Release builds. No release carries it: the words are looked for in the binary.
+if grep -a -q -F "thumb wheel trace:" "$BINARY"; then
+    fail "the release app still writes the \"thumb wheel trace:\" log line (every event of a thumb wheel roll), which is in every build only while the wheel is tuned: cut it, or put it inside #if DEBUG, in ${APP_NAME}/ScrollCore/ThumbWheelEngine.swift (write(_:trace:): the writeTrace call) and ${APP_NAME}/ScrollCore/ScrollSystemLog.swift (thumbWheelTraceMessage, which holds the words), then commit and build again"
+fi
+
 ACKNOWLEDGEMENTS="$BUILT/Contents/Resources/Acknowledgements.txt"
 [ -s "$ACKNOWLEDGEMENTS" ] || fail "the app does not carry Acknowledgements.txt (Scrollio/Acknowledgements.txt)"
 [ -s "$REPO/LICENSE" ] || fail "no LICENSE in the repository"

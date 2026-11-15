@@ -84,6 +84,10 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](../SECU
     (to press the right key for shortcuts such as ⌘A, and to name keys) and the macOS
     setting for natural scrolling (for "Follow the hand", and once on a new
     installation for the wheel's first direction);
+  - for a swipe of the desktops ("Follow the hand", and the thumb wheel's "Follow the
+    wheel"): the window server's list of the desktops (Spaces) of the display under the
+    pointer, for how many there are, when a swipe begins; "Follow the wheel" also hears
+    from macOS that the desktop in use changed, to begin the next swipe;
   - which app is under the pointer or in front, for the per-app settings and "Smooth
     Scrolling in …". With "Trackpad-style scrolling (Experimental)" on, for a wheel scroll in an
     app that gets the one-touch form, it reads the kind of the element under the pointer

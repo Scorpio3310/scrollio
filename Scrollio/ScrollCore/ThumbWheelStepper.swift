@@ -46,6 +46,10 @@ enum ThumbWheelTuning {
     /// At most this many steps from one event; the travel of further steps is dropped, not
     /// carried, so a fast turn at speed 3 does not come out in bursts.
     static let maxStepsPerEvent = 2
+    /// ...and this many from a batch the stray-tick filter confirmed (held ticks and the
+    /// event that confirmed them): at speed 3 three ticks of 0.10 line were two desktops,
+    /// the second a quarter of a second after the thumb had stopped.
+    static let maxStepsPerConfirmedBatch = 1
 
     /// Volume: a slow roll of 9 events gives 3 steps, a flick of 10 events about 6, long
     /// rolling (35 events) roughly 11 to 16, so a roll no longer runs the whole range (16
@@ -55,15 +59,21 @@ enum ThumbWheelTuning {
     static let zoom = ThumbWheelStepping(first: 3, next: 5, accelerates: true, rest: 0.6)
     /// Tabs: a slow roll of 5 to 9 events gives 1 to 2 tabs, a flick of 10 events 2.
     static let tabs = ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.6)
-    /// Desktops: the first desktop after 3 events, each further one after 5 more, so one long
-    /// roll moves several (at 0.7× steps at events 5, 12, 19; with "next" 12 the second
-    /// needed four times the first, and the owner's rolls of 16 to 18 events gave one). Their
+    /// Desktops: the first desktop after 2.5 units, each further one after 5 more, so one
+    /// long roll moves several (at 0.7× steps at events 4, 11, 18; with "next" 12 the second
+    /// needed four times the first, and the owner's rolls of 16 to 18 events gave one). The
+    /// first was 3: at 0.7× that is five events, and a few of the owner's 32 strokes
+    /// (2026-11-15) were shorter and gave nothing; with 2.5 every one of them gives a desktop
+    /// and none of his 49 small clusters (three events or fewer) does. Their
     /// pacing (`desktopsPacing`) keeps the Dock from stacking switches. The rest is the
     /// turn's: the thumb takes the wheel again after 250 to 580 ms (the owner's log), and a
     /// shorter rest made the desktops of a roll depend on how quickly it did.
-    static let desktops = ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.6)
-    /// Back / forward: one stroke of 3 to 14 events gives one step, 15 events two.
-    static let backForward = ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3)
+    static let desktops = ThumbWheelStepping(first: 2.5, next: 5, accelerates: false, rest: 0.6)
+    /// Back / forward: one stroke of 3 to 18 events gives one step, 19 events two (the
+    /// owner's hardest flick stays one page; "next" was 12). Its rest is short, so a quick
+    /// second stroke is a second step: 0.25 s (it was 0.3, more than the pause before some
+    /// of his second strokes).
+    static let backForward = ThumbWheelStepping(first: 3, next: 16, accelerates: false, rest: 0.25)
 
     /// Volume's pacing (`ThumbWheelPacer`): at most one step each 50 ms, at most 3 waiting.
     /// From the owner's second log (2026-11-11): at speed 3 two volume key presses per event,
@@ -99,6 +109,11 @@ enum ThumbWheelTuning {
     /// A function roll's trace line (`ScrollSystemLog.thumbWheelTraceMessage`) lists this many
     /// events at most (the engine's buffers are reserved once for them).
     static let traceEntries = 128
+    /// Rolls that ended and wait for their line (`ThumbWheelEngine.endedRolls`): at most this
+    /// many. A swipe of Follow the wheel is told at most 2.5 s after its end (a second for
+    /// the Space change, 1.5 s as a late record) and rolls are 0.6 s apart at least, so four
+    /// or five can wait; past this many the oldest is written as it stands.
+    static let endedRollsKept = 8
     /// A roll's line is due but steps still wait to run: the look comes again after at least
     /// this long (s), so it never spins on the main queue.
     static let pendingRecheck: TimeInterval = 0.01
@@ -244,17 +259,27 @@ struct ThumbWheelStepper: Equatable {
     ///   - travel: the event's travel toward "next" (`travel(...)`).
     ///   - function: the function the wheel runs now.
     ///   - now: the event's time (s, any monotonic clock).
+    ///   - heldSince: the travel is a batch the stray-tick filter confirmed (held events
+    ///     and the one that confirmed them): the time of the first held one
+    ///     (`ThumbWheelTickFilter.Result.heldSince`). Nil: one event's own travel.
     /// - Returns: the steps to run: positive toward "next", negative toward "previous", 0 none;
-    ///   never more than `maxStepsPerEvent` either way.
-    mutating func feed(travel: Double, function: ThumbWheelFunction, at now: TimeInterval) -> Int {
+    ///   never more than `maxStepsPerEvent` either way, `maxStepsPerConfirmedBatch` for a
+    ///   confirmed batch.
+    mutating func feed(travel: Double, function: ThumbWheelFunction, at now: TimeInterval,
+                       heldSince: TimeInterval? = nil) -> Int {
         // Another function (changed in the middle of a roll) starts afresh.
         if function != self.function {
             reset()
             self.function = function
         }
         guard let stepping = function.stepping else { return 0 }
-        // A rest drops the carried travel; the next step is a first one again.
-        if let last = lastEventAt, now - last >= stepping.rest {
+        // A rest drops the carried travel; the next step is a first one again. It is
+        // measured to where the thumb took the wheel again: a stroke that begins with a
+        // held tick began at that tick, not at the event that confirmed it up to
+        // `tickWindow` later (else a re-grip of 0.45 to 0.6 s counted as a rest, and the
+        // stroke before it was lost).
+        let resumedAt = min(heldSince ?? now, now)
+        if let last = lastEventAt, resumedAt - last >= stepping.rest {
             carried = 0
             stepped = false
         }
@@ -271,8 +296,11 @@ struct ThumbWheelStepper: Equatable {
         carried += travel
         var steps = 0
         var threshold = stepped ? stepping.next : stepping.first
+        // Small ticks the filter confirmed are one deliberate nudge, however much travel
+        // the speed makes of them: one step at most.
+        let most = heldSince == nil ? ThumbWheelTuning.maxStepsPerEvent : ThumbWheelTuning.maxStepsPerConfirmedBatch
         while carried.magnitude + ThumbWheelTuning.thresholdSlack >= threshold {
-            if steps == ThumbWheelTuning.maxStepsPerEvent {
+            if steps == most {
                 // The travel of further steps is dropped; less than a step stays carried.
                 carried = carried.truncatingRemainder(dividingBy: threshold)
                 break
