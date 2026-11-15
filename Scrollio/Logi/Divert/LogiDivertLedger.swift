@@ -82,7 +82,9 @@ struct LogiDivertLedger: Equatable {
     /// comes before that answer if it comes at all, and puts the control back. Without one
     /// the answer "not diverted" is the mouse's refusal, not another app's doing: `dropLost`
     /// does not see the control, and the pass that ends the re-read writes it again, once
-    /// per re-read of its slot (see the top of the file for when those come).
+    /// per re-read of its slot (see the top of the file for when those come). When its
+    /// binding went before that, the pass gives it back instead (`LogiDeviceSession` diffs
+    /// `lastApplied` and this set against the bindings).
     private(set) var heldBack: Set<UInt16> = []
     /// Per control: how many diverts of Scrollio's in a row the mouse did not take, each held
     /// back and written again. An echo of the divert or a give-back starts it again. At

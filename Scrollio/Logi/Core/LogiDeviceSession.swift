@@ -731,7 +731,10 @@ class LogiDeviceSession {
             policy: policy
         )
         let toDivert = targetCIDs.subtracting(self.lastApplied)
-        var toUndivert = self.lastApplied.subtracting(targetCIDs).union(nativeFirstCIDs)
+        // A control held back at a re-read (`LogiDivertLedger.heldBack`: Scrollio's own divert
+        // whose echo never came) is out of `lastApplied`. When its binding went before the
+        // re-read ended, it is given back here like any other, as 1.1.0 did.
+        var toUndivert = self.lastApplied.union(divertLedger.heldBack).subtracting(targetCIDs).union(nativeFirstCIDs)
         if staleDivertCheckSlot == deviceIndex {
             // Once per discovery: controls the mouse still has diverted from an earlier run.
             // Nothing stale, nothing added: the writes below are the usual ones.

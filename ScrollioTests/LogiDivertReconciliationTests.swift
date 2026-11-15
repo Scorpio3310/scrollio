@@ -507,7 +507,7 @@ final class LogiDivertReconciliationTests: XCTestCase {
         mutating func pass(bindings: Set<UInt16>) {
             let target = bindings.filter { modes.mode(for: key($0)) == .hidpp }
             for cid in target.subtracting(ledger.lastApplied).sorted() { write(cid, divert: true) }
-            for cid in ledger.lastApplied.subtracting(target).sorted() { write(cid, divert: false) }
+            for cid in ledger.lastApplied.union(ledger.heldBack).subtracting(target).sorted() { write(cid, divert: false) }
             ledger.lastApplied = target
         }
 
@@ -677,16 +677,30 @@ final class LogiDivertReconciliationTests: XCTestCase {
         XCTAssertEqual(copy.dropLost(queriedControls: [queried(gesture, diverted: false)]), [], "older than the write")
         XCTAssertEqual(slot.ledger.lastApplied, [gesture, back])
 
-        // The binding removed instead: the pass gives back what lastApplied has
-        // (LogiDeviceSession), so it writes nothing for the held-back button. The ledger
-        // still has it, and gives it back at Pause, Quit and sleep.
+        // The binding removed instead: the pass gives back what lastApplied has and what is
+        // held back (LogiDeviceSession), so the button is the mouse's again at once, not only
+        // at Pause, Quit or sleep.
         var removed = ModelledSlot()
         removed.pass(bindings: [gesture])
         removed.now += 15
         removed.ledger.noteQuerySent(cid: gesture)
         removed.pass(bindings: [])
-        XCTAssertEqual(removed.ledger.heldBack, [gesture])
-        XCTAssertEqual(removed.ledger.toGiveBack, [gesture])
+        XCTAssertEqual(removed.writes, [.divert(gesture), .giveBack(gesture)])
+        XCTAssertEqual(removed.ledger.heldBack, [])
+        XCTAssertEqual(removed.ledger.toGiveBack, [])
+    }
+
+    /// The pass in `ModelledSlot` is the session's: what it gives back is `lastApplied` and
+    /// the held-back controls, less the bindings (`LogiDeviceSession`, the one line in Core
+    /// that names the ledger's held-back set).
+    func testTheSessionGivesBackAHeldBackControlWhoseBindingWent() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let session = try String(
+            contentsOf: root.appendingPathComponent("Scrollio/Logi/Core/LogiDeviceSession.swift"), encoding: .utf8
+        )
+        XCTAssertTrue(session.contains(
+            "var toUndivert = self.lastApplied.union(divertLedger.heldBack).subtracting(targetCIDs).union(nativeFirstCIDs)\n"
+        ))
     }
 
     /// A divert the mouse refuses every time is written again at every re-read and the button
