@@ -85,6 +85,9 @@ it for the people who use the app, and give the version its part before you tag 
 - **Menus show what is set.** An action menu ticks the action in use (its group shows a
   dash), and every jump inside Settings reads "Show in …": Show in Gestures, Show in
   Scrolling, Show in Mouse, Show in Shortcut Ring, "Show in Safari › Gestures".
+- **Undo for the ring's places and the gesture directions.** In Shortcut Ring, Gestures
+  and an app's own ring and gestures, Edit › Undo takes back a changed action, name or
+  icon, and shows where: the pane or the app's page comes forward with the row selected.
 - **Pause from Settings.** The top of General always says whether Scrollio works, in the
   menu bar's words, with Pause (or Resume, Try Again, Open System Settings).
 - **Restore by date.** Restore… in General lists the kept settings by date and time.
