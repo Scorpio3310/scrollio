@@ -1807,6 +1807,41 @@ final class GestureDirectionUndoTests: XCTestCase {
         XCTAssertEqual(Options.shared.gesture, .default)
     }
 
+    /// A direction of an app's own gestures, changed, then "Use settings from Gestures" is
+    /// on again: the set is kept for later and its part shows the switch alone. Undo and
+    /// Redo still reach the kept set, and nothing comes forward, from another pane or on
+    /// the app's page. Regression: the app's Gestures part came forward with nothing
+    /// changed in sight.
+    func testUndoOfADirectionOfASetKeptForLaterBringsNothingForward() throws {
+        let calculator = Application(path: Self.calculator)
+        Options.shared.application.applications.append(calculator)
+        calculator.setUsesGeneralGestures(false, general: Options.shared.gesture)
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: calculator)), part: .gestures)
+        let page = try XCTUnwrap(w.apps.detailController)
+        let controls = try XCTUnwrap(page.gesturesPart.controls)
+        try step(w.undo) { controls.actionPopUp(for: .up).onShortcutSelected?(SystemShortcut.paste) }
+        calculator.setUsesGeneralGestures(true, general: Options.shared.gesture)
+        page.gesturesPart.syncViewWithOptions()
+
+        // On the app's page, another part on show: it stays.
+        page.show(.scrolling)
+        w.undo.undo()
+        XCTAssertEqual(calculator.gestures?.actions.up, GestureActions.default.up, "the kept set has its direction back")
+        XCTAssertTrue(calculator.usesGeneralGestures)
+        XCTAssertEqual(page.shownPart, .scrolling, "the part on show stays")
+
+        // From another pane, the page closed: nothing comes forward.
+        w.apps.showList(focusList: false)
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.redo()
+        XCTAssertEqual(calculator.gestures?.actions.up, GestureAction(SystemShortcut.paste))
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.general, "nothing comes forward")
+        XCTAssertNil(w.apps.detailController)
+        XCTAssertEqual(Options.shared.gesture, .default, "the general gestures are untouched")
+    }
+
     // MARK: - Undo of a step of the whole pane or part, shown where it acts too
 
     /// "Undo Reset Gestures" from another pane (⌘Z after a slider elsewhere, which

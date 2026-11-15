@@ -2345,6 +2345,43 @@ final class RingPlaceUndoTests: XCTestCase {
         XCTAssertEqual(Options.shared.ring, .default)
     }
 
+    /// A place of an app's own ring, changed, then "Use settings from Shortcut Ring" is on
+    /// again: the ring is kept for later and its part shows the switch alone. Undo and Redo
+    /// still reach the kept ring, and nothing comes forward, from another pane or on the
+    /// app's page. Regression: the app's Shortcut Ring part came forward with nothing
+    /// changed in sight.
+    func testUndoOfAPlaceOfARingKeptForLaterBringsNothingForward() throws {
+        let calculator = Application(path: Self.calculator)
+        Options.shared.application.applications.append(calculator)
+        calculator.setUsesGeneralRing(false, general: Options.shared.ring)
+        let before = try XCTUnwrap(calculator.ownRingPlaces?[0])
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: calculator)), part: .ring)
+        let page = try XCTUnwrap(w.apps.detailController)
+        let ring = try XCTUnwrap(page.ringPart.ringController)
+        try step(w.undo) { ring.placePopUps[0].onShortcutSelected?(SystemShortcut.paste) }
+        calculator.setUsesGeneralRing(true, general: Options.shared.ring)
+        page.ringPart.syncViewWithOptions()
+        XCTAssertNil(page.ringPart.ringController, "the part shows the switch alone")
+
+        // On the app's page, another part on show: it stays.
+        page.show(.scrolling)
+        w.undo.undo()
+        XCTAssertEqual(calculator.ring?.places[0], before, "the kept ring has its place back")
+        XCTAssertTrue(calculator.usesGeneralRing)
+        XCTAssertEqual(page.shownPart, .scrolling, "the part on show stays")
+
+        // From another pane, the page closed: nothing comes forward.
+        w.apps.showList(focusList: false)
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.redo()
+        XCTAssertEqual(calculator.ring?.places[0], ShortcutRingPlace(SystemShortcut.paste))
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.general, "nothing comes forward")
+        XCTAssertNil(w.apps.detailController)
+        XCTAssertEqual(Options.shared.ring, .default, "the general ring is untouched")
+    }
+
     /// A change in Buttons, then one in the ring: Undo takes back the ring's first and shows
     /// its pane, then the button's and shows Buttons with its row selected; Redo goes the
     /// other way.

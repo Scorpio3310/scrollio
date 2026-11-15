@@ -970,8 +970,11 @@ final class RingPreferencesViewController: NSViewController {
 
     /// Shows the place an Undo or Redo changed where it is: the Shortcut Ring pane, or the
     /// app's page under Apps on its Shortcut Ring part, comes forward and shows the ring as
-    /// stored, with the place's row selected (`selectPlace`).
+    /// stored, with the place's row selected (`selectPlace`). Not for an app's ring kept
+    /// for later (the app uses the general ring again): its part shows the switch alone,
+    /// so nothing there would show the change (the place is back all the same).
     private static func show(_ place: Int, of entry: Application?, in showing: PlaceShowing) {
+        if let entry, entry.ownRingPlaces == nil { return }
         if let split = showing.split {
             if let entry {
                 let part = split.bringForward(pageOf: entry, part: .ring)?.ringPart
