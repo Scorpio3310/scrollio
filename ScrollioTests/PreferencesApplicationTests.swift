@@ -1125,7 +1125,8 @@ final class PreferencesApplicationTests: XCTestCase {
 
     /// The line under the app's box shows while the limit is on and the app is not Left
     /// to macOS (then it scrolls as an app off the list does), for each choice and with the
-    /// limit off and on; a pick on the page shows or hides it at once and the pane follows.
+    /// limit off and on, and takes room on a page that opens only then; a pick on the page
+    /// shows or hides it at once and the pane follows.
     func testTheLimitsLineShowsUnlessTheAppIsLeftToMacOS() throws {
         for allowlist in [false, true] {
             for choice in ApplicationScrollingChoice.allCases {
@@ -1139,7 +1140,9 @@ final class PreferencesApplicationTests: XCTestCase {
                 let controller = makeController()
                 controller.openApplication(withID: Self.calculator, part: .buttons)
                 let page = try XCTUnwrap(controller.detailController)
-                XCTAssertEqual(page.allowlistNote.isHidden, !(allowlist && choice != .leftToMacOS), "limit \(allowlist), \(choice)")
+                let shows = allowlist && choice != .leftToMacOS
+                XCTAssertEqual(page.allowlistNoteShows, shows, "limit \(allowlist), \(choice)")
+                XCTAssertEqual(page.allowlistNote.isHidden, !shows, "limit \(allowlist), \(choice): room only while it shows")
             }
         }
 
@@ -1149,14 +1152,64 @@ final class PreferencesApplicationTests: XCTestCase {
         let controller = makeController()
         controller.openApplication(withID: Self.calculator, part: .scrolling)
         let page = try XCTUnwrap(controller.detailController)
-        XCTAssertFalse(page.allowlistNote.isHidden)
+        XCTAssertTrue(page.allowlistNoteShows)
         pick(.leftToMacOS, on: page)
-        XCTAssertTrue(page.allowlistNote.isHidden)
-        page.view.layoutSubtreeIfNeeded()
-        XCTAssertEqual(page.headerSection.frame.minY - page.partControl.frame.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 0.5)
+        XCTAssertFalse(page.allowlistNoteShows)
+        XCTAssertEqual(page.allowlistNote.alphaValue, 0)
+        XCTAssertFalse(page.allowlistNote.isAccessibilityElement(), "not read out while faded out")
         XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
         pick(.sameAsScrolling, on: page)
-        XCTAssertFalse(page.allowlistNote.isHidden)
+        XCTAssertTrue(page.allowlistNoteShows)
+        XCTAssertTrue(page.allowlistNote.isAccessibilityElement())
+        XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+    }
+
+    /// With the limit on, a pick never moves the pop-up: the line above the parts keeps its
+    /// room while the page stays open and only fades out for Left to macOS and in again
+    /// (its distance from the page's top, which stays where it is in the window, is the
+    /// same after each pick). A part that opens decides the room afresh: Left to macOS,
+    /// then another part, and the room is gone; back on Scrolling another pick brings the
+    /// line with its room (it must show), and it stays from then on.
+    func testAPickWithTheLimitOnNeverMovesThePopUp() throws {
+        let calculator = application(Self.calculator, inherit: false)
+        calculator.scroll.speed = 2.5
+        Options.shared.application.applications = Self.makeStore([calculator])
+        Options.shared.application.allowlist = true
+        let controller = makeController()
+        _ = makeWindow(for: controller)
+        controller.openApplication(withID: Self.calculator, part: .scrolling)
+        let page = try XCTUnwrap(controller.detailController)
+        let popUp = try XCTUnwrap(page.scrollingChoicePopUp)
+        func fromTop(_ view: NSView) -> CGFloat {
+            page.view.layoutSubtreeIfNeeded()
+            let frame = view.convert(view.bounds, to: page.view)
+            return page.view.isFlipped ? frame.minY : page.view.bounds.height - frame.maxY
+        }
+        let place = fromTop(popUp)
+        let control = fromTop(page.partControl)
+        let noteRoom = page.allowlistNote.frame.height + PreferencesGroupedForm.noteSpacing
+        XCTAssertGreaterThan(noteRoom, 20)
+        for choice in [ApplicationScrollingChoice.leftToMacOS, .sameAsScrolling, .leftToMacOS, .ownSettings, .sameAsScrolling, .leftToMacOS, .ownSettings] {
+            pick(choice, on: page)
+            XCTAssertEqual(page.allowlistNoteShows, choice != .leftToMacOS, "\(choice)")
+            XCTAssertEqual(fromTop(popUp), place, accuracy: 0.5, "\(choice): the pop-up stays")
+            XCTAssertEqual(fromTop(page.partControl), control, accuracy: 0.5, "\(choice)")
+            XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5, "\(choice)")
+        }
+
+        // Another part opens while the app is left to macOS: no room for a line that does not show.
+        pick(.leftToMacOS, on: page)
+        page.show(.buttons)
+        XCTAssertTrue(page.allowlistNote.isHidden)
+        XCTAssertEqual(fromTop(page.partControl), control - noteRoom, accuracy: 1)
+        page.show(.scrolling)
+        let without = fromTop(popUp)
+        XCTAssertLessThan(without, place - 20)
+        pick(.ownSettings, on: page)
+        XCTAssertTrue(page.allowlistNoteShows, "it must show: it takes its room")
+        XCTAssertEqual(fromTop(popUp), place, accuracy: 0.5)
+        pick(.leftToMacOS, on: page)
+        XCTAssertEqual(fromTop(popUp), place, accuracy: 0.5, "and keeps it")
         XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
     }
 
@@ -1176,11 +1229,11 @@ final class PreferencesApplicationTests: XCTestCase {
         var page = try XCTUnwrap(controller.detailController)
         XCTAssertEqual(page.scrollingPart.shownChoice, .sameAsScrolling)
         XCTAssertFalse(ApplicationDetailViewController.showsAllowlistNote(for: calculator))
-        XCTAssertTrue(page.allowlistNote.isHidden, "Same as Scrolling over a Scrolling left to macOS")
+        XCTAssertFalse(page.allowlistNoteShows, "Same as Scrolling over a Scrolling left to macOS")
         Options.shared.scroll.smooth = true
         XCTAssertTrue(ApplicationDetailViewController.showsAllowlistNote(for: calculator))
         page.syncViewWithOptions()
-        XCTAssertFalse(page.allowlistNote.isHidden)
+        XCTAssertTrue(page.allowlistNoteShows)
         controller.leaveSubpage()
 
         // Own Settings held over values switched to Left to macOS here, by hand.
@@ -1190,18 +1243,18 @@ final class PreferencesApplicationTests: XCTestCase {
         controller.openApplication(withID: Self.calculator, part: .scrolling)
         page = try XCTUnwrap(controller.detailController)
         let settings = try XCTUnwrap(page.scrollingController)
-        XCTAssertFalse(page.allowlistNote.isHidden)
+        XCTAssertTrue(page.allowlistNoteShows)
         settings.smoothSwitch.state = .off
         send(settings.smoothSwitch)
-        XCTAssertFalse(page.allowlistNote.isHidden, "the direction is still reversed")
+        XCTAssertTrue(page.allowlistNoteShows, "the direction is still reversed")
         settings.reverseSwitch.state = .off
         send(settings.reverseSwitch)
         XCTAssertEqual(page.scrollingPart.shownChoice, .ownSettings, "held while the part shows")
         XCTAssertEqual(calculator.scrollingChoice, .leftToMacOS)
-        XCTAssertTrue(page.allowlistNote.isHidden, "the app scrolls as one off the list")
+        XCTAssertFalse(page.allowlistNoteShows, "the app scrolls as one off the list")
         settings.smoothSwitch.state = .on
         send(settings.smoothSwitch)
-        XCTAssertFalse(page.allowlistNote.isHidden)
+        XCTAssertTrue(page.allowlistNoteShows)
         XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
     }
 

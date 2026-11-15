@@ -312,6 +312,8 @@ final class ApplicationDetailViewController: NSViewController {
         super.viewWillAppear()
         // The Scrolling pane may have changed what an inheriting app shows.
         syncViewWithOptions()
+        // The page opens: the line under the app's box takes room only while it shows.
+        syncAllowlistNote(decidingRoom: true)
     }
 
     /// The controller of the part shown.
@@ -377,6 +379,8 @@ final class ApplicationDetailViewController: NSViewController {
         put(part)
         // (The selected segment's dot takes the selection's colour.)
         showOwnSettings()
+        // A part opens: the line under the app's box takes room only while it shows.
+        syncAllowlistNote(decidingRoom: true)
         onHeightChange?()
     }
 
@@ -432,19 +436,36 @@ final class ApplicationDetailViewController: NSViewController {
     }
 
     /// The line under the app's box: its words (the app's name may change with an Undo of
-    /// its removal), and whether it shows; the pane measures again when it comes or goes.
-    func syncAllowlistNote() {
+    /// its removal), and whether it shows. Its room is decided when the page or a part
+    /// opens (`decidingRoom`: there only while the line shows); while the page stays open
+    /// the room stays, and a pick in "Scrolling in Safari" only fades the line out or in,
+    /// so the pop-up under it does not move. A line that must show and has no room gets it
+    /// (the page opened while it did not show). The pane measures again when the room
+    /// comes or goes.
+    func syncAllowlistNote(decidingRoom: Bool = false) {
         guard isViewLoaded else { return }
         let text = Self.allowlistNoteText(fitting: application.getName())
         if allowlistNote.stringValue != text {
             allowlistNote.stringValue = text
         }
         let showsNote = Self.showsAllowlistNote(for: application)
-        guard allowlistNote.isHidden == showsNote else { return }
-        allowlistNote.isHidden = !showsNote
-        NSLayoutConstraint.deactivate([showsNote ? controlUnderHeader : controlUnderNote])
-        NSLayoutConstraint.activate([showsNote ? controlUnderNote : controlUnderHeader])
+        let alpha: CGFloat = showsNote ? 1 : 0
+        if allowlistNote.alphaValue != alpha {
+            allowlistNote.alphaValue = alpha
+            // (A line faded out is not read out either.)
+            allowlistNote.setAccessibilityElement(showsNote)
+        }
+        let hasRoom = showsNote || (!decidingRoom && !allowlistNote.isHidden)
+        guard allowlistNote.isHidden == hasRoom else { return }
+        allowlistNote.isHidden = !hasRoom
+        NSLayoutConstraint.deactivate([hasRoom ? controlUnderHeader : controlUnderNote])
+        NSLayoutConstraint.activate([hasRoom ? controlUnderNote : controlUnderHeader])
         onHeightChange?()
+    }
+
+    /// The line under the app's box shows (faded out, it may still keep its room).
+    var allowlistNoteShows: Bool {
+        return isViewLoaded && !allowlistNote.isHidden && allowlistNote.alphaValue > 0
     }
 
     /// What the app has of its own changed (a part, an Undo, the list's own refresh): the
