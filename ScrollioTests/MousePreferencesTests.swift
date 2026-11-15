@@ -694,6 +694,28 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertNil(controller.headerView.emphasis)
     }
 
+    /// With a Logitech mouse what is this mouse's comes first: the switch with its line, Sensor,
+    /// Scroll wheel, Haptics; the macOS settings for every mouse come last, as "All mice
+    /// (macOS)". Without one the card and that box, as before.
+    func testTheManageSwitchComesFirstAndAllMiceLast() throws {
+        manage(false)
+        let controller = makeController([Fixtures.mxMaster4()])
+        let content = try XCTUnwrap(controller.headerView.superview as? NSStackView)
+        func shown() -> [NSView] { return content.arrangedSubviews.filter { !$0.isHidden } }
+        XCTAssertEqual(shown(), [controller.headerView!, controller.managedSection!, controller.managedOffNote!,
+                                 controller.pointerSection!, controller.wheelSection!, controller.hapticsSection!,
+                                 controller.macSection!])
+        XCTAssertEqual(controller.macSection.titleLabel?.stringValue, "All mice (macOS)")
+
+        set(controller.managedSwitch, true)
+        XCTAssertEqual(shown(), [controller.headerView!, controller.managedSection!, controller.pointerSection!,
+                                 controller.wheelSection!, controller.hapticsSection!, controller.macSection!])
+
+        devices = []
+        controller.reloadDevices()
+        XCTAssertEqual(shown(), [controller.headerView!, controller.macSection!])
+    }
+
     func testTheTabFollowsTheMiceComingAndGoing() {
         let controller = makeController()
         let emptyHeight = controller.view.frame.height
@@ -997,7 +1019,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertFalse(controller.managedOffNote.isHidden)
         XCTAssertTrue(controller.notOnTheMouseNote.isHidden)
         let label = allSubviews(of: controller.managedOffNote).compactMap { $0 as? NSTextField }.first
-        XCTAssertEqual(label?.stringValue, "Turn this on to change the settings below. Until then they show what the mouse reports.")
+        XCTAssertEqual(label?.stringValue, "Turn this on to change this mouse's settings below. Until then they show what the mouse reports.")
         for row in settingRows(controller).dropFirst() where !row.isHidden {
             XCTAssertFalse(row.isEnabled, row.title)
         }
@@ -1411,7 +1433,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertEqual(controller.trackingSpeedRow.highEndLabel?.stringValue, text("mouse-macos-tracking-speed-fast"))
         // One name for one thing: the Logitech box is the sensor, not a second "Pointer";
         // every speed slider ends in the words of System Settings.
-        XCTAssertEqual(controller.macSection.titleLabel?.stringValue, "Pointer (macOS)")
+        XCTAssertEqual(controller.macSection.titleLabel?.stringValue, "All mice (macOS)")
         XCTAssertEqual(controller.pointerSection.titleLabel?.stringValue, "Sensor")
         XCTAssertEqual(controller.trackingSpeedRow.lowEndLabel?.stringValue, "Slow")
         XCTAssertEqual(controller.trackingSpeedRow.highEndLabel?.stringValue, "Fast")
@@ -1690,17 +1712,20 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         let boxRight = MousePreferencesViewController.paneWidth - margin
 
         // The header and the boxes span the pane between its margins, top to bottom.
-        let boxes = [controller.headerView!, controller.macSection.box, controller.managedSection.box,
-                     controller.pointerSection.box, controller.wheelSection.box, controller.hapticsSection.box] as [NSView]
+        let boxes = [controller.headerView!, controller.managedSection.box, controller.pointerSection.box,
+                     controller.wheelSection.box, controller.hapticsSection.box, controller.macSection.box] as [NSView]
         for view in boxes {
             let box = frame(of: view, in: controller)
             XCTAssertEqual(box.minX, margin, accuracy: 0.5)
             XCTAssertEqual(box.maxX, boxRight, accuracy: 0.5)
         }
         let tops = boxes.map { frame(of: $0, in: controller).maxY }
-        XCTAssertEqual(tops, tops.sorted(by: >), "the macOS box above the Logitech boxes")
-        // The Logitech part keeps a section's distance from the macOS box above it.
-        let gap = frame(of: controller.macSection.box, in: controller).minY - frame(of: controller.managedSection.box, in: controller).maxY
+        XCTAssertEqual(tops, tops.sorted(by: >), "this mouse's boxes, then the box for all mice")
+        // The switch's box sits under the card as any untitled box; "All mice (macOS)" keeps
+        // a titled section's distance from the box above it.
+        let underCard = frame(of: controller.headerView, in: controller).minY - frame(of: controller.managedSection.box, in: controller).maxY
+        XCTAssertEqual(underCard, PreferencesGroupedForm.boxSpacing, accuracy: 0.5)
+        let gap = frame(of: controller.hapticsSection, in: controller).minY - frame(of: controller.macSection, in: controller).maxY
         XCTAssertEqual(gap, PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
         for row in settingRows(controller) + [controller.trackingSpeedRow!, controller.pointerAccelerationRow!] {
             XCTAssertEqual(frame(of: row.titleLabel, in: controller).minX, margin + inset, accuracy: 0.5, row.title)

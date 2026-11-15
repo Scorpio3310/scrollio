@@ -3,7 +3,7 @@
 //  Mos
 //  What the Mouse tab shows, worked out without views so the rules can be unit tested:
 //  where the mice come from, which rows a mouse gets, what each control shows, when it
-//  can be changed and when an "On the mouse: …" line is due. The "Pointer (macOS)" box,
+//  can be changed and when an "On the mouse: …" line is due. The "All mice (macOS)" box,
 //  shown for any mouse, is `MacPointerPaneModel`.
 //
 //  The rules:
@@ -504,7 +504,7 @@ struct MousePaneModel: Equatable {
     }
 }
 
-/// The "Pointer (macOS)" box: the user's macOS settings for every mouse. A row whose value
+/// The "All mice (macOS)" box: the user's macOS settings for every mouse. A row whose value
 /// macOS did not give is hidden, and the box with it once both are.
 struct MacPointerPaneModel: Equatable {
 

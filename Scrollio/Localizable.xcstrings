@@ -4945,7 +4945,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pointer (macOS)"
+            "value": "All mice (macOS)"
           }
         }
       }
@@ -5292,7 +5292,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turn this on to change the settings below. Until then they show what the mouse reports."
+            "value": "Turn this on to change this mouse's settings below. Until then they show what the mouse reports."
           }
         }
       }
@@ -10930,6 +10930,42 @@
           "stringUnit": {
             "state": "translated",
             "value": "Show in %1$@ › %2$@"
+          }
+        }
+      }
+    },
+    "status-menu-app-settings": {
+      "comment": "Status-bar menu: opens Settings › Apps on the page of the app in front, or offers to add it there; %@ is its name, e.g. Safari",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings for %@…"
+          }
+        }
+      }
+    },
+    "apps-not-on-list": {
+      "comment": "Apps pane: a line in the list after \"Settings for Safari…\" of the menu bar, for an app that is not on the list; %@ is its name, e.g. Safari",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ isn't on the list."
+          }
+        }
+      }
+    },
+    "apps-add-named": {
+      "comment": "Apps pane: the button of that line, which adds the app to the list; %@ is its name, e.g. Safari",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add %@"
           }
         }
       }

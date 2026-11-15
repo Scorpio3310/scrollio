@@ -21,6 +21,12 @@
 //  the window's title bar, Esc and ⌘[ come back (`PreferencesPaneWithSubpage`), and leaving
 //  the pane always comes back to the list.
 //
+//  "Settings for Safari…" of the menu bar brings the window to the front on this pane: the
+//  app's page when it is on the list (on the part shown last), else the list with one line
+//  at its top, "Safari isn't on the list." with "Add Safari"; only that button adds it (as
+//  "+" adds a running app) and opens its page. The line goes when the pane is left or the
+//  app is on the list.
+//
 //  The pane edits Options.shared.application: the allowlist switch and the list of apps.
 //  What is stored and how is unchanged: running apps are stored by their program's path,
 //  apps chosen in Finder by their bundle's, as before.
@@ -80,7 +86,12 @@ class PreferencesApplicationViewController: NSViewController {
         static let list = NSUserInterfaceItemIdentifier("apps-list")
         static let chooseInFinder = NSUserInterfaceItemIdentifier("apps-choose-in-finder")
         static let allowlistEmpty = NSUserInterfaceItemIdentifier("apps-limit-empty")
+        static let offerAdd = NSUserInterfaceItemIdentifier("apps-offer-add")
     }
+
+    /// The id of the line that offers to add an app ("Safari isn't on the list."): never a
+    /// stored path, which always begins with "/".
+    static let offerRowID = "apps-offer"
 
     // MARK: - Seams
 
@@ -133,6 +144,9 @@ class PreferencesApplicationViewController: NSViewController {
     private(set) var rowApplications: [String: Application] = [:]
     /// What the pane shows: `listPage` or the open app's page.
     private(set) var currentPage: NSView?
+    /// The app "Settings for …" of the menu bar asked for while it is not on the list: the
+    /// list offers to add it, in one line at its top. nil: no such line.
+    private(set) var offeredApplication: AppSmoothing.App?
     /// The stack of the list page: the switch's box, the muted line, the list.
     private var listContent: NSStackView!
 
@@ -200,8 +214,12 @@ class PreferencesApplicationViewController: NSViewController {
 
     override func viewDidDisappear() {
         super.viewDidDisappear()
-        // Coming back to the pane always shows the list.
+        // Coming back to the pane always shows the list, without the offer of an app.
         showList(focusList: false)
+        if offeredApplication != nil {
+            offeredApplication = nil
+            reloadRows()
+        }
     }
 
     // MARK: - Data
@@ -281,12 +299,16 @@ class PreferencesApplicationViewController: NSViewController {
         }
     }
 
-    /// Shows the stored apps in the list (the selection stays on the same app).
+    /// Shows the stored apps in the list (the selection stays on the same app), under the
+    /// line that offers to add an app, while that app is not on the list.
     func reloadRows() {
         guard isViewLoaded else { return }
+        if let offered = offeredApplication, Self.listedApplication(for: offered) != nil {
+            offeredApplication = nil
+        }
         var occurrences: [String: Int] = [:]
         var targets: [String: Application] = [:]
-        var rows: [PreferencesListRow] = []
+        var rows: [PreferencesListRow] = offeredApplication.map { [makeOfferRow(for: $0)] } ?? []
         for application in applications {
             let count = occurrences[application.path, default: 0] + 1
             occurrences[application.path] = count
@@ -329,6 +351,71 @@ class PreferencesApplicationViewController: NSViewController {
         row.showMarks(ApplicationPagePart.ownSettings(of: application))
         row.onMarkClick = { [weak self] part in self?.openApplication(withID: id, part: part) }
         return row
+    }
+
+    /// "Safari isn't on the list." with "Add Safari": the app's icon, the line, the button.
+    /// A long name is cut short in both, so that both say what they are about; whole in the
+    /// tooltips and for VoiceOver. Nothing to remove or open.
+    private func makeOfferRow(for app: AppSmoothing.App) -> PreferencesListRow {
+        let name = Self.offerName(app.name)
+        let add = Self.makeOfferButton(name: name)
+        add.target = self
+        add.action = #selector(addOfferedApplication(_:))
+        add.identifier = Identifier.offerAdd
+        add.lineBreakMode = .byTruncatingTail
+        // Never more than half the box, whatever the name.
+        add.widthAnchor.constraint(lessThanOrEqualToConstant: Self.boxWidth / 2).isActive = true
+        let row = PreferencesListRow(
+            id: Self.offerRowID,
+            title: String(format: text("apps-not-on-list"), name),
+            icon: .image(Utils.getApplicationIcon(fromPath: app.bundlePath ?? app.executablePath)),
+            accessory: add
+        )
+        row.isRemovable = false
+        row.toolTip = String(format: text("apps-not-on-list"), app.name)
+        if name != app.name {
+            let whole = String(format: text("apps-add-named"), app.name)
+            add.toolTip = whole
+            add.setAccessibilityLabel(whole)
+        }
+        return row
+    }
+
+    private static func makeOfferButton(name: String) -> NSButton {
+        return PreferencesGroupedForm.makePushButton(
+            title: String(format: NSLocalizedString("apps-add-named", comment: ""), name), target: nil, action: nil
+        )
+    }
+
+    /// `name` whole, or cut short at its end with "…", so that the line and its button fit
+    /// side by side on one line of the list, the button in half the box at most.
+    static func offerName(_ name: String) -> String {
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        let room = boxWidth - 2 * inset - PreferencesListRow.imageIconSize - PreferencesListRow.iconSpacing
+        let font = PreferencesGroupedForm.titleFont
+        func fits(_ candidate: String) -> Bool {
+            let button = makeOfferButton(name: candidate).fittingSize.width
+            let line = String(format: NSLocalizedString("apps-not-on-list", comment: ""), candidate)
+            // A label keeps 2 pt free at each side of its line.
+            let lineWidth = ceil((line as NSString).size(withAttributes: [.font: font]).width) + 4
+            return button <= boxWidth / 2 && lineWidth + PreferencesGroupedForm.controlSpacing + button <= room
+        }
+        guard !fits(name) else { return name }
+        // The longest beginning of the name that fits, by halves.
+        let characters = Array(name)
+        var shortest = 1, longest = characters.count - 1
+        var fitting = String(characters.prefix(1)) + "…"
+        while shortest <= longest {
+            let length = (shortest + longest) / 2
+            let candidate = String(characters.prefix(length)).trimmingCharacters(in: .whitespaces) + "…"
+            if fits(candidate) {
+                fitting = candidate
+                shortest = length + 1
+            } else {
+                longest = length - 1
+            }
+        }
+        return fitting
     }
 
     // MARK: - Allowlist
@@ -445,6 +532,18 @@ class PreferencesApplicationViewController: NSViewController {
         }
         focusList()
         return application
+    }
+
+    /// "Add Safari" of the line: adds the app as "+" adds a running app (by its program's
+    /// path; never a second entry for it) and opens its page.
+    @objc func addOfferedApplication(_ sender: Any?) {
+        guard let app = offeredApplication, let path = app.pathToStore else { return }
+        offeredApplication = nil
+        let (application, _) = insertApplication(path: path, knownPaths: [app.bundlePath, app.executablePath].compactMap { $0 })
+        reloadRows()
+        if let id = rowID(for: application) {
+            openApplication(withID: id)
+        }
     }
 
     private func insertApplication(path: String, knownPaths: [String]) -> (Application, isNew: Bool) {
@@ -597,6 +696,55 @@ class PreferencesApplicationViewController: NSViewController {
         if let binding = triggers.bindingID {
             apps.detailController?.buttonsPart?.list.select(AnyHashable(binding))
         }
+    }
+
+    // MARK: - From the menu bar
+
+    /// The entry the menu bar's items use for `app` (by its bundle's path, then by its
+    /// program's, as the scroll engine finds it), if the list has one.
+    static func listedApplication(for app: AppSmoothing.App) -> Application? {
+        return AppSmoothing.entry(for: app, in: Options.shared.application.applications)
+    }
+
+    /// "Settings for Safari…" of the menu bar: the Settings window in front, on this pane,
+    /// with the app's page or the line that offers to add it.
+    static func showSettingsWindow(for app: AppSmoothing.App) {
+        MainMenuManager.showPreferencesWindow(paneIdentifier: PANEL_IDENTIFIER.application)
+        guard let split = WindowManager.shared.refs[WINDOW_IDENTIFIER.preferencesWindowController]?.contentViewController
+                as? PreferencesSplitViewController else { return }
+        showSettings(for: app, in: split)
+    }
+
+    /// The same in the window of `split`: this pane selected, then `showSettings(for:)`.
+    static func showSettings(for app: AppSmoothing.App, in split: PreferencesSplitViewController) {
+        guard split.selectPane(withIdentifier: PANEL_IDENTIFIER.application),
+              let apps = split.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController
+        else { return }
+        apps.showSettings(for: app)
+    }
+
+    /// The app's page when it is on the list (on the part shown last; a page of it that is
+    /// open stays as it is, showing what is stored now); else the list, scrolled to its top,
+    /// with one line that offers to add the app (the line of an earlier ask goes). Nothing
+    /// is added here.
+    func showSettings(for app: AppSmoothing.App) {
+        _ = view
+        offeredApplication = nil
+        // What the menu bar changed meanwhile ("Smooth Scrolling in …" may have added the
+        // app or changed its settings), as when the pane appears.
+        syncViewWithOptions()
+        reloadRows()
+        if let entry = Self.listedApplication(for: app), let id = rowID(for: entry) {
+            openApplication(withID: id)
+            return
+        }
+        showList(focusList: false)
+        offeredApplication = app
+        reloadRows()
+        list.select(nil)
+        contentHeightDidChange()
+        scrollToTop()
+        focusList()
     }
 
     /// Back from an app's page to the list, with that app selected.

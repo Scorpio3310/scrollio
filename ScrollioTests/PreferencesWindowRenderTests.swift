@@ -2439,7 +2439,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         Options.shared.logiMouse = .default
         Options.shared.logiWheel = LogiWheelSettings(managedByScrollio: true)
         let master4 = MouseDeviceFixtures.mxMaster4(dpi: 1600, hapticsOn: true, strength: 60, pressForce: 5167)
-        try renderMouse([master4], name: "readme-mouse", titled: TitledCut(boxes: 4))
+        try renderMouse([master4], name: "readme-mouse", titled: TitledCut(boxes: 3))
     }
 
     // MARK: - Kit
@@ -4180,6 +4180,78 @@ private final class Round3C1MenuSheet: NSView {
                 }
                 y += Self.rowHeight
             }
+    }
+}
+
+// MARK: - Round 3 C4
+
+extension PreferencesWindowRenderTests {
+
+    /// What round 3 C4 changes (`r3-c4-<case>-<appearance>.png`). The Mouse pane in its new
+    /// order (`mouse-*`): an MX Master 4 managed, not managed (the line under the switch),
+    /// with a value refused ("Send Again"), an MX Master 3S, and no Logitech mouse (as
+    /// before). The Apps pane after "Settings for …" of the menu bar (`apps-*`): Safari not
+    /// on a list of two, an empty list, a long name; Calculator on the list (its page). The
+    /// status menu (`menu-*`, a stand-in): Scrollio working with Safari in front, and paused.
+    func testRenderRound3C4() throws {
+        let master4 = MouseDeviceFixtures.mxMaster4()
+        Options.shared.logiMouse = .default
+        Options.shared.logiWheel = LogiWheelSettings(managedByScrollio: true)
+        try renderMouse([master4], name: "r3-c4-mouse-managed")
+        Options.shared.logiMouse = LogiMouseSettings(pointerDPI: 1600)
+        try renderMouse([MouseDeviceFixtures.mxMaster4(mismatches: [.pointerSpeed: .refused])], name: "r3-c4-mouse-refused")
+        Options.shared.logiMouse = .default
+        Options.shared.logiWheel = .default
+        try renderMouse([master4], name: "r3-c4-mouse-not-managed")
+        try renderMouse([MouseDeviceFixtures.mxMaster3S()], name: "r3-c4-mouse-mx-master-3s")
+        try renderMouse([], name: "r3-c4-mouse-no-mouse")
+
+        let stored = Options.shared.application.applications
+        addTeardownBlock { Options.shared.application.applications = stored }
+        Options.shared.application.allowlist = false
+        let safari = AppSmoothing.App(
+            name: "Safari", bundlePath: "/Applications/Safari.app", executablePath: "/Applications/Safari.app/Contents/MacOS/Safari"
+        )
+        let calculator = AppSmoothing.App(
+            name: "Calculator", bundlePath: "/System/Applications/Calculator.app",
+            executablePath: "/System/Applications/Calculator.app/Contents/MacOS/Calculator"
+        )
+        let long = AppSmoothing.App(
+            name: "Microsoft Visual Studio Code Insiders Edition With A Very Long Name",
+            bundlePath: "/Applications/Long Test.app", executablePath: "/Applications/Long Test.app/Contents/MacOS/Long"
+        )
+        func apps(_ name: String, listed: [String], asked app: AppSmoothing.App) throws {
+            let defaults = uiDefaults(advanced: false)
+            try renderPane(PANEL_IDENTIFIER.application, name: "r3-c4-apps-\(name)", prepare: { preferences in
+                let entries = listed.map { Application(path: $0) }
+                Options.shared.application.applications = EnhanceArray<Application>(withArray: entries, matchKey: "path")
+                (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                    .uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                (controller as? PreferencesApplicationViewController)?.showSettings(for: app)
+            })
+        }
+        let two = ["/System/Applications/Calculator.app", "/System/Applications/TextEdit.app"]
+        try apps("safari-not-listed", listed: two, asked: safari)
+        try apps("safari-empty-list", listed: [], asked: safari)
+        try apps("long-name", listed: two, asked: long)
+        try apps("calculator-listed", listed: two, asked: calculator)
+
+        let actions = StatusMenuActions()
+        let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
+        let smoothing = StatusMenu.appSmoothingItem(
+            front: safari, isScrollio: false, scrollingRuns: true, rule: .usesScrollingSettings,
+            scrollingSmooth: true, limitedToListedApps: false
+        )
+        let settings = StatusMenu.appSettingsItem(front: safari, isScrollio: false)
+        for (name, paused) in [("working", false), ("paused", true)] {
+            let menu = NSMenu()
+            let state = StatusMenu.State(
+                hasAccess: true, isPaused: paused, showsDiagnostics: false, batteries: paused ? [] : [battery],
+                appSmoothing: paused ? nil : smoothing, appSettings: settings
+            )
+            StatusMenu.build(into: menu, state: state, actions: actions)
+            try renderMenuStandIn(menu.items, name: "r3-c4-menu-\(name)")
         }
     }
 }

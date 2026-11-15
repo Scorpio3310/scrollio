@@ -2,11 +2,12 @@
 //  MousePreferencesViewController.swift
 //  Mos
 //  "Mouse" preferences tab, in the boxes of System Settings like the Scrolling tab
-//  (PreferencesGroupedForm). On top a card with the mouse; under it "Pointer (macOS)", the
-//  user's macOS tracking speed and pointer acceleration, shown for any mouse. With a
-//  Logitech mouse the card shows its name and battery, and "Let Scrollio manage this mouse",
-//  the pointer speed, the wheel and the haptics follow. A row for something the mouse does
-//  not have, or a macOS value that could not be read, is hidden. A muted line under the
+//  (PreferencesGroupedForm). On top a card with the mouse. With a Logitech mouse the card
+//  shows its name and battery, and "Let Scrollio manage this mouse", Sensor (the pointer
+//  speed), Scroll wheel and Haptics follow under it; last comes "All mice (macOS)", the
+//  user's macOS tracking speed and pointer acceleration, shown for any mouse (without a
+//  Logitech mouse right under the card). A row for something the mouse does not have, or a
+//  macOS value that could not be read, is hidden. A muted line under the
 //  switch says why the rows are greyed while it is off (their values, what the mouse
 //  reports, stay in the label colour so they can be read), and, while it is on, that a value
 //  is not on the mouse, with "Send Again" (LogiCenter reads the mice again and writes what
@@ -173,8 +174,9 @@ final class MousePreferencesViewController: NSViewController {
             rows: [makeHapticsRow(), makeStrengthRow(), makePressForceRow()]
         )
 
+        // This mouse's settings first, the macOS settings for every mouse last.
         PreferencesGroupedForm.add(
-            [header, macSection, managedSection, managedOffNote, notOnTheMouseNote, pointerSection, wheelSection, hapticsSection],
+            [header, managedSection, managedOffNote, notOnTheMouseNote, pointerSection, wheelSection, hapticsSection, macSection],
             to: content
         )
 
@@ -342,7 +344,7 @@ final class MousePreferencesViewController: NSViewController {
                 sensitivityRow, firmnessRow, hapticsRow, strengthRow, pressForceRow]
     }
 
-    /// The "Pointer (macOS)" box. A knob the user is dragging stays where the pointer has it.
+    /// The "All mice (macOS)" box. A knob the user is dragging stays where the pointer has it.
     /// VoiceOver reads the stop the knob is on ("4 of 10"): the slider shows no value.
     private func applyMacPointer(_ mac: MacPointerPaneModel) {
         if let index = mac.trackingSpeedIndex {
@@ -401,9 +403,7 @@ final class MousePreferencesViewController: NSViewController {
             contentStack.setCustomSpacing(PreferencesGroupedForm.boxSpacing, after: view)
         }
         for (above, below) in zip(shown, shown.dropFirst()) {
-            // "Let Scrollio manage this mouse" starts the Logitech part: apart from the macOS box.
             let titled = (below as? PreferencesGroupSection)?.titleLabel != nil
-                || (below === managedSection && above === macSection)
             // A muted line sits close under its box.
             let note = below === managedOffNote || below === notOnTheMouseNote
             contentStack.setCustomSpacing(
@@ -651,7 +651,7 @@ final class MousePreferencesViewController: NSViewController {
         return row
     }
 
-    /// "Turn this on to change the settings below. …", under the switch at the rows' inset.
+    /// "Turn this on to change this mouse's settings below. …", under the switch at the rows' inset.
     private func makeManagedOffNote() -> NSView {
         let label = Self.makeNote(MouseText.managedNote(.notManaged))
         label.identifier = Identifier.managedOffNote

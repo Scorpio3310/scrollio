@@ -79,6 +79,7 @@ final class StatusMenuTests: XCTestCase {
         actions.tryAgain = { calls.log.append("try again") }
         actions.showMouseSettings = { calls.log.append("mouse") }
         actions.toggleAppSmoothing = { calls.log.append("smoothing \($0.name)") }
+        actions.showApplicationSettings = { calls.log.append("app settings \($0.name)") }
         actions.showScrollMonitor = { calls.log.append("monitor") }
         actions.showDiagnostics = { calls.log.append("diagnostics") }
         actions.showTestToasts = { calls.log.append("toasts") }
@@ -106,11 +107,12 @@ final class StatusMenuTests: XCTestCase {
     private func state(
         access: Bool = true, paused: Bool = false, diagnostics: Bool = false,
         batteries: [StatusMenu.Battery] = [], appSmoothing: StatusMenu.AppSmoothingItem? = nil,
+        appSettings: StatusMenu.AppSettingsItem? = nil,
         updates: StatusMenu.Updates = .none, startProblem: StatusMenu.StartProblem? = nil
     ) -> StatusMenu.State {
         return StatusMenu.State(
             hasAccess: access, isPaused: paused, showsDiagnostics: diagnostics, batteries: batteries,
-            appSmoothing: appSmoothing, updates: updates, startProblem: startProblem
+            appSmoothing: appSmoothing, appSettings: appSettings, updates: updates, startProblem: startProblem
         )
     }
 
@@ -607,6 +609,98 @@ final class StatusMenuTests: XCTestCase {
         try choose("Smooth Scrolling in Safari", in: built)
         XCTAssertEqual(calls.log, ["smoothing Safari"])
         XCTAssertEqual(built.items.first?.representedObject as? AppSmoothing.App, Self.safari)
+    }
+
+    // MARK: - Settings for the app in front
+
+    /// "Settings for Safari…" stands under "Smooth Scrolling in Safari", above Pause.
+    func testSettingsForTheAppInFrontStandsUnderItsSmoothingItem() throws {
+        let smoothing = try XCTUnwrap(safariItem(.usesScrollingSettings))
+        let settings = try XCTUnwrap(StatusMenu.appSettingsItem(front: Self.safari, isScrollio: false))
+        let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
+        XCTAssertEqual(rows(state(batteries: [battery], appSmoothing: smoothing, appSettings: settings)), [
+            Row(title: "MX Master 4: 75%"),
+            .separator,
+            Row(title: "Smooth Scrolling in Safari", checked: true),
+            Row(title: "Settings for Safari…"),
+            Row(title: "Pause Scrollio"),
+            .separator,
+            Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+        // Without the smoothing item (smoothing is off everywhere, say) it is still there.
+        XCTAssertEqual(rows(state(appSettings: settings)).prefix(2), [Row(title: "Settings for Safari…"), Row(title: "Pause Scrollio")])
+    }
+
+    /// Paused, or unable to start, the app's settings can still be changed: the item stands
+    /// alone where the app in front's group is, under the batteries; Pause or Resume stay
+    /// under the title.
+    func testSettingsForTheAppInFrontAlsoWhileScrollioDoesNotWork() throws {
+        let settings = try XCTUnwrap(StatusMenu.appSettingsItem(front: Self.safari, isScrollio: false))
+        XCTAssertEqual(rows(state(paused: true, appSettings: settings)), [
+            Self.pausedTitle,
+            Row(title: "Resume Scrollio"),
+            .separator,
+            Row(title: "Settings for Safari…"),
+            .separator,
+            Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+        let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
+        XCTAssertEqual(rows(state(batteries: [battery], appSettings: settings, startProblem: .retrying)), [
+            Self.couldNotStartTitle,
+            Row(title: "Try Again Now"),
+            Row(title: "Pause Scrollio"),
+            .separator,
+            Row(title: "MX Master 4: 75%"),
+            .separator,
+            Row(title: "Settings for Safari…"),
+            .separator,
+            Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+        // Without the access only the way to it.
+        XCTAssertFalse(rows(state(access: false, appSettings: settings)).contains { $0.title.hasPrefix("Settings for") })
+    }
+
+    /// Any app in front with a path, but Scrollio itself; whether Scrollio runs or not. The
+    /// name is whole, as in "Smooth Scrolling in …".
+    func testTheSettingsItemIsForAnyAppButScrollio() throws {
+        XCTAssertEqual(StatusMenu.appSettingsItem(front: Self.safari, isScrollio: false)?.title, "Settings for Safari…")
+        XCTAssertNil(StatusMenu.appSettingsItem(front: nil, isScrollio: false))
+        XCTAssertNil(StatusMenu.appSettingsItem(front: AppSmoothing.App(name: "Ghost", bundlePath: nil, executablePath: nil), isScrollio: false))
+        XCTAssertNil(StatusMenu.appSettingsItem(front: Self.safari, isScrollio: true))
+        XCTAssertNotNil(StatusMenu.appSettingsItem(front: AppSmoothing.App(name: "tool", bundlePath: nil, executablePath: "/usr/local/bin/tool"), isScrollio: false))
+        let long = AppSmoothing.App(
+            name: "Microsoft Visual Studio Code Insiders Edition With A Very Long Name",
+            bundlePath: "/Applications/Long.app", executablePath: "/Applications/Long.app/Contents/MacOS/Long"
+        )
+        let smoothing = try XCTUnwrap(StatusMenu.appSmoothingItem(
+            front: long, isScrollio: false, scrollingRuns: true, rule: .notListed, scrollingSmooth: true, limitedToListedApps: false
+        ))
+        let settings = try XCTUnwrap(StatusMenu.appSettingsItem(front: long, isScrollio: false))
+        XCTAssertTrue(smoothing.title.hasSuffix(long.name))
+        XCTAssertEqual(settings.title, String(format: NSLocalizedString("status-menu-app-settings", comment: ""), long.name))
+        // The live menu names the app in front only with the access, and never Scrollio.
+        if let live = StatusItemManager.liveAppSettingsItem() {
+            XCTAssertNotEqual(live.app.executablePath, NSRunningApplication.current.executableURL?.path)
+        }
+    }
+
+    /// A click shows the app's settings and changes nothing itself: no app is added.
+    func testChoosingSettingsForAnAppShowsItsSettingsAndAddsNothing() throws {
+        let stored = Options.shared.application.applications.count
+        let settings = try XCTUnwrap(StatusMenu.appSettingsItem(front: Self.safari, isScrollio: false))
+        let built = menu(state(appSettings: settings))
+        XCTAssertEqual(calls.log, [], "building it does nothing")
+        try choose("Settings for Safari…", in: built)
+        XCTAssertEqual(calls.log, ["app settings Safari"])
+        XCTAssertEqual(built.items.first?.representedObject as? AppSmoothing.App, Self.safari)
+        XCTAssertEqual(Options.shared.application.applications.count, stored)
+        XCTAssertNil(built.items.first?.image)
     }
 
     // MARK: - Actions

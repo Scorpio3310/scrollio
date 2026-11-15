@@ -5,7 +5,9 @@
 //
 //  With Accessibility access, in groups: one line per Logitech mouse with its battery
 //  ("MX Master 4: 75%"; a click opens Settings › Mouse) | "Smooth Scrolling in Safari" for
-//  the app in front (while the event handling runs; `AppSmoothing`) and "Pause Scrollio" |
+//  the app in front (while the event handling runs; `AppSmoothing`), "Settings for
+//  Safari…" under it (for any app in front but Scrollio, also while paused; Settings ›
+//  Apps on its page, or offering to add it there) and "Pause Scrollio" |
 //  "Settings…" (and "Check for Updates…") | "Quit Scrollio". While Option is held (always in
 //  the debug build) the diagnostic windows are added above Quit: Logitech Diagnostics in
 //  every build, Scroll Monitor and Test Toasts only in the debug build.
@@ -156,6 +158,7 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             showsDiagnostics: showsDiagnostics,
             batteries: hasAccess ? StatusMenu.batteries(from: LogiCenter.shared.mouseDeviceStates()) : [],
             appSmoothing: hasAccess ? liveAppSmoothingItem() : nil,
+            appSettings: hasAccess ? liveAppSettingsItem() : nil,
             updates: StatusMenu.updates(from: UpdateCenter.shared.status),
             startProblem: StatusMenu.startProblem(
                 coresActive: controller.coresActive,
@@ -179,6 +182,15 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             rule: front.map { AppSmoothing.rule(of: AppSmoothing.entry(for: $0, in: list.applications)) } ?? .notListed,
             scrollingSmooth: Options.shared.scroll.smooth,
             limitedToListedApps: list.allowlist
+        )
+    }
+
+    /// "Settings for …" for the app in front.
+    static func liveAppSettingsItem() -> StatusMenu.AppSettingsItem? {
+        let running = NSWorkspace.shared.frontmostApplication
+        return StatusMenu.appSettingsItem(
+            front: running.map(frontApp),
+            isScrollio: running?.processIdentifier == ProcessInfo.processInfo.processIdentifier
         )
     }
 
@@ -251,6 +263,8 @@ enum StatusMenu {
         var batteries: [Battery]
         /// "Smooth Scrolling in Safari" for the app in front; nil: no such item.
         var appSmoothing: AppSmoothingItem? = nil
+        /// "Settings for Safari…" for the app in front; nil: no such item.
+        var appSettings: AppSettingsItem? = nil
         /// What the menu offers of the updater.
         var updates: Updates = .none
         /// The access is there and Scrollio is not paused, but it does not work; nil while it
@@ -378,10 +392,29 @@ enum StatusMenu {
         )
     }
 
+    /// "Settings for Safari…": Settings › Apps on the app's page, or, for an app that is not
+    /// on the list, the list with a line that offers to add it. The item adds nothing.
+    struct AppSettingsItem: Equatable {
+        let app: AppSmoothing.App
+        let title: String
+    }
+
+    /// The item for the app in front: any app with a path but Scrollio itself, whether
+    /// Scrollio runs its event taps or not (its settings can be changed while paused). The
+    /// name is whole, as in "Smooth Scrolling in …".
+    static func appSettingsItem(front: AppSmoothing.App?, isScrollio: Bool) -> AppSettingsItem? {
+        guard let front, front.pathToStore != nil, !isScrollio else { return nil }
+        return AppSettingsItem(
+            app: front,
+            title: String(format: NSLocalizedString("status-menu-app-settings", comment: ""), front.name)
+        )
+    }
+
     enum Item: Equatable {
         case title(Title)
         case battery(Battery)
         case appSmoothing(AppSmoothingItem)
+        case appSettings(AppSettingsItem)
         case separator
         case pause
         case resume
@@ -402,7 +435,8 @@ enum StatusMenu {
     /// The groups, top to bottom: the title and its action (only while Scrollio does not
     /// work) | a waiting update | the batteries | the app in front and Pause | Settings and
     /// the check for updates | the diagnostics | Quit. While there is a title, Pause stands
-    /// under it, in the title's group.
+    /// under it, in the title's group, and the app in front's group holds only "Settings
+    /// for …" (smoothing is in effect nowhere then).
     static func items(for state: State) -> [Item] {
         var waiting: [Item] = []
         var check: [Item] = []
@@ -415,26 +449,36 @@ enum StatusMenu {
             return [.title(.needsAccess), .allowAccess, .separator] + waiting
                 + (check.isEmpty ? [] : check + [.separator]) + [.quit]
         }
-        // "Smooth Scrolling in …" and Pause, or the title with its action.
-        var running: [Item] = state.appSmoothing.map { [.appSmoothing($0)] } ?? []
+        // The title with its action, while there is one.
+        let heading = title(for: state)
         var items: [Item] = []
-        switch title(for: state) {
+        switch heading {
         case .paused?:
             items = [.title(.paused), .resume, .separator]
-            running = []
         case .couldNotStart?:
             let tryAgain: [Item] = state.startProblem == .retrying ? [.tryAgain] : []
-            items = [.title(.couldNotStart)] + tryAgain + running + [.pause, .separator]
-            running = []
+            items = [.title(.couldNotStart)] + tryAgain + [.pause, .separator]
         case .needsAccess?, nil:
-            running.append(.pause)
+            break
         }
         items += waiting + state.batteries.map(Item.battery)
         if !state.batteries.isEmpty {
             items.append(.separator)
         }
-        if !running.isEmpty {
-            items += running + [.separator]
+        // The app in front: "Smooth Scrolling in …" (while Scrollio works), "Settings for …"
+        // under it, then Pause while there is no title.
+        var front: [Item] = []
+        if heading == nil, let smoothing = state.appSmoothing {
+            front.append(.appSmoothing(smoothing))
+        }
+        if let settings = state.appSettings {
+            front.append(.appSettings(settings))
+        }
+        if heading == nil {
+            front.append(.pause)
+        }
+        if !front.isEmpty {
+            items += front + [.separator]
         }
         items += [.settings] + check + [.separator]
         if state.showsDiagnostics {
@@ -504,6 +548,11 @@ enum StatusMenu {
             toggle.state = appSmoothing.isChecked ? .on : .off
             toggle.representedObject = appSmoothing.app
             return toggle
+        case .appSettings(let appSettings):
+            let show = NSMenuItem(title: appSettings.title, action: #selector(StatusMenuActions.appSettingsClicked(_:)), keyEquivalent: "")
+            show.target = actions
+            show.representedObject = appSettings.app
+            return show
         case .separator:
             return .separator()
         case .pause:
@@ -647,6 +696,11 @@ final class StatusMenuActions: NSObject {
     var toggleAppSmoothing: (AppSmoothing.App) -> Void = { app in
         AppSmoothing.toggle(app, list: Options.shared.application, scrolling: Options.shared.scroll)
     }
+    /// "Settings for …": Settings in front, on Apps, with the app's page or the line that
+    /// offers to add it. Adds nothing.
+    var showApplicationSettings: (AppSmoothing.App) -> Void = { app in
+        PreferencesApplicationViewController.showSettingsWindow(for: app)
+    }
     var showDiagnostics: () -> Void = { LogiCenter.shared.showDebugPanel() }
     var showTestToasts: () -> Void = { Toast.showTestPanel() }
     /// "Check for Updates…", and "Update to Scrollio …" (the same call brings a waiting
@@ -662,6 +716,10 @@ final class StatusMenuActions: NSObject {
     @objc func appSmoothingClicked(_ sender: Any?) {
         guard let app = (sender as? NSMenuItem)?.representedObject as? AppSmoothing.App else { return }
         toggleAppSmoothing(app)
+    }
+    @objc func appSettingsClicked(_ sender: Any?) {
+        guard let app = (sender as? NSMenuItem)?.representedObject as? AppSmoothing.App else { return }
+        showApplicationSettings(app)
     }
     @objc func scrollMonitorClicked(_ sender: Any?) { showScrollMonitor() }
     @objc func diagnosticsClicked(_ sender: Any?) { showDiagnostics() }
