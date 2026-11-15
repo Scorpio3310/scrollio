@@ -9,8 +9,9 @@
 //  3 or 3S) and the app has no function of its own; the new row starts with the function
 //  the wheel has everywhere, is selected and its menu opens. Its pull-down is the Buttons
 //  pane's ("Default (Scroll Sideways)") and changes only the app's function; the line under
-//  it names the general one by its name in Scrolling › Thumb wheel ("In other apps: Scroll
-//  Sideways": one line, where "Default (Scroll Sideways)" would take two).
+//  it names the general one as Buttons names it ("In other apps: Zoom", "In other apps:
+//  Default (Scroll Sideways)", kept together with no-break spaces as a button's "Default
+//  (Back)" is).
 //  "−" (or Delete), or "Same as Other Apps (…)" at the top of its menu, gives the wheel back
 //  to Buttons, and the window's Undo takes it again,
 //  with an undo target that outlives the page, as for a button's row; Undo takes back a
@@ -58,11 +59,16 @@ final class ApplicationThumbWheelRow: PreferencesListRow {
         fatalError("ApplicationThumbWheelRow is built in code")
     }
 
-    /// "In other apps: Zoom", "In other apps: Scroll Sideways": what the wheel does in every
-    /// other app, as a button's row names what it does there, by the name Scrolling › Thumb
-    /// wheel gives it (the wheel's default does something known).
+    /// "In other apps: Zoom", "In other apps: Default (Scroll Sideways)": what the wheel
+    /// does in every other app, named as the Buttons pane's row names it (one name
+    /// everywhere), "Default (Scroll Sideways)" kept on one line with no-break spaces, as a
+    /// button's row keeps "Default (Back)" (`ApplicationButtonsViewController.OtherApps`).
     static func everywhere(_ general: ThumbWheelFunction) -> String {
-        return String(format: NSLocalizedString("apps-buttons-everywhere", comment: ""), general.localizedName)
+        var name = ThumbWheelPresentation.buttonsTitle(for: general)
+        if general == .scroll {
+            name = name.replacingOccurrences(of: " ", with: "\u{A0}")
+        }
+        return String(format: NSLocalizedString("apps-buttons-everywhere", comment: ""), name)
     }
 
     /// "Same as Other Apps (Zoom)", "Same as Other Apps (Scroll Sideways)": the first item of
