@@ -8,6 +8,21 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
+## Unreleased
+
+### Fixed
+
+- **The wheel no longer goes quiet** when macOS stops drawing frames for smooth scrolling:
+  it scrolls unsmoothed at once, and smooth scrolling comes back by itself.
+- **When macOS stops letting Scrollio send scroll events** (after some updates), the menu
+  bar and General say "Scrollio can't send scroll events" and show where to fix it; the
+  wheel keeps scrolling, unsmoothed.
+- **A hold key on ⌥, ⇧, ⌘ or ⌃** no longer stays held when another app swallows its
+  release: the next turn of the wheel without it lets it go.
+- **A Logitech button the mouse did not take at first** (asleep or out of range) is set up
+  again the next time Scrollio checks the buttons, instead of "Logi Options+ keeps taking
+  this button over".
+
 ## 1.1.0
 
 **Every app gets its own:** buttons, gestures and a Shortcut Ring for each app, with
