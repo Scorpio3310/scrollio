@@ -59,15 +59,21 @@ enum ThumbWheelTuning {
     static let zoom = ThumbWheelStepping(first: 3, next: 5, accelerates: true, rest: 0.6)
     /// Tabs: a slow roll of 5 to 9 events gives 1 to 2 tabs, a flick of 10 events 2.
     static let tabs = ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.6)
-    /// Desktops: the first desktop after 3 events, each further one after 5 more, so one long
-    /// roll moves several (at 0.7× steps at events 5, 12, 19; with "next" 12 the second
-    /// needed four times the first, and the owner's rolls of 16 to 18 events gave one). Their
+    /// Desktops: the first desktop after 2.5 units, each further one after 5 more, so one
+    /// long roll moves several (at 0.7× steps at events 4, 11, 18; with "next" 12 the second
+    /// needed four times the first, and the owner's rolls of 16 to 18 events gave one). The
+    /// first was 3: at 0.7× that is five events, and a few of the owner's 32 strokes
+    /// (2026-11-15) were shorter and gave nothing; with 2.5 every one of them gives a desktop
+    /// and none of his 49 small clusters (three events or fewer) does. Their
     /// pacing (`desktopsPacing`) keeps the Dock from stacking switches. The rest is the
     /// turn's: the thumb takes the wheel again after 250 to 580 ms (the owner's log), and a
     /// shorter rest made the desktops of a roll depend on how quickly it did.
-    static let desktops = ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.6)
-    /// Back / forward: one stroke of 3 to 14 events gives one step, 15 events two.
-    static let backForward = ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3)
+    static let desktops = ThumbWheelStepping(first: 2.5, next: 5, accelerates: false, rest: 0.6)
+    /// Back / forward: one stroke of 3 to 18 events gives one step, 19 events two (the
+    /// owner's hardest flick stays one page; "next" was 12). Its rest is short, so a quick
+    /// second stroke is a second step: 0.25 s (it was 0.3, more than the pause before some
+    /// of his second strokes).
+    static let backForward = ThumbWheelStepping(first: 3, next: 16, accelerates: false, rest: 0.25)
 
     /// Volume's pacing (`ThumbWheelPacer`): at most one step each 50 ms, at most 3 waiting.
     /// From the owner's second log (2026-11-11): at speed 3 two volume key presses per event,

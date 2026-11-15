@@ -662,8 +662,8 @@ final class ThumbWheelStepperTests: XCTestCase {
         XCTAssertEqual(ThumbWheelFunction.volume.stepping, ThumbWheelStepping(first: 2, next: 3, accelerates: true, rest: 0.6))
         XCTAssertEqual(ThumbWheelFunction.zoom.stepping, ThumbWheelStepping(first: 3, next: 5, accelerates: true, rest: 0.6))
         XCTAssertEqual(ThumbWheelFunction.tabs.stepping, ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.6))
-        XCTAssertEqual(ThumbWheelFunction.desktops.stepping, ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.6))
-        XCTAssertEqual(ThumbWheelFunction.backForward.stepping, ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3))
+        XCTAssertEqual(ThumbWheelFunction.desktops.stepping, ThumbWheelStepping(first: 2.5, next: 5, accelerates: false, rest: 0.6))
+        XCTAssertEqual(ThumbWheelFunction.backForward.stepping, ThumbWheelStepping(first: 3, next: 16, accelerates: false, rest: 0.25))
         XCTAssertNil(ThumbWheelFunction.scroll.stepping)
         XCTAssertEqual(ThumbWheelTuning.maxStepsPerEvent, 2)
         XCTAssertEqual(ThumbWheelTuning.logRollRest, 0.6)
@@ -716,9 +716,13 @@ final class ThumbWheelStepperTests: XCTestCase {
         var volume = ThumbWheelStepper()
         XCTAssertEqual(stepAt(run(&volume, Array(repeating: -1, count: 8), .volume)), [2, 5, 8], "first 2, then every 3")
         var desktops = ThumbWheelStepper()
-        XCTAssertEqual(stepAt(run(&desktops, Array(repeating: -1, count: 13), .desktops)), [3, 8, 13], "first 3, then every 5")
+        XCTAssertEqual(stepAt(run(&desktops, Array(repeating: -1, count: 13), .desktops)), [3, 8, 13],
+                       "first 2.5 (the third event, half a unit carried), then every 5")
+        var slower = ThumbWheelStepper()
+        XCTAssertEqual(stepAt(run(&slower, Array(repeating: -1, count: 18), .desktops, speed: 0.7)), [4, 11, 18],
+                       "at 0.7×: 2.8 reach the first 2.5, then every 5")
         var back = ThumbWheelStepper()
-        XCTAssertEqual(stepAt(run(&back, Array(repeating: -1, count: 27), .backForward)), [3, 15, 27], "first 3, then every 12")
+        XCTAssertEqual(stepAt(run(&back, Array(repeating: -1, count: 35), .backForward)), [3, 19, 35], "first 3, then every 16")
         var previous = ThumbWheelStepper()
         XCTAssertEqual(run(&previous, [1, 1, 1], .tabs), [0, 0, -1], "toward previous")
     }
@@ -764,18 +768,21 @@ final class ThumbWheelStepperTests: XCTestCase {
         XCTAssertEqual(rested.carried, 2)
     }
 
-    /// Each function has its own rest: 0.3 s for back / forward (two quick strokes are two
+    /// Each function has its own rest: 0.25 s for back / forward (two quick strokes are two
     /// steps), 0.6 s for the others (a slow roll's gaps reach 0.4 s, a re-grip 0.6 s).
     func testRest_isPerFunction() {
         var back = ThumbWheelStepper()
-        XCTAssertEqual(run(&back, [-1, -1, -1], .backForward, gaps: [0.05, 0.35]), [0, 0, 0], "0.35 s is a rest for back / forward")
+        XCTAssertEqual(run(&back, [-1, -1, -1], .backForward, gaps: [0.05, 0.26]), [0, 0, 0], "0.26 s is a rest for back / forward")
         var desktops = ThumbWheelStepper()
-        XCTAssertEqual(run(&desktops, [-1, -1, -1], .desktops, gaps: [0.05, 0.35]), [0, 0, 1], "not for desktops")
+        XCTAssertEqual(run(&desktops, [-1, -1, -1], .desktops, gaps: [0.05, 0.26]), [0, 0, 1], "not for desktops")
         var tabs = ThumbWheelStepper()
-        XCTAssertEqual(run(&tabs, [-1, -1, -1], .tabs, gaps: [0.05, 0.35]), [0, 0, 1], "but not for tabs")
+        XCTAssertEqual(run(&tabs, [-1, -1, -1], .tabs, gaps: [0.05, 0.26]), [0, 0, 1], "but not for tabs")
         var strokes = ThumbWheelStepper()
-        XCTAssertEqual(stepAt(run(&strokes, Array(repeating: -1, count: 6), .backForward, gaps: [0.05, 0.05, 0.31, 0.05, 0.05])), [3, 6],
+        XCTAssertEqual(stepAt(run(&strokes, Array(repeating: -1, count: 6), .backForward, gaps: [0.05, 0.05, 0.26, 0.05, 0.05])), [3, 6],
                        "a second quick stroke steps again after 3 events")
+        var oneStroke = ThumbWheelStepper()
+        XCTAssertEqual(stepAt(run(&oneStroke, Array(repeating: -1, count: 6), .backForward, gaps: [0.05, 0.05, 0.24, 0.05, 0.05])), [3],
+                       "a gap of 0.24 s is the same stroke: its next step needs 16")
     }
 
     // MARK: Direction
@@ -880,16 +887,30 @@ final class ThumbWheelStepperTests: XCTestCase {
     }
 
     /// One long roll moves several desktops: the first after 3 events, each further one after
-    /// 5 more (the second no longer needs four times the first).
+    /// 5 more (the second no longer needs four times the first). At 0.7× the first comes
+    /// with the fourth event (it was the fifth: strokes of four gave nothing), and three
+    /// events are still none.
     func testDesktops_firstAfterThreeEventsEachFurtherAfterFive() {
         for (count, desktops) in [(3, 1), (7, 1), (8, 2), (12, 2), (13, 3)] {
             var stroke = ThumbWheelStepper()
             XCTAssertEqual(total(run(&stroke, Array(repeating: -10, count: count), .desktops, gaps: [0.02])), desktops, "\(count) events")
         }
-        var back = ThumbWheelStepper()
-        XCTAssertEqual(total(run(&back, Array(repeating: -10, count: 14), .backForward, gaps: [0.02])), 1, "back / forward as before")
+        for (count, desktops) in [(3, 0), (4, 1), (10, 1), (11, 2), (17, 2), (18, 3)] {
+            var stroke = ThumbWheelStepper()
+            XCTAssertEqual(total(run(&stroke, Array(repeating: -10, count: count), .desktops, gaps: [0.02], speed: 0.7)), desktops,
+                           "\(count) events at 0.7×")
+        }
         var two = ThumbWheelStepper()
         XCTAssertEqual(total(run(&two, Array(repeating: -0.5, count: 2), .desktops)), 0, "less than a stroke")
+    }
+
+    /// Back and Forward: the hardest flick is one page (a stroke of up to 18 events; it was
+    /// two from 15 on), 19 events are two.
+    func testBackForward_oneStrokeIsOnePageUpTo18Events() {
+        for (count, pages) in [(2, 0), (3, 1), (14, 1), (18, 1), (19, 2)] {
+            var stroke = ThumbWheelStepper()
+            XCTAssertEqual(total(run(&stroke, Array(repeating: -10, count: count), .backForward, gaps: [0.02])), pages, "\(count) events")
+        }
     }
 }
 
@@ -1388,10 +1409,10 @@ final class ThumbWheelEngineTests: XCTestCase {
     /// Lines of a slow roll as the owner's log has them: 0.1 to 1 line an event.
     private static let slowLines: [Double] = [-0.1, -0.35, -0.6, -1, -0.8, -0.2, -0.45, -0.9, -0.15, -0.7, -1, -0.3]
 
-    /// At 0.7× a one-way roll at 94 ms an event steps at events 5, 12 and 19 (3, then 5 more
-    /// each); 17 events are two desktops, not one.
-    func testDesktops_atPoint7_aOneWayRollStepsAtEvents5_12_19() throws {
-        for (count, expected) in [(22, [5, 12, 19]), (17, [5, 12])] {
+    /// At 0.7× a one-way roll at 94 ms an event steps at events 4, 11 and 18 (2.5 units,
+    /// then 5 more each); 17 events are two desktops, not one.
+    func testDesktops_atPoint7_aOneWayRollStepsAtEvents4_11_18() throws {
+        for (count, expected) in [(22, [4, 11, 18]), (17, [4, 11])] {
             let rig = Rig()
             let settings = ThumbWheelSettings(function: .desktops, speed: 0.7)
             var steppedAt: [Int] = []
@@ -1472,7 +1493,8 @@ final class ThumbWheelEngineTests: XCTestCase {
     }
 
     /// 0.7×, a re-grip: 9 events, a pause of 280, 320 or 470 ms with one tick of 0.10 line
-    /// the other way in it, 9 more: two desktops every time, the tick dropped.
+    /// the other way in it, 8 more: two desktops every time, the tick dropped. (17 events:
+    /// 18 are three, at 0.7× the third desktop comes with the 18th.)
     func testDesktops_aRegripWithAStrayTick_twoDesktopsWhateverThePause() throws {
         for pause in [0.28, 0.32, 0.47] {
             let rig = Rig()
@@ -1483,7 +1505,7 @@ final class ThumbWheelEngineTests: XCTestCase {
             time -= 0.094
             steps += rig.turn(lines: 0.1, at: time + pause / 2, settings: settings)
             time += pause
-            for _ in 0..<9 { steps += rig.turn(lines: -1, at: time, settings: settings); time += 0.094 }
+            for _ in 0..<8 { steps += rig.turn(lines: -1, at: time, settings: settings); time += 0.094 }
             rig.advance(to: 510)
             XCTAssertEqual(steps, 2, "pause \(pause)")
             XCTAssertEqual(rig.performed.map(\.action), [.named("moveSpaceRight"), .named("moveSpaceRight")], "pause \(pause)")
@@ -1519,10 +1541,11 @@ final class ThumbWheelEngineTests: XCTestCase {
     }
 
     /// 0.7×, a re-grip that begins with a tick of 0.10 line, as the owner's do: 9 events, a
-    /// pause, then −0.1, −1, −1, −1. Two desktops after 280 to 580 ms: the pause is measured
+    /// pause, then −0.1, −1, −1. Two desktops after 280 to 580 ms: the pause is measured
     /// to the tick, where the thumb took the wheel again, not to the event that confirms it
     /// 94 ms later (0.52 s then counted as a rest of 0.6 s and dropped what the first
-    /// stroke had carried). After 0.62 s it is a rest: the second stroke alone is no desktop.
+    /// stroke had carried). After 0.62 s it is a rest: the second stroke alone is no desktop
+    /// (three events; a fourth makes it one of its own, 2.8 units).
     func testDesktops_aRegripThatBeginsWithAHeldTick_isARestOnlyFrom600Milliseconds() throws {
         for (pause, desktops) in [(0.28, 2), (0.47, 2), (0.52, 2), (0.58, 2), (0.62, 1)] {
             let rig = Rig()
@@ -1531,7 +1554,7 @@ final class ThumbWheelEngineTests: XCTestCase {
             var time = 0.0
             for _ in 0..<9 { steps += rig.turn(lines: -1, at: time, settings: settings); time += 0.094 }
             time += pause - 0.094
-            for lines in [-0.1, -1, -1, -1] { steps += rig.turn(lines: lines, at: time, settings: settings); time += 0.094 }
+            for lines in [-0.1, -1, -1] { steps += rig.turn(lines: lines, at: time, settings: settings); time += 0.094 }
             rig.advance(to: 510)
             XCTAssertEqual(steps, desktops, "pause \(pause)")
             XCTAssertEqual(rig.performed.count, desktops, "pause \(pause): every desktop ran")
