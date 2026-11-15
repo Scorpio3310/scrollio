@@ -2416,7 +2416,7 @@ final class PreferencesButtonsTests: XCTestCase {
         ])
         let stored = Options.shared.buttons.binding
         XCTAssertEqual(pane.rows.map(\.explanation), [
-            "A key cannot run Gesture Navigation. Choose a mouse button.",
+            "A key cannot run Gesture Navigation.",
             "Hold and move the mouse. Set the directions under Gestures.",
         ])
         XCTAssertEqual(pane.rows.map { $0.note?.tone }, [.problem, .plain])
@@ -2425,7 +2425,7 @@ final class PreferencesButtonsTests: XCTestCase {
         let line = pane.rows[0].explanationLabel.attributedStringValue
         XCTAssertTrue(line.containsAttachments(in: NSRange(location: 0, length: line.length)), "after the warning sign")
         XCTAssertEqual(line.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .systemOrange)
-        XCTAssertEqual(pane.rows[0].accessibilityLabel(), "\(pane.rows[0].title), A key cannot run Gesture Navigation. Choose a mouse button.")
+        XCTAssertEqual(pane.rows[0].accessibilityLabel(), "\(pane.rows[0].title), A key cannot run Gesture Navigation.")
 
         let popover = try XCTUnwrap(pane.showProblem(of: pane.rows[0], relativeTo: pane.rows[0].infoButton))
         _ = popover.view
@@ -2522,6 +2522,30 @@ final class PreferencesButtonsTests: XCTestCase {
         let pane = makePane([binding(40, "copy", modifiers: control, type: .keyboard)])
         XCTAssertNil(pane.rows.first?.note, "a key never asks the mouse")
         XCTAssertEqual(pane.rows.first?.title, "⌃ K")
+    }
+
+    /// The lines that say what an action needs fit the row's two lines (QA B7): the ring's
+    /// and the one of a key that cannot run Gesture Navigation (with its sign) took three
+    /// in the 172 pt beside the pull-down, on a button and on a key.
+    func testTheLinesOfWhatAnActionNeedsFitTwoLines() throws {
+        let ring = SystemShortcut.shortcutRing.identifier
+        let gesture = SystemShortcut.mouseGestureNavigation.identifier
+        let scroll = try XCTUnwrap(SystemShortcut.mouseScrollCategory.shortcuts.first).identifier
+        let bindings = [
+            binding(1000, ring), binding(49, ring, modifiers: control, type: .keyboard), binding(3, gesture),
+            binding(41, gesture, modifiers: command, type: .keyboard), binding(4, scroll),
+        ]
+        let pane = makePane(bindings)
+        pane.view.layoutSubtreeIfNeeded()
+        let oneLine = NSTextField(labelWithString: "Xg")
+        oneLine.font = PreferencesGroupedForm.explanationFont
+        let listed = try rows(of: bindings, in: pane)
+        XCTAssertEqual(listed.map(\.note?.kind), [.shortcutRing, .shortcutRing, .gestureNavigation, .keyGestureNavigation, .holdAction])
+        XCTAssertEqual(listed[0].explanation, "Opens the ring. Set its shortcuts under Shortcut Ring.")
+        for row in listed {
+            XCTAssertFalse(row.explanationLabel.isHidden, row.title)
+            XCTAssertLessThanOrEqual(row.explanationLabel.frame.height, 2 * oneLine.fittingSize.height + 1, row.explanation ?? row.title)
+        }
     }
 
     // MARK: - Changing an action

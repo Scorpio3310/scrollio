@@ -5079,7 +5079,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A key cannot run Gesture Navigation. Choose a mouse button."
+            "value": "A key cannot run Gesture Navigation."
           }
         }
       }
@@ -7563,7 +7563,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Opens the ring at the pointer. Set its shortcuts under Shortcut Ring."
+            "value": "Opens the ring. Set its shortcuts under Shortcut Ring."
           }
         }
       }
