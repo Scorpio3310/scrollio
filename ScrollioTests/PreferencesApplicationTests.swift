@@ -51,6 +51,12 @@ final class PreferencesApplicationTests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// The catalog's text for `key`, with `arguments` put in as the app puts them: the
+    /// expected text follows the catalog's wording.
+    private static func catalog(_ key: String, _ arguments: String...) -> String {
+        return String(format: NSLocalizedString(key, comment: ""), arguments: arguments)
+    }
+
     private static func makeStore(_ applications: [Application] = []) -> EnhanceArray<Application> {
         return EnhanceArray<Application>(
             withArray: applications,
@@ -138,6 +144,17 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertTrue(control.sendAction(control.action, to: control.target), file: file, line: line)
     }
 
+    /// Picks `choice` in "Scrolling in …", as a click on its item does.
+    private func pick(_ choice: ApplicationScrollingChoice, on page: ApplicationDetailViewController,
+                      file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(page.scrollingChoicePopUp.selectItem(withTag: choice.rawValue), file: file, line: line)
+        send(page.scrollingChoicePopUp, file: file, line: line)
+    }
+
+    private func shownChoice(of page: ApplicationDetailViewController) -> ApplicationScrollingChoice? {
+        return ApplicationScrollingChoice(rawValue: page.scrollingChoicePopUp.selectedTag())
+    }
+
     private func key(_ characters: String, keyCode: UInt16, modifiers: NSEvent.ModifierFlags = []) throws -> NSEvent {
         return try XCTUnwrap(NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: 0, context: nil,
@@ -170,7 +187,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(controller.allowlistRow.title, "Change scrolling only in these apps")
         XCTAssertEqual(
             controller.allowlistRow.explanation,
-            "Apps not in the list scroll the way macOS does. Buttons and gestures still work everywhere."
+            Self.catalog("apps-limit-hint")
         )
         XCTAssertEqual(controller.allowlistSwitch.state, .off)
         XCTAssertEqual(controller.allowlistSwitch.identifier, PreferencesApplicationViewController.Identifier.allowlist)
@@ -302,7 +319,7 @@ final class PreferencesApplicationTests: XCTestCase {
         let page = try XCTUnwrap(controller.detailController, "the new app's page opens")
         XCTAssertTrue(page.application === added)
         XCTAssertTrue(controller.currentPage === page.view)
-        XCTAssertEqual(page.inheritSwitch.state, .on)
+        XCTAssertEqual(shownChoice(of: page), .sameAsScrolling)
 
         // Back on the list, the same app picked again: it blinks, no page opens.
         controller.showList(focusList: false)
@@ -597,7 +614,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertFalse(allSubviews(of: page.view).contains { ($0 as? NSButton)?.title == "Apps" })
         XCTAssertFalse(allSubviews(of: page.view).contains { $0.identifier?.rawValue == "apps-detail-back" })
         XCTAssertTrue(allSubviews(of: page.view).compactMap { $0 as? NSButton }.allSatisfy {
-            $0.isDescendant(of: page.scrollingController.view) || $0 === page.inheritSwitch || $0.title == "Show in Finder"
+            $0.isDescendant(of: page.scrollingController.view) || $0 === page.scrollingChoicePopUp || $0.title == "Show in Finder"
         })
         XCTAssertEqual(page.view.frame.height - page.headerSection.frame.maxY, PreferencesGroupedForm.margin, accuracy: 0.5)
         XCTAssertEqual(page.headerSection.frame.minX, PreferencesGroupedForm.margin, accuracy: 0.5)
@@ -672,7 +689,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertNotNil(controller.detailController)
     }
 
-    func testUseSettingsFromScrollingHidesTheSettingsAndUpdatesTheList() throws {
+    func testSameAsScrollingHidesTheSettingsAndUpdatesTheList() throws {
         Options.shared.scroll.speed = 8.5
         let calculator = application(Self.calculator, inherit: false)
         calculator.scroll.speed = 1.5
@@ -682,31 +699,29 @@ final class PreferencesApplicationTests: XCTestCase {
         let page = try XCTUnwrap(controller.detailController)
         let scrolling = try XCTUnwrap(page.scrollingController)
 
-        XCTAssertEqual(page.inheritRow.title, "Use settings from Scrolling")
-        XCTAssertEqual(page.inheritSwitch.state, .off)
-        XCTAssertEqual(page.inheritRow.explanation, "Calculator keeps its own settings below.")
-        XCTAssertEqual(page.inheritSwitch.controlSize, PreferencesGroupedForm.switchControlSize)
+        XCTAssertEqual(page.scrollingChoiceRow.title, "Scrolling in Calculator")
+        XCTAssertEqual(shownChoice(of: page), .ownSettings)
+        XCTAssertEqual(page.scrollingChoicePopUp.titleOfSelectedItem, "Own Settings")
+        XCTAssertEqual(page.scrollingChoiceRow.explanation, "Calculator keeps its own settings below.")
         XCTAssertTrue(scrolling.smoothRow.isEnabled)
         XCTAssertTrue(scrolling.speedRow.isEnabled)
         XCTAssertEqual(scrolling.scrollSpeedSlider.doubleValue, 1.5, accuracy: 1e-9)
         XCTAssertTrue(scrolling.view.isDescendant(of: page.view))
         let height = page.view.fittingSize.height
-        let switchHeight = page.inheritRow.fittingSize.height
+        let switchHeight = page.scrollingChoiceRow.fittingSize.height
 
-        page.inheritSwitch.state = .on
-        send(page.inheritSwitch)
+        pick(.sameAsScrolling, on: page)
         XCTAssertTrue(calculator.inherit)
-        XCTAssertEqual(page.inheritRow.explanation, "Changes under Scrolling apply to Calculator too.")
+        XCTAssertEqual(page.scrollingChoiceRow.explanation, "Changes under Scrolling apply to Calculator too.")
         XCTAssertFalse(scrolling.view.isDescendant(of: page.view), "out of sight while the app uses the Scrolling settings")
         XCTAssertFalse(scrolling.resetToDefaultsButton.isDescendant(of: page.view))
         XCTAssertEqual(calculator.scroll.speed, 1.5, "its own value is kept for later")
         XCTAssertEqual(controller.list.rows.first?.explanation, "Nothing of its own yet")
-        XCTAssertEqual(page.inheritRow.fittingSize.height, switchHeight, accuracy: 0.5, "the other line takes the same room")
+        XCTAssertEqual(page.scrollingChoiceRow.fittingSize.height, switchHeight, accuracy: 0.5, "the other line takes the same room")
         XCTAssertLessThan(page.view.fittingSize.height, height - 300, "the page is the switch's box under the app's")
         XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5, "the pane follows")
 
-        page.inheritSwitch.state = .off
-        send(page.inheritSwitch)
+        pick(.ownSettings, on: page)
         XCTAssertFalse(calculator.inherit)
         XCTAssertTrue(scrolling.view.isDescendant(of: page.view))
         XCTAssertTrue(scrolling.smoothRow.isEnabled)
@@ -717,10 +732,10 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(controller.list.rows.first?.explanation, "Own: scrolling")
     }
 
-    /// A new app's own options are those of a new installation: switched off as they were,
-    /// Reverse would come back on and Speed and the keys go to the factory values. Never
-    /// edited, they start as a copy of the Scrolling settings; edited ones are kept.
-    func testSwitchingOffUseSettingsFromScrollingStartsFromTheScrollingSettings() throws {
+    /// A new app's own options are those of a new installation: taken as they were, Reverse
+    /// would come back on and Speed and the keys go to the factory values. Never edited,
+    /// Own Settings starts from a copy of the Scrolling settings; edited ones are kept.
+    func testOwnSettingsStartsFromTheScrollingSettings() throws {
         Options.shared.scroll.reversesWheel = false
         Options.shared.scroll.speed = 8.5
         Options.shared.scroll.dash = nil
@@ -733,8 +748,7 @@ final class PreferencesApplicationTests: XCTestCase {
 
         controller.openApplication(withID: Self.calculator)
         var page = try XCTUnwrap(controller.detailController)
-        page.inheritSwitch.state = .off
-        send(page.inheritSwitch)
+        pick(.ownSettings, on: page)
         XCTAssertFalse(fresh.inherit)
         XCTAssertEqual(fresh.scroll, Options.shared.scroll, "the wheel scrolls on as before")
         XCTAssertFalse(fresh.scroll === Options.shared.scroll, "a copy: the app's own container")
@@ -749,19 +763,16 @@ final class PreferencesApplicationTests: XCTestCase {
         send(scrolling.scrollSpeedSlider)
         XCTAssertEqual(fresh.scroll.speed, 3)
         XCTAssertEqual(Options.shared.scroll.speed, 8.5)
-        // On and off again: its own options are edited now, so they stay.
-        page.inheritSwitch.state = .on
-        send(page.inheritSwitch)
-        page.inheritSwitch.state = .off
-        send(page.inheritSwitch)
+        // Same as Scrolling and Own Settings again: its own options are edited now, so they stay.
+        pick(.sameAsScrolling, on: page)
+        pick(.ownSettings, on: page)
         XCTAssertEqual(fresh.scroll.speed, 3)
 
         // Edited earlier: kept, Reverse and all.
         controller.showList(focusList: false)
         controller.openApplication(withID: Self.textEdit)
         page = try XCTUnwrap(controller.detailController)
-        page.inheritSwitch.state = .off
-        send(page.inheritSwitch)
+        pick(.ownSettings, on: page)
         XCTAssertEqual(edited.scroll.speed, 2)
         XCTAssertTrue(edited.scroll.reversesWheel, "the app's own value")
         XCTAssertEqual(edited.scroll.dash, OPTIONS_SCROLL_DEFAULT().dash)
@@ -1073,7 +1084,7 @@ final class PreferencesApplicationTests: XCTestCase {
         send(page.generalRingSwitch)
         XCTAssertNotNil(page.ringController)
         XCTAssertEqual(page.ringPart.triggerRow.explanation, "None in Calculator")
-        XCTAssertEqual(page.generalRingRow.explanation, "While Calculator is in front, the ring below opens.")
+        XCTAssertEqual(page.generalRingRow.explanation, Self.catalog("apps-detail-ring-general-off", "Calculator"))
     }
 
     /// While "Change scrolling only in these apps" is on, a muted line under the app's box
@@ -1098,11 +1109,11 @@ final class PreferencesApplicationTests: XCTestCase {
         page.view.layoutSubtreeIfNeeded()
         let note = try XCTUnwrap(page.allowlistNote)
         XCTAssertFalse(note.isHidden)
-        // A new app uses the Scrolling settings, its smoothing and reversing dimmed: the
-        // way to macOS starts with that switch, named as the page names it.
-        XCTAssertEqual(note.stringValue, "“Change scrolling only in these apps” is on: this app scrolls as its Scrolling part says. "
-                       + "To leave it to macOS, turn off “Use settings from Scrolling”, smoothing and reversing.")
-        XCTAssertTrue(note.stringValue.contains("“\(NSLocalizedString("apps-detail-inherit", comment: ""))”"))
+        // A new app uses the Scrolling settings: the way to macOS is one choice in its
+        // Scrolling part, named as the part names it.
+        XCTAssertEqual(note.stringValue, "Calculator is on the list, so Scrollio changes how it scrolls. "
+                       + "To leave that to macOS, choose Left to macOS in Calculator › Scrolling.")
+        XCTAssertTrue(note.stringValue.contains(NSLocalizedString("apps-detail-scrolling-macos", comment: "")))
         XCTAssertFalse(page.view.hasAmbiguousLayout)
         XCTAssertEqual(page.headerSection.frame.minY - note.frame.maxY, PreferencesGroupedForm.noteSpacing, accuracy: 1)
         XCTAssertEqual(note.frame.minY - page.partControl.frame.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 0.5)
@@ -1110,6 +1121,74 @@ final class PreferencesApplicationTests: XCTestCase {
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
         XCTAssertLessThanOrEqual(note.frame.height, twoLines)
         XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+    }
+
+    /// The line under the app's box shows while the limit is on and the app is not Left
+    /// to macOS (then it scrolls as an app off the list does), for each choice and with the
+    /// limit off and on; a pick on the page shows or hides it at once and the pane follows.
+    func testTheLimitsLineShowsUnlessTheAppIsLeftToMacOS() throws {
+        for allowlist in [false, true] {
+            for choice in ApplicationScrollingChoice.allCases {
+                let calculator = application(Self.calculator, inherit: choice == .sameAsScrolling)
+                if choice == .leftToMacOS {
+                    calculator.scroll.smooth = false
+                    calculator.scroll.reversesWheel = false
+                }
+                Options.shared.application.applications = Self.makeStore([calculator])
+                Options.shared.application.allowlist = allowlist
+                let controller = makeController()
+                controller.openApplication(withID: Self.calculator, part: .buttons)
+                let page = try XCTUnwrap(controller.detailController)
+                XCTAssertEqual(page.allowlistNote.isHidden, !(allowlist && choice != .leftToMacOS), "limit \(allowlist), \(choice)")
+            }
+        }
+
+        let calculator = application(Self.calculator, inherit: false)
+        Options.shared.application.applications = Self.makeStore([calculator])
+        Options.shared.application.allowlist = true
+        let controller = makeController()
+        controller.openApplication(withID: Self.calculator, part: .scrolling)
+        let page = try XCTUnwrap(controller.detailController)
+        XCTAssertFalse(page.allowlistNote.isHidden)
+        pick(.leftToMacOS, on: page)
+        XCTAssertTrue(page.allowlistNote.isHidden)
+        page.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(page.headerSection.frame.minY - page.partControl.frame.maxY, PreferencesGroupedForm.boxSpacing, accuracy: 0.5)
+        XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+        pick(.sameAsScrolling, on: page)
+        XCTAssertFalse(page.allowlistNote.isHidden)
+        XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+    }
+
+    /// Nothing of the choice is stored: a settings file carries what it is worked out from,
+    /// and every app reads the same choice after an export and an import.
+    func testASettingsFileKeepsEachAppsChoice() throws {
+        let paths = [Self.calculator, Self.textEdit, "/Applications/Safari.app"]
+        let choices: [ApplicationScrollingChoice] = [.sameAsScrolling, .ownSettings, .leftToMacOS]
+        let source = Options()
+        source.defaults = TestDefaults.make(for: self)
+        source.readOptions()
+        for (path, choice) in zip(paths, choices) {
+            let entry = Application(path: path)
+            entry.scroll.speed = 2.5
+            entry.inherit = choice == .sameAsScrolling
+            if choice == .leftToMacOS {
+                entry.scroll.smooth = false
+                entry.scroll.reversesWheel = false
+            }
+            source.application.applications.append(entry)
+        }
+        let data = try SettingsFile.export(from: source).get()
+
+        let target = Options()
+        target.defaults = TestDefaults.make(for: self)
+        target.readOptions()
+        XCTAssertTrue(SettingsFile.apply(try SettingsFile.read(data).get(), to: target))
+        for (path, choice) in zip(paths, choices) {
+            let entry = try XCTUnwrap(target.application.applications.get(by: path), path)
+            XCTAssertEqual(entry.scrollingChoice, choice, path)
+            XCTAssertEqual(entry.scroll.speed, 2.5, path)
+        }
     }
 
     /// The page's "Shortcut Ring" part. While "Use the general ring" is on (as for every
@@ -1125,10 +1204,10 @@ final class PreferencesApplicationTests: XCTestCase {
 
         XCTAssertNil(page.ringSection.titleLabel, "the part's segment names it")
         XCTAssertEqual(page.ringSection.box.visibleRows, [page.ringPart.triggerRow, page.generalRingRow])
-        XCTAssertEqual(page.generalRingRow.title, "Use the general ring")
+        XCTAssertEqual(page.generalRingRow.title, Self.catalog("apps-detail-ring-general"))
         XCTAssertEqual(page.generalRingSwitch.state, .on)
         XCTAssertEqual(page.generalRingSwitch.controlSize, PreferencesGroupedForm.switchControlSize)
-        XCTAssertEqual(page.generalRingRow.explanation, "While Calculator is in front, the general ring opens.")
+        XCTAssertEqual(page.generalRingRow.explanation, Self.catalog("apps-detail-ring-general-on", "Calculator"))
         XCTAssertNil(page.ringController, "no drawing and no rows")
         XCTAssertFalse(allSubviews(of: page.view).contains { $0 is ShortcutRingPreviewView || $0 is ButtonActionPullDown })
         // The section is the part's first box, and the part ends under it.
@@ -1168,7 +1247,7 @@ final class PreferencesApplicationTests: XCTestCase {
         send(page.generalRingSwitch)
         XCTAssertFalse(calculator.usesGeneralRing)
         XCTAssertEqual(calculator.ownRingPlaces, general.places, "a copy of the general ring")
-        XCTAssertEqual(page.generalRingRow.explanation, "While Calculator is in front, the ring below opens.")
+        XCTAssertEqual(page.generalRingRow.explanation, Self.catalog("apps-detail-ring-general-off", "Calculator"))
         XCTAssertEqual(heightChanges, 1)
         let ring = try XCTUnwrap(page.ringController)
         XCTAssertTrue(ring.view.isDescendant(of: page.view))

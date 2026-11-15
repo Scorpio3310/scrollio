@@ -6,8 +6,9 @@
 //  the app's name (PreferencesWindowController), as in System Settings; Esc and ⌘[ go back
 //  too. A box shows the app (icon, name, what it has of its own, "Show in Finder"; where
 //  it is in the tooltip), with a muted line under it while
-//  "Change scrolling only in these apps" is on (being on the list changes the app's
-//  scrolling, whatever it was added for); under it a segmented control
+//  "Change scrolling only in these apps" is on and the app's scrolling is not left to macOS
+//  (being on the list changes the app's scrolling, whatever it was added for); under it a
+//  segmented control
 //  chooses the part of the page that shows (`ApplicationPagePart`: Scrolling, Buttons,
 //  Gestures, Shortcut Ring), one at a time, so the page stays short; a small dot on a
 //  segment says that the app has settings of that kind of its own. The part shown last is shown
@@ -52,6 +53,7 @@ final class ApplicationDetailViewController: NSViewController {
     var onInheritChange: (() -> Void)? {
         didSet {
             buttonsPart?.onOwnButtonsChange = onInheritChange
+            scrollingPart?.onInheritChange = onInheritChange
             scrollingPart?.onOwnThumbWheelChange = ownThumbWheelChange()
         }
     }
@@ -87,9 +89,9 @@ final class ApplicationDetailViewController: NSViewController {
 
     private(set) var headerRow: ApplicationDetailHeaderRow!
     private(set) var headerSection: PreferencesGroupSection!
-    /// Under the app's box while "Change scrolling only in these apps" is on: being on the
-    /// list changes how the app scrolls, also for an app added only for its buttons,
-    /// gestures or ring.
+    /// Under the app's box while "Change scrolling only in these apps" is on and the app's
+    /// scrolling is not Left to macOS: being on the list changes how the app scrolls, also
+    /// for an app added only for its buttons, gestures or ring.
     private(set) var allowlistNote: NSTextField!
     private var controlUnderHeader: NSLayoutConstraint!
     private var controlUnderNote: NSLayoutConstraint!
@@ -116,8 +118,9 @@ final class ApplicationDetailViewController: NSViewController {
     var gesturesPart: ApplicationGesturesPartViewController! {
         return partControllers[ApplicationPagePart.gestures.id] as? ApplicationGesturesPartViewController
     }
-    var inheritRow: PreferencesSwitchRow! { return scrollingPart.inheritRow }
-    var inheritSwitch: NSSwitch { return inheritRow.toggle }
+    /// "Scrolling in Safari" and its pop-up.
+    var scrollingChoiceRow: PreferencesGroupRow! { return scrollingPart.choiceRow }
+    var scrollingChoicePopUp: NSPopUpButton { return scrollingPart.choicePopUp }
     var scrollingController: PreferencesScrollingViewController! { return scrollingPart.scrollingController }
     var ringSection: PreferencesGroupSection! { return ringPart.ringSection }
     var generalRingRow: PreferencesSwitchRow! { return ringPart.generalRingRow }
@@ -190,7 +193,7 @@ final class ApplicationDetailViewController: NSViewController {
         container.translatesAutoresizingMaskIntoConstraints = false
         partContainer = container
 
-        let note = NSTextField(wrappingLabelWithString: NSLocalizedString("apps-detail-allowlist-note", comment: ""))
+        let note = NSTextField(wrappingLabelWithString: Self.allowlistNoteText(fitting: application.getName()))
         note.identifier = Identifier.allowlistNote
         note.font = PreferencesGroupedForm.explanationFont
         note.textColor = PreferencesGroupedForm.explanationColor(enabled: true)
@@ -206,7 +209,8 @@ final class ApplicationDetailViewController: NSViewController {
         let margin = PreferencesGroupedForm.margin
         controlUnderHeader = control.topAnchor.constraint(equalTo: header.bottomAnchor, constant: PreferencesGroupedForm.boxSpacing)
         controlUnderNote = control.topAnchor.constraint(equalTo: note.bottomAnchor, constant: PreferencesGroupedForm.boxSpacing)
-        let showsNote = Self.showsAllowlistNote
+        // (The parts are not made yet: what is stored says whether the app is left to macOS.)
+        let showsNote = Self.showsAllowlistNote(choice: application.scrollingChoice)
         note.isHidden = !showsNote
         NSLayoutConstraint.activate([
             // The app's box begins where the first box of every pane does.
@@ -233,7 +237,10 @@ final class ApplicationDetailViewController: NSViewController {
             // (A part out of sight changes nothing on screen; the pane only measures again.)
             controller.onHeightChange = { [weak self] in self?.onHeightChange?() }
             if let scrolling = controller as? ApplicationScrollingPartViewController {
-                scrolling.onInheritChange = { [weak self] in self?.onInheritChange?() }
+                // The pane's own, as it is: an Undo of a pick after the page closed still
+                // reaches the list.
+                scrolling.onInheritChange = onInheritChange
+                scrolling.onChoiceChange = { [weak self] in self?.syncAllowlistNote() }
                 scrolling.onOwnThumbWheelChange = ownThumbWheelChange()
                 scrolling.partShowing = scrollingPartShowing
             }
@@ -328,10 +335,10 @@ final class ApplicationDetailViewController: NSViewController {
     // MARK: - Parts
 
     /// "Thumb Wheel Settings…" of the Buttons part's thumb wheel row: the app's Scrolling
-    /// part, with its Thumb wheel box in view while the app has its own settings. While it
-    /// uses the Scrolling settings the part shows that switch and its line, and no box:
-    /// the general Scrolling pane would show the general action's values, not this app's
-    /// action, and one click on the switch here shows the app's own, with its action.
+    /// part, with its Thumb wheel box in view while the app has its own settings (Own
+    /// Settings or Left to macOS). With Same as Scrolling the part shows that choice and its
+    /// line, and no box: the general Scrolling pane would show the general action's values,
+    /// not this app's action, and another pick here shows the app's own, with its action.
     func showThumbWheelSettings() {
         show(.scrolling)
         guard let scrolling = scrollingPart else { return }
@@ -422,13 +429,23 @@ final class ApplicationDetailViewController: NSViewController {
             controller.syncViewWithOptions()
         }
         showOwnSettings()
-        let showsNote = Self.showsAllowlistNote
-        if allowlistNote.isHidden == showsNote {
-            allowlistNote.isHidden = !showsNote
-            NSLayoutConstraint.deactivate([showsNote ? controlUnderHeader : controlUnderNote])
-            NSLayoutConstraint.activate([showsNote ? controlUnderNote : controlUnderHeader])
-            onHeightChange?()
+        syncAllowlistNote()
+    }
+
+    /// The line under the app's box: its words (the app's name may change with an Undo of
+    /// its removal), and whether it shows; the pane measures again when it comes or goes.
+    func syncAllowlistNote() {
+        guard isViewLoaded else { return }
+        let text = Self.allowlistNoteText(fitting: application.getName())
+        if allowlistNote.stringValue != text {
+            allowlistNote.stringValue = text
         }
+        let showsNote = Self.showsAllowlistNote(choice: scrollingPart?.shownChoice ?? application.scrollingChoice)
+        guard allowlistNote.isHidden == showsNote else { return }
+        allowlistNote.isHidden = !showsNote
+        NSLayoutConstraint.deactivate([showsNote ? controlUnderHeader : controlUnderNote])
+        NSLayoutConstraint.activate([showsNote ? controlUnderNote : controlUnderHeader])
+        onHeightChange?()
     }
 
     /// What the app has of its own changed (a part, an Undo, the list's own refresh): the
@@ -477,10 +494,24 @@ final class ApplicationDetailViewController: NSViewController {
     }
 
     /// The line under the app's box shows while "Change scrolling only in these apps" is
-    /// on: every app on the list then scrolls as its Scrolling part says, also one added
-    /// only for its buttons, gestures or ring.
-    static var showsAllowlistNote: Bool {
-        return Options.shared.application.allowlist
+    /// on (every app on the list then scrolls as its Scrolling part says, also one added
+    /// only for its buttons, gestures or ring) and the part shows `choice` other than Left
+    /// to macOS (then the app scrolls as one off the list does).
+    static func showsAllowlistNote(choice: ApplicationScrollingChoice) -> Bool {
+        return Options.shared.application.allowlist && choice != .leftToMacOS
+    }
+
+    /// "Safari is on the list, so Scrollio changes how it scrolls. To leave that to macOS,
+    /// choose Left to macOS in Safari › Scrolling."
+    static func allowlistNoteText(name: String) -> String {
+        return String(format: NSLocalizedString("apps-detail-allowlist-note", comment: ""), name)
+    }
+
+    /// The same with `name` cut short where the line would take more than two lines (the
+    /// whole name is in the app's box right above it).
+    static func allowlistNoteText(fitting name: String) -> String {
+        let width = PreferencesGroupedForm.boxWidth(paneWidth: paneWidth) - 2 * PreferencesGroupedForm.rowHorizontalInset
+        return allowlistNoteText(name: ApplicationPagePart.name(name, fittingTwoLinesOf: width) { [allowlistNoteText(name: $0)] })
     }
 
     /// What opens the Shortcut Ring while an app is in front: whether the part folds the
@@ -523,12 +554,6 @@ final class ApplicationDetailViewController: NSViewController {
     /// The button that runs them there is the part's first row ("Button to hold").
     static func generalGesturesExplanation(on: Bool, name: String) -> String {
         let format = NSLocalizedString(on ? "apps-detail-gestures-general-on" : "apps-detail-gestures-general-off", comment: "")
-        return String(format: format, name)
-    }
-
-    /// "Changes under Scrolling apply to Safari too." / "Safari keeps its own settings below."
-    static func inheritExplanation(on: Bool, name: String) -> String {
-        let format = NSLocalizedString(on ? "apps-detail-inherit-on" : "apps-detail-inherit-off", comment: "")
         return String(format: format, name)
     }
 

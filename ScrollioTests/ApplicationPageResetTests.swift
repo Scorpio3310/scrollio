@@ -58,6 +58,12 @@ final class ApplicationPageResetTests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// The catalog's text for `key`, with `arguments` put in as the app puts them: the
+    /// expected text follows the catalog's wording.
+    private static func catalog(_ key: String, _ arguments: String...) -> String {
+        return String(format: NSLocalizedString(key, comment: ""), arguments: arguments)
+    }
+
     /// The Apps pane as the window makes it, with nothing shown on screen.
     private func makePane() -> PreferencesApplicationViewController {
         let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
@@ -168,6 +174,73 @@ final class ApplicationPageResetTests: XCTestCase {
         tab.uiStateDefaults = uiDefaults
         _ = tab.view
         XCTAssertEqual(tab.resetToDefaultsButton.title, "Reset to Defaults")
+    }
+
+    /// "Copy from Scrolling" in each face of "Scrolling in Calculator": with Same as
+    /// Scrolling and with Left to macOS it is not there (out of the part, or folded with the
+    /// main box); with Own Settings what the copy gives shows at once, also Left to macOS
+    /// (the Scrolling settings smooth and reverse nothing) over Own Settings held for what
+    /// was switched here by hand, with the box folded and the button's "Undo" offer gone;
+    /// Edit › Undo of the copy shows Own Settings again at once.
+    func testCopyFromScrollingInEachChoice() throws {
+        let savedScroll = Options.shared.scroll
+        addTeardownBlock { Options.shared.scroll = savedScroll }
+        let general = OPTIONS_SCROLL_DEFAULT()
+        general.smooth = false
+        general.reversesWheel = false
+        Options.shared.scroll = general
+        let calculator = addCalculator()
+        let pane = makePane()
+        let undo = undoManager()
+        var page = try open(.scrolling, in: pane, undo: undo)
+        func shown() -> ApplicationScrollingChoice? {
+            return ApplicationScrollingChoice(rawValue: page.scrollingChoicePopUp.selectedTag())
+        }
+        XCTAssertEqual(shown(), .sameAsScrolling)
+        XCTAssertFalse(page.scrollingController.resetToDefaultsButton.isDescendant(of: page.view), "Same as Scrolling: no copy")
+
+        // Own Settings, smoothing on: the copy gives Left to macOS, shown at once.
+        calculator.inherit = false
+        calculator.scroll.smooth = true
+        calculator.scroll.reversesWheel = true
+        pane.leaveSubpage()
+        page = try open(.scrolling, in: pane, undo: undo)
+        let settings = try XCTUnwrap(page.scrollingController)
+        settings.paneUndoManager = undo
+        XCTAssertEqual(shown(), .ownSettings)
+        // Held: smoothing and the direction switched off here by hand.
+        settings.smoothSwitch.state = .off
+        XCTAssertTrue(settings.smoothSwitch.sendAction(settings.smoothSwitch.action, to: settings.smoothSwitch.target))
+        settings.reverseSwitch.state = .off
+        XCTAssertTrue(settings.reverseSwitch.sendAction(settings.reverseSwitch.action, to: settings.reverseSwitch.target))
+        XCTAssertEqual(shown(), .ownSettings)
+        settings.syncViewWithOptions()
+        let button = try XCTUnwrap(settings.resetToDefaultsButton)
+        calculator.scroll.speed = 4.5
+        settings.syncViewWithOptions()
+        XCTAssertTrue(button.isEnabled, "the speed differs from the copy")
+        click(button, undo: undo)
+        XCTAssertEqual(calculator.scroll, general)
+        XCTAssertEqual(shown(), .leftToMacOS, "what the copy gives shows at once")
+        XCTAssertTrue(settings.isLeftToMacOS)
+        XCTAssertTrue(button.isHiddenOrHasHiddenAncestor, "Left to macOS: no copy")
+        XCTAssertFalse(settings.offersUndoOfReset, "no offer on a button out of sight")
+        XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+
+        undo.undo()
+        XCTAssertEqual(calculator.scroll.speed, 4.5)
+        XCTAssertEqual(calculator.scrollingChoice, .leftToMacOS, "smoothing and reversing were off before the copy too")
+        XCTAssertEqual(shown(), .leftToMacOS, "Undo shows what is stored")
+
+        // Own Settings with smoothing on, the Scrolling settings smoothing too: Own Settings stays.
+        general.smooth = true
+        calculator.scroll.smooth = true
+        pane.syncViewWithOptions()
+        XCTAssertEqual(shown(), .ownSettings)
+        XCTAssertFalse(button.isHiddenOrHasHiddenAncestor)
+        click(button, undo: undo)
+        XCTAssertEqual(shown(), .ownSettings)
+        XCTAssertTrue(settings.offersUndoOfReset)
     }
 
     // MARK: - Shortcut Ring
@@ -545,10 +618,10 @@ final class ApplicationPageResetTests: XCTestCase {
         click(page.buttonsPart.resetToDefaultsButton, undo: undo)
         page.show(.ring)
         let five = ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 5, modifiers: 0, deviceFilter: nil))
-        XCTAssertEqual(page.ringPart.triggerRow.explanation, "\(five), as everywhere")
+        XCTAssertEqual(page.ringPart.triggerRow.explanation, Self.catalog("apps-trigger-everywhere", five))
         undo.undo()
         XCTAssertEqual(page.ringPart.triggerRow.explanation, "None in Calculator")
         undo.redo()
-        XCTAssertEqual(page.ringPart.triggerRow.explanation, "\(five), as everywhere")
+        XCTAssertEqual(page.ringPart.triggerRow.explanation, Self.catalog("apps-trigger-everywhere", five))
     }
 }

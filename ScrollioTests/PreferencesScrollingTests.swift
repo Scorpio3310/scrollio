@@ -1865,7 +1865,7 @@ final class PreferencesScrollingTests: XCTestCase {
     /// The page has no preview, and the thumb wheel's box in the same place as the tab,
     /// with a line of its own under it: the action is the app's Buttons part's, the speed
     /// and the direction are the app's own settings.
-    func testThePerAppViewHasNoPreviewAndItsOwnThumbWheel() {
+    func testThePerAppViewHasNoPreviewAndItsOwnThumbWheel() throws {
         let global = makeController()
         let perApp = makeController(target: makeApplication(inherit: false))
         XCTAssertFalse(global.previewView.isHidden)
@@ -1876,8 +1876,9 @@ final class PreferencesScrollingTests: XCTestCase {
             XCTAssertTrue(controller.sections[1] === controller.thumbWheelSection, "under the main box")
         }
         XCTAssertEqual(global.thumbWheelNote.stringValue, "For the sideways wheel: an MX Master's thumb wheel, or a wheel that tilts.")
+        let name = try XCTUnwrap(perApp.currentTargetApplication).getName()
         XCTAssertEqual(perApp.thumbWheelNote.stringValue,
-                       "The action is also in this app's Buttons part and stays when “Use settings from Scrolling” is on; speed and direction then follow Scrolling.")
+                       "The action is also set in \(name) › Buttons. With Same as Scrolling, speed and direction follow Scrolling.")
         XCTAssertEqual(perApp.thumbWheelSection.accessibilityHelp(), perApp.thumbWheelNote.stringValue)
         global.view.layoutSubtreeIfNeeded()
         perApp.view.layoutSubtreeIfNeeded()
@@ -1912,14 +1913,17 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(page.view.fittingSize.width, PreferencesScrollingViewController.paneWidth)
         XCTAssertEqual(tab.scrollSpeedSlider.doubleValue, 4.2, accuracy: 1e-9)
         XCTAssertTrue(tab.previewView.isHidden)
-        XCTAssertEqual(page.inheritSwitch.state, .off)
-        // "Use settings from Scrolling" is a switch row in a box of its own over the
-        // settings, as in the boxes under it; the app's box holds the app alone.
-        XCTAssertEqual(page.inheritSwitch.controlSize, PreferencesGroupedForm.switchControlSize)
-        XCTAssertEqual(page.inheritRow.title, "Use settings from Scrolling")
+        XCTAssertEqual(page.scrollingChoicePopUp.selectedTag(), ApplicationScrollingChoice.ownSettings.rawValue)
+        // "Scrolling in …" is a pop-up row in a box of its own over the settings, as in the
+        // boxes under it; the app's box holds the app alone.
+        XCTAssertEqual(page.scrollingChoicePopUp.identifier?.rawValue, "apps-detail-inherit", "the switch's identifier")
+        XCTAssertFalse(page.scrollingChoicePopUp.pullsDown)
+        XCTAssertEqual(page.scrollingChoicePopUp.itemTitles, ["Same as Scrolling", "Own Settings", "Left to macOS"])
+        XCTAssertEqual(page.scrollingChoiceRow.title, "Scrolling in \(application.getName())")
+        XCTAssertEqual(page.scrollingChoicePopUp.accessibilityLabel(), page.scrollingChoiceRow.title, "named by its row")
         XCTAssertEqual(page.headerSection.box.rows.count, 1)
         XCTAssertTrue(page.headerSection.box.rows.first === page.headerRow)
-        XCTAssertTrue(page.scrollingPart.inheritSection.box.rows.first === page.inheritRow)
+        XCTAssertTrue(page.scrollingPart.choiceSection.box.rows.first === page.scrollingChoiceRow)
 
         // The page is as tall as the app's box and the settings under it, and follows
         // when "Advanced" opens and closes.
@@ -1937,11 +1941,11 @@ final class PreferencesScrollingTests: XCTestCase {
         tab.setAdvancedExpanded(false)
         XCTAssertEqual(page.view.fittingSize.height, closed, accuracy: 0.5)
 
-        // "Use settings from Scrolling" takes the settings out of the page (the tab stays its
-        // child), and the page hears of it.
+        // Same as Scrolling takes the settings out of the page (the tab stays its child), and
+        // the page hears of it.
         let beforeSwitch = heightChanges
-        page.inheritSwitch.state = .on
-        page.scrollingPart.inheritClick(page.inheritSwitch)
+        page.scrollingChoicePopUp.selectItem(withTag: ApplicationScrollingChoice.sameAsScrolling.rawValue)
+        page.scrollingPart.choiceChanged(page.scrollingChoicePopUp)
         XCTAssertTrue(application.inherit)
         XCTAssertFalse(tab.view.isDescendant(of: page.view))
         XCTAssertTrue(page.scrollingPart.children.first === tab)
@@ -1954,6 +1958,41 @@ final class PreferencesScrollingTests: XCTestCase {
         tab.setAdvancedExpanded(true)
         XCTAssertEqual(heightChanges, beforeSwitch + 1)
         tab.setAdvancedExpanded(false)
+    }
+
+    /// Left to macOS on an app's page: only what still acts there shows, the Thumb wheel
+    /// box (editable: its action, speed and Reverse stay as set) and "While you hold a key";
+    /// the main box, "Advanced" and "Copy from Scrolling" are hidden, their values kept. The
+    /// pane hears of its new height, and of the old one when it goes back.
+    func testLeftToMacOSShowsOnlyWhatStillActs() {
+        let application = makeApplication(inherit: false)
+        application.scroll.smooth = false
+        application.scroll.reversesWheel = false
+        application.scroll.speed = 2.5
+        let controller = makeController(target: application, advanced: true)
+        let full = controller.view.fittingSize.height
+        XCTAssertFalse(controller.isLeftToMacOS)
+
+        controller.isLeftToMacOS = true
+        for view: NSView in [controller.smoothSwitch, controller.feelControl, controller.scrollSpeedSlider, controller.reverseSwitch,
+                             controller.advancedButton, controller.glideTimeSlider, controller.resetToDefaultsButton] {
+            XCTAssertTrue(view.isHiddenOrHasHiddenAncestor)
+        }
+        for view: NSView in [controller.thumbWheelSection, controller.thumbWheelNote, controller.keysSection, controller.keyBindButtons[0]] {
+            XCTAssertFalse(view.isHiddenOrHasHiddenAncestor)
+        }
+        XCTAssertTrue(controller.thumbWheelSpeedRow.isEnabled)
+        XCTAssertTrue(controller.thumbWheelReverseRow.isEnabled)
+        XCTAssertTrue(controller.thumbWheelFunctionPopUp.isEnabled)
+        XCTAssertLessThan(controller.view.fittingSize.height, full - 250)
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(controller.view.hasAmbiguousLayout)
+        XCTAssertEqual(application.scroll.speed, 2.5, "kept")
+
+        controller.isLeftToMacOS = false
+        XCTAssertFalse(controller.smoothSwitch.isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(controller.resetToDefaultsButton.isHiddenOrHasHiddenAncestor)
+        XCTAssertEqual(controller.view.fittingSize.height, full, accuracy: 0.5)
     }
 
     // MARK: - Layout

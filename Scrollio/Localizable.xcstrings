@@ -3025,20 +3025,8 @@
         }
       }
     },
-    "apps-detail-inherit": {
-      "comment": "App page: switch; on, the app uses the settings of the Scrolling pane",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Use settings from Scrolling"
-          }
-        }
-      }
-    },
     "apps-detail-inherit-on": {
-      "comment": "App page: explanation while the switch is on; %@ is the app's name",
+      "comment": "An app's Scrolling part: the line under “Scrolling in …” while Same as Scrolling is chosen; %@ is the app's name",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -3050,7 +3038,7 @@
       }
     },
     "apps-detail-inherit-off": {
-      "comment": "App page: explanation while the switch is off; %@ is the app's name",
+      "comment": "An app's Scrolling part: the line under “Scrolling in …” while Own Settings is chosen; %@ is the app's name",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -8430,13 +8418,13 @@
       }
     },
     "apps-detail-allowlist-note": {
-      "comment": "App page: muted line under the app's box while \"Change scrolling only in these apps\" is on",
+      "comment": "App page: muted line under the app's box while \"Change scrolling only in these apps\" is on and the app's Scrolling is not Left to macOS; %1$@ is the app's name (twice)",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "“Change scrolling only in these apps” is on: this app scrolls as its Scrolling part says. To leave it to macOS, turn off “Use settings from Scrolling”, smoothing and reversing."
+            "value": "%1$@ is on the list, so Scrollio changes how it scrolls. To leave that to macOS, choose Left to macOS in %1$@ › Scrolling."
           }
         }
       }
@@ -8538,13 +8526,13 @@
       }
     },
     "apps-detail-thumb-wheel-shared": {
-      "comment": "Apps, an app's Scrolling part: the muted line under its Thumb wheel box, shown only while “Use settings from Scrolling” is off. Its Action is the same value as the thumb wheel's row of the app's Buttons part and stays when the switch goes on (the box is then out of sight); its Speed and Swap direction then follow Scrolling",
+      "comment": "Apps, an app's Scrolling part: the muted line under its Thumb wheel box (Own Settings and Left to macOS). Its Action is the same value as the thumb wheel's row of the app's Buttons part; with Same as Scrolling its Speed and Reverse direction follow Scrolling; %@ is the app's name",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The action is also in this app's Buttons part and stays when “Use settings from Scrolling” is on; speed and direction then follow Scrolling."
+            "value": "The action is also set in %@ › Buttons. With Same as Scrolling, speed and direction follow Scrolling."
           }
         }
       }
@@ -10713,6 +10701,78 @@
           "stringUnit": {
             "state": "translated",
             "value": "Eight shortcuts around the pointer."
+          }
+        }
+      }
+    },
+    "apps-detail-scrolling-choice": {
+      "comment": "An app's Scrolling part: the title of the row with the pop-up Same as Scrolling / Own Settings / Left to macOS; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrolling in %@"
+          }
+        }
+      }
+    },
+    "apps-detail-scrolling-same": {
+      "comment": "An app's Scrolling part, “Scrolling in …” pop-up: the app uses the settings of the Scrolling pane",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Same as Scrolling"
+          }
+        }
+      }
+    },
+    "apps-detail-scrolling-own": {
+      "comment": "An app's Scrolling part, “Scrolling in …” pop-up: the app has settings of its own, shown below",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Own Settings"
+          }
+        }
+      }
+    },
+    "apps-detail-scrolling-macos": {
+      "comment": "An app's Scrolling part, “Scrolling in …” pop-up: Scrollio neither smooths nor reverses the wheel in the app",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Left to macOS"
+          }
+        }
+      }
+    },
+    "apps-detail-scrolling-macos-hint": {
+      "comment": "An app's Scrolling part: the line under “Scrolling in …” while Left to macOS is chosen; %@ is the app's name",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ scrolls the way macOS does: not smoothed, not reversed."
+          }
+        }
+      }
+    },
+    "apps-undo-scrolling-choice": {
+      "comment": "Edit › Undo / Redo: the action name of a pick in “Scrolling in …” on an app's page; %@ the app",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change Scrolling in %@"
           }
         }
       }
