@@ -3,7 +3,8 @@
 //  MosTests
 //
 //  The General pane: the card with the app's name and version (what the About pane
-//  showed), "Scrollio is paused" with Resume, "Open at login" and its approval row, "Show
+//  showed), the row under it that says whether Scrollio works ("Scrollio is on" with
+//  Pause, the status-bar menu's title with its way out), "Open at login" and its approval row, "Show
 //  in menu bar" (the stored "hide" shown the other way round), the Accessibility row, no
 //  developer tools, "Updates" (the two switches and "Check Now" in a copy that updates
 //  itself, one line that says why in every other), "Settings file" (its own tests are in
@@ -58,7 +59,10 @@ final class PreferencesGeneralTests: XCTestCase {
         var menuBarIconHidden = false
         var accessibilitySettingsOpened = 0
         var paused = false
+        var pauses = 0
         var resumes = 0
+        var startProblem: StatusMenu.StartProblem?
+        var tryAgains = 0
         var welcomeGuidesOpened = 0
         var openedURLs: [URL] = []
         /// The updater: a copy built from source unless a test says otherwise.
@@ -100,10 +104,16 @@ final class PreferencesGeneralTests: XCTestCase {
         pane.isMenuBarIconHidden = { world.menuBarIconHidden }
         pane.setMenuBarIconHidden = { world.menuBarIconHidden = $0 }
         pane.isPaused = { world.paused }
+        pane.pause = {
+            world.pauses += 1
+            world.paused = true
+        }
         pane.resume = {
             world.resumes += 1
             world.paused = false
         }
+        pane.startProblem = { world.startProblem }
+        pane.tryAgain = { world.tryAgains += 1 }
         pane.showWelcomeGuide = { world.welcomeGuidesOpened += 1 }
         pane.openURL = { world.openedURLs.append($0) }
         pane.updateStatus = { world.updates }
@@ -325,41 +335,179 @@ final class PreferencesGeneralTests: XCTestCase {
         }
     }
 
-    // MARK: - Paused
+    // MARK: - Whether Scrollio works
 
-    /// "Pause Scrollio" is only in the status-bar menu: with the menu bar icon hidden, the
-    /// pane is the way back.
-    func testWhilePausedTheTopRowSaysSoAndResumes() throws {
+    /// The row under the card is always there: "Scrollio is on" with Pause, and while
+    /// paused the menu's title with Resume. With the menu bar icon hidden it is the way to
+    /// pause and back.
+    func testTheRowUnderTheCardPausesAndResumes() throws {
         install(.notRegistered)
         let world = World()
         let pane = try makePane(world)
-        let content = try XCTUnwrap(pane.pausedSection.superview as? NSStackView)
+        let content = try XCTUnwrap(pane.statusSection.superview as? NSStackView)
         XCTAssertTrue(content.arrangedSubviews.first === pane.headerView)
-        XCTAssertTrue(content.arrangedSubviews[1] === pane.pausedSection, "right under the card")
-        XCTAssertTrue(pane.pausedSection.isHidden, "not while running")
-        XCTAssertFalse(shownTexts(pane).contains("Scrollio is paused"))
+        XCTAssertTrue(content.arrangedSubviews[1] === pane.statusSection, "right under the card")
+        XCTAssertTrue(isShown(pane.statusSection), "while running too")
+        XCTAssertEqual(pane.statusSection.box.visibleRows.count, 1, "one row")
+        XCTAssertNil(pane.statusSection.titleLabel)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is on")
+        XCTAssertNil(pane.statusRow.explanation)
+        XCTAssertEqual(pane.statusButton.title, "Pause")
+        XCTAssertEqual(pane.statusButton.bezelStyle, .push)
+        XCTAssertTrue(pane.statusButton.accessibilityTitleUIElement() as? NSTextField === pane.statusRow.titleLabel)
+        XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
         let runningHeight = pane.view.frame.height
+
+        click(pane.statusButton)
+        XCTAssertEqual(world.pauses, 1)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is paused")
+        XCTAssertEqual(pane.statusRow.explanation, "Scrolling, buttons, gestures and the Shortcut Ring are off until you resume.")
+        XCTAssertEqual(pane.statusButton.title, "Resume")
+        XCTAssertTrue(pane.statusButton.accessibilityTitleUIElement() as? NSTextField === pane.statusRow.titleLabel)
+        XCTAssertEqual(pane.statusButton.accessibilityHelp(), pane.statusRow.explanation)
+        XCTAssertGreaterThan(pane.view.frame.height, runningHeight, "the pane makes room for the line")
+        XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+        pane.view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(pane.view.hasAmbiguousLayout)
+
+        click(pane.statusButton)
+        XCTAssertEqual(world.resumes, 1)
+        XCTAssertEqual(world.pauses, 1)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is on")
+        XCTAssertEqual(pane.statusButton.title, "Pause")
+        XCTAssertEqual(pane.view.frame.height, runningHeight, accuracy: 0.5)
+        XCTAssertEqual(world.tryAgains, 0)
+        XCTAssertEqual(world.accessibilitySettingsOpened, 0)
+    }
+
+    /// The row's title is the status-bar menu's, by the same pure rule and in its order:
+    /// the missing access first (also while paused), then the pause, then a start problem.
+    func testTheRowSaysWhatTheMenuBarSays() throws {
+        typealias Status = PreferencesGeneralViewController.RunStatus
+        for access in [true, false] {
+            for paused in [false, true] {
+                for problem in [nil, StatusMenu.StartProblem.retrying, .tapOff] {
+                    let status = Status(hasAccess: access, isPaused: paused, startProblem: problem)
+                    let menu = StatusMenu.title(hasAccess: access, isPaused: paused, startProblem: problem)
+                    let name = "access \(access) paused \(paused) \(String(describing: problem))"
+                    XCTAssertEqual(status.title, menu, name)
+                    XCTAssertEqual(status.titleKey, menu?.key ?? "general-status-on", name)
+                    // The icon's tooltip says the same, by the same rule.
+                    let look = StatusMenu.IconLook(
+                        hasAccess: access, coresActive: problem == .tapOff, isPaused: paused,
+                        startFailed: problem == .retrying, tapRestartsThrottled: problem == .tapOff
+                    )
+                    XCTAssertEqual(look.toolTip == nil, menu == nil, name)
+                }
+            }
+        }
+        XCTAssertEqual(Status(hasAccess: false, isPaused: true, startProblem: nil).action, .allowAccess, "the access first")
+        XCTAssertEqual(Status(hasAccess: true, isPaused: true, startProblem: .retrying).action, .resume, "then the pause")
+        XCTAssertEqual(Status(hasAccess: true, isPaused: false, startProblem: .retrying).action, .tryAgain)
+        XCTAssertEqual(Status(hasAccess: true, isPaused: false, startProblem: .tapOff).action, .pause, "it comes back by itself")
+        XCTAssertEqual(Status(hasAccess: true, isPaused: false, startProblem: nil).action, .pause)
+
+        // The words are the menu's.
+        install(.notRegistered)
+        let world = World()
+        world.paused = true
+        let pane = try makePane(world)
+        XCTAssertEqual(pane.statusRow.title, NSLocalizedString(StatusMenu.Title.paused.key, comment: ""))
+    }
+
+    /// A start that failed: the menu's title, and Try Again tries at once (as "Try Again
+    /// Now" in the menu). A tap kept off comes back by itself: Pause, as in the menu.
+    func testAStartThatFailedOffersTryAgain() throws {
+        install(.notRegistered)
+        let world = World()
+        world.startProblem = .retrying
+        let pane = try makePane(world)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio couldn't start and is trying again")
+        XCTAssertNil(pane.statusRow.explanation)
+        XCTAssertEqual(pane.statusButton.title, "Try Again")
+        XCTAssertTrue(pane.statusButton.accessibilityTitleUIElement() as? NSTextField === pane.statusRow.titleLabel)
+        click(pane.statusButton)
+        XCTAssertEqual(world.tryAgains, 1)
+        XCTAssertEqual(world.pauses, 0)
+
+        world.startProblem = .tapOff
+        NotificationCenter.default.post(name: Interceptor.restartThrottleDidChangeNotification, object: nil)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio couldn't start and is trying again")
+        XCTAssertEqual(pane.statusButton.title, "Pause")
+        click(pane.statusButton)
+        XCTAssertEqual(world.pauses, 1)
+        XCTAssertEqual(world.tryAgains, 1)
+        // Paused now: the pause comes before the start problem.
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is paused")
+        XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+    }
+
+    /// Without the access, the row says so first (also while paused) and leads where the
+    /// Permissions row leads.
+    func testWithoutAccessTheRowUnderTheCardLeadsToSystemSettings() throws {
+        install(.notRegistered)
+        let world = World()
+        world.access = false
+        world.paused = true
+        let pane = try makePane(world)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio needs Accessibility access")
+        XCTAssertEqual(pane.statusButton.title, "Open System Settings")
+        XCTAssertEqual(pane.statusButton.title, pane.openAccessibilitySettingsButton.title)
+        click(pane.statusButton)
+        XCTAssertEqual(world.accessibilitySettingsOpened, 1)
+        XCTAssertEqual(world.resumes, 0, "Resume is not offered without the access")
+        XCTAssertEqual(world.pauses, 0)
+        XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+    }
+
+    /// The row follows what the status item follows: the run controller, the lost access,
+    /// a tap kept off, and the window becoming key (back from System Settings).
+    func testTheRowFollowsTheRunState() throws {
+        install(.notRegistered)
+        let world = World()
+        let pane = try makePane(world)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is on")
 
         // Paused from the menu: the run controller says so.
         world.paused = true
         NotificationCenter.default.post(name: AppRunController.didChangeNotification, object: nil)
-        XCTAssertFalse(pane.pausedSection.isHidden)
-        XCTAssertEqual(pane.pausedRow.title, "Scrollio is paused")
-        XCTAssertEqual(pane.pausedRow.explanation, "Scrolling, buttons and gestures are off until you resume.")
-        XCTAssertEqual(pane.resumeButton.title, "Resume")
-        XCTAssertTrue(pane.resumeButton.accessibilityTitleUIElement() as? NSTextField === pane.pausedRow.titleLabel)
-        XCTAssertGreaterThan(pane.view.frame.height, runningHeight, "the pane makes room for it")
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is paused")
         XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
 
-        click(pane.resumeButton)
-        XCTAssertEqual(world.resumes, 1)
-        XCTAssertTrue(pane.pausedSection.isHidden)
-        XCTAssertEqual(pane.view.frame.height, runningHeight, accuracy: 0.5)
-
-        // Paused while the pane was not showing: it shows when the pane appears.
-        world.paused = true
+        // Resumed while the pane was not showing: it shows when the pane appears.
+        world.paused = false
         pane.viewWillAppear()
-        XCTAssertFalse(pane.pausedSection.isHidden)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is on")
+
+        world.access = false
+        NotificationCenter.default.post(name: .scrollioAccessibilityPermissionLost, object: nil)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio needs Accessibility access")
+
+        world.access = true
+        world.startProblem = .tapOff
+        NotificationCenter.default.post(name: Interceptor.restartThrottleDidChangeNotification, object: nil)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio couldn't start and is trying again")
+
+        let window = NSWindow(
+            contentRect: NSRect(x: -20000, y: -20000, width: 520, height: 300),
+            styleMask: [.titled], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = pane
+        defer { window.contentViewController = nil }
+        world.startProblem = nil
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is on")
+        XCTAssertEqual(pane.statusButton.title, "Pause")
+    }
+
+    /// The pane as the app makes it reads the run controller: under XCTest nothing runs
+    /// and nothing failed, so the row says Scrollio is on (the cores never start in tests).
+    func testTheLiveSeamsReadTheRunControllerAndTheStatusItemsRule() throws {
+        let pane = PreferencesGeneralViewController()
+        XCTAssertFalse(AppRunController.shared.isRetryingStart)
+        XCTAssertNil(pane.startProblem())
+        XCTAssertEqual(pane.isPaused(), AppRunController.shared.isPaused)
     }
 
     // MARK: - Open at login
@@ -426,7 +574,10 @@ final class PreferencesGeneralTests: XCTestCase {
         let world = World()
         let pane = try makePane(world)
         XCTAssertEqual(pane.showInMenuBarRow.title, "Show in menu bar")
-        XCTAssertEqual(pane.showInMenuBarRow.explanation, "When it's off, open Scrollio again to reach its settings.")
+        XCTAssertEqual(
+            pane.showInMenuBarRow.explanation,
+            "When it's off, open Scrollio again to reach its settings. Pause is also at the top of General."
+        )
         XCTAssertEqual(pane.showInMenuBarSwitch.state, .on)
 
         pane.showInMenuBarSwitch.state = .off
@@ -571,7 +722,7 @@ final class PreferencesGeneralTests: XCTestCase {
         }
         XCTAssertFalse(allSubviews(of: pane.view).contains { $0 is PreferencesDisclosureRow })
         XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
-        // The boxes: the card, (paused), startup, permissions, updates, the settings file,
+        // The boxes: the card, whether Scrollio works, startup, permissions, updates, the settings file,
         // the Welcome Guide, the credit.
         let content = try XCTUnwrap(pane.headerView.superview as? NSStackView)
         XCTAssertEqual(content.arrangedSubviews.filter { $0 is PreferencesGroupSection }.count, 6)

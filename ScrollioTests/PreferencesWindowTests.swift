@@ -806,7 +806,7 @@ final class PreferencesNamingTests: XCTestCase {
         XCTAssertEqual(general.showInMenuBarSwitch.accessibilityLabel(), "Show in menu bar")
         XCTAssertEqual(general.launchOnLoginRow.title, "Open at login")
         let shown = texts(in: general.view)
-        XCTAssertTrue(shown.contains("When it's off, open Scrollio again to reach its settings."))
+        XCTAssertTrue(shown.contains(NSLocalizedString("general-show-in-menu-bar-hint", comment: "")))
         for text in shown {
             XCTAssertFalse(text.localizedCaseInsensitiveContains("status bar"), text)
             XCTAssertFalse(text.localizedCaseInsensitiveContains("re-run"), text)

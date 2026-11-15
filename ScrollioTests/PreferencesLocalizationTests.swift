@@ -190,7 +190,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-launch-at-login", "general-launch-at-login-hint", "general-launch-at-login-waiting",
         "general-login-approval", "general-open-login-items",
         "general-show-in-menu-bar", "general-show-in-menu-bar-hint",
-        "general-paused", "general-paused-hint", "general-resume",
+        "general-paused-hint", "general-resume",
         "general-permissions-header", "general-accessibility", "general-accessibility-hint",
         "general-accessibility-hint-not-allowed",
         "general-accessibility-allowed", "general-accessibility-not-allowed", "general-accessibility-open-settings",
@@ -235,6 +235,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-file-restore-message",
         "general-settings-problem-not-imported-title", "general-settings-problem-too-many",
         "general-settings-problem-not-stored",
+        // The row under the card: whether Scrollio works, and its button.
+        "general-status-on", "general-pause", "general-try-again",
     ]
 
     /// The window and the kit: the sidebar, the + and − under a list.

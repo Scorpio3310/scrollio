@@ -432,6 +432,8 @@ those controls.
   is trying again" with "Try Again Now" (or, while an event tap is kept off for up to a
   minute and comes back by itself, with "Pause Scrollio" alone).
 - The icon is dimmed in the same three cases; its tooltip says which.
+- General says the same under its card, always: "Scrollio is on" with "Pause", or the
+  menu's title with "Resume", "Try Again" or, for the access, "Open System Settings".
 - The icon can be hidden (General › Show in menu bar). Opening Scrollio again then shows
   its settings, or the Welcome Guide while Accessibility access is missing.
 - General also has "Open at login", the state of the Accessibility access, the
