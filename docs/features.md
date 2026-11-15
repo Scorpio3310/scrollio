@@ -92,10 +92,16 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   page says so under the app's box: to leave its scrolling to macOS, turn off "Use
   settings from Scrolling" on its page and, in its own settings, "Smooth scrolling" and
   "Reverse wheel direction".
-- "Reset to Defaults" under an app's Buttons part removes all of the app's own buttons
-  and its own thumb wheel action at once: every button does what the Buttons pane says
-  again. It can be clicked while the app has something of its own; for a few seconds it
-  reads "Undo Reset", and Edit › Undo brings everything back, also after the page closed.
+- The buttons at the bottom of an app's parts are named by what they do, while the panes
+  keep "Reset to Defaults": "Remove All Buttons" under an app's Buttons part removes all
+  of the app's own buttons and its own thumb wheel action at once (every button does
+  what the Buttons pane says again); "Copy from Scrolling", "Copy from Gestures" and
+  "Copy from Shortcut Ring" make the app's own settings a copy of the pane's as they are
+  then; "Use Suggested Shortcuts" (for an app with suggested shortcuts, instead of "Copy
+  from Shortcut Ring") puts them in. Each can be clicked only while the app differs from
+  where it leads; for a few seconds after a click it reads "Undo", and Edit › Undo
+  ("Undo Copy from Gestures in Figma") brings everything back, also after the page
+  closed. The switches stay as they are.
 
 ## Mouse gestures
 
@@ -134,7 +140,7 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   app's Buttons part, that row selected) or "Set Up…", which records a mouse button
   right there and gives it Gesture Navigation in that app only. While only an app's own button runs
   Gesture Navigation, the Gestures pane says in which apps and with which button, and
-  its "Change" shows that app's Buttons part. "Reset to Defaults" under the app's
+  its "Change" shows that app's Buttons part. "Copy from Gestures" under the app's
   gestures puts them back to a copy of the pane's as they are then (all of them, the
   actions with their names and icons too); the switch stays off, and Edit › Undo takes
   it back. While no button runs Gesture Navigation with the app in front, "Directions",
@@ -213,8 +219,8 @@ the eight places hold.
   the ring there ("Thumb panel, as everywhere", "Back button, only in Figma", "None in
   Figma") with "Show in Buttons", "Show Buttons" or "Set Up…" beside it, as the Gestures
   part's "Button to hold" (a key works here too); while nothing opens the ring with the
-  app in front, "Shortcuts" folds the app's ring away (a click on it opens it). "Reset to Defaults"
-  under the app's ring puts it back where it started (its suggested shortcuts, see
+  app in front, "Shortcuts" folds the app's ring away (a click on it opens it). "Copy from Shortcut
+  Ring" (or "Use Suggested Shortcuts") under the app's ring puts it back where it started (its suggested shortcuts, see
   below, else a copy of the general ring as it is then, and the general ring's freeze
   switch as it is then); the switch stays off, and Edit › Undo takes it back. Turn the
   switch on again and the app's ring is kept for later. An app added for its ring has
@@ -225,8 +231,9 @@ the eight places hold.
   and Redo on the left and right, zoom on top and bottom, Copy and Paste below). Nothing
   changes by itself: only when you turn "Use the general ring" off for such an app does
   its ring start with them instead of the copy, and while its own ring is in use,
-  "Reset to Defaults" under it puts them in all eight places again (Edit › Undo takes
-  that back); the page says whether the ring started from them. They are ordinary
+  "Use Suggested Shortcuts" under it puts them in all eight places again (Edit › Undo
+  takes that back); while your keyboard layout leaves places of them empty, a quiet line
+  under the switch says how many. They are ordinary
   places afterwards: change any of them. No suggested place deletes what cannot be
   brought back or changes something outside the Mac at one flick (a git app fetches
   rather than pushes, a terminal splits its pane rather than clearing what it showed,
@@ -329,10 +336,10 @@ wheel.
   app's action runs at the default speed when it is of the other kind than what the
   wheel does everywhere (scrolling against steps). "−" gives the action back to Buttons;
   Edit › Undo takes it again.
-- "Reset to Defaults" of the app's Scrolling part (there while the switch is off) gives
-  the wheel 1×, no action reversed and desktops in steps there, and the action of every
-  app again; that of its Buttons
-  part takes the action away.
+- "Copy from Scrolling" of the app's Scrolling part (there while the switch is off)
+  gives the wheel the speed, reversing and desktops of Scrolling › Thumb wheel there, and
+  the action of every app again; "Remove All Buttons" of its Buttons part takes the
+  action away too.
 
 ## Logitech MX mice
 

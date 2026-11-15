@@ -1209,12 +1209,12 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(Options.shared.thumbWheel, changed)
     }
 
-    /// An app's page edits the app's own thumb wheel, never the general one: its reset gives
-    /// the app 1× and no swap and takes its own action away, its Undo brings back what the
-    /// app had (here: nothing of its own, so the general values run again); the general
-    /// thumb wheel is not touched by either. The speed a turn runs with in the app counts
-    /// for the reset button, as the values on the tab do.
-    func testAnAppsPageResetsTheAppsThumbWheelAndLeavesTheGeneralOneAlone() {
+    /// An app's page edits the app's own thumb wheel, never the general one: its "Copy from
+    /// Scrolling" gives the app the general speed and swap and takes its own action away,
+    /// its Undo brings back what the app had (here: nothing of its own, so the general
+    /// values run again); the general thumb wheel is not touched by either. The speed a
+    /// turn runs with in the app counts for the button, as the values on the tab do.
+    func testAnAppsPageCopiesTheGeneralThumbWheelAndLeavesItAlone() {
         let changed = ThumbWheelSettings(function: .zoom, speed: 0.5, swapsDirection: true)
         Options.shared.thumbWheel = changed
         let application = makeApplication(inherit: false)
@@ -1224,8 +1224,9 @@ final class PreferencesScrollingTests: XCTestCase {
         controller.paneUndoManager = undo
         XCTAssertFalse(controller.thumbWheelSection.isHiddenOrHasHiddenAncestor)
         XCTAssertEqual(controller.thumbWheelSpeedSlider.doubleValue, 0.5, accuracy: 1e-9, "the general speed runs there")
-        XCTAssertTrue(controller.hasSettingsToReset, "1× and no swap are the defaults")
-        XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
+        XCTAssertFalse(controller.hasSettingsToReset, "the general speed and swap run there: a copy already")
+        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
+        XCTAssertEqual(controller.resetToDefaultsButton.title, "Copy from Scrolling")
 
         application.scroll.speed = 4.5
         application.setOwnThumbWheelFunction(.volume)
@@ -1233,10 +1234,10 @@ final class PreferencesScrollingTests: XCTestCase {
         undo.beginUndoGrouping()
         send(controller.resetToDefaultsButton)
         undo.endUndoGrouping()
-        XCTAssertEqual(application.scroll, OPTIONS_SCROLL_DEFAULT())
-        XCTAssertEqual(application.scroll.thumbWheel, ApplicationThumbWheelScrolling(ThumbWheelSettings(speed: 1, swapsDirection: false)))
+        XCTAssertEqual(application.scroll, Options.shared.scroll)
+        XCTAssertEqual(application.scroll.thumbWheel, ApplicationThumbWheelScrolling(changed))
         XCTAssertNil(application.thumbWheel, "the action is the general one again")
-        XCTAssertEqual(application.thumbWheelThatRuns(general: changed), ThumbWheelSettings(function: .zoom, speed: 1))
+        XCTAssertEqual(application.thumbWheelThatRuns(general: changed), changed)
         XCTAssertEqual(Options.shared.thumbWheel, changed, "not the app's")
         XCTAssertFalse(controller.hasSettingsToReset)
         undo.undo()
@@ -1246,7 +1247,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(Options.shared.thumbWheel, changed)
         undo.redo()
         XCTAssertNil(application.thumbWheel)
-        XCTAssertEqual(application.scroll.thumbWheel?.speed, 1)
+        XCTAssertEqual(application.scroll.thumbWheel?.speed, 0.5)
 
         // A change from elsewhere shows on the page at once (the app has no action of its
         // own: the general one runs there); the section stays.

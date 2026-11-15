@@ -2,10 +2,11 @@
 //  ApplicationPageResetTests.swift
 //  ScrollioTests
 //
-//  "Reset to Defaults" at the bottom of an app's Shortcut Ring, Gestures and Buttons parts:
+//  The button at the bottom of an app's Shortcut Ring, Gestures and Buttons parts, named by
+//  what it does ("Copy from Shortcut Ring", "Copy from Gestures", "Remove All Buttons"):
 //  where each leads (the ring where it started, a copy of the general gestures, no button
 //  of the app's own), that the switches stay, that the button is on only while there is
-//  something to reset and follows a row's change, that it reads "Undo Reset" for a moment,
+//  something to reset and follows a row's change, that it reads "Undo" for a moment,
 //  and that Edit › Undo and Redo outlive the page and show on the part open now, with the
 //  list's marks following. (The ring of an app with suggested shortcuts is in
 //  ShortcutRingSuggestionFillTests.) Nothing is shown on screen.
@@ -119,12 +120,62 @@ final class ApplicationPageResetTests: XCTestCase {
         return page
     }
 
+    // MARK: - Scrolling
+
+    /// "Copy from Scrolling" makes the app's own settings a copy of the Scrolling pane's
+    /// (its thumb wheel's speed and swap Scrolling › Thumb wheel's), greyed while they are
+    /// one; the switch stays off, the Scrolling settings are untouched; "Undo" for a moment,
+    /// and Edit › Undo under the app's name. The Scrolling pane keeps "Reset to Defaults".
+    func testTheScrollingPartsButtonCopiesTheScrollingSettings() throws {
+        let savedScroll = Options.shared.scroll
+        addTeardownBlock { Options.shared.scroll = savedScroll }
+        let general = OPTIONS_SCROLL_DEFAULT()
+        general.speed = 2.5
+        general.smoothSimTrackpad = true
+        Options.shared.scroll = general
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: true)
+        let calculator = addCalculator()
+        calculator.setUsesScrollingSettings(false, scrolling: general, thumbWheel: Options.shared.thumbWheel)
+        let pane = makePane()
+        let undo = undoManager()
+        let page = try open(.scrolling, in: pane, undo: undo)
+        let settings = try XCTUnwrap(page.scrollingController)
+        settings.paneUndoManager = undo
+        let button = try XCTUnwrap(settings.resetToDefaultsButton)
+        XCTAssertEqual(button.title, "Copy from Scrolling")
+        XCTAssertFalse(button.isEnabled, "a copy already: nothing to copy")
+
+        calculator.scroll.speed = 4.5
+        calculator.setOwnThumbWheelFunction(.volume)
+        settings.syncViewWithOptions()
+        XCTAssertTrue(button.isEnabled)
+        click(button, undo: undo)
+        XCTAssertEqual(calculator.scroll, general, "a copy of the Scrolling settings")
+        XCTAssertFalse(calculator.scroll === general, "its own container")
+        XCTAssertEqual(calculator.scroll.thumbWheel, ApplicationThumbWheelScrolling(Options.shared.thumbWheel))
+        XCTAssertNil(calculator.ownThumbWheelFunction)
+        XCTAssertFalse(calculator.inherit, "the switch stays")
+        XCTAssertEqual(Options.shared.scroll.speed, 2.5, "the Scrolling settings are untouched")
+        XCTAssertEqual(button.title, "Undo")
+        XCTAssertEqual(undo.undoActionName, "Copy from Scrolling in Calculator")
+        undo.undo()
+        XCTAssertEqual(calculator.scroll.speed, 4.5)
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .volume)
+        XCTAssertEqual(button.title, "Copy from Scrolling")
+
+        // The Scrolling pane keeps its own button.
+        let tab = PreferencesScrollingViewController()
+        tab.uiStateDefaults = uiDefaults
+        _ = tab.view
+        XCTAssertEqual(tab.resetToDefaultsButton.title, "Reset to Defaults")
+    }
+
     // MARK: - Shortcut Ring
 
     /// An app without suggested shortcuts: its own ring goes back to a copy of the general
     /// ring as it is now; the switch stays off, the general ring is untouched. The button
     /// is there with the own ring only, on only while the ring differs from where it
-    /// starts, reads "Undo Reset" for a moment and takes the reset back.
+    /// starts, reads "Undo" for a moment and takes the copy back.
     func testTheRingsResetGoesBackToACopyOfTheGeneralRingAndKeepsTheSwitch() throws {
         let calculator = addCalculator()
         let pane = makePane()
@@ -136,7 +187,7 @@ final class ApplicationPageResetTests: XCTestCase {
         part.generalRingClick(part.generalRingRow.toggle)
         XCTAssertTrue(part.resetToDefaultsButton.isDescendant(of: part.view))
         XCTAssertFalse(part.resetToDefaultsButton.isEnabled, "a copy of the general ring: nothing to reset")
-        XCTAssertEqual(part.resetToDefaultsButton.title, "Reset to Defaults")
+        XCTAssertEqual(part.resetToDefaultsButton.title, "Copy from Shortcut Ring")
         XCTAssertFalse(part.view.hasAmbiguousLayout)
 
         var general = ShortcutRingSettings.default
@@ -151,15 +202,15 @@ final class ApplicationPageResetTests: XCTestCase {
         XCTAssertEqual(calculator.ownRingPlaces, general.places, "the general ring as it is now")
         XCTAssertFalse(calculator.usesGeneralRing, "the switch stays")
         XCTAssertEqual(Options.shared.ring, general, "the general ring is untouched")
-        XCTAssertEqual(part.resetToDefaultsButton.title, "Undo Reset")
+        XCTAssertEqual(part.resetToDefaultsButton.title, "Undo")
         XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
-        XCTAssertEqual(undo.undoActionName, "Reset Shortcut Ring in Calculator", "its own name, not the pane's")
+        XCTAssertEqual(undo.undoActionName, "Copy from Shortcut Ring in Calculator", "its own name, not the pane's")
 
-        // "Undo Reset" is Edit › Undo (outside an undo group, as a real click).
+        // "Undo" is Edit › Undo (outside an undo group, as a real click).
         let button = part.resetToDefaultsButton
         XCTAssertTrue(button.sendAction(button.action, to: button.target))
         XCTAssertEqual(calculator.ownRingPlaces, edited)
-        XCTAssertEqual(part.resetToDefaultsButton.title, "Reset to Defaults")
+        XCTAssertEqual(part.resetToDefaultsButton.title, "Copy from Shortcut Ring")
         undo.redo()
         XCTAssertEqual(calculator.ownRingPlaces, general.places)
         XCTAssertFalse(part.resetToDefaultsButton.isEnabled)
@@ -240,7 +291,7 @@ final class ApplicationPageResetTests: XCTestCase {
 
     /// A click on a button that was not yet told that nothing differs any more (the
     /// general ring reset and undone in its pane behind the page's back) resets nothing,
-    /// offers no "Undo Reset" and registers no Undo; the button then says so (R3-1 F3).
+    /// offers no "Undo" and registers no Undo; the button then says so (R3-1 F3).
     /// The same for the gestures.
     func testAClickThatResetsNothingOffersNoUndo() throws {
         let calculator = addCalculator()
@@ -257,7 +308,7 @@ final class ApplicationPageResetTests: XCTestCase {
         // The general ring comes back to where the own ring is, and nobody tells the part.
         Options.shared.ring = .default
         click(ring.resetToDefaultsButton, undo: undo)
-        XCTAssertEqual(ring.resetToDefaultsButton.title, "Reset to Defaults")
+        XCTAssertEqual(ring.resetToDefaultsButton.title, "Copy from Shortcut Ring")
         XCTAssertFalse(ring.resetToDefaultsButton.isEnabled)
         XCTAssertEqual(undo.undoActionName, "", "nothing was reset, nothing to undo")
 
@@ -269,7 +320,7 @@ final class ApplicationPageResetTests: XCTestCase {
         XCTAssertTrue(gestures.resetToDefaultsButton.isEnabled)
         Options.shared.gesture = .default
         click(gestures.resetToDefaultsButton, undo: undo)
-        XCTAssertEqual(gestures.resetToDefaultsButton.title, "Reset to Defaults")
+        XCTAssertEqual(gestures.resetToDefaultsButton.title, "Copy from Gestures")
         XCTAssertFalse(gestures.resetToDefaultsButton.isEnabled)
         XCTAssertEqual(undo.undoActionName, "")
         XCTAssertEqual(calculator.ownRingPlaces, ShortcutRingSettings.default.places)
@@ -308,7 +359,7 @@ final class ApplicationPageResetTests: XCTestCase {
         XCTAssertEqual(calculator.ownGestures, ApplicationGestures(inherit: false, copying: general))
         XCTAssertEqual(Options.shared.gesture, general, "the general gestures are untouched")
         XCTAssertEqual(freeze.state, .on, "the row shows it")
-        XCTAssertFalse(part.resetToDefaultsButton.title == "Reset to Defaults" && part.resetToDefaultsButton.isEnabled)
+        XCTAssertFalse(part.resetToDefaultsButton.title == "Copy from Gestures" && part.resetToDefaultsButton.isEnabled)
         undo.undo()
         XCTAssertEqual(calculator.ownGestures, edited)
         XCTAssertEqual(freeze.state, .off)
@@ -351,12 +402,12 @@ final class ApplicationPageResetTests: XCTestCase {
         XCTAssertEqual(Options.shared.gesture, general, "the general gestures are untouched")
         XCTAssertNotEqual(part.controls?.actionPopUp(for: .left).menu?.items.first?.title, SystemShortcut.paste.localizedName)
         XCTAssertEqual((part.controls?.invertToggle as? NSSwitch)?.state, .on, "the rows show the reset")
-        XCTAssertEqual(part.resetToDefaultsButton.title, "Undo Reset")
-        XCTAssertEqual(undo.undoActionName, "Reset Gestures in Calculator", "its own name, not the pane's")
+        XCTAssertEqual(part.resetToDefaultsButton.title, "Undo")
+        XCTAssertEqual(undo.undoActionName, "Copy from Gestures in Calculator", "its own name, not the pane's")
 
         undo.undo()
         XCTAssertEqual(calculator.ownGestures, edited)
-        XCTAssertEqual(part.resetToDefaultsButton.title, "Reset to Defaults")
+        XCTAssertEqual(part.resetToDefaultsButton.title, "Copy from Gestures")
         XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
         undo.redo()
         XCTAssertEqual(calculator.ownGestures?.actions, general.actions)
@@ -434,8 +485,8 @@ final class ApplicationPageResetTests: XCTestCase {
         XCTAssertEqual(part.noteLabel.stringValue, "Click + to give a button something else to do while Calculator is in front.")
         XCTAssertEqual(Options.shared.buttons.binding, general, "Buttons is untouched")
         XCTAssertEqual(marks(in: pane), [], "the list's mark goes")
-        XCTAssertEqual(part.resetToDefaultsButton.title, "Undo Reset")
-        XCTAssertEqual(undo.undoActionName, "Reset Buttons in Calculator", "its own name, with the app's (F30)")
+        XCTAssertEqual(part.resetToDefaultsButton.title, "Undo")
+        XCTAssertEqual(undo.undoActionName, "Remove All Buttons in Calculator", "its own name, with the app's (F30)")
 
         undo.undo()
         XCTAssertEqual(calculator.ownButtonBindings, own, "every button, in its order")
@@ -443,7 +494,7 @@ final class ApplicationPageResetTests: XCTestCase {
         XCTAssertEqual(part.rows.map(\.binding.systemShortcutName), ["copy", "paste"])
         XCTAssertNotNil(part.thumbWheelRow)
         XCTAssertEqual(marks(in: pane), [.buttons])
-        XCTAssertEqual(part.resetToDefaultsButton.title, "Reset to Defaults")
+        XCTAssertEqual(part.resetToDefaultsButton.title, "Remove All Buttons")
         XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
 
         undo.redo()

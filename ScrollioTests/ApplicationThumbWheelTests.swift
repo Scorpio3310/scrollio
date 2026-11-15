@@ -1142,7 +1142,7 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
     func testUndoOfTheRemovedRowShowsOnTheScrollingPartShownNow() throws {
         let calculator = addCalculator()
         calculator.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
-        calculator.setOwnThumbWheelScrolling(ThumbWheelSettings(speed: 1, swapsDirection: false))
+        calculator.setOwnThumbWheelScrolling(Options.shared.thumbWheel)
         calculator.setOwnThumbWheelFunction(.zoom)
         let page = try page()
         let tab = try XCTUnwrap(page.scrollingController)
@@ -1154,7 +1154,7 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
         undo.endUndoGrouping()
         page.show(.scrolling)
         XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .tabs, "the general action")
-        XCTAssertFalse(tab.resetToDefaultsButton.isEnabled, "nothing to reset: 1×, no swap, no action of its own")
+        XCTAssertFalse(tab.resetToDefaultsButton.isEnabled, "nothing to copy: Scrolling's speed and swap, no action of its own")
 
         undo.undo()
         XCTAssertEqual(calculator.ownThumbWheelFunction, .zoom)
@@ -1166,10 +1166,10 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
         XCTAssertFalse(tab.resetToDefaultsButton.isEnabled)
     }
 
-    /// The part's "Reset to Defaults" with the app's own settings: the scroll values, the
-    /// thumb wheel's 1× and no swap, and no action of its own (the Buttons part's row goes,
-    /// the list's mark too); the window's Undo brings everything back, also after the page
-    /// closed, and the list follows.
+    /// The part's "Copy from Scrolling" with the app's own settings: the Scrolling settings'
+    /// values, the thumb wheel's speed and swap of Scrolling › Thumb wheel, and no action of
+    /// its own (the Buttons part's row goes, the list's mark too); the window's Undo brings
+    /// everything back, also after the page closed, and the list follows.
     func testResetToDefaultsTakesTheAppsThumbWheelAndUndoBringsItBack() throws {
         let calculator = addCalculator()
         calculator.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
@@ -1188,11 +1188,13 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
             undo.beginUndoGrouping()
             send(tab.resetToDefaultsButton)
             undo.endUndoGrouping()
-            XCTAssertEqual(calculator.scroll, OPTIONS_SCROLL_DEFAULT())
-            XCTAssertEqual(calculator.scroll.thumbWheel, .defaults)
+            XCTAssertEqual(calculator.scroll, Options.shared.scroll)
+            XCTAssertEqual(calculator.scroll.thumbWheel, ApplicationThumbWheelScrolling(Options.shared.thumbWheel))
             XCTAssertNil(calculator.thumbWheel)
             XCTAssertFalse(calculator.inherit, "the switch stays")
-            XCTAssertEqual(tab.thumbWheelSpeedSlider.doubleValue, 1, accuracy: 1e-9)
+            XCTAssertEqual(tab.thumbWheelSpeedSlider.doubleValue, Options.shared.thumbWheel.speed, accuracy: 1e-9)
+            XCTAssertEqual(tab.resetToDefaultsButton.title, "Undo")
+            XCTAssertEqual(undo.undoActionName, "Copy from Scrolling in Calculator")
             XCTAssertEqual(ThumbWheelPresentation.function(of: tab.thumbWheelFunctionPopUp.selectedItem), .tabs)
             XCTAssertNil(page.buttonsPart.thumbWheelRow)
             XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks, [.scrolling])

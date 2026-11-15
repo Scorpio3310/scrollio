@@ -17,9 +17,9 @@
 //  there: "Show in Buttons", "Show Buttons" (the app's Buttons part, that row selected) or
 //  "Set Up…", which records a mouse button that runs the gestures only in this app.
 //
-//  "Reset to Defaults" ends the own set, there with it: all of it goes back to a copy of
-//  the general gestures as they are now, the switch stays; the window's Undo takes it
-//  back, also after the page closed.
+//  "Copy from Gestures" ends the own set, there with it: all of it becomes a copy of the
+//  general gestures as they are now (greyed while it is one), the switch stays; the
+//  window's Undo takes it back, also after the page closed.
 //
 //  While no button runs the gestures with the app in front (`ApplicationTriggerRule`),
 //  the titles "Directions", "Behavior" and "Logitech mouse" fold what is under them
@@ -171,6 +171,8 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: section)
         let reset = PreferencesPaneReset(
             undoActionName: Self.resetActionName(for: application),
+            title: text("apps-gestures-copy"),
+            undoTitle: text("apps-part-undo"),
             hasSettingsToReset: { [weak self] in self?.hasSettingsToReset ?? false },
             undoManager: { [weak self] in self?.undoTarget },
             reset: { [weak self] undo in self?.resetGestures(undoManager: undo) }
@@ -305,10 +307,10 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
 
     // MARK: - Reset to Defaults
 
-    /// The undo action's name, its own, not the Gestures pane's: "Reset Gestures in
-    /// Calculator" (Edit › Undo says which reset it takes back, and "Undo Reset" never takes
-    /// back the pane's or another app's).
-    static let resetActionNameKey = "apps-undo-reset-gestures"
+    /// The undo action's name, its own, not the Gestures pane's: "Copy from Gestures in
+    /// Calculator" (Edit › Undo says what it takes back, and the button's "Undo" never
+    /// takes back the pane's reset or another app's copy).
+    static let resetActionNameKey = "apps-undo-copy-gestures"
 
     static func resetActionName(for application: Application) -> String {
         return String(format: NSLocalizedString(resetActionNameKey, comment: ""), application.getName())
@@ -328,7 +330,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         return application.gesturesThatRun(general: general) != general
     }
 
-    /// "Reset to Defaults": the own set as the switch starts it, a copy of the general one
+    /// "Copy from Gestures": the own set as the switch starts it, a copy of the general one
     /// as it is now; the switch stays off. Edit › Undo brings back the set that was there.
     private func resetGestures(undoManager undo: UndoManager?) {
         guard hasSettingsToReset else { return }

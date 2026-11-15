@@ -24,7 +24,7 @@
 //  (`beginAddingBinding`): the recorder hangs on that button, and what it catches gets
 //  Gesture Navigation or the Shortcut Ring in this app only.
 //
-//  "Reset to Defaults" under the list removes every button of the app's own and its own
+//  "Remove All Buttons" under the list removes every button of the app's own and its own
 //  thumb wheel function at once: every button does what Buttons says again. The window's
 //  Undo brings them all back, also after the page closed (as a row's removal).
 //
@@ -174,6 +174,8 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
         let reset = PreferencesPaneReset(
             undoActionName: Self.resetActionName(for: application),
+            title: text("apps-buttons-remove-all"),
+            undoTitle: text("apps-part-undo"),
             hasSettingsToReset: { [weak self] in self?.hasSettingsToReset ?? false },
             undoManager: { [weak self] in self?.undoTarget },
             reset: { [weak self] undo in self?.resetOwnButtons(undoManager: undo) }
@@ -552,9 +554,9 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     // MARK: - Reset to Defaults, with Undo
 
-    /// The undo action's name, with the app's: "Reset Buttons in Calculator" (Edit › Undo
-    /// says which app's reset it takes back, as the Ring and Gestures parts' do).
-    static let resetActionNameKey = "apps-undo-reset-buttons"
+    /// The undo action's name, with the app's: "Remove All Buttons in Calculator" (Edit ›
+    /// Undo says which app's removal it takes back, as the Ring and Gestures parts' do).
+    static let resetActionNameKey = "apps-undo-remove-buttons"
 
     static func resetActionName(for application: Application) -> String {
         return String(format: NSLocalizedString(resetActionNameKey, comment: ""), application.getName())
@@ -565,7 +567,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         return application.hasOwnButtonsPart
     }
 
-    /// "Reset to Defaults": every button of the app's own and its own thumb wheel function
+    /// "Remove All Buttons": every button of the app's own and its own thumb wheel function
     /// go; every button does what Buttons says again. Edit › Undo brings them all back.
     private func resetOwnButtons(undoManager undo: UndoManager?) {
         guard hasSettingsToReset else { return }

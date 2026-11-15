@@ -6,7 +6,9 @@
 //  the few seconds in which the button reads "Undo Reset", and when it can be clicked.
 //  The Buttons, Gestures and Shortcut Ring parts of an app's page use the same button
 //  with a reset of their own (`init(undoActionNameKey:…)`, `init(undoActionName:…)`):
-//  theirs finds the app's entry again when its Undo runs, under a name of its own.
+//  theirs finds the app's entry again when its Undo runs, under a name of its own, and
+//  the button is named by what it does there ("Remove All Buttons", "Copy from Gestures"),
+//  "Undo" for a moment after a click.
 //
 //  The rules are the Scrolling pane's, which keeps its own code: its reset spans two
 //  stores and an app's page. Change a rule in both places.
@@ -39,6 +41,9 @@ final class PreferencesPaneReset: NSObject {
 
     /// The push button for the pane's footer.
     let button: NSButton
+    /// Its title, and its title while it offers to take the click back.
+    let title: String
+    let undoTitle: String
     /// How long the button reads "Undo Reset" after a reset. Tests shorten it.
     var undoOfferDuration: TimeInterval = 8
     /// The button offers to take the reset back (it reads "Undo Reset").
@@ -92,14 +97,19 @@ final class PreferencesPaneReset: NSObject {
         )
     }
 
-    /// The same, with the name itself (one made with the app's name).
+    /// The same, with the name itself (one made with the app's name), and the button's
+    /// titles (an app's part names it by what it does).
     init(
         undoActionName: String,
+        title: String = PreferencesPaneReset.resetTitle,
+        undoTitle: String = PreferencesPaneReset.undoTitle,
         hasSettingsToReset: @escaping () -> Bool,
         undoManager: @escaping () -> UndoManager?,
         reset: @escaping (UndoManager?) -> Void
     ) {
-        button = PreferencesGroupedForm.makePushButton(title: Self.resetTitle, target: nil, action: nil)
+        self.title = title
+        self.undoTitle = undoTitle
+        button = PreferencesGroupedForm.makePushButton(title: title, target: nil, action: nil)
         differsFromDefaults = hasSettingsToReset
         resetSettings = reset
         self.undoActionName = undoActionName
@@ -184,7 +194,7 @@ final class PreferencesPaneReset: NSObject {
     /// The button's title and whether it can be clicked: "Undo Reset" while that is offered,
     /// else "Reset to Defaults", on only while something differs from the defaults.
     private func updateButton() {
-        let title = offersUndo ? Self.undoTitle : Self.resetTitle
+        let title = offersUndo ? undoTitle : self.title
         if button.title != title {
             button.title = title
             NSAccessibility.post(element: button as Any, notification: .titleChanged)

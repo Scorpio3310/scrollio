@@ -33,8 +33,8 @@ it for the people who use the app, and give the version its part before you tag 
   really runs them, on your mouse; with none yet, a dashed outline shows where it goes.
 - **Quiet until it runs, and a way back per app.** Gestures and Shortcut Ring fold their
   settings while nothing runs them; an app's Scrolling part shows its settings only while
-  it has its own, as its Gestures and Ring do; an app's Buttons, Gestures and Ring reset
-  to defaults.
+  it has its own, as its Gestures and Ring do; each part of an app's page has a button
+  that puts it back.
 - **Thumb wheel, your way round.** Each thumb wheel action has its own "Reverse
   direction", and Switch Desktops can follow the wheel like a trackpad swipe.
 
@@ -45,6 +45,8 @@ it for the people who use the app, and give the version its part before you tag 
   that goes there, or sets one up for that app only.
 - **Apps says what each app has of its own.** "Own scrolling and 2 buttons" in
   the list and on the app's page, where a dot marks those parts.
+- **An app's buttons say what they do.** "Remove All Buttons", "Copy from Gestures",
+  "Use Suggested Shortcuts" and "Copy from Scrolling" instead of "Reset to Defaults".
 - **A click while you hold the ring's button belongs to the ring.** It runs the shortcut
   that is lit (nothing lit: the ring closes), and nothing reaches the app under the ring.
   A click right as you press the button does nothing.

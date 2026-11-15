@@ -8572,114 +8572,6 @@
         }
       }
     },
-    "apps-detail-ring-suggested": {
-      "comment": "An app's page, Shortcut Ring part: title of the row that offers the app's suggested shortcuts (shown while the app's own ring is in use)",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Suggested shortcuts"
-          }
-        }
-      }
-    },
-    "apps-detail-ring-suggested-in-use": {
-      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the ring holds them; %@ is the app's name; fits two lines",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The ring started from the shortcuts suggested for %@."
-          }
-        }
-      }
-    },
-    "apps-detail-ring-suggested-in-use-empty-one": {
-      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the ring holds them, when the keyboard layout in use cannot type the keys of one of the suggested places (they stay empty); fits two lines",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The ring started from them. 1 place stays empty: its keys can't be typed on this keyboard layout."
-          }
-        }
-      }
-    },
-    "apps-detail-ring-suggested-in-use-empty-other": {
-      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the ring holds them, when the keyboard layout in use cannot type the keys of several of the suggested places (they stay empty); %d is how many; fits two lines",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The ring started from them. %d places stay empty: their keys can't be typed on this keyboard layout."
-          }
-        }
-      }
-    },
-    "apps-detail-ring-suggested-reset": {
-      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the app's own ring did not start from them (made before there were any, or by hand); %@ is the app's name; \"Reset to Defaults\" is the button under the ring; fits two lines",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reset to Defaults fills the ring with the shortcuts suggested for %@."
-          }
-        }
-      }
-    },
-    "apps-detail-ring-suggested-reset-empty-one": {
-      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the app's own ring did not start from them, when the keyboard layout in use cannot type the keys of one suggested place (it would stay empty); fits two lines",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reset to Defaults fills the ring with them, except 1 place whose keys can't be typed on this keyboard layout."
-          }
-        }
-      }
-    },
-    "apps-detail-ring-suggested-reset-empty-other": {
-      "comment": "An app's page, Shortcut Ring part: the line of \"Suggested shortcuts\" while the app's own ring did not start from them, when the keyboard layout in use cannot type the keys of several suggested places (they would stay empty); %d is how many; fits two lines",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reset to Defaults fills the ring with them, except %d places whose keys can't be typed on this keyboard layout."
-          }
-        }
-      }
-    },
-    "apps-undo-reset-ring": {
-      "comment": "Apps, an app's Shortcut Ring part: \"Reset to Defaults\" puts its own ring back; the Undo menu item reads \"Undo Reset Shortcut Ring in Calculator\"; %@ is the app's name",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reset Shortcut Ring in %@"
-          }
-        }
-      }
-    },
-    "apps-undo-reset-gestures": {
-      "comment": "Apps, an app's Gestures part: \"Reset to Defaults\" puts its own gestures back; the Undo menu item reads \"Undo Reset Gestures in Calculator\"; %@ is the app's name",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reset Gestures in %@"
-          }
-        }
-      }
-    },
     "apps-detail-thumb-wheel-shared": {
       "comment": "Apps, an app's Scrolling part: the muted line under its Thumb wheel box, shown only while “Use settings from Scrolling” is off. Its Action is the same value as the thumb wheel's row of the app's Buttons part and stays when the switch goes on (the box is then out of sight); its Speed and Swap direction then follow Scrolling",
       "extractionState": "manual",
@@ -10036,18 +9928,6 @@
         }
       }
     },
-    "apps-undo-reset-buttons": {
-      "comment": "Apps, an app's Buttons part: \"Reset to Defaults\" removes its own buttons; the Undo menu item reads \"Undo Reset Buttons in Calculator\"; %@ is the app's name",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reset Buttons in %@"
-          }
-        }
-      }
-    },
     "scrolling-thumb-wheel-reverse": {
       "comment": "Scrolling pane, Thumb wheel group: the switch under Action; each action keeps its own",
       "extractionState": "manual",
@@ -10368,6 +10248,186 @@
           "stringUnit": {
             "state": "translated",
             "value": "Show in Finder"
+          }
+        }
+      }
+    },
+    "apps-buttons-remove-all": {
+      "comment": "An app's Buttons part: the button under the list; removes every button of the app's own and its own thumb wheel action (greyed while it has none)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove All Buttons"
+          }
+        }
+      }
+    },
+    "apps-gestures-copy": {
+      "comment": "An app's Gestures part: the button under the app's own gestures; makes them a copy of the Gestures pane's (greyed while they are one)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy from Gestures"
+          }
+        }
+      }
+    },
+    "apps-ring-copy": {
+      "comment": "An app's Shortcut Ring part, for an app without suggested shortcuts: the button under the app's own ring; makes it a copy of the Shortcut Ring pane's (greyed while it is one)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy from Shortcut Ring"
+          }
+        }
+      }
+    },
+    "apps-ring-use-suggested": {
+      "comment": "An app's Shortcut Ring part, for an app with suggested shortcuts: the button under the app's own ring; fills it with them (greyed while it holds them)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Suggested Shortcuts"
+          }
+        }
+      }
+    },
+    "apps-scrolling-copy": {
+      "comment": "An app's Scrolling part: the button under the app's own scrolling settings; makes them a copy of the Scrolling pane's (greyed while they are one)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy from Scrolling"
+          }
+        }
+      }
+    },
+    "apps-part-undo": {
+      "comment": "An app's page: what the button under a part reads for a few seconds after a click (Copy from Gestures, Remove All Buttons …); takes the click back",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Undo"
+          }
+        }
+      }
+    },
+    "apps-undo-remove-buttons": {
+      "comment": "Edit › Undo / Redo: the action name of “Remove All Buttons” on an app's Buttons part; %@ the app",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove All Buttons in %@"
+          }
+        }
+      }
+    },
+    "apps-undo-copy-gestures": {
+      "comment": "Edit › Undo / Redo: the action name of “Copy from Gestures” on an app's page; %@ the app",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy from Gestures in %@"
+          }
+        }
+      }
+    },
+    "apps-undo-copy-ring": {
+      "comment": "Edit › Undo / Redo: the action name of “Copy from Shortcut Ring” on an app's page; %@ the app",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy from Shortcut Ring in %@"
+          }
+        }
+      }
+    },
+    "apps-undo-use-suggested": {
+      "comment": "Edit › Undo / Redo: the action name of “Use Suggested Shortcuts” on an app's page; %@ the app",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Suggested Shortcuts in %@"
+          }
+        }
+      }
+    },
+    "apps-undo-copy-scrolling": {
+      "comment": "Edit › Undo / Redo: the action name of “Copy from Scrolling” on an app's page; %@ the app",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy from Scrolling in %@"
+          }
+        }
+      }
+    },
+    "apps-ring-layout-empty-one": {
+      "comment": "An app's Shortcut Ring part: the quiet line under the switch while its ring started from the suggested shortcuts and one of their places stays empty on this keyboard layout",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 place stays empty: its keys can't be typed on this keyboard layout."
+          }
+        }
+      }
+    },
+    "apps-ring-layout-empty-other": {
+      "comment": "An app's Shortcut Ring part: the same for several places; %d how many",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d places stay empty: their keys can't be typed on this keyboard layout."
+          }
+        }
+      }
+    },
+    "apps-ring-layout-would-empty-one": {
+      "comment": "An app's Shortcut Ring part: the quiet line under the switch while its ring did not start from the suggested shortcuts, which would leave one place empty on this keyboard layout",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Suggested Shortcuts leaves 1 place empty: its keys can't be typed on this keyboard layout."
+          }
+        }
+      }
+    },
+    "apps-ring-layout-would-empty-other": {
+      "comment": "An app's Shortcut Ring part: the same for several places; %d how many",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Suggested Shortcuts leaves %d places empty: their keys can't be typed on this keyboard layout."
           }
         }
       }
