@@ -312,6 +312,13 @@ name) shows that app's Buttons part. The pane also sets what the eight places ho
 - While nothing opens the ring, the Shortcut Ring pane folds its shortcuts under their
   title ("Shortcuts"): a click on it opens them, and everything can be set. Once a button
   or key opens the ring, they show as usual.
+- The drawing of the ring in the pane is an editor too: a click on a drop opens that
+  place's menu right there (folded shortcuts stay folded), and what the menu opens, the
+  recorder, the name and icon, "Open App or File…", stands at the drop. A secondary click
+  on a drop (right button, two fingers, Control-click) offers "Swap With", which exchanges
+  the place with another, a named shortcut with its name and icon, and "Clear". "Swap
+  With" is also the last item of every place's own menu, for the keyboard and VoiceOver.
+  Edit › Undo takes a swap back ("Undo Swap"). The same in an app's own ring.
 - How it looks: nine round drops and nothing behind them, one for each place and one in
   the middle. When the ring opens, the places' drops leave the middle one after the
   other, clockwise from the top, and are in their places after a third of a second; you
