@@ -55,6 +55,10 @@ final class MainMenuTests: XCTestCase {
     private var updateChecks = 0
     private var settingsState = SettingsWindowState.closed
     private var shownPanes: [String] = []
+    /// For each time the Updates box was brought into view: the pane shown last before it.
+    private var revealedUpdates: [String?] = []
+    /// What VoiceOver was told.
+    private var announcements: [String] = []
     private var steps: [PreferencesHistory.Direction] = []
     private var currentEvent: NSEvent?
 
@@ -74,10 +78,14 @@ final class MainMenuTests: XCTestCase {
         manager.checkForUpdates = { [unowned self] in self.updateChecks += 1 }
         settingsState = .closed
         shownPanes = []
+        revealedUpdates = []
+        announcements = []
         steps = []
         currentEvent = nil
         manager.settingsWindow = { [unowned self] in self.settingsState }
         manager.showPane = { [unowned self] pane in self.shownPanes.append(pane) }
+        manager.revealUpdates = { [unowned self] in self.revealedUpdates.append(self.shownPanes.last) }
+        manager.announce = { [unowned self] text in self.announcements.append(text) }
         manager.step = { [unowned self] direction in self.steps.append(direction) }
         manager.currentEvent = { [unowned self] in self.currentEvent }
         menus = manager.makeMenus()
@@ -133,6 +141,7 @@ final class MainMenuTests: XCTestCase {
         XCTAssertEqual(rows(menu), [
             Row(title: "About Scrollio"),
             Row(title: "Check for Updates…"),
+            .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
             Row(title: "Services"),
@@ -359,31 +368,101 @@ final class MainMenuTests: XCTestCase {
 
     // MARK: - Updates
 
-    /// "Check for Updates…" is there only in a copy that updates itself (a released one),
-    /// and enabled while a check can start. AppKit asks when the menu opens.
-    func testCheckForUpdatesFollowsTheUpdater() throws {
+    private func checkForUpdatesItem() throws -> NSMenuItem {
         let menu = try submenu(MainMenuManager.Identifier.applicationMenu)
-        let check = try XCTUnwrap(menu.items.first { $0.identifier == MainMenuManager.Identifier.checkForUpdates })
-        XCTAssertEqual(menu.items.firstIndex(of: check), 1, "right under About, where a Mac app has it")
+        return try XCTUnwrap(menu.items.first { $0.identifier == MainMenuManager.Identifier.checkForUpdates })
+    }
 
-        // Built from source, from a disk image, or the updater did not start: no item.
-        for availability in [UpdateAvailability.builtFromSource, .wrongPlace, .failed] {
-            updateStatus = UpdateStatus(availability: availability, canCheck: true)
-            XCTAssertFalse(manager.validateMenuItem(check), "\(availability)")
-            XCTAssertTrue(check.isHidden, "\(availability)")
+    /// "Check for Updates…" is there in every copy, right under About, where a Mac app has
+    /// it: also built from source, run from a disk image, or with an updater that did not
+    /// start. AppKit asks when the menu opens.
+    func testCheckForUpdatesIsAlwaysThereRightUnderAbout() throws {
+        let menu = try submenu(MainMenuManager.Identifier.applicationMenu)
+        let check = try checkForUpdatesItem()
+        for availability in [UpdateAvailability.available, .builtFromSource, .wrongPlace, .failed] {
+            for canCheck in [true, false] {
+                updateStatus = UpdateStatus(availability: availability, canCheck: canCheck)
+                _ = manager.validateMenuItem(check)
+                XCTAssertFalse(check.isHidden, "\(availability), canCheck \(canCheck)")
+                XCTAssertEqual(menu.items.first?.identifier, MainMenuManager.Identifier.about)
+                XCTAssertEqual(menu.items.firstIndex(of: check), 1, "\(availability)")
+                XCTAssertEqual(check.title, "Check for Updates…")
+            }
         }
+    }
 
+    /// In a copy that updates itself the item starts a check, and is dimmed while one runs
+    /// in the background.
+    func testInACopyThatUpdatesItselfTheItemChecks() throws {
+        let check = try checkForUpdatesItem()
         updateStatus = UpdateStatus(availability: .available, canCheck: true)
         XCTAssertTrue(manager.validateMenuItem(check))
-        XCTAssertFalse(check.isHidden)
         XCTAssertTrue(choose(check))
         XCTAssertEqual(updateChecks, 1)
+        XCTAssertEqual(shownPanes, [])
+        XCTAssertEqual(revealedUpdates, [])
+        XCTAssertEqual(announcements, [], "nothing to say: the check says it")
         XCTAssertEqual(openedPreferences, [])
 
-        // A check runs in the background: shown, dimmed.
         updateStatus = UpdateStatus(availability: .available, canCheck: false)
         XCTAssertFalse(manager.validateMenuItem(check))
         XCTAssertFalse(check.isHidden)
+    }
+
+    /// Any other copy cannot check: the item is enabled and opens General with its Updates
+    /// box in view, where the reason stands, and VoiceOver hears that reason (the box's
+    /// line). It never starts a check.
+    func testInACopyThatDoesNotUpdateItselfTheItemShowsGeneralUpdates() throws {
+        let check = try checkForUpdatesItem()
+        for availability in [UpdateAvailability.builtFromSource, .wrongPlace, .failed] {
+            for canCheck in [true, false] {
+                shownPanes = []
+                revealedUpdates = []
+                announcements = []
+                updateStatus = UpdateStatus(availability: availability, canCheck: canCheck)
+                XCTAssertTrue(manager.validateMenuItem(check), "\(availability), canCheck \(canCheck)")
+                XCTAssertTrue(choose(check))
+                XCTAssertEqual(shownPanes, [PANEL_IDENTIFIER.general], "\(availability)")
+                XCTAssertEqual(revealedUpdates, [PANEL_IDENTIFIER.general], "the box, once General is shown")
+                let reason = NSLocalizedString(PreferencesGeneralViewController.unavailableTextKey(for: availability), comment: "")
+                XCTAssertEqual(announcements, [reason], "\(availability)")
+            }
+        }
+        XCTAssertEqual(updateStatus.availability, .failed)
+        XCTAssertEqual(announcements, ["The updater could not start. New versions are on Scrollio's GitHub page."])
+        XCTAssertEqual(updateChecks, 0)
+        XCTAssertEqual(openedPreferences, [])
+    }
+
+    /// In a copy that does not update itself the item changes the pane, so it is dimmed as
+    /// View's pane items are while a sheet, a popover or a modal panel of Settings has the
+    /// keyboard (no pane is swapped under a popover). A copy that updates itself shows no
+    /// pane: its item follows the check alone.
+    func testTheItemIsDimmedWhileSettingsIsBusyOnlyWhenItWouldShowAPane() throws {
+        let check = try checkForUpdatesItem()
+        let buttons = PANEL_IDENTIFIER.buttons
+        for availability in [UpdateAvailability.builtFromSource, .wrongPlace, .failed] {
+            updateStatus = UpdateStatus(availability: availability)
+            for busy in [SettingsWindowState.busy(pane: buttons), .busy(pane: nil)] {
+                settingsState = busy
+                XCTAssertFalse(manager.validateMenuItem(check), "\(availability), \(busy)")
+                XCTAssertFalse(check.isHidden, "dimmed, not hidden")
+            }
+            for free in [
+                SettingsWindowState.closed,
+                .behind(pane: buttons),
+                .inFront(pane: buttons, canGoBack: false, canGoForward: false),
+            ] {
+                settingsState = free
+                XCTAssertTrue(manager.validateMenuItem(check), "\(availability), \(free)")
+            }
+        }
+        updateStatus = UpdateStatus(availability: .available, canCheck: true)
+        settingsState = .busy(pane: buttons)
+        XCTAssertTrue(manager.validateMenuItem(check))
+        updateStatus = UpdateStatus(availability: .available, canCheck: false)
+        settingsState = .closed
+        XCTAssertFalse(manager.validateMenuItem(check))
     }
 
     func testTheOtherItemsOfTheManagerAreAlwaysEnabled() throws {
@@ -711,6 +790,107 @@ final class PreferencesPaneSelectionTests: XCTestCase {
         XCTAssertFalse(preferences.selectPane(withIdentifier: "no-such-pane"))
         XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.buttons)
         XCTAssertEqual(preferences.sidebar.selectedIdentifier, PANEL_IDENTIFIER.buttons)
+    }
+
+    // MARK: - General at its Updates box
+
+    /// The Updates box in the column as it stands: how far its top is under the top of the
+    /// visible part, whether it is wholly in view, and whether the column shows the pane's end.
+    private func updatesBox(in preferences: PreferencesSplitViewController) throws -> (fromTop: CGFloat, inView: Bool, atEnd: Bool) {
+        let general = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController)
+        let updates = try XCTUnwrap(general.updatesSection)
+        let scrollView = try XCTUnwrap(preferences.host.scrollView)
+        let document = try XCTUnwrap(scrollView.documentView)
+        let visible = scrollView.documentVisibleRect
+        let box = updates.convert(updates.bounds, to: document)
+        return (box.minY - visible.minY, visible.insetBy(dx: -0.5, dy: -0.5).contains(box), abs(visible.maxY - document.bounds.maxY) < 1)
+    }
+
+    /// "Check for Updates…" of a copy that does not update itself: General with its Updates
+    /// box at the top of the column, as far under its edge as the pane's first box, also
+    /// when the box was in view lower down; as near as the pane's end lets it otherwise.
+    /// Only General on show, and not under a sheet (the sheet keeps the pane under it).
+    func testGeneralIsShownWithItsUpdatesBoxAtTheTop() throws {
+        let preferences = try makePreferences()
+        let window = try XCTUnwrap(preferences.view.window)
+        let width = window.contentRect(forFrameRect: window.frame).width
+        // Columns shorter than the window allows, so the box has room to reach the top.
+        window.contentMinSize = NSSize(width: width, height: 100)
+        let scrollView = try XCTUnwrap(preferences.host.scrollView)
+        let clip = scrollView.contentView
+        let general = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController)
+        let margin = PreferencesGroupedForm.margin
+        func setColumnHeight(_ height: CGFloat) {
+            window.contentView?.layoutSubtreeIfNeeded()
+            let chrome = window.contentRect(forFrameRect: window.frame).height - scrollView.frame.height
+            window.setContentSize(NSSize(width: width, height: height + chrome))
+            window.contentView?.layoutSubtreeIfNeeded()
+        }
+
+        // Measured in a column taller than the pane.
+        setColumnHeight(2000)
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        let updates = try XCTUnwrap(general.updatesSection)
+        let box = updates.convert(updates.bounds, to: scrollView.documentView)
+        let paneEnd = general.view.frame.maxY
+        XCTAssertGreaterThan(box.minY, margin, "the box is not the pane's first")
+
+        // Another pane on show, scrolled a little: it stays, and so does its place.
+        setColumnHeight(150)
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons))
+        clip.scroll(to: NSPoint(x: 0, y: 40))
+        scrollView.reflectScrolledClipView(clip)
+        XCTAssertEqual(clip.bounds.minY, 40, "Buttons scrolls in this column")
+        MainMenuManager.revealUpdates(in: preferences)
+        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.buttons, "the reveal never switches panes")
+        XCTAssertEqual(clip.bounds.minY, 40)
+
+        // Room under the box: its top goes to the top, the margin under the edge.
+        setColumnHeight(paneEnd - box.minY + margin - 30)
+        XCTAssertTrue(preferences.showPaneFromMenu(PANEL_IDENTIFIER.general))
+        XCTAssertEqual(clip.bounds.minY, 0, "General at its top first")
+        XCTAssertFalse(try updatesBox(in: preferences).inView, "below the edge")
+        preferences.hasSheet = { true }
+        MainMenuManager.revealUpdates(in: preferences)
+        XCTAssertEqual(clip.bounds.minY, 0, "a sheet is on the window")
+        preferences.hasSheet = { false }
+        MainMenuManager.revealUpdates(in: preferences)
+        XCTAssertEqual(try updatesBox(in: preferences).fromTop, margin, accuracy: 1)
+        XCTAssertTrue(try updatesBox(in: preferences).inView)
+
+        // In view at the pane's top, lower down: it still goes up, as far as the pane's end lets it.
+        let column = (box.maxY + paneEnd) / 2
+        setColumnHeight(column)
+        XCTAssertTrue(preferences.showPaneFromMenu(PANEL_IDENTIFIER.general))
+        XCTAssertEqual(clip.bounds.minY, 0)
+        XCTAssertTrue(try updatesBox(in: preferences).inView, "in view at the pane's top")
+        MainMenuManager.revealUpdates(in: preferences)
+        XCTAssertEqual(clip.bounds.minY, min(box.minY - margin, paneEnd - column), accuracy: 1)
+        XCTAssertGreaterThan(clip.bounds.minY, 0, "it moved")
+        XCTAssertTrue(try updatesBox(in: preferences).inView)
+    }
+
+    /// The pane and the box are asked for in a window not laid out at its new height: one
+    /// just made for the item (on another pane), and one already on General (the pane is
+    /// not shown anew, only scrolled to its top).
+    func testTheBoxIsShownInAWindowNotLaidOutAtItsHeight() throws {
+        for generalFirst in [false, true] {
+            let preferences = try makePreferences()
+            let window = try XCTUnwrap(preferences.view.window)
+            if generalFirst {
+                XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+            }
+            let width = window.contentRect(forFrameRect: window.frame).width
+            window.setContentSize(NSSize(width: width, height: PreferencesWindowLayout.minimumContentHeight))
+            // What the item does: the pane, then the box.
+            XCTAssertTrue(preferences.showPaneFromMenu(PANEL_IDENTIFIER.general))
+            MainMenuManager.revealUpdates(in: preferences)
+            window.contentView?.layoutSubtreeIfNeeded()
+            let shown = try updatesBox(in: preferences)
+            XCTAssertTrue(shown.inView, "General first: \(generalFirst)")
+            XCTAssertTrue(abs(shown.fromTop - PreferencesGroupedForm.margin) < 1 || shown.atEnd, "\(generalFirst): \(shown)")
+            XCTAssertGreaterThan(try XCTUnwrap(preferences.host.scrollView).contentView.bounds.minY, 0, "it moved")
+        }
     }
 }
 

@@ -541,8 +541,9 @@ only when you move those controls.
   Safari", or with "Add" when the name is too long to be read in both; also while
   paused; never for Scrollio itself), "Pause Scrollio" and "Pause For" ("15 Minutes",
   "1 Hour"), then "Settings…"
-  (and "Check for Updates…"), then "Quit Scrollio". A pause stops everything and gives
-  the Logitech mice their buttons back; it is not kept after Scrollio quits. "Pause
+  (and, in a copy that updates itself, "Check for Updates…"), then "Quit Scrollio". A
+  pause stops everything and gives the Logitech mice their buttons back; it is not kept
+  after Scrollio quits. "Pause
   Scrollio" lasts until "Resume Scrollio". A pause from "Pause For" ends by itself at the
   time the menu shows (a whole minute, never later than chosen; also checked after sleep
   and after a change of the clock) and then starts Scrollio as Resume does, without a
@@ -703,4 +704,7 @@ get the next version by hand, once.
 - A check asks GitHub for one small file that names the newest version. What that
   request shows is under [Privacy](privacy.md#privacy).
 - A copy built from source does not update itself and asks nobody; neither does a copy
-  that runs from the disk image. General › Updates says so.
+  that runs from the disk image, or one whose updater did not start (its line has "Open"
+  for the GitHub page). General › Updates says which, and "Check for Updates…" in the
+  Scrollio menu opens it there and VoiceOver reads why; the menu bar menu then has no
+  such item.
