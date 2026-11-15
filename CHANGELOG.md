@@ -59,9 +59,11 @@ suggested shortcuts for 100 of them.
   the app under the ring.
 - **Middle, Back and Forward of a Logitech mouse** set up on its receiver work over
   Bluetooth too.
-- **A key combination sent from the ring** no longer leaves its modifier keys held.
+- **The screen no longer goes a shade darker** while the Shortcut Ring is open.
 - **A Logitech button with a modifier key** (⌥ + the mode shift button) runs its own
-  action, no longer the plain button's (SmartShift).
+  action, no longer the plain button's (SmartShift); and a button kept for such a shortcut
+  (⌘ + Back) still works when pressed alone.
+- **Safari added with "Choose in Finder…"** now gets its own settings.
 - **"Freeze pointer during a gesture"** reads on, dimmed, while the mouse itself keeps the
   pointer still.
 
