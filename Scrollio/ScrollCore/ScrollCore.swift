@@ -29,10 +29,18 @@ class ScrollCore: ScrollActionPort {
     }
     var blockSmooth = false
     // 非修饰键热键的按下状态跟踪
-    var dashKeyHeld = false
-    var slowKeyHeld = false
-    var toggleKeyHeld = false
-    var blockKeyHeld = false
+    // A key that counts as up is held by no modifier (`releaseModifierHoldKeys`).
+    var dashKeyHeld = false { didSet { if !dashKeyHeld { dashHeldByModifier = [] } } }
+    var slowKeyHeld = false { didSet { if !slowKeyHeld { slowHeldByModifier = [] } } }
+    var toggleKeyHeld = false { didSet { if !toggleKeyHeld { toggleHeldByModifier = [] } } }
+    var blockKeyHeld = false { didSet { if !blockKeyHeld { blockHeldByModifier = [] } } }
+    /// The modifier (⌥, ⇧, ⌘ or ⌃) whose key holds each of the four, from that key's
+    /// flagsChanged; empty while the key is up, or held by a button, a plain key or fn.
+    /// Main thread.
+    private var dashHeldByModifier: CGEventFlags = []
+    private var slowHeldByModifier: CGEventFlags = []
+    private var toggleHeldByModifier: CGEventFlags = []
+    private var blockHeldByModifier: CGEventFlags = []
     private var dashActionCount = 0
     private var slowActionCount = 0
     private var toggleActionCount = 0
@@ -196,6 +204,9 @@ class ScrollCore: ScrollActionPort {
             ScrollSystemLog.notePassthrough(.remoteSmoothed)
             return Unmanaged.passUnretained(event)
         }
+        // A hold key whose modifier this event does not carry is up: its release was lost.
+        // Before the keys are read below.
+        ScrollCore.shared.releaseModifierHoldKeys(notCarriedBy: event)
         // 当鼠标输入, 根据需要执行翻转方向/平滑滚动
         // 获取事件目标
         let targetRunningApplication = ScrollUtils.shared.getRunningApplication(from: event)
@@ -468,6 +479,61 @@ class ScrollCore: ScrollActionPort {
         blockSmooth = blockKeyHeld || blockActionCount > 0
     }
 
+    // MARK: - Hold keys whose release was lost
+
+    /// The modifier that holds a key after this flagsChanged of it: its own while it is a
+    /// modifier key and down, none for fn (whether macOS puts fn into a wheel event's flags
+    /// is not known here: if not, the wheel would let fn go at every turn).
+    static func holdingModifier(_ hotkey: ScrollHotkey?, isPressed: Bool) -> CGEventFlags {
+        guard isPressed, let hotkey = hotkey, hotkey.isModifierKey else { return [] }
+        let mask = hotkey.modifierMask
+        return mask == .maskSecondaryFn ? [] : mask
+    }
+
+    /// A hold key that is a modifier key (⌥, ⇧, ⌘, ⌃) is up as soon as a wheel event from the
+    /// hardware comes without its modifier. Its release is a flagsChanged event of its own, and
+    /// that one can be lost: another program swallowed it (a window switcher, a key remapper)
+    /// or secure keyboard entry hid it. The key then stayed held (five times the distance,
+    /// smoothing paused, sideways) until it was pressed again. Each wheel event carries the
+    /// modifiers down at that moment: one it does not carry lets its key go here, as the key's
+    /// own release would. The side is not compared (the flags do not say which ⌥ is down).
+    /// A wheel event another program posted carries the flags it was given and is not asked;
+    /// buttons, plain keys and fn wait for their own release, as before.
+    /// Main thread (the scroll tap), before the keys are read: one comparison per wheel event
+    /// while no modifier holds a key, nothing allocated unless a key is let go.
+    func releaseModifierHoldKeys(notCarriedBy event: CGEvent) {
+        let held = dashHeldByModifier.rawValue | slowHeldByModifier.rawValue
+            | toggleHeldByModifier.rawValue | blockHeldByModifier.rawValue
+        guard held != 0 else { return }
+        let flags = event.flags
+        guard flags.rawValue & held != held,
+              event.getIntegerValueField(.eventSourceUnixProcessID) == 0 else { return }
+        if !flags.contains(dashHeldByModifier) {
+            dashKeyHeld = false
+            refreshDashState()
+            noteLostRelease(of: "Scroll faster")
+        }
+        if !flags.contains(slowHeldByModifier) {
+            slowKeyHeld = false
+            refreshDashState()
+            noteLostRelease(of: "Scroll slower")
+        }
+        if !flags.contains(toggleHeldByModifier) {
+            toggleKeyHeld = false
+            refreshToggleState()
+            noteLostRelease(of: "Scroll sideways")
+        }
+        if !flags.contains(blockHeldByModifier) {
+            blockKeyHeld = false
+            refreshBlockState()
+            noteLostRelease(of: "Pause smoothing")
+        }
+    }
+
+    private func noteLostRelease(of key: String) {
+        AppSystemLog.note("ScrollCore: let go of the \"\(key)\" key at a wheel event without its modifier (its release was not seen)")
+    }
+
     /// 处理来自 Logitech HID++ 的按键事件, 匹配 dash/toggle/block 滚动热键
     @discardableResult
     func handleScrollHotkey(code: UInt16, isDown: Bool) -> Bool {
@@ -515,24 +581,28 @@ class ScrollCore: ScrollActionPort {
         if let h = dashHotkey, h.type == .mouse, h.code == code {
             dashKeyHeld = true
             hidDashHeldCode = code
+            dashHeldByModifier = []
             refreshDashState()
             matched = true
         }
         if let h = slowHotkey, h.type == .mouse, h.code == code {
             slowKeyHeld = true
             hidSlowHeldCode = code
+            slowHeldByModifier = []
             refreshDashState()
             matched = true
         }
         if let h = toggleHotkey, h.type == .mouse, h.code == code {
             toggleKeyHeld = true
             hidToggleHeldCode = code
+            toggleHeldByModifier = []
             refreshToggleState()
             matched = true
         }
         if let h = blockHotkey, h.type == .mouse, h.code == code {
             blockKeyHeld = true
             hidBlockHeldCode = code
+            blockHeldByModifier = []
             refreshBlockState()
             matched = true
         }
@@ -594,21 +664,25 @@ class ScrollCore: ScrollActionPort {
         // Dash
         if let isPressed = checkAndUpdateHotkey(dashHotkey, keyHeld: &ScrollCore.shared.dashKeyHeld) {
             ScrollCore.shared.dashKeyHeld = isPressed
+            ScrollCore.shared.dashHeldByModifier = ScrollCore.holdingModifier(dashHotkey, isPressed: isPressed)
             ScrollCore.shared.refreshDashState()
         }
         // Slow (no key unless the user recorded one: then this is one test of nil)
         if let isPressed = checkAndUpdateHotkey(slowHotkey, keyHeld: &ScrollCore.shared.slowKeyHeld) {
             ScrollCore.shared.slowKeyHeld = isPressed
+            ScrollCore.shared.slowHeldByModifier = ScrollCore.holdingModifier(slowHotkey, isPressed: isPressed)
             ScrollCore.shared.refreshDashState()
         }
         // Toggle
         if let isPressed = checkAndUpdateHotkey(toggleHotkey, keyHeld: &ScrollCore.shared.toggleKeyHeld) {
             ScrollCore.shared.toggleKeyHeld = isPressed
+            ScrollCore.shared.toggleHeldByModifier = ScrollCore.holdingModifier(toggleHotkey, isPressed: isPressed)
             ScrollCore.shared.refreshToggleState()
         }
         // Block
         if let isPressed = checkAndUpdateHotkey(blockHotkey, keyHeld: &ScrollCore.shared.blockKeyHeld) {
             ScrollCore.shared.blockKeyHeld = isPressed
+            ScrollCore.shared.blockHeldByModifier = ScrollCore.holdingModifier(blockHotkey, isPressed: isPressed)
             ScrollCore.shared.refreshBlockState()
         }
 
