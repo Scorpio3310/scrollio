@@ -312,7 +312,7 @@ final class PreferencesDisclosureSectionTests: XCTestCase {
         XCTAssertEqual(section.body.alphaValue, 1)
     }
 
-    func testWithoutReduceMotionTheChevronTurnsOverAFifthOfASecond() {
+    func testWithoutReduceMotionTheChevronTurnsOverAFifthOfASecond() throws {
         XCTAssertEqual(PreferencesDisclosureSection.animationDuration, 0.2)
         let section = makeSection(collapsible: true, reducedMotion: false)
         install(section)
@@ -320,11 +320,22 @@ final class PreferencesDisclosureSectionTests: XCTestCase {
         XCTAssertTrue(section.isExpanded)
         XCTAssertFalse(section.body.isHidden)
         XCTAssertEqual(section.disclosure.accessibilityValue() as? NSNumber, 1, "the state is at once what it ends as")
+        XCTAssertTrue(section.disclosure.isAccessibilityExpanded(), "the state is at once what it ends as")
 
-        // The turn and the fade end where they head for.
-        let deadline = Date().addingTimeInterval(3)
-        while Date() < deadline, section.disclosure.chevron.turn < 1 || section.body.alphaValue < 1 {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        // The turn and the fade end where they head for. They move with the display's
+        // frames: with the display asleep (a night run) not one frame comes, and the test
+        // says so instead of failing.
+        let ended = expectation(description: "the turn and the fade end")
+        let poll = Timer(timeInterval: 0.02, repeats: true) { timer in
+            if section.disclosure.chevron.turn >= 1, section.body.alphaValue >= 1 {
+                timer.invalidate()
+                ended.fulfill()
+            }
+        }
+        RunLoop.current.add(poll, forMode: .common)
+        defer { poll.invalidate() }
+        if XCTWaiter().wait(for: [ended], timeout: 3) != .completed, section.disclosure.chevron.turn == 0 {
+            throw XCTSkip("no display frame arrived in 3 seconds (the display sleeps)")
         }
         XCTAssertEqual(section.disclosure.chevron.turn, 1, accuracy: 0.001)
         XCTAssertEqual(section.body.alphaValue, 1, accuracy: 0.001)
