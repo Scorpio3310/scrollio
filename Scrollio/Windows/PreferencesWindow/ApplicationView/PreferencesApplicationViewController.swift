@@ -203,6 +203,23 @@ class PreferencesApplicationViewController: NSViewController {
         reloadRows()
         syncViewWithOptions()
         root.setFrameSize(root.fittingSize)
+        // "Smooth Scrolling in …" of the menu bar can put the app of the line on the list
+        // while the pane shows: the list follows when its window becomes key again.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowDidBecomeKey(_:)), name: NSWindow.didBecomeKeyNotification, object: nil
+        )
+    }
+
+    /// The pane's window became key (back from the menu bar or another app): the list shows
+    /// what is stored now, the line that offers an app goes once the app is on it, and the
+    /// muted line under the switch follows (`reloadRows`), as an app's page shows its
+    /// settings again.
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        guard isViewLoaded, let window = notification.object as? NSWindow, window === view.window else { return }
+        reloadRows()
+        if currentPage === listPage {
+            contentHeightDidChange()
+        }
     }
 
     override func viewWillAppear() {

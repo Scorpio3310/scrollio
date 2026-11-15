@@ -478,10 +478,11 @@ final class PreferencesApplicationTests: XCTestCase {
     }
 
     /// One line at a time; it goes when the pane is left or when the app gets on the list
-    /// another way (the menu bar's "Smooth Scrolling in …", "+"), and its button then adds
-    /// nothing more.
+    /// another way (the menu bar's "Smooth Scrolling in …", seen when the window becomes key
+    /// again; "+"), and its button then adds nothing more.
     func testTheLineIsOneAndGoesWithItsReason() throws {
         let controller = makeController(running: [candidate(Self.textEdit, program: Self.textEditProgram, name: "TextEdit")])
+        let window = makeWindow(for: controller)
         controller.showSettings(for: Self.calculatorApp)
         controller.showSettings(for: Self.textEditApp)
         XCTAssertEqual(controller.list.rows.map(\.title), ["TextEdit isn't on the list."], "the empty list's line makes way")
@@ -494,7 +495,13 @@ final class PreferencesApplicationTests: XCTestCase {
         controller.showSettings(for: Self.textEditApp)
         let add = try XCTUnwrap(controller.list.rows.first?.accessory as? NSButton)
         AppSmoothing.addWithSmoothingOff(path: Self.textEditProgram, list: Options.shared.application, scrolling: Options.shared.scroll)
-        controller.reloadRows()
+        // Another window becoming key changes nothing here; this pane's window does.
+        let other = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100), styleMask: [.titled], backing: .buffered, defer: true)
+        other.isReleasedWhenClosed = false
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: other)
+        XCTAssertNotNil(controller.offeredApplication)
+        XCTAssertEqual(controller.list.rows.map { $0.id as? String }, [PreferencesApplicationViewController.offerRowID])
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
         XCTAssertNil(controller.offeredApplication)
         XCTAssertEqual(controller.list.rows.map { $0.id as? String }, [Self.textEditProgram])
         controller.addOfferedApplication(add)
