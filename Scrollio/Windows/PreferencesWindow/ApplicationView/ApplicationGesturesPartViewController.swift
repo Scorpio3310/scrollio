@@ -14,7 +14,7 @@
 //  of Buttons, or of the app's Buttons part: the first row, "Button to hold", says which
 //  one runs the gestures with the app in front ("Gesture button, as everywhere", "Back
 //  button, only in Figma", "None in Figma", `ApplicationTriggerRow`), and its button goes
-//  there: "Show in Buttons", "Show Buttons" (the app's Buttons part, that row selected) or
+//  there: "Show in Buttons", "Show in Figma" (the app's Buttons part, that row selected) or
 //  "Set Up…", which records a mouse button that runs the gestures only in this app.
 //
 //  "Copy from Gestures" ends the own set, there with it: all of it becomes a copy of the
@@ -65,7 +65,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     /// "Show in Buttons" of "Button to hold": the Buttons pane, the gesture button's row
     /// selected. Tests replace it.
     var openButtonsPane: (() -> Void)?
-    /// "Show Buttons" of "Button to hold": the app's Buttons part, the row with this id
+    /// "Show in Figma" of "Button to hold": the app's Buttons part, the row with this id
     /// selected (the page sets it).
     var showApplicationButtons: ((UUID) -> Void)?
     /// "Set Up…" of "Button to hold": records a mouse button at the push button that runs
@@ -161,6 +161,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
             title: text("gestures-gesture-button-set-up"), target: self, action: #selector(holdButtonClicked(_:))
         )
         hold.identifier = Identifier.holdButton
+        ApplicationTriggerRow.limitWidth(of: hold)
         holdButton = hold
         holdRow = PreferencesGroupRow(title: text("gestures-gesture-button"), explanation: "", accessory: hold)
         // (No title: the part's segment names it.) The button to hold first, as in the pane.
@@ -219,10 +220,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     private func syncHold() -> Bool {
         let hold = Self.hold(for: application, general: Options.shared.buttons.binding)
         shownHold = hold
-        let title = text(hold.buttonTitleKey)
-        if holdButton.title != title {
-            holdButton.title = title
-        }
+        ApplicationTriggerRow.show(hold.buttonTitle(applicationName: application.getName()), on: holdButton)
         guard holdRow.explanation != hold.text else { return false }
         holdRow.explanation = hold.text
         return view.superview != nil

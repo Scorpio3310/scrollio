@@ -200,8 +200,8 @@ struct ApplicationTriggers: Equatable {
 /// key"): what does it while the app is in front, by the rule above, and where the row's
 /// button leads. "Gesture button, as everywhere" (Buttons' button: "Show in Buttons", the
 /// Buttons pane with its row selected); "Back button, only in Figma" (a button of the app's
-/// own: "Show Buttons", the app's Buttons part with that row selected); "None in Figma"
-/// ("Set Up…", which records a button for this app only; or "Show Buttons" when one of the
+/// own: "Show in Figma", the app's Buttons part with that row selected); "None in Figma"
+/// ("Set Up…", which records a button for this app only; or "Show in Figma" when one of the
 /// app's own rows took what does it everywhere else, that row selected).
 struct ApplicationTriggerRow: Equatable {
 
@@ -219,12 +219,20 @@ struct ApplicationTriggerRow: Equatable {
     let text: String
     let destination: Destination
 
-    /// The catalog key of the button's title.
-    var buttonTitleKey: String {
+    /// The button's title, which says where it goes, in the words of the Gestures and
+    /// Shortcut Ring panes' pull-down: "Show in Buttons" (the Buttons pane), "Show in
+    /// Figma" (the app's Buttons part; `name` is the app's), or the part's "Set Up…"
+    /// (`setUpKey`).
+    func buttonTitle(applicationName name: String, setUpKey: String = "gestures-gesture-button-set-up") -> String {
         switch destination {
-        case .buttonsPane: return "apps-trigger-show-in-buttons"
-        case .applicationButtons: return "apps-trigger-show-buttons"
-        case .setUp: return "gestures-gesture-button-set-up"
+        case .buttonsPane:
+            return NSLocalizedString("apps-trigger-show-in-buttons", comment: "")
+        case .applicationButtons:
+            // (The pull-down's key; `value` is its English, should the catalog lack it.)
+            let format = NSLocalizedString("buttons-trigger-choice-show-in-app", value: "Show in %@", comment: "")
+            return String(format: format, name)
+        case .setUp:
+            return NSLocalizedString(setUpKey, comment: "")
         }
     }
 
@@ -239,8 +247,11 @@ struct ApplicationTriggerRow: Equatable {
         let here = rule.bindings(general: general, own: own)
         guard !here.isEmpty else {
             let text = String(format: NSLocalizedString("apps-trigger-none", comment: ""), name)
-            // A row of the app's own on what does it everywhere else: that row is why.
-            if let taken = own.first(where: { ApplicationButtons.generalBinding(for: $0.triggerEvent, in: everywhere) != nil }) {
+            // A row of the app's own on what does it everywhere else: that row is why; the
+            // row of that very trigger first, before one a press of it matches too (with
+            // modifier keys).
+            let exact = own.first { binding in everywhere.contains { $0.identity == binding.identity } }
+            if let taken = exact ?? own.first(where: { ApplicationButtons.generalBinding(for: $0.triggerEvent, in: everywhere) != nil }) {
                 return ApplicationTriggerRow(text: text, destination: .applicationButtons(taken.id))
             }
             return ApplicationTriggerRow(text: text, destination: .setUp)

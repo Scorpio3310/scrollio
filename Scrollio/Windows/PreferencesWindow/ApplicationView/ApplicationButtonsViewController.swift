@@ -23,7 +23,8 @@
 //  Only the app's own list is edited (`Application.setOwnButtonBindings`); Buttons is
 //  never touched. "Set Up…" of the app's Gestures and Shortcut Ring parts records here too
 //  (`beginAddingBinding`): the recorder hangs on that button, and what it catches gets
-//  Gesture Navigation or the Shortcut Ring in this app only.
+//  Gesture Navigation or the Shortcut Ring in this app only, with Undo in the page's
+//  window (this part is out of the window then).
 //
 //  "Remove All Buttons" under the list removes every button of the app's own and its own
 //  thumb wheel function at once: every button does what Buttons says again. The window's
@@ -85,6 +86,10 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     }
     /// Takes Undo and Redo of a removal; the window's when nil.
     var paneUndoManager: UndoManager?
+    /// The page's window's undo manager (the page sets it): this part's view is out of the
+    /// window while another part shows, and "Set Up…" of the Gestures and Shortcut Ring
+    /// parts records here then.
+    var pageUndoManager: (() -> UndoManager?)?
 
     // MARK: - Views and state (read access for tests)
 
@@ -337,9 +342,10 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     /// The action of the app's binding `id`: a listed one (the Shortcut Ring and Gesture
     /// Navigation among them), a recorded key combination (with its name and icon), or ""
-    /// ("Default": the button does what it does by itself here).
-    func setAction(of id: UUID, named name: String, label: ShortcutLabel? = nil) {
-        change(id) { old in
+    /// ("Default": the button does what it does by itself here). `undoName`: what Edit ›
+    /// Undo calls it ("Change Action" when nil).
+    func setAction(of id: UUID, named name: String, label: ShortcutLabel? = nil, undoName: String? = nil) {
+        change(id, undoName: undoName) { old in
             ButtonBinding(
                 id: old.id, triggerEvent: old.triggerEvent, systemShortcutName: name, isEnabled: true,
                 createdAt: old.createdAt, label: label
@@ -354,9 +360,10 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     }
 
     /// Changes the app's binding `id`; the window's Undo ("Undo Change Action", or "Undo
-    /// Rename" when only the name or icon of its keys changed) puts the one before back,
-    /// with an undo target that outlives the page, as a removal's (`registerOwnRowUndo`).
-    private func change(_ id: UUID, _ transform: (ButtonBinding) -> ButtonBinding) {
+    /// Rename" when only the name or icon of its keys changed; `undoName` when given) puts
+    /// the one before back, with an undo target that outlives the page, as a removal's
+    /// (`registerOwnRowUndo`).
+    private func change(_ id: UUID, undoName: String? = nil, _ transform: (ButtonBinding) -> ButtonBinding) {
         var own = ownBindings
         guard let index = own.firstIndex(where: { $0.id == id }) else { return }
         let old = own[index]
@@ -364,21 +371,28 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         own[index] = new
         store(own)
         guard !ButtonRowChange.isSame(old, new) else { return }
+        registerOwnRowUndo(
+            ButtonRowChange(kind: .of(old, to: new), states: [.init(id: id, binding: old, index: index)]), name: undoName
+        )
+    }
+
+    /// Registers Undo of `change` on the undo target, for this part's app.
+    private func registerOwnRowUndo(_ change: ButtonRowChange, name: String?) {
         let showing = partShowing ?? { [weak self] entry in
             self?.application === entry ? self : nil
         }
         Self.registerOwnRowUndo(
-            ButtonRowChange(kind: .of(old, to: new), states: [.init(id: id, binding: old, index: index)]),
-            of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange
+            change, name: name, of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange
         )
     }
 
     /// As a removal's (`removeOwnBinding`): the undo target is the settings, not the page;
     /// Undo and Redo find the app's entry by its path when they run, show the change on
     /// the part `showing` gives for it, with the changed row selected, and tell the list
-    /// of apps (its marks).
+    /// of apps (its marks). `name`: what Edit › Undo calls it, the change's kind's name
+    /// when nil.
     private static func registerOwnRowUndo(
-        _ change: ButtonRowChange, of application: Application, undoManager undo: UndoManager?,
+        _ change: ButtonRowChange, name: String? = nil, of application: Application, undoManager undo: UndoManager?,
         showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?
     ) {
         guard let undo, !change.states.isEmpty else { return }
@@ -391,11 +405,11 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
             showing(entry)?.showUndoableChange(selecting: change.states.first?.id)
             listDidChange?()
             Self.registerOwnRowUndo(
-                ButtonRowChange(kind: change.kind, states: result.replaced),
+                ButtonRowChange(kind: change.kind, states: result.replaced), name: name,
                 of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange
             )
         }
-        undo.setActionName(change.kind.actionName)
+        undo.setActionName(name ?? change.kind.actionName)
     }
 
     private func presentOpenTargetPopover(forRow id: UUID) {
@@ -498,12 +512,14 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// everywhere (so nothing changes until another one is chosen), selects it and opens
     /// its menu. A trigger the app has already is selected and flashes. With `action`
     /// ("Set Up…" of the Gestures or Shortcut Ring part) the new binding has that action
-    /// and no menu opens; a row of the trigger with "Default" takes it too.
+    /// and no menu opens; a row of the trigger with "Default" takes it too; either has
+    /// Undo, named as the panes' choice of the button ("Undo Change Button to Hold").
     @discardableResult
     func addOwnBinding(for trigger: RecordedEvent, action: SystemShortcut.Shortcut? = nil) -> UUID? {
+        let undoName = action.map(Self.setUpUndoName(for:))
         if let existing = ownBinding(for: trigger) {
             if let action, Self.takesAction(existing) {
-                setAction(of: existing.id, named: action.identifier)
+                setAction(of: existing.id, named: action.identifier, undoName: undoName)
                 list.select(AnyHashable(existing.id))
             } else {
                 list.flash(AnyHashable(existing.id))
@@ -513,10 +529,17 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         guard ButtonUtils.isRunnable(trigger) else { return nil }
         let added = action.map { ButtonBinding(triggerEvent: trigger, systemShortcutName: $0.identifier, isEnabled: true) }
             ?? Self.newBinding(for: trigger, general: generalBindings)
-        store(ownBindings + [added])
+        let own = ownBindings
+        store(own + [added])
         list.select(AnyHashable(added.id))
         if trigger.type == .mouse, deviceSource.captureStatus(trigger.code) == .bleHIDPPUnstable {
             deviceSource.warnBluetoothButton(trigger.code)
+        }
+        if let undoName {
+            // (Undo takes the new row away again; Redo puts it back.)
+            registerOwnRowUndo(
+                ButtonRowChange(kind: .action, states: [.init(id: added.id, binding: nil, index: own.count)]), name: undoName
+            )
         }
         guard action == nil else { return added.id }
         // The new row's menu opens by itself, once the "+" menu or the recorder is gone.
@@ -545,8 +568,9 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     // MARK: - Removing, with Undo
 
+    /// The window's while the part is in it, else the page's window's (another part shows).
     var undoTarget: UndoManager? {
-        return paneUndoManager ?? view.window?.undoManager
+        return paneUndoManager ?? view.window?.undoManager ?? pageUndoManager?()
     }
 
     /// Gives the button back to Buttons; the window's Undo takes it again.
@@ -710,6 +734,14 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// action of its own here), as the Buttons pane's Set Up… takes a row without one.
     static func takesAction(_ binding: ButtonBinding) -> Bool {
         return !CellActionState(binding: binding).hasBoundAction
+    }
+
+    /// What Edit › Undo calls what "Set Up…" recorded: as the Gestures and Shortcut Ring
+    /// panes call their choice of the button ("Change Button to Hold", "Change What Opens
+    /// the Ring").
+    static func setUpUndoName(for action: SystemShortcut.Shortcut) -> String {
+        let key = action.identifier == SystemShortcut.shortcutRing.identifier ? "ring-undo-choose-trigger" : "gestures-undo-choose-button"
+        return NSLocalizedString(key, comment: "")
     }
 
     /// "Set Up…" of the app's Gestures or Shortcut Ring part: the recorder, at `anchor`,

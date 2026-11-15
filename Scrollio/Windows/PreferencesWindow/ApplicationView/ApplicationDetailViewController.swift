@@ -18,7 +18,8 @@
 //  its thumb wheel's speed and swap), its own buttons and thumb wheel action, its
 //  `gestures` and its `ring`. The Apps pane puts the page in place of the list and takes
 //  it away again; the page tells it when its height changed (the part, or the part's
-//  content).
+//  content). An Undo or Redo of a change made in another pane that changes the bindings
+//  of Buttons shows the part again (what its first row says follows them).
 //
 
 import Cocoa
@@ -98,6 +99,10 @@ final class ApplicationDetailViewController: NSViewController {
     private(set) var shownPart: ApplicationPagePart
     /// Each part's controller, by the part's id: made with the page.
     private(set) var partControllers: [String: ApplicationPagePartController] = [:]
+    /// The bindings of Buttons the part shown was last shown with: an Undo or Redo of a
+    /// change made in another pane (Buttons, or the Gestures or Shortcut Ring pane's choice
+    /// of the button) that changed them shows the part again.
+    private var shownGeneralBindings: [ButtonBinding] = []
 
     var scrollingPart: ApplicationScrollingPartViewController! {
         return partControllers[ApplicationPagePart.scrolling.id] as? ApplicationScrollingPartViewController
@@ -143,6 +148,10 @@ final class ApplicationDetailViewController: NSViewController {
 
     required init?(coder: NSCoder) {
         fatalError("ApplicationDetailViewController is built in code")
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     override func loadView() {
@@ -231,6 +240,9 @@ final class ApplicationDetailViewController: NSViewController {
             if let buttons = controller as? ApplicationButtonsViewController {
                 buttons.onOwnButtonsChange = onInheritChange
                 buttons.partShowing = buttonsPartShowing
+                // "Set Up…" of the Gestures and Ring parts records there while the part is
+                // out of the window: its Undo goes to the page's window.
+                buttons.pageUndoManager = { [weak self] in self?.viewIfLoaded?.window?.undoManager }
                 // "Show Gesture Settings" of a row: the gestures of this app, not the pane.
                 buttons.onGestureSettingsRequested = { [weak self] in self?.show(.gestures) }
                 buttons.onThumbWheelSettingsRequested = { [weak self] in self?.showThumbWheelSettings() }
@@ -264,6 +276,30 @@ final class ApplicationDetailViewController: NSViewController {
         put(shownPart)
         showOwnSettings()
         root.setFrameSize(root.fittingSize)
+        // An Undo or Redo in another pane can change what the first rows of the Gestures
+        // and Shortcut Ring parts say (and the Buttons part's lines): they follow.
+        for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+            NotificationCenter.default.addObserver(self, selector: #selector(undoManagerDidChange(_:)), name: name, object: nil)
+        }
+    }
+
+    /// An Undo or Redo ran: while the page is in a window and the bindings of Buttons are
+    /// not the ones the part shown was shown with, the part shows them, and the app's box
+    /// and dots follow. (Undo of the app's own buttons shows itself; see
+    /// `ApplicationButtonsViewController.showUndoableChange`.)
+    @objc private func undoManagerDidChange(_ notification: Notification) {
+        guard isViewLoaded, view.window != nil else { return }
+        let general = Options.shared.buttons.binding
+        guard !Self.sameBindings(general, shownGeneralBindings) else { return }
+        shownGeneralBindings = general
+        shownController?.syncViewWithOptions()
+        showOwnSettings()
+    }
+
+    /// The same bindings, stored the same way (also where a numbered button is said to be,
+    /// which its name follows).
+    private static func sameBindings(_ a: [ButtonBinding], _ b: [ButtonBinding]) -> Bool {
+        return a.count == b.count && zip(a, b).allSatisfy { ButtonRowChange.isSame($0, $1) }
     }
 
     override func viewWillAppear() {
@@ -304,7 +340,7 @@ final class ApplicationDetailViewController: NSViewController {
         scrolling.scrollingController.revealThumbWheel()
     }
 
-    /// "Show Buttons" of the Gestures and Shortcut Ring parts' first rows: the Buttons part,
+    /// "Show in Figma" of the Gestures and Shortcut Ring parts' first rows: the Buttons part,
     /// with the row of the app's own binding `id` selected.
     func showButtons(selecting id: UUID) {
         show(.buttons)
@@ -347,6 +383,7 @@ final class ApplicationDetailViewController: NSViewController {
         }
         partControl.selectedSegment = parts.firstIndex(of: part) ?? 0
         guard controller.view.superview !== partContainer else { return }
+        shownGeneralBindings = Options.shared.buttons.binding
         controller.syncViewWithOptions()
         let partView = controller.view
         partContainer.addSubview(partView)
@@ -380,6 +417,7 @@ final class ApplicationDetailViewController: NSViewController {
             title = name
             headerRow.title = name
         }
+        shownGeneralBindings = Options.shared.buttons.binding
         for controller in partControllers.values {
             controller.syncViewWithOptions()
         }
@@ -405,20 +443,32 @@ final class ApplicationDetailViewController: NSViewController {
         for (index, part) in parts.enumerated() {
             let own = part.hasOwnSettings(application)
             let selected = index == partControl.selectedSegment
-            partControl.setImage(own ? Self.ownDot(label: part.markLabel, onSelection: selected) : nil, forSegment: index)
+            partControl.setImage(Self.segmentImage(own: own ? part.markLabel : nil, onSelection: selected), forSegment: index)
             partControl.setToolTip(own ? part.markLabel : nil, forSegment: index)
         }
     }
 
+    /// The dot's diameter, and the room after it, before the segment's title.
+    static let dotSide: CGFloat = 6
+    static let dotGap: CGFloat = 3
+
     /// The dot on a part's segment: a small circle in the accent colour, said as the mark of
-    /// the list ("Own gestures"). On the selected segment, which can be that colour, a
-    /// template the control tints as its title (white on the accent, dark in a window in
-    /// the back).
+    /// the list ("Own gestures"), with room after it before the title. On the selected
+    /// segment, which can be that colour, a template the control tints as its title (white
+    /// on the accent, dark in a window in the back).
     static func ownDot(label: String, onSelection: Bool = false) -> NSImage {
-        let side: CGFloat = 6
-        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+        return segmentImage(own: label, onSelection: onSelection)
+    }
+
+    /// What a segment shows before its title: the dot while the app has settings of that
+    /// kind of its own (`own`: what it says), else the same room, clear. Every segment has
+    /// it, so the control keeps its width and no segment moves when a switch below makes a
+    /// part the app's own or takes it away.
+    static func segmentImage(own label: String?, onSelection: Bool) -> NSImage {
+        let image = NSImage(size: NSSize(width: dotSide + dotGap, height: dotSide), flipped: false) { _ in
+            guard label != nil else { return true }
             (onSelection ? NSColor.black : NSColor.controlAccentColor).setFill()
-            NSBezierPath(ovalIn: rect).fill()
+            NSBezierPath(ovalIn: NSRect(x: 0, y: 0, width: dotSide, height: dotSide)).fill()
             return true
         }
         image.isTemplate = onSelection
