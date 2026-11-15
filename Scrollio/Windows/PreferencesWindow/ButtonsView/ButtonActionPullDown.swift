@@ -28,6 +28,12 @@
 //  menus offer what a place or a direction can hold, and their recorder takes only what a
 //  place of the ring can run (a key combination, the Back or the Forward button).
 //
+//  The open menu ticks what the row shows (`shownActionItem`), every time it opens: a
+//  listed action inside its category, which gets the dash; "Keyboard Shortcut…" for
+//  recorded keys, "Open App or File…" for an app or a file, Gesture Navigation and the
+//  Shortcut Ring their own items, "Default" or "No Action" without an action. Nothing
+//  else, "Same as Other Apps (…)" never. The order of the menu stays.
+//
 
 import Cocoa
 
@@ -154,6 +160,8 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         super.init(frame: .zero, pullsDown: true)
         translatesAutoresizingMaskIntoConstraints = false
         widthAnchor.constraint(equalToConstant: Self.width).isActive = true
+        // The tick is the menu's own (`tickShownAction`), not the item AppKit last chose.
+        (cell as? NSPopUpButtonCell)?.altersStateOfSelectedItem = false
         configure(with: binding)
     }
 
@@ -484,7 +492,75 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        tickShownAction(in: menu)
         enableKeyEquivalents(in: menu)
+    }
+
+    // MARK: The tick
+
+    /// The item of what the row shows, and the category it sits in (nil: the menu's own
+    /// level); nil when the menu has none. A listed action is its item; recorded keys
+    /// "Keyboard Shortcut…", unless they read as a listed action (no name of their own);
+    /// an app or a file "Open App or File…"; Gesture Navigation and the Shortcut Ring their
+    /// own items; no action "Default" or "No Action". "Same as Other Apps (…)" never.
+    var shownActionItem: (item: NSMenuItem, category: NSMenuItem?)? {
+        guard let menu else { return nil }
+        // (What is stored: a recording that waits for a key changes nothing yet.)
+        let state = CellActionState(binding: binding)
+        if resolver.resolve(state: state).kind == .unbound {
+            return noActionItem.map { ($0, nil) }
+        }
+        switch state {
+        case .unbound, .recordingPrompt:
+            return noActionItem.map { ($0, nil) }
+        case .namedShortcut(let shortcut):
+            return Self.item(of: shortcut.identifier, in: menu)
+        case .customBinding(let name, let label):
+            if label == nil, let shortcut = SystemShortcut.displayShortcut(matchingBindingName: name),
+               let listed = Self.item(of: shortcut.identifier, in: menu) {
+                return listed
+            }
+            return Self.item(marked: ShortcutManager.MenuMarker.keyboardShortcut, in: menu)
+        case .openTarget:
+            return Self.item(marked: ShortcutManager.MenuMarker.openTarget, in: menu)
+        }
+    }
+
+    /// Clears every state, then ticks what the row shows and puts the dash on its category.
+    private func tickShownAction(in menu: NSMenu) {
+        Self.clearStates(in: menu)
+        guard let shown = shownActionItem else { return }
+        shown.item.state = .on
+        shown.category?.state = .mixed
+    }
+
+    private static func clearStates(in menu: NSMenu) {
+        for item in menu.items {
+            item.state = .off
+            if let submenu = item.submenu {
+                clearStates(in: submenu)
+            }
+        }
+    }
+
+    /// The first item that binds `identifier` (after the title), at the menu's level or in
+    /// a category.
+    private static func item(of identifier: String, in menu: NSMenu) -> (item: NSMenuItem, category: NSMenuItem?)? {
+        for item in menu.items.dropFirst() {
+            if (item.representedObject as? SystemShortcut.Shortcut)?.identifier == identifier {
+                return (item, nil)
+            }
+            if let found = item.submenu?.items.first(where: {
+                ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == identifier
+            }) {
+                return (found, item)
+            }
+        }
+        return nil
+    }
+
+    private static func item(marked marker: String, in menu: NSMenu) -> (item: NSMenuItem, category: NSMenuItem?)? {
+        return menu.items.first { $0.representedObject as? String == marker }.map { ($0, nil) }
     }
 
     func menuDidClose(_ menu: NSMenu) {
