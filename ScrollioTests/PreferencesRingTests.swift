@@ -444,6 +444,113 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertFalse(page.placeRows[0].isHiddenOrHasHiddenAncestor)
     }
 
+    /// The drawing of an app's own ring shows the app's icon in its middle, as the ring on
+    /// screen does; the pane's drawing of the general ring never does. The page makes the
+    /// mark once, and hands it to the ring on screen only when that app's own ring can
+    /// open (a page that is only looked at pushes out no other app's mark).
+    func testTheDrawingOfAnAppsOwnRingShowsTheAppsIcon() throws {
+        ShortcutRingController.forgetPreparedFaces()
+        defer { ShortcutRingController.forgetPreparedFaces() }
+        let savedBindings = Options.shared.buttons.binding
+        let savedApplications = Options.shared.application.applications
+        defer {
+            Options.shared.buttons.binding = savedBindings
+            Options.shared.application.applications = savedApplications
+        }
+        Options.shared.buttons.binding = []
+        let path = "/System/Applications/Notes.app"
+        let notes = Application(path: path)
+        notes.setUsesGeneralRing(false, general: .default)
+        Options.shared.application.applications = EnhanceArray(withArray: [notes], matchKey: "path")
+
+        var made: [String] = []
+        func page(_ application: Application?) -> RingPreferencesViewController {
+            let page = RingPreferencesViewController(application: application)
+            page.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: []) }
+            page.makeAppMark = { path in
+                made.append(path)
+                return RingHarness.mark(named: "Notes")
+            }
+            _ = page.view
+            return page
+        }
+        let own = page(notes)
+        let icon = try XCTUnwrap(own.previewView.appIcon, "the app's own ring")
+        XCTAssertEqual(made, [path])
+        XCTAssertNil(ShortcutRingController.preparedAppMark(forPath: path), "nothing opens its ring: not handed on")
+        own.setPlace(ShortcutRingPlace(SystemShortcut.copy), at: 0)
+        XCTAssertTrue(own.previewView.appIcon === icon)
+        XCTAssertEqual(made, [path], "made once")
+
+        // A place lit: its name stands in the middle instead (the artwork draws one or the other).
+        own.placePointedAt(2)
+        XCTAssertEqual(own.previewView.lit, 2)
+        own.placePointedAt(nil)
+
+        XCTAssertNil(page(nil).previewView.appIcon, "the pane's general ring")
+        let usesGeneral = Application(path: "/System/Applications/Maps.app")
+        XCTAssertNil(page(usesGeneral).previewView.appIcon, "an app that uses the general ring")
+        XCTAssertEqual(made, [path])
+
+        // Something opens the ring: the page hands the mark on to the ring on screen, and a
+        // page that comes later takes that one.
+        Options.shared.buttons.binding = [ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: SystemShortcut.shortcutRing.identifier, isEnabled: true
+        )]
+        let second = page(notes)
+        XCTAssertEqual(made, [path, path])
+        let handedOn = try XCTUnwrap(ShortcutRingController.preparedAppMark(forPath: path))
+        XCTAssertTrue(second.previewView.appIcon === handedOn.icon)
+        XCTAssertTrue(page(notes).previewView.appIcon === handedOn.icon)
+        XCTAssertEqual(made, [path, path], "the ring's mark is taken, not made again")
+    }
+
+    /// The icon in the drawing is half faint, and whole under Increase Contrast or Reduce
+    /// Transparency, as on screen.
+    func testTheIconInTheDrawingIsFaintUnlessContrastOrNoTransparency() throws {
+        let preview = ShortcutRingPreviewView(frame: NSRect(x: 0, y: 0, width: 460, height: ShortcutRingPreviewView.preferredHeight))
+        preview.face = ShortcutRingFace(.default)
+        let icon = NSImage(size: NSSize(width: 40, height: 40), flipped: false) { rect in
+            NSColor.black.setFill()
+            rect.fill()
+            return true
+        }
+        var reduces = false
+        preview.reducesTransparency = { reduces }
+        /// How bright the drawing's middle is (the icon, black over the light hub), drawn
+        /// now into a bitmap of its own.
+        func middle(appearance name: NSAppearance.Name) throws -> CGFloat {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            preview.appearance = appearance
+            let rep = try XCTUnwrap(NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(preview.bounds.width), pixelsHigh: Int(preview.bounds.height),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            ))
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            appearance.performAsCurrentDrawingAppearance { preview.draw(preview.bounds) }
+            NSGraphicsContext.restoreGraphicsState()
+            let colour = try XCTUnwrap(rep.colorAt(x: rep.pixelsWide / 2, y: rep.pixelsHigh / 2)?.usingColorSpace(.sRGB))
+            return colour.brightnessComponent
+        }
+        let empty = try middle(appearance: .aqua)
+        preview.appIcon = icon
+        let faint = try middle(appearance: .aqua)
+        reduces = true
+        let whole = try middle(appearance: .aqua)
+        reduces = false
+        XCTAssertGreaterThan(empty, 0.9, "the light hub")
+        XCTAssertGreaterThan(faint, 0.35, "the icon is faint: the hub shows through")
+        XCTAssertLessThan(faint, empty - 0.3, "the icon is there")
+        XCTAssertLessThan(whole, 0.05, "Reduce Transparency: the whole icon")
+        // (Some systems hand out the plain appearance while Increase Contrast is off.)
+        if NSAppearance(named: .accessibilityHighContrastAqua)?.name.rawValue.contains("Accessibility") == true {
+            XCTAssertLessThan(try middle(appearance: .accessibilityHighContrastAqua), 0.05, "Increase Contrast: the whole icon")
+        }
+    }
+
     /// The row answers "can a key open it?" whether or not something opens the ring yet:
     /// yes, also a keystroke that Logi Options+ sends for a button.
     func testTheRowSaysThatAKeyCombinationWorks() {
