@@ -2380,9 +2380,12 @@ final class PreferencesWindowRenderTests: XCTestCase {
 
     /// The pictures of the README (`readme-<pane>-<appearance>.png`, copied by hand to
     /// `assets/readme/`): Scrolling at its defaults; Buttons with an MX Master 4, a few
-    /// buttons and keys set up and the gesture button's row selected; Gestures with an MX
-    /// Master 4; the Mouse pane of an MX Master 4 that Scrollio manages, down to its scroll
-    /// wheel. Each is the window's column under the pane's title, cut below a box of the pane.
+    /// buttons and keys set up, the thumb panel free and the gesture button's row selected;
+    /// Gestures with an MX Master 4; the Mouse pane of an MX Master 4 that Scrollio manages,
+    /// down to its scroll wheel; Shortcut Ring with an MX Master 4 whose thumb panel opens
+    /// the default ring (`readme-ring`); Safari's own Shortcut Ring on its page, its
+    /// suggested shortcuts round its icon (`readme-app`, cut below the drawing). Each is the
+    /// window's column under the pane's title, cut below a box of the pane.
     /// Numbers follow the region of the test run: for "6.3×" rather than "6,3×", give the
     /// test plan's configuration the options `"language": "en", "region": "US"` while you
     /// render (xcodebuild's `-testRegion` does not reach a scheme with test plans), then:
@@ -2398,10 +2401,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
 
         let mxMaster4 = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { "MX Master 4" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
         let controlOption = UInt(CGEventFlags.maskControl.rawValue | CGEventFlags.maskAlternate.rawValue)
+        // (The thumb panel is left free: its row says what it is good for.)
         Options.shared.buttons.binding = [
             binding(1000, SystemShortcut.mouseGestureNavigation.identifier),
             binding(3, SystemShortcut.missionControl.identifier),
-            binding(2000 + 0x01A0, SystemShortcut.copy.identifier),
             ButtonBinding(
                 triggerEvent: RecordedEvent(type: .keyboard, code: 40, modifiers: controlOption, deviceFilter: nil),
                 systemShortcutName: SystemShortcut.screenshotSelection.identifier
@@ -2440,6 +2443,60 @@ final class PreferencesWindowRenderTests: XCTestCase {
         Options.shared.logiWheel = LogiWheelSettings(managedByScrollio: true)
         let master4 = MouseDeviceFixtures.mxMaster4(dpi: 1600, hapticsOn: true, strength: 60, pressForce: 5167)
         try renderMouse([master4], name: "readme-mouse", titled: TitledCut(boxes: 3))
+
+        let stored = Options.shared.application.applications
+        let savedRing = Options.shared.ring
+        let savedIdentifier = ShortcutRingSuggestions.bundleIdentifierOfApplication
+        let savedLayout = ShortcutRingSuggestions.layout
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            Options.shared.ring = savedRing
+            ShortcutRingSuggestions.bundleIdentifierOfApplication = savedIdentifier
+            ShortcutRingSuggestions.layout = savedLayout
+            ShortcutRingController.forgetPreparedFaces()
+            ButtonUtils.shared.invalidateCache()
+        }
+        Options.shared.application.applications = EnhanceArray<Application>(matchKey: "path")
+        Options.shared.ring = .default
+        // The thumb panel opens the ring, a binding of Buttons as the user makes it.
+        let opensRing = [binding(LogiCenter.shared.scrollioCode(for: .thumbPanel), SystemShortcut.shortcutRing.identifier)]
+        Options.shared.buttons.binding = opensRing
+        ButtonUtils.shared.invalidateCache()
+        try renderPane(RingPreferencesViewController.tabIdentifier, name: "readme-ring", titled: TitledCut(boxes: 1), replacement: {
+            let ring = RingPreferencesViewController()
+            ring.bindingSummary = { ShortcutRingBindingSummary(bindings: opensRing) }
+            return ring
+        }, afterLoad: { controller in
+            guard let ring = controller as? RingPreferencesViewController else { return }
+            ring.triggerChooser?.deviceSource = mxMaster4
+            Self.stillTriggerCard(of: ring, mouse: .mxMaster4)
+            ring.reload()
+        })
+
+        // Safari's page, right after "Use settings from Shortcut Ring" was turned off: its own
+        // ring holds Safari's suggested shortcuts (on the US layout) round its icon. Safari
+        // gets its bundle identifier through the seam.
+        let safari = Application(path: "/Applications/Safari.app")
+        safari.displayName = "Safari"
+        ShortcutRingSuggestions.bundleIdentifierOfApplication = { $0 == safari.path ? "com.apple.Safari" : nil }
+        ShortcutRingSuggestions.layout = { .us }
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [safari], matchKey: "path")
+        let defaults = uiDefaults(advanced: false)
+        try renderPane(PANEL_IDENTIFIER.application, name: "readme-app",
+                       titled: TitledCut(boxes: 3, margin: 12, alsoBoxes: [ShortcutRingPreviewView.self]), prepare: { preferences in
+            (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                .uiStateDefaults = defaults
+        }, afterLoad: { controller in
+            let pane = controller as? PreferencesApplicationViewController
+            pane?.openApplication(withID: safari.path, part: .ring)
+            guard let part = pane?.detailController?.ringPart else { return }
+            // Each appearance starts from the general ring, as the user finds it.
+            safari.ring = nil
+            part.syncViewWithOptions()
+            part.generalRingRow.toggle.state = .off
+            part.generalRingClick(part.generalRingRow.toggle)
+            part.syncViewWithOptions()
+        })
     }
 
     // MARK: - Kit
@@ -3218,19 +3275,22 @@ private final class RenderWindow: NSWindow {
 
 /// How a picture with the pane's title is cut from the window's frame: the pane's column
 /// from the top of the window (the title bar's strip, with the title) down to `margin`
-/// below the `boxes`-th box of the pane counted from the top (a rounded box or a list), or
-/// to the bottom of the column when nil. The line at the column's leading edge (the
-/// sidebar's border) is left out.
+/// below the `boxes`-th box of the pane counted from the top (a rounded box or a list, or
+/// a view of one of the `alsoBoxes` classes), or to the bottom of the column when nil.
+/// The line at the column's leading edge (the sidebar's border) is left out.
 private struct TitledCut {
     var boxes: Int?
     var margin: CGFloat = 20
+    /// Views that count as boxes too (the drawing of an app's own ring stands on its page
+    /// by itself).
+    var alsoBoxes: [AnyClass] = []
 
     func rect(column scroll: NSScrollView, pane: NSView, in frameView: NSView) -> NSRect {
         let column = scroll.convert(scroll.bounds, to: frameView)
         let flipped = frameView.isFlipped
         var bottom = flipped ? column.maxY : column.minY
         if let boxes, boxes > 0 {
-            let frames = Self.boxes(in: pane).map { $0.convert($0.bounds, to: frameView) }
+            let frames = Self.boxes(in: pane, also: alsoBoxes).map { $0.convert($0.bounds, to: frameView) }
             let fromTop = flipped ? frames.sorted { $0.minY < $1.minY } : frames.sorted { $0.maxY > $1.maxY }
             if fromTop.count >= boxes {
                 let box = fromTop[boxes - 1]
@@ -3243,11 +3303,11 @@ private struct TitledCut {
     }
 
     /// The pane's boxes, the outermost only.
-    private static func boxes(in view: NSView) -> [NSView] {
-        if view is PreferencesGroupBox || view is PreferencesListBox {
+    private static func boxes(in view: NSView, also: [AnyClass]) -> [NSView] {
+        if view is PreferencesGroupBox || view is PreferencesListBox || also.contains(where: { view.isKind(of: $0) }) {
             return [view]
         }
-        return view.subviews.flatMap { boxes(in: $0) }
+        return view.subviews.flatMap { boxes(in: $0, also: also) }
     }
 }
 
