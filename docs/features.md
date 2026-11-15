@@ -575,7 +575,9 @@ only when you move those controls.
   Settings"; and for "no display frames", with a line that says to quit and reopen
   Scrollio) or, for the access, "Open System Settings". The Welcome Guide does not
   say "Allowed" alone then either: its Accessibility step says the same with an orange
-  sign, and its sample page "Not smoothed: Scrollio can't send events".
+  sign, and its sample page "Not smoothed: Scrollio can't send events" (for "no display
+  frames": "Allowed, but smooth scrolling is off: no display frames" and "Not smoothed:
+  no display frames").
 - The icon can be hidden (General › Show in menu bar). Opening Scrollio again then shows
   its settings, or the Welcome Guide while Accessibility access is missing.
 - General also has "Open at login", the state of the Accessibility access (without it
