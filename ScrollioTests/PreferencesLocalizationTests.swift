@@ -208,6 +208,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-paused-hint", "general-resume",
         // Round 4 D5: under "Scrollio is paused until 14:30"
         "general-paused-until-hint",
+        // Under "Scrollio can't send scroll events"
+        "general-cannot-post-events-hint",
         "general-permissions-header", "general-accessibility", "general-accessibility-hint",
         "general-accessibility-hint-not-allowed",
         "general-accessibility-allowed", "general-accessibility-not-allowed", "general-accessibility-open-settings",
@@ -269,6 +271,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "status-item-could-not-start", "status-menu-app-smoothing", "status-item-battery-low",
         "status-menu-title-paused", "status-menu-title-needs-access", "status-menu-title-could-not-start",
         "status-menu-try-again",
+        "status-menu-title-cannot-post-events", "status-item-cannot-post-events",
+        "status-menu-open-accessibility-settings",
         "status-item-accessibility", "status-item-accessibility-battery", "status-item-accessibility-battery-low",
         "scroll-monitor-title", "logitech-diagnostics-title",
         "toast-accessibility-lost", "toast-battery-low", "toast-battery-low-plain",

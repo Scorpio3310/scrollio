@@ -14,7 +14,8 @@
 //  "Scrollio couldn't
 //  start and is trying again" with "Try Again" (or "Pause" while an event tap is kept off
 //  and comes back by itself); "Scrollio needs Accessibility access" with "Open System
-//  Settings". With the menu bar icon hidden this is the way to pause and back. Then
+//  Settings"; "Scrollio can't send scroll events" with a line that says what to do there
+//  and "Open System Settings". With the menu bar icon hidden this is the way to pause and back. Then
 //  two boxes:
 //  - "Open at login" (with a row to approve it in System Settings while macOS waits for
 //    that) and "Show in menu bar";
@@ -83,13 +84,15 @@ class PreferencesGeneralViewController: NSViewController {
     /// A start that failed, tried at once, as "Try Again Now" of the status-bar menu does.
     var tryAgain: () -> Void = { AppRunController.shared.tryAgainNow() }
     /// Why Scrollio does not work although it has the access and is not paused, by the
-    /// status item's rule (a failed start, an event tap kept off); nil while it works.
+    /// status item's rule (a failed start, an event tap kept off, no right to post events);
+    /// nil while it works.
     var startProblem: () -> StatusMenu.StartProblem? = {
         let controller = AppRunController.shared
         return StatusMenu.startProblem(
             coresActive: controller.coresActive,
             startFailed: controller.isRetryingStart,
-            tapRestartsThrottled: Interceptor.hasThrottledTap
+            tapRestartsThrottled: Interceptor.hasThrottledTap,
+            canPostEvents: ScrollPoster.shared.canPostEvents
         )
     }
     /// Opens the Welcome Guide.
@@ -601,6 +604,10 @@ class PreferencesGeneralViewController: NSViewController {
             center.addObserver(forName: Interceptor.restartThrottleDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 self?.refreshRunStatus()
             },
+            // macOS stopped or started letting Scrollio post events: "can't send scroll events".
+            center.addObserver(forName: ScrollPoster.postEventAccessDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.refreshRunStatus()
+            },
             // A check started or ended, an update was found or answered, or Sparkle's own
             // question about automatic checks was answered.
             center.addObserver(forName: UpdateCenter.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -738,6 +745,8 @@ class PreferencesGeneralViewController: NSViewController {
             case .needsAccess?: action = .allowAccess
             case .paused?: action = .resume
             case .couldNotStart?: action = startProblem == .retrying ? .tryAgain : .pause
+            // The way out is in System Settings, where the access is.
+            case .cannotPostEvents?: action = .allowAccess
             case nil: action = .pause
             }
         }
@@ -753,11 +762,14 @@ class PreferencesGeneralViewController: NSViewController {
             return StatusMenu.titleText(title, pauseEnd: pauseEnd)
         }
 
-        /// Only the pause needs a line: what is off until Resume, or until the time the
-        /// title names.
+        /// The pause needs a line: what is off until Resume, or until the time the title
+        /// names. So does "can't send scroll events": what to do in System Settings.
         var explanationKey: String? {
-            guard title == .paused else { return nil }
-            return pauseEnd == nil ? "general-paused-hint" : "general-paused-until-hint"
+            switch title {
+            case .paused?: return pauseEnd == nil ? "general-paused-hint" : "general-paused-until-hint"
+            case .cannotPostEvents?: return "general-cannot-post-events-hint"
+            default: return nil
+            }
         }
 
         var buttonKey: String {

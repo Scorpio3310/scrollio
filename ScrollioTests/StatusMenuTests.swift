@@ -81,6 +81,7 @@ final class StatusMenuTests: XCTestCase {
         actions.pause = { calls.log.append("pause \($0)") }
         actions.resume = { calls.log.append("resume") }
         actions.tryAgain = { calls.log.append("try again") }
+        actions.openAccessibilitySettings = { calls.log.append("accessibility settings") }
         actions.showMouseSettings = { calls.log.append("mouse") }
         actions.toggleAppSmoothing = { calls.log.append("smoothing \($0.name)") }
         actions.showApplicationSettings = { calls.log.append("app settings \($0.name)") }
@@ -434,6 +435,42 @@ final class StatusMenuTests: XCTestCase {
         ])
     }
 
+    /// Without the right to post events (after some macOS updates the system drops what
+    /// Scrollio posts and says nothing) Scrollio runs but smooths nothing: the menu says so,
+    /// with the way out (System Settings › Privacy & Security › Accessibility) and Pause.
+    func testWithoutTheRightToPostEventsTheMenuSaysItCantSendScrollEvents() throws {
+        XCTAssertEqual(StatusMenu.startProblem(coresActive: true, startFailed: false, tapRestartsThrottled: false,
+                                               canPostEvents: false), .cannotPostEvents)
+        XCTAssertNil(StatusMenu.startProblem(coresActive: false, startFailed: false, tapRestartsThrottled: false,
+                                             canPostEvents: false), "not running (paused, asleep): not this")
+        XCTAssertEqual(StatusMenu.startProblem(coresActive: false, startFailed: true, tapRestartsThrottled: false,
+                                               canPostEvents: false), .retrying)
+        XCTAssertEqual(StatusMenu.startProblem(coresActive: true, startFailed: false, tapRestartsThrottled: true,
+                                               canPostEvents: false), .tapOff, "a tap kept off first: it comes back by itself")
+        XCTAssertEqual(StatusMenu.title(hasAccess: true, isPaused: false, startProblem: .cannotPostEvents), .cannotPostEvents)
+        XCTAssertEqual(StatusMenu.title(hasAccess: true, isPaused: true, startProblem: .cannotPostEvents), .paused)
+        XCTAssertEqual(StatusMenu.title(hasAccess: false, isPaused: false, startProblem: .cannotPostEvents), .needsAccess)
+
+        XCTAssertEqual(rows(state(startProblem: .cannotPostEvents)), [
+            Row.title("Scrollio can't send scroll events"),
+            Row(title: "Open Accessibility Settings…"),
+            Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
+            .separator,
+            Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+        try choose("Open Accessibility Settings…", in: menu(state(startProblem: .cannotPostEvents)))
+        XCTAssertEqual(calls.log, ["accessibility settings"])
+
+        let look = StatusMenu.IconLook(hasAccess: true, coresActive: true, isPaused: false, canPostEvents: false)
+        XCTAssertTrue(look.appearsDisabled)
+        XCTAssertEqual(look.toolTip, "Scrollio can't send scroll events.")
+        // The live menu reads the shared poster: under tests the right is there.
+        XCTAssertNil(StatusItemManager.liveState().startProblem)
+    }
+
     /// The title is there only while Scrollio does not work, always first, a section
     /// header; and it says what the icon's tooltip says, in every state (regression: paused
     /// without the access, the menu said "needs access" and the tooltip "paused").
@@ -443,7 +480,7 @@ final class StatusMenuTests: XCTestCase {
         let pauses: [(paused: Bool, end: Date?)] = [(false, nil), (true, nil), (true, Self.pauseEnd)]
         for access in [true, false] {
             for (paused, end) in pauses {
-                for problem in [nil, .retrying, .tapOff] as [StatusMenu.StartProblem?] {
+                for problem in [nil, .retrying, .tapOff, .cannotPostEvents] as [StatusMenu.StartProblem?] {
                     for updates in [StatusMenu.Updates.none, .check(enabled: true), .waiting(version: "1.1.0")] {
                         let shown = state(access: access, paused: paused, diagnostics: true, batteries: [battery],
                                           updates: updates, startProblem: problem, pauseEnd: end)
@@ -458,7 +495,8 @@ final class StatusMenuTests: XCTestCase {
                         XCTAssertFalse(built.items[1].isSeparatorItem, "an action under the title: \(label)")
                         let tooltip = StatusMenu.IconLook(
                             hasAccess: access, coresActive: access && problem != .retrying && !paused, isPaused: paused,
-                            startFailed: problem == .retrying, tapRestartsThrottled: problem == .tapOff, pauseEnd: end
+                            startFailed: problem == .retrying, tapRestartsThrottled: problem == .tapOff, pauseEnd: end,
+                            canPostEvents: problem != .cannotPostEvents
                         ).toolTip
                         XCTAssertEqual(built.items[0].title + ".", tooltip, label)
                         // Without the access the menu offers only the way to it, and says so.
@@ -867,6 +905,7 @@ final class StatusMenuTests: XCTestCase {
         _ = menu(state(paused: true, pauseEnd: Self.pauseEnd))
         _ = menu(state(startProblem: .retrying))
         _ = menu(state(startProblem: .tapOff))
+        _ = menu(state(startProblem: .cannotPostEvents))
         XCTAssertEqual(calls.log, [])
     }
 

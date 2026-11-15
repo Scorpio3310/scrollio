@@ -195,6 +195,21 @@ class ScrollPoster {
     var isEventTargetingChrome: (CGEvent) -> Bool = {
         ScrollUtils.shared.isEventTargetingChrome($0)
     }
+    /// Whether macOS lets Scrollio post events (the Post Event right). After some macOS
+    /// updates it is gone while the Accessibility access still shows as allowed, and the
+    /// system drops every frame Scrollio posts without an error. Read with
+    /// `CGPreflightPostEventAccess`, which never asks the user (`CGRequestPostEventAccess`
+    /// would, and is never called). Under XCTest the default says yes without asking; a test
+    /// says what it needs here.
+    var postEventAccess: () -> Bool = {
+        AppRuntime.isRunningXCTest ? true : CGPreflightPostEventAccess()
+    }
+    /// What `postEventAccess` said the last time it was read (`checkPostEventAccess`); true
+    /// before that. Without the right nothing is smoothed (`smooth`), and the menu bar and
+    /// General say so (`StatusMenu.StartProblem.cannotPostEvents`). Main thread.
+    private(set) var canPostEvents = true
+    /// Posted (object: the poster) when `canPostEvents` changed.
+    static let postEventAccessDidChangeNotification = Notification.Name("ScrollioPostEventAccessDidChange")
     /// Seconds on a clock that is never set back or forward (the wall clock was used here:
     /// set back by a time sync, it refused every new display link and kept a touch open for
     /// as long as it was set back). Both threads read the same clock.
@@ -888,10 +903,16 @@ extension ScrollPoster {
     ///   app): that touch is ended first, at its own place (`endOneTouchLocked(unlessAt:)`),
     ///   in one stretch under the lock with the "began" that follows.
     /// - a link runs but sends no frames (`linkSendsFrames`): not taken, until a frame comes.
+    /// - macOS does not let Scrollio post events (`canPostEvents`): not taken, nothing touched.
     /// - Returns: whether the event was taken. false: the caller lets it through.
     func smooth(event: CGEvent, input: ScrollPosterInput) -> Bool {
         guard input.isUsable else { return false }
         notTakenReason = .noDisplayLink
+        guard canPostEvents else {
+            // Every frame would be dropped by the system: the event goes on as it came.
+            notTakenReason = .noPostEventAccess
+            return false
+        }
         let target = pid_t(event.getIntegerValueField(.eventTargetUnixProcessID))
         if endHoldHint, takesInAtPageEnd(event: event, input: input, target: target) {
             // One touch, the page at its end and the wheel still turning into it: nothing is
@@ -2557,7 +2578,10 @@ extension ScrollPoster {
         return replacedWasRunning || scrollWaiting
     }
     // 守护定时器 (与 Interceptor 的 keeper 模式一致)
+    /// Starts the keeper. The cores start it at each start (launch, wake, resume, the access
+    /// back), so the right to post events is read here as well (`checkPostEventAccess`).
     func startKeeper() {
+        checkPostEventAccess()
         keeper?.invalidate()
         keeper = CommonModesTimer.scheduled(withTimeInterval: Self.keeperInterval, repeats: true) { [weak self] _ in
             self?.healthCheck(now: ScrollPoster.monotonicNow())
@@ -2590,8 +2614,37 @@ extension ScrollPoster {
         missingLinkRetryAt = 0
         recreateDisplayLink()
     }
+    /// Reads the right to post events (`postEventAccess`) and says so when it changed: one
+    /// line in the `app` log and `postEventAccessDidChangeNotification` (the menu bar icon
+    /// and General read `canPostEvents`). Read when the keeper starts (the cores start:
+    /// launch, wake, resume) and at each of its looks while the right is missing, so that
+    /// smoothing comes back by itself once the right is given back. Whether a frame's
+    /// posted events have an effect cannot be told cheaply: `postToPid` says nothing, and
+    /// Scrollio's frames do not pass its own tap. Main thread.
+    func checkPostEventAccess() {
+        let can = postEventAccess()
+        guard can != canPostEvents else { return }
+        canPostEvents = can
+        if can {
+            logHealth(note: Self.postEventAccessBackLine)
+        } else {
+            logHealth(problem: Self.postEventAccessMissingLine)
+            if isGliding {
+                stop()
+            }
+        }
+        NotificationCenter.default.post(name: Self.postEventAccessDidChangeNotification, object: self)
+    }
+    static let postEventAccessMissingLine = "ScrollPoster: macOS does not let Scrollio post events "
+        + "(CGPreflightPostEventAccess is false): wheel events go through unsmoothed until it does "
+        + "(System Settings › Privacy & Security › Accessibility)"
+    static let postEventAccessBackLine = "ScrollPoster: macOS lets Scrollio post events again: smoothing again"
+
     /// The keeper's look, every `keeperInterval`. `now`: `monotonicNow()`.
     private func healthCheck(now: CFTimeInterval) {
+        if !canPostEvents {
+            checkPostEventAccess()
+        }
         os_unfair_lock_lock(&stateLock)
         let lastCallback = lastCallbackTime
         let lastActivity = lastActivityTime

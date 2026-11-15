@@ -4431,7 +4431,8 @@ extension PreferencesWindowRenderTests {
         }
         LoginItem.service = InertLoginItemService()
         let plain: [String: Any] = ["CFBundleShortVersionString": "1.0", "CFBundleVersion": "1"]
-        for (name, access, problem) in [("general-could-not-start", true, StatusMenu.StartProblem.retrying), ("general-needs-access", false, nil)] {
+        for (name, access, problem) in [("general-could-not-start", true, StatusMenu.StartProblem.retrying), ("general-needs-access", false, nil),
+                                        ("general-cannot-post-events", true, .cannotPostEvents)] {
             try renderPane(PANEL_IDENTIFIER.general, name: "r3-fix-" + name, prepare: { preferences in
                 guard let general = preferences.controller(for: PANEL_IDENTIFIER.general)
                     as? PreferencesGeneralViewController else { return }

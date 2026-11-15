@@ -733,6 +733,60 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertEqual(poster.healthLinesForTests.count, 1)
     }
 
+    // MARK: - The right to post events
+
+    /// After some macOS updates the system drops every event Scrollio posts, and posting
+    /// says nothing: the Post Event right is gone while the Accessibility access shows as
+    /// allowed. The right is read when the cores start (launch, wake, resume: they start the
+    /// keeper); without it nothing is smoothed and the wheel goes on raw.
+    func testWithoutTheRightToPostEventsNothingIsSmoothed() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        var allowed = false
+        var asked = 0
+        poster.postEventAccess = { asked += 1; return allowed }
+        var told = 0
+        let observer = NotificationCenter.default.addObserver(
+            forName: ScrollPoster.postEventAccessDidChangeNotification, object: poster, queue: nil
+        ) { _ in told += 1 }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        poster.startKeeper()
+
+        XCTAssertEqual(asked, 1, "read when the cores start")
+        XCTAssertFalse(poster.canPostEvents)
+        XCTAssertEqual(told, 1, "the menu bar and General are told")
+        XCTAssertEqual(poster.healthLinesForTests, [ScrollPoster.postEventAccessMissingLine])
+        XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()), "not taken: it goes on raw")
+        XCTAssertEqual(poster.notTakenReason, .noPostEventAccess)
+        XCTAssertFalse(poster.isGliding)
+        XCTAssertEqual(poster.motionStateForTests.buffer.y, 0)
+        XCTAssertEqual(display.tries, 0, "no display link either")
+
+        // The keeper reads it again while it is missing: nothing new, nothing said.
+        poster.healthCheckForTests()
+        XCTAssertEqual(asked, 2)
+        XCTAssertEqual(told, 1)
+        XCTAssertEqual(poster.healthLinesForTests.count, 1)
+        // Given back (Scrollio removed from the Accessibility list and added again): smoothing again.
+        allowed = true
+        poster.healthCheckForTests()
+        XCTAssertTrue(poster.canPostEvents)
+        XCTAssertEqual(told, 2)
+        XCTAssertEqual(poster.healthLinesForTests.last, ScrollPoster.postEventAccessBackLine)
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        XCTAssertTrue(poster.isGliding)
+        // With the right there the keeper does not ask at every look.
+        poster.healthCheckForTests()
+        XCTAssertEqual(asked, 3)
+    }
+
+    /// Under XCTest the right is never asked of macOS: the default says yes.
+    func testTheRightToPostEventsIsNotAskedOfMacOSUnderTests() {
+        XCTAssertTrue(poster.postEventAccess())
+        XCTAssertTrue(ScrollPoster.shared.canPostEvents)
+    }
+
     /// The frame that ends a silence finds no scroll: the link, started for that frame only,
     /// is stopped again (the next wheel event starts it). It ran on with nothing to do.
     func testALinkStartedOnlyToSeeAFrameIsStoppedByItsFirstFrame() throws {

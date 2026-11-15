@@ -174,6 +174,9 @@ enum ScrollSystemLog {
         /// Smoothing wanted, but the display link runs and sends no frames
         /// (`ScrollPoster.linkSendsFrames`), until a frame comes.
         case silentDisplayLink
+        /// Smoothing wanted, but macOS does not let Scrollio post events
+        /// (`ScrollPoster.canPostEvents`).
+        case noPostEventAccess
 
         var text: String {
             switch self {
@@ -184,6 +187,7 @@ enum ScrollSystemLog {
             case .noDisplayLink: return "no display link"
             case .unusableSettings: return "Step or Speed is not a finite number"
             case .silentDisplayLink: return "the display link sends no frames"
+            case .noPostEventAccess: return "macOS does not let Scrollio post events"
             }
         }
     }

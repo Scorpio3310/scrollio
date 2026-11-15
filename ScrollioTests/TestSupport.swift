@@ -241,6 +241,10 @@ final class TestIsolationTests: XCTestCase {
         Effect(name: "registers a login item", pattern: #"SMAppService\.mainApp\.(register|unregister)\("#, allowed: ["Scrollio/Utils/LoginItem.swift"]),
         // The permission prompt: the guide asks through a closure the tests replace.
         Effect(name: "asks for the Accessibility permission", pattern: #"AXIsProcessTrustedWithOptions\("#, allowed: ["Scrollio/Utils/Utils.swift"]),
+        // The right to post events: read without a prompt by ScrollPoster.postEventAccess,
+        // which says yes without asking under XCTest. Asking for it would prompt: nowhere.
+        Effect(name: "reads the right to post events", pattern: #"CGPreflightPostEventAccess\("#, allowed: ["Scrollio/ScrollCore/ScrollPoster.swift"]),
+        Effect(name: "asks for the right to post events", pattern: #"CGRequestPostEventAccess\("#, allowed: []),
         // The app's folder in Application Support (the settings from before an import):
         // SettingsBackups.live has no folder under XCTest, so nothing is written there.
         Effect(name: "uses the app's folder in Application Support", pattern: #"\.applicationSupportDirectory"#, allowed: [

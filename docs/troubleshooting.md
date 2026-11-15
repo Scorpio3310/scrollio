@@ -85,8 +85,8 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   it, and a released copy never writes it). Also at
   most one line per reason every 3 seconds while wheel events are let through unsmoothed
   (trackpad events, a remote desktop, smoothing off for that event or that axis, no
-  display link, a display link that sends no frames, a Step or Speed that is not a
-  number).
+  display link, a display link that sends no frames, no right to post events, a Step or
+  Speed that is not a number).
 - `logi`: what a Logitech mouse reported (battery, pointer speed, haptics, press force,
   wheel settings), each decision to write a value or not and why, the read-back after a
   write, requests the mouse refused or did not answer, gesture haptic cues, and slow
@@ -108,7 +108,8 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   or back, quit), event taps that
   could not be created or that macOS turned off, restarts, a display link that runs and
   sends no frames (one line each time; the wheel then goes on unsmoothed until frames
-  come again), settings that could not be
+  come again), macOS not letting Scrollio post events and letting it again (checked at
+  each start and wake; without it nothing is smoothed), settings that could not be
   read or written, an app, a file or a script that could not be opened (never its name
   or path), a held action whose release never came, each use of the Shortcut Ring ("opened
   by" a mouse button, a key or a button over HID++, and "the own ring of the app in
