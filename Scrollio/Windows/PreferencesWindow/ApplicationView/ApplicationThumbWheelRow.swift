@@ -11,7 +11,8 @@
 //  pane's ("Default" scrolls sideways) and changes only the app's function; the line under
 //  it names the general one by its name in Scrolling › Thumb wheel ("Scroll Sideways").
 //  "−" (or Delete) gives the wheel back to Buttons, and the window's Undo takes it again,
-//  with an undo target that outlives the page, as for a button's row. Buttons and
+//  with an undo target that outlives the page, as for a button's row; Undo takes back a
+//  function chosen in the pull-down the same way. Buttons and
 //  Scrolling › Thumb wheel are never touched. The menu's "Thumb Wheel Settings…" shows the
 //  app's Scrolling part (`onThumbWheelSettingsRequested`, the page's
 //  `showThumbWheelSettings`).
@@ -198,12 +199,40 @@ extension ApplicationButtonsViewController {
         }
     }
 
-    /// The row's pull-down: the app's function, never the general one.
+    /// The row's pull-down: the app's function, never the general one. Edit › Undo ("Undo
+    /// Change Action", as for a button's row) puts the one before back.
     func setOwnThumbWheelFunction(_ function: ThumbWheelFunction) {
-        guard application.ownThumbWheelFunction != nil else { return }
+        guard let old = application.ownThumbWheelFunction else { return }
         application.setOwnThumbWheelFunction(function)
         reloadRows()
         onOwnButtonsChange?()
+        guard old != function else { return }
+        let showing = partShowing ?? { [weak self] entry in
+            self?.application === entry ? self : nil
+        }
+        Self.registerThumbWheelFunctionUndo(
+            back: old, of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange
+        )
+    }
+
+    /// As a removal's: the undo target is the settings, not the page; Undo finds the app's
+    /// entry by its path when it runs, puts `function` back while the app still has a
+    /// function of its own, shows it on the part `showing` gives for it, and registers the
+    /// way back (Redo).
+    private static func registerThumbWheelFunctionUndo(
+        back function: ThumbWheelFunction, of application: Application, undoManager undo: UndoManager?,
+        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?
+    ) {
+        guard let undo else { return }
+        let path = application.path
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            guard let entry = thumbWheelEntry(storedAs: path), let now = entry.ownThumbWheelFunction, now != function else { return }
+            entry.setOwnThumbWheelFunction(function)
+            showing(entry)?.showThumbWheelChange(selecting: true)
+            listDidChange?()
+            registerThumbWheelFunctionUndo(back: now, of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange)
+        }
+        undo.setActionName(ButtonRowChange.Kind.action.actionName)
     }
 
     /// Return on the selected row opens its menu.

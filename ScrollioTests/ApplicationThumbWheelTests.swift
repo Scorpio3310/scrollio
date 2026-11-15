@@ -427,6 +427,51 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         XCTAssertEqual(calculator.ownThumbWheelFunction, .scroll)
     }
 
+    /// A function chosen in the row's pull-down has Undo ("Change Action"), as a button's
+    /// row has: Undo puts the one before back and Redo the new one, the row follows and is
+    /// selected; choosing the function the app has already is no change. Undo still works
+    /// after the page closed.
+    func testTheRowsFunctionChangeHasUndo() throws {
+        let calculator = addCalculator()
+        calculator.setOwnThumbWheelFunction(.zoom)
+        let pane = makePane()
+        let part = try buttonsPart(pane: pane)
+        let undo = try XCTUnwrap(part.paneUndoManager)
+        undo.groupsByEvent = false
+        func choose(_ function: ThumbWheelFunction, on part: ApplicationButtonsViewController) throws {
+            let row = try XCTUnwrap(part.thumbWheelRow)
+            let item = try XCTUnwrap(row.pullDown.functionItems.first { ThumbWheelPresentation.function(of: $0) == function })
+            undo.beginUndoGrouping()
+            row.pullDown.functionChosen(item)
+            undo.endUndoGrouping()
+        }
+        try choose(.volume, on: part)
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .volume)
+        XCTAssertEqual(undo.undoActionName, "Change Action")
+        XCTAssertEqual(Options.shared.thumbWheel, .default, "Buttons and Scrolling keep theirs")
+
+        undo.undo()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .zoom)
+        XCTAssertEqual(part.thumbWheelRow?.function, .zoom)
+        XCTAssertEqual(part.list.selectedID, ButtonsListLayout.thumbWheelRowID)
+        undo.redo()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .volume)
+        XCTAssertEqual(part.thumbWheelRow?.function, .volume)
+
+        // The same function again: nothing to undo.
+        undo.removeAllActions()
+        try choose(.volume, on: part)
+        XCTAssertNotEqual(undo.undoActionName, "Change Action")
+
+        // After the page closed.
+        try choose(.desktops, on: part)
+        pane.leaveSubpage()
+        undo.undo()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .volume)
+        undo.redo()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .desktops)
+    }
+
     /// The row's "Thumb Wheel Settings…" shows the app's Scrolling part, the app's
     /// function unchanged: with the app's own settings its Thumb wheel box; while the app
     /// uses the Scrolling settings the part's switch (the general pane would show the
