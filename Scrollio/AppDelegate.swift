@@ -366,6 +366,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         runController.wake()
     }
     @objc func clockDidChange(notification: NSNotification) {
+        // The run controller is the main thread's; macOS does not say which thread posts these.
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.runController.clockDidChange()
+            }
+            return
+        }
         runController.clockDidChange()
     }
     @objc func reloadSystemShortcutsIfNeeded(notification: NSNotification) {

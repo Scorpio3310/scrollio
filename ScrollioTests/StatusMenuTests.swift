@@ -2534,6 +2534,20 @@ final class AppDelegateObserverTests: XCTestCase {
             XCTAssertTrue(controller.coresActive, name.rawValue)
             XCTAssertEqual(world.log, ["start"], name.rawValue)
         }
+
+        // Posted from another thread, it reaches the controller on the main thread.
+        controller.pause(for: .fifteenMinutes)
+        world.now = try XCTUnwrap(controller.pauseEnd)
+        let center = app
+        let ended = expectation(forNotification: AppRunController.didChangeNotification, object: controller) { _ in
+            return Thread.isMainThread
+        }
+        DispatchQueue.global().async {
+            center.post(name: .NSSystemClockDidChange, object: nil)
+        }
+        wait(for: [ended], timeout: 5)
+        XCTAssertFalse(controller.isPaused)
+        XCTAssertTrue(controller.coresActive)
     }
 
     /// The Welcome Guide reports the grant through the delegate.
