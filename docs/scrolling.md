@@ -18,12 +18,15 @@
   example to zoom with ⌘). "Scroll slower" has no key until you record one: ⌥, ⇧ and ⌘
   are the other three, and ⌃ with the wheel is the screen zoom of macOS for those who
   turned that on. Held together, "Scroll faster" and "Scroll slower" cancel. A mouse
-  button can hold them too. These keys work while Smooth scrolling is on.
+  button can hold them too. These keys work while Smooth scrolling is on (an app left to
+  macOS does not show them).
 - "Reset to Defaults" can be taken back: for a few seconds the button reads "Undo Reset".
-- Per app (the Apps pane): an app uses the Scrolling settings or keeps its own. "Change
-  scrolling only in these apps" leaves every other app to macOS; buttons and gestures
-  still work everywhere. "Smooth Scrolling in …" in the menu bar menu turns smoothing on
-  or off for the app in front. An app's own settings include the thumb wheel's speed and
+- Per app (Apps): on an app's page, "Scrolling in Safari" is Same as Scrolling, Own
+  Settings (its own settings, under the pop-up) or Left to macOS (not smoothed, not
+  reversed: the wheel as macOS turns it; only the Thumb wheel box shows, since only it
+  still acts). "Change scrolling only in these apps" leaves every app not on the list to
+  macOS; buttons, gestures and the Shortcut Ring work in every app. "Smooth Scrolling in
+  …" in the menu bar menu turns smoothing on or off for the app in front. An app's own settings include the thumb wheel's speed and
   direction, and its action ([Thumb wheel](features.md#thumb-wheel)); the two switches
   under "Trackpad-style scrolling" stay those of every app, and apply where an app's own
   switch is on. An app's page there also holds the app's own buttons
@@ -34,7 +37,7 @@
   changed too, and its page says so.
 - Calendar's month view aligns itself to weeks and takes a smoothed wheel badly (a small
   turn barely moves it, a little more runs away). If that bothers you, add Calendar in
-  the Apps pane and turn Smooth scrolling off for it, or use "Smooth Scrolling in
+  Apps and choose Left to macOS for it, or use "Smooth Scrolling in
   Calendar" in the menu bar menu. Scrollio adds no app to the list by itself (version
   1.0.4 added Calendar; an entry it made is yours to keep or remove).
 - Trackpads and the Magic Mouse are left alone. With several displays, the motion is

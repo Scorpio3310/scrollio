@@ -618,7 +618,7 @@ final class ApplicationGesturesWordsTests: XCTestCase {
         calculator.setOwnButtonBindings([binding(4)])
         XCTAssertEqual(
             ApplicationTriggerRow.make(.gestureNavigation, application: calculator, general: general, titles: titles).text,
-            "Forward button as in other apps, Back button only in Calculator"
+            "Forward button as in other apps; Back button only in Calculator"
         )
     }
 

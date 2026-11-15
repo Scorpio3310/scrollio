@@ -67,16 +67,28 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   ("Undo Which Button"); Undo selects the row it changes. On a button of your mouse,
   "−" and Delete set it back to "Default" ("Clear Action"), as "Default" in its menu
   does; on a row that reads "Default" already "−" is off.
+- A button without an action reads "Default": it does what it does by itself. Where that
+  is certain, the effect stands in parentheses, in the row and in its menu: "Default
+  (Back)", "Default (Forward)", "Default (Middle Click)", "Default (Switch Wheel Mode)"
+  for the mode shift button, and "Default (Scroll Sideways)" for the thumb wheel; the
+  row's tooltip says it in a sentence.
 - Buttons for one app: an app's page in Apps (add the app there, or open it in the list)
   has four parts, chosen at its top: Scrolling, Buttons, Gestures and Shortcut Ring; the page
-  opens on the part you looked at last, for any app. In Buttons the app holds only the
-  buttons that do something else in it, and every other button does what the Buttons
-  pane says (as Logi Options+ does it). + offers the buttons of your mouse, "Record a
-  Button or Key…" and the buttons the Buttons pane gives an action; a new row starts
-  with the action it has everywhere, and the line under it says what that is. "Default"
-  lets the button do what it does by itself in that app. − gives the button back to the
-  Buttons pane. These rows count while the app is in front (the app in front, not the
-  one under the pointer: the actions go to it); while Scrollio's own Settings are in
+  opens on the part you looked at last, for any app. Scrolling asks "Scrolling in Figma":
+  Same as Scrolling, Own Settings (the Scrolling settings for that app alone, under the
+  pop-up) or Left to macOS (not smoothed, not reversed, as an app off the list scrolls
+  while "Change scrolling only in these apps" is on; only the Thumb wheel box, which
+  still acts, shows under it; see [scrolling.md](scrolling.md)). In Buttons the app
+  holds only the buttons that do something else in it, and every other button does
+  what the Buttons pane says (as Logi Options+ does it). + offers the buttons of your
+  mouse, "Record a Button or Key…" and the buttons the Buttons pane gives an action; a
+  new row starts with the action it has in other apps, and the line under each row says what that is
+  ("In other apps: Mission Control", "In other apps: Default (Back)"). "Default" lets the
+  button do what it does by itself in that app. A row's menu starts with "Same as Other
+  Apps (Mission Control)", the action the button has in other apps in the brackets (its
+  effect, or "Default", for a button without one): it gives the button back to the
+  Buttons pane, as − does. These rows count while the app is in front (the app in
+  front, not the one under the pointer: the actions go to it); while Scrollio's own Settings are in
   front, every button does what Buttons says. Nothing stays general: + offers the button
   that opens the Shortcut Ring or runs Gesture Navigation in the Buttons pane too (such
   as the MX Master 4's thumb panel), and a row's menu is the Buttons pane's, the Shortcut
@@ -94,9 +106,10 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   and a small dot marks each part the app has settings of its own in.
   While "Change scrolling only in these apps" is on, every app on the list has its
   scrolling changed, also one you added only for its buttons, gestures or ring, and its
-  page says so under the app's box: to leave its scrolling to macOS, turn off "Use
-  settings from Scrolling" on its page and, in its own settings, "Smooth scrolling" and
-  "Reverse wheel direction".
+  page says so under the app's box: to leave its scrolling to macOS, choose Left to
+  macOS in "Scrolling in Figma" on its Scrolling part. The line goes by how the app
+  really scrolls: with Same as Scrolling, by the Scrolling settings. While the page is
+  open a choice there only fades the line out or in, so nothing under it moves.
 - The buttons at the bottom of an app's parts are named by what they do, while the panes
   keep "Reset to Defaults": "Remove All Buttons" under an app's Buttons part removes all
   of the app's own buttons and its own thumb wheel action at once (every button does
@@ -114,9 +127,10 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   left and right each run an action, and letting go without moving runs one more.
 - The button to hold is chosen in the Gestures pane's first row, "Button to hold": its
   pull-down lists the buttons of the connected mouse in the order they sit on it, each
-  with what it does now in grey ("Back button — Back, will be replaced"), then "Record a
-  Button…" (press the button while the recorder waits at the pull-down) and "Show in
-  Buttons". A choice gives that button Gesture Navigation in Buttons, where it is
+  with what it does now in grey ("Back button — Back, will be replaced"; a button
+  without an action as its row says it, "Default (Back)"), then "Record a Button…" (press
+  the button while the recorder waits at the pull-down; it says what the caught button
+  loses, "Replaces: Copy") and "Show in Buttons". A choice gives that button Gesture Navigation in Buttons, where it is
   stored, as choosing it on the button's row there does; the button that had it until
   then goes back to "Default", so one button runs the gestures. The row, the preview and
   the folded settings show it at once, and Edit › Undo ("Undo Change Button to Hold")
@@ -135,7 +149,7 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
 - "Freeze pointer during a gesture" keeps the pointer where it is while you hold the
   button.
 - An app can have gestures of its own. Its page in Apps (add the app there, or open it
-  in the list) has a "Gestures" part. "Use the general gestures" is on for every app;
+  in the list) has a "Gestures" part. "Use settings from Gestures" is on for every app;
   turn it off and the app gets everything of the Gestures pane but the button to hold,
   in the pane's order: the mode, the five directions, "Invert left and right", "Freeze
   pointer", the swipe speed and, while a connected mouse can do them, the two switches
@@ -149,8 +163,9 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   mode) Left and Right on the app's page say so, as in the pane. The button to hold is
   the Buttons pane's, unless the app's Buttons part gives it another action or gives
   another button Gesture Navigation. The app's Gestures part begins with "Button to
-  hold", which says which button runs the gestures there ("Gesture button, as
-  everywhere", "Back button, only in Figma", "None in Figma") and has a button that goes
+  hold", which says which button runs the gestures there ("Gesture button, as in other
+  apps", "Back button, only in Figma", "Back button as in other apps; Thumb panel only in
+  Figma", "None in Figma") and has a button that goes
   there: "Show in Buttons" (the Buttons pane, that row selected), "Show in Figma" (the
   app's Buttons part, that row selected) or "Set Up…", which records a mouse button
   right there and gives it Gesture Navigation in that app only. While only an app's own button runs
@@ -224,18 +239,22 @@ app's Buttons part. The pane also sets what the eight places hold.
   desktops on the left and right, Copy and Paste beside Apps, and a screenshot of a
   selection and Show Desktop beside Mission Control.
 - An app can have a ring of its own. Its page in Apps (add the app there, or open it in
-  the list) has a "Shortcut Ring" part. "Use the general ring" is on for every app; turn
-  it off and the app gets eight places of its own and its own "Freeze pointer while the
-  ring is held", which start as a copy of the ring as it is at that moment and are set
-  like the pane's. That ring opens while the app is in front (the app in front, not the
-  one under the pointer: the shortcuts go to it); while Scrollio's own Settings are in
-  front, the general ring opens. The ring that opened stays until it closes, with its
-  freeze switch. What opens the ring is set in the Buttons pane, or for one app in its
+  the list) has a "Shortcut Ring" part. "Use settings from Shortcut Ring" is on for
+  every app; turn it off and the app gets eight places of its own and its own "Freeze
+  pointer while the ring is held", which start as a copy of the ring as it is at that
+  moment and are set like the pane's. That ring opens while the app is in front (the app
+  in front, not the one under the pointer: the shortcuts go to it); while Scrollio's own
+  Settings are in front, the general ring opens. The ring that opened stays until it
+  closes, with its freeze switch. An app's own ring shows the app's icon, faint, in its
+  middle drop while no place is lit, so you see whose ring it is (a lit place shows its
+  name there as usual); the general ring never does, nor an app that uses it. The
+  drawing in the app's Shortcut Ring part shows the icon too. What opens the ring is set in the Buttons pane, or for one app in its
   Buttons part: a button or key can open the ring only in that app, or do something else
   there. The app's Shortcut Ring part begins with "Button or key", which says what opens
-  the ring there ("Thumb panel, as everywhere", "Back button, only in Figma", "None in
-  Figma") with "Show in Buttons", "Show in Figma" or "Set Up…" beside it, as the Gestures
-  part's "Button to hold" (a key works here too); while nothing opens the ring with the
+  the ring there ("Thumb panel, as in other apps", "Back button, only in Figma", "None in
+  Figma"; a long app name is cut short so the line keeps to two lines) with "Show in
+  Buttons", "Show in Figma" or "Set Up…" beside it, as the Gestures part's "Button to
+  hold" (a key works here too); while nothing opens the ring with the
   app in front, "Shortcuts" folds the app's ring away (a click on it opens it). "Copy from Shortcut
   Ring" (or "Use Suggested Shortcuts") under the app's ring puts it back where it started (its suggested shortcuts, see
   below, else a copy of the general ring as it is then, and the general ring's freeze
@@ -246,8 +265,8 @@ app's Buttons part. The pane also sets what the eight places hold.
 - Scrollio suggests shortcuts for 100 popular apps (Figma, Photoshop, Final Cut Pro,
   Safari, Word, Xcode, Discord, Zed, GitHub Desktop …: each app's most used ones, Undo
   and Redo on the left and right, zoom on top and bottom, Copy and Paste below). Nothing
-  changes by itself: only when you turn "Use the general ring" off for such an app does
-  its ring start with them instead of the copy (while such an app uses the general ring
+  changes by itself: only when you turn "Use settings from Shortcut Ring" off for such an
+  app does its ring start with them instead of the copy (while such an app uses the general ring
   and never had one of its own, its Shortcut Ring part says "Scrollio has suggested
   shortcuts for Figma." with "Use Suggested Shortcuts", which does the same, and "+" in
   Apps marks such running apps "Suggested ring" in grey), and while its own ring is in use,
@@ -309,7 +328,7 @@ app's Buttons part. The pane also sets what the eight places hold.
   ended up), the modifier keys and the scroll keys (they only mean something while
   held), Gesture Navigation, the Logitech actions and the ring itself.
 - Not in this version: rings inside rings; your own symbols; more or fewer than eight
-  places; an app's icon in the middle of its ring; a step of the Welcome Guide.
+  places; a step of the Welcome Guide.
 
 ## Thumb wheel
 
@@ -354,26 +373,29 @@ wheel.
   Forward go to it); a turn keeps them until the wheel rests, whatever comes to the
   front meanwhile. While Scrollio's own Settings are in front, the wheel does what the
   panes say.
-- Speed, Reverse direction and Follow the wheel are scroll settings of the app: they are its own while "Use
-  settings from Scrolling" is off on its page (they start as what the wheel did in the
-  app at that moment, and stay for later while the switch is on). The Scrolling part
-  shows its settings, the Thumb wheel box among them, only while that switch is off: on,
-  it is the switch alone, as the Gestures and Shortcut Ring parts are with theirs. An
-  app whose own settings date from before keeps the speed and directions of Scrolling ›
-  Thumb wheel until you change them on its page. "Thumb Wheel Settings…" of the app's
-  Buttons part shows the Scrolling part either way: with the switch on it is the switch
-  that gives the app its own.
-- The action is the app's own whatever that switch says: choose it in the Scrolling
-  part's box while the switch is off, or, either way, with "+" of the Buttons part, which
-  offers "Thumb wheel" while the connected mouse has one (an MX Master 4, 3 or 3S). The
-  new row starts with what the wheel does everywhere. Without a speed of its own, an
-  app's action runs at the default speed when it is of the other kind than what the
-  wheel does everywhere (scrolling against steps). "−" gives the action back to Buttons;
-  Edit › Undo takes it again.
-- "Copy from Scrolling" of the app's Scrolling part (there while the switch is off)
-  gives the wheel the speed, reversing and desktops of Scrolling › Thumb wheel there, and
-  the action of every app again; "Remove All Buttons" of its Buttons part takes the
-  action away too.
+- Speed, Reverse direction and Follow the wheel are scroll settings of the app: they are
+  its own while "Scrolling in Figma" on its page is Own Settings or Left to macOS (they
+  start as what the wheel did in the app at that moment, and stay for later with Same as
+  Scrolling). The Scrolling part shows its settings, the Thumb wheel box among them, only
+  then: with Same as Scrolling it is the pop-up alone, as the Gestures and Shortcut Ring
+  parts are with their switches. With Left to macOS the box is all that shows, without
+  its Speed while the action is Scroll Sideways (that speed applies to a smoothed wheel
+  only; the other actions use it). An app whose own settings date from before keeps the
+  speed and directions of Scrolling › Thumb wheel until you change them on its page.
+  "Thumb Wheel Settings…" of the app's Buttons part shows the Scrolling part either way:
+  with Same as Scrolling it is the pop-up that gives the app its own.
+- The action is the app's own whatever the pop-up says: choose it in the Scrolling
+  part's box (with Own Settings or Left to macOS), or, either way, with "+" of the
+  Buttons part, which offers "Thumb wheel" while the connected mouse has one (an MX
+  Master 4, 3 or 3S). The new row starts with what the wheel does in other apps. Without
+  a speed of its own, an app's action runs at the default speed when it is of the other
+  kind than what the wheel does in other apps (scrolling against steps). "−", or "Same as
+  Other Apps (…)" at the top of the row's menu, gives the action back to Buttons; Edit ›
+  Undo takes it again.
+- "Copy from Scrolling" of the app's Scrolling part (there with Own Settings) gives the
+  wheel the speed, reversing and desktops of Scrolling › Thumb wheel there, and the
+  action of every app again; "Remove All Buttons" of its Buttons part takes the action
+  away too.
 
 ## Logitech MX mice
 
@@ -436,6 +458,13 @@ those controls.
   its settings, or the Welcome Guide while Accessibility access is missing.
 - General also has "Open at login", the state of the Accessibility access, the
   [updates](#updates) and the [settings file](#settings-file).
+- The Welcome Guide (at the first launch, and General › Welcome Guide) ends with
+  "Scrollio is ready": "Open at login" and three rows that lead on, each with the
+  sidebar's symbol and a line, to Buttons ("Give any button its own action."), Gestures
+  ("Hold a button and move the mouse.") and Shortcut Ring ("Eight shortcuts around the
+  pointer."). A click on a row finishes the guide and opens Settings on that pane;
+  "Done" finishes it where you are. With the menu bar icon hidden the step says how to
+  reach Settings later: open Scrollio again.
 - Scrollio stops while the Mac sleeps or another user has it, and starts again when you
   are back.
 - When its event handling starts (at launch once Accessibility access is there, on

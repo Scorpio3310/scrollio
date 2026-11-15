@@ -134,7 +134,7 @@ struct MouseGestureBindingSummary: Equatable {
     /// "Gesture button": under it an MX Master's own "Gesture button" would read twice.
     var gestureButtonExplanation: String {
         if hasGestureButton {
-            let buttons = ListFormatter.localizedString(byJoining: buttonTitles)
+            let buttons = InterfaceList.joined(buttonTitles)
             return String(format: NSLocalizedString("gestures-gesture-button-bound", comment: ""), buttons)
         }
         if let onlyInApps {

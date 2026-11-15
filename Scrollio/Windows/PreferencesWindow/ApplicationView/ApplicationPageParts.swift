@@ -124,9 +124,8 @@ struct ApplicationPagePart: Equatable {
     /// What the app has of its own, in words, for its row in the list and its page's
     /// header, as System Settings › Notifications says it of an app: "Own scrolling, 2
     /// buttons and ring", "Own ring", "Nothing of its own yet". The parts' order. The list
-    /// is joined in the app's own language (`listLocale`), not the Mac's region: an English
-    /// app on a Slovenian Mac says "and", never "in".
-    static func summary(of application: Application, locale: Locale = listLocale) -> String {
+    /// is joined as every list of the window is (`InterfaceList`).
+    static func summary(of application: Application, locale: Locale = InterfaceList.locale) -> String {
         var items: [String] = []
         if !application.inherit {
             items.append(NSLocalizedString("apps-summary-scrolling", comment: ""))
@@ -147,38 +146,20 @@ struct ApplicationPagePart: Equatable {
             items.append(NSLocalizedString("apps-summary-ring", comment: ""))
         }
         guard !items.isEmpty else { return NSLocalizedString("apps-summary-none", comment: "") }
-        return String(format: NSLocalizedString("apps-summary-own", comment: ""), joinedList(items, locale: locale))
-    }
-
-    /// The language the app's texts are shown in (its first localization in use), for the
-    /// words a list is joined with.
-    static var listLocale: Locale {
-        return Locale(identifier: Bundle.main.preferredLocalizations.first ?? "en")
-    }
-
-    /// "1 button, gestures and ring": `items` joined as `locale` joins a list.
-    static func joinedList(_ items: [String], locale: Locale) -> String {
-        let formatter = ListFormatter()
-        formatter.locale = locale
-        return formatter.string(from: items) ?? items.joined(separator: ", ")
+        return String(format: NSLocalizedString("apps-summary-own", comment: ""), InterfaceList.joined(items, locale: locale))
     }
 
     /// `name` whole, or cut short at its end with "…", so that every text `texts` makes
     /// with it takes at most two lines `width` wide in the explanations' font (an
     /// explanation fits two lines). Where such a text stands the whole name is at hand: in
-    /// the app's box above it, and in a title's tooltip.
+    /// the app's box above it, and in a title's tooltip. Lines are counted, not measured
+    /// against the height of two Latin lines: a name in Chinese, Thai or with an emoji is
+    /// set in a fallback font whose lines are taller, and fits all the same.
     static func name(_ name: String, fittingTwoLinesOf width: CGFloat, in texts: (String) -> [String]) -> String {
         guard width > 0 else { return name }
-        let measure = NSTextField(wrappingLabelWithString: "")
-        measure.font = PreferencesGroupedForm.explanationFont
-        measure.preferredMaxLayoutWidth = width
-        func height(_ text: String) -> CGFloat {
-            measure.stringValue = text
-            return measure.fittingSize.height
-        }
-        let twoLines = height("A\nA") + 0.5
+        let lines = LineCount(width: width, font: PreferencesGroupedForm.explanationFont)
         func fits(_ candidate: String) -> Bool {
-            return texts(candidate).allSatisfy { height($0) <= twoLines }
+            return texts(candidate).allSatisfy { lines.of($0) <= 2 }
         }
         guard !fits(name) else { return name }
         // The longest beginning of the name that fits, by halves.
@@ -196,6 +177,37 @@ struct ApplicationPagePart: Equatable {
             }
         }
         return fitting
+    }
+
+    /// The lines a text takes `width` wide in `font`, as a wrapping label lays it out (a
+    /// label keeps 2 pt free at each side of its lines), whatever font each character
+    /// falls back to.
+    final class LineCount {
+        private let storage = NSTextStorage()
+        private let layout = NSLayoutManager()
+        private let font: NSFont
+
+        init(width: CGFloat, font: NSFont) {
+            self.font = font
+            let container = NSTextContainer(size: NSSize(width: width, height: .greatestFiniteMagnitude))
+            container.lineFragmentPadding = 2
+            layout.addTextContainer(container)
+            storage.addLayoutManager(layout)
+        }
+
+        func of(_ text: String) -> Int {
+            storage.setAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
+            let glyphs = layout.numberOfGlyphs
+            var lines = 0
+            var index = 0
+            while index < glyphs {
+                var range = NSRange(location: 0, length: 0)
+                layout.lineFragmentRect(forGlyphAt: index, effectiveRange: &range)
+                lines += 1
+                index = max(NSMaxRange(range), index + 1)
+            }
+            return lines
+        }
     }
 }
 
@@ -230,9 +242,9 @@ extension ApplicationTriggerRow {
 /// Scrolling, Own Settings or Left to macOS, worked out from what is stored. Under its box
 /// the Scrolling settings editing the app's own options (PreferencesScrollingViewController
 /// with a target application: no preview, "Copy from Scrolling") for Own Settings; for Left
-/// to macOS only what still acts there, the Thumb wheel and "While you hold a key" boxes
-/// (`isLeftToMacOS`); for Same as Scrolling nothing, the choice's box alone, as the
-/// Gestures and Shortcut Ring parts show what is under their switch. The settings' "Thumb
+/// to macOS only what still acts there, the Thumb wheel box (`isLeftToMacOS`); for Same
+/// as Scrolling nothing, the choice's box alone, as the Gestures and Shortcut Ring parts
+/// show what is under their switch. The settings' "Thumb
 /// wheel" box has the app's own speed and swap (scroll values like the others) and its own
 /// action, which is the thumb wheel's row of the Buttons part: with Same as Scrolling that
 /// row is where the action is set.
@@ -264,7 +276,9 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
     /// What the app has of its own changed (a pick, its Undo or Redo): the list says which
     /// apps have their own. The page hands on the pane's, which outlives the page.
     var onInheritChange: (() -> Void)?
-    /// The choice the pop-up shows changed: the page's line under the app's box follows.
+    /// The part showed the stored settings again: the choice, or the values the app really
+    /// scrolls with, may have changed (also under Own Settings held, smoothing switched
+    /// off here by hand). The page's line under the app's box follows.
     var onChoiceChange: (() -> Void)?
     /// The app's own thumb wheel function changed in these settings (its action, a reset or
     /// the reset's Undo): the Buttons part and the list show it. Handed on to the settings
@@ -437,7 +451,6 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
         showName()
         choicePopUp.selectItem(withTag: choice.rawValue)
         choiceRow.explanation = Self.explanation(of: choice, name: linesName)
-        let changed = choice != shownChoice
         shownChoice = choice
         let showsOwn = choice != .sameAsScrolling
         // Out of the part before they change and into it after, so that the page hears of
@@ -446,9 +459,7 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
         scrollingController.syncViewWithOptions()
         scrollingController.isLeftToMacOS = choice == .leftToMacOS
         moved = (showsOwn && showSettings(true)) || moved
-        if changed {
-            onChoiceChange?()
-        }
+        onChoiceChange?()
         return moved && view.superview != nil
     }
 
@@ -544,10 +555,15 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
         return paneUndoManager ?? view.window?.undoManager
     }
 
-    /// A pick in "Scrolling in Safari": writes what the move needs, as one Undo step.
+    /// A pick in "Scrolling in Safari": writes what the move needs, as one Undo step. The
+    /// move starts from what the stored values say now (with Own Settings held over them),
+    /// not from what the pop-up showed: on a page that did not hear of a change made
+    /// elsewhere (the menu bar) a pick of the item shown would otherwise write nothing,
+    /// and the pop-up would jump to what is stored. So a pick always leaves the stored
+    /// values saying the item picked.
     @objc func choiceChanged(_ sender: NSPopUpButton) {
         guard let choice = ApplicationScrollingChoice(rawValue: sender.selectedTag()) else { return }
-        let shown = shownChoice
+        let shown = choiceToShow()
         heldOwnSettings = nil
         let before = ApplicationScrollingSnapshot(of: application)
         application.choose(choice, from: shown, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)

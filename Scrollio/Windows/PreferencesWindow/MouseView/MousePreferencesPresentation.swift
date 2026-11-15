@@ -402,7 +402,7 @@ struct MousePaneModel: Equatable {
         // A name is not broken at the end of a line ("MX" / "Master 3S"): its spaces do not break.
         let others = mice.dropFirst().map { $0.deviceName.replacingOccurrences(of: " ", with: "\u{00A0}") }
         let subtitle = mice.count > 1 && managed
-            ? String(format: MouseText.text("mouse-header-connected-several"), ListFormatter.localizedString(byJoining: others))
+            ? String(format: MouseText.text("mouse-header-connected-several"), InterfaceList.joined(others))
             : MouseText.text("mouse-header-connected")
         return Header(
             title: mouse.deviceName, subtitle: subtitle, battery: battery(mouse.battery), isConnected: true,

@@ -172,10 +172,9 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// What an app has of its own, as the list and the header say it: the catalog's form
-    /// ("Own %@") with the items joined as the app's language joins a list.
+    /// ("Own %@") with the items joined as every list of the window is.
     private static func own(_ items: String...) -> String {
-        let list = ApplicationPagePart.joinedList(items, locale: ApplicationPagePart.listLocale)
-        return String(format: NSLocalizedString("apps-summary-own", comment: ""), list)
+        return String(format: NSLocalizedString("apps-summary-own", comment: ""), InterfaceList.joined(items))
     }
 
     // MARK: - The parts
@@ -720,19 +719,28 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// "Smooth Scrolling in Calculator" of the menu bar changes the app's own smoothing:
-    /// the open page shows what it gives as soon as it refreshes, also over Own Settings
-    /// held for what was done here by hand.
+    /// the open page shows what it gives as soon as its window becomes key again (back from
+    /// the menu bar), also over Own Settings held for what was done here by hand. Another
+    /// window becoming key changes nothing on it.
     func testAMenuBarChangeShowsOnTheOpenPage() throws {
         let calculator = addApp(Self.calculator)
         make(calculator, .ownSettings)
         calculator.scroll.reversesWheel = false
         let pane = makePane()
+        let window = makeWindow(for: pane)
         pane.openApplication(withID: Self.calculator, part: .scrolling)
         let page = try XCTUnwrap(pane.detailController)
         let menu = AppSmoothing.App(name: "Calculator", bundlePath: Self.calculator, executablePath: nil)
+        let other = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
+        other.isReleasedWhenClosed = false
+        addTeardownBlock { other.close() }
+        XCTAssertEqual(AppSmoothing.toggle(menu, list: Options.shared.application, scrolling: Options.shared.scroll), .setOwnSmoothing(false))
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: other)
+        XCTAssertEqual(shown(page), .ownSettings, "another window: nothing yet")
+        XCTAssertEqual(AppSmoothing.toggle(menu, list: Options.shared.application, scrolling: Options.shared.scroll), .setOwnSmoothing(true))
         func toggle(_ expected: AppSmoothing.Change, line: UInt = #line) {
             XCTAssertEqual(AppSmoothing.toggle(menu, list: Options.shared.application, scrolling: Options.shared.scroll), expected, line: line)
-            pane.syncViewWithOptions()
+            NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
         }
 
         toggle(.setOwnSmoothing(false))
@@ -751,6 +759,54 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(shown(page), .ownSettings)
         toggle(.setOwnSmoothing(false))
         XCTAssertEqual(shown(page), .leftToMacOS)
+    }
+
+    /// A page that has not heard of a change from the menu bar yet: a pick of the item it
+    /// shows writes what makes the stored values say that item (from what they say now), as
+    /// one Undo step, and the pop-up stays on it; the settings stay where they were.
+    func testAPickOnAStalePageMakesTheStoredValuesSayIt() throws {
+        let menu = AppSmoothing.App(name: "Calculator", bundlePath: Self.calculator, executablePath: nil)
+        func toggle(_ expected: AppSmoothing.Change, line: UInt = #line) {
+            XCTAssertEqual(AppSmoothing.toggle(menu, list: Options.shared.application, scrolling: Options.shared.scroll), expected, line: line)
+        }
+        // Own Settings shows; the menu bar turns smoothing off: the stored values say Left to macOS.
+        let calculator = addApp(Self.calculator)
+        make(calculator, .ownSettings)
+        calculator.scroll.reversesWheel = false
+        let pane = makePane()
+        pane.openApplication(withID: Self.calculator, part: .scrolling)
+        let page = try XCTUnwrap(pane.detailController)
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        page.scrollingPart.paneUndoManager = undo
+        let height = pane.view.frame.height
+        toggle(.setOwnSmoothing(false))
+        XCTAssertEqual(calculator.scrollingChoice, .leftToMacOS)
+        XCTAssertEqual(shown(page), .ownSettings, "stale")
+        undo.beginUndoGrouping()
+        pick(.ownSettings, on: page)
+        undo.endUndoGrouping()
+        XCTAssertTrue(calculator.scroll.smooth, "smoothing on again: what Own Settings from Left to macOS writes")
+        XCTAssertEqual(calculator.scrollingChoice, .ownSettings)
+        XCTAssertEqual(shown(page), .ownSettings)
+        XCTAssertFalse(page.scrollingController.smoothSwitch.isHiddenOrHasHiddenAncestor)
+        XCTAssertEqual(pane.view.frame.height, height, accuracy: 0.5, "nothing folded")
+        XCTAssertEqual(undo.undoActionName, "Change Scrolling in Calculator")
+        undo.undo()
+        XCTAssertFalse(calculator.scroll.smooth)
+        XCTAssertEqual(shown(page), .leftToMacOS, "Undo shows what is stored")
+
+        // Left to macOS shows; the menu bar turns smoothing on: the stored values say Own Settings.
+        toggle(.setOwnSmoothing(true))
+        XCTAssertEqual(calculator.scrollingChoice, .ownSettings)
+        XCTAssertEqual(shown(page), .leftToMacOS, "stale")
+        undo.beginUndoGrouping()
+        pick(.leftToMacOS, on: page)
+        undo.endUndoGrouping()
+        XCTAssertFalse(calculator.scroll.smooth)
+        XCTAssertEqual(calculator.scrollingChoice, .leftToMacOS)
+        XCTAssertEqual(shown(page), .leftToMacOS)
+        XCTAssertTrue(page.scrollingController.smoothSwitch.isHiddenOrHasHiddenAncestor)
     }
 
     /// "Scrolling in …" and its three lines for an app with a long name: the title is cut
@@ -784,9 +840,11 @@ final class ApplicationPageTests: XCTestCase {
         // A name that fits is said whole.
         XCTAssertEqual(ApplicationPagePart.name("Calculator", fittingTwoLinesOf: 200) { [$0] }, "Calculator")
 
-        // The line under the app's box (the limit on) and the thumb wheel's.
+        // The line under the app's box (the limit on, the app smoothed: the picks above
+        // left its own values not smoothed and not reversed) and the thumb wheel's.
         Options.shared.application.allowlist = true
         defer { Options.shared.application.allowlist = false }
+        long.scroll.smooth = true
         page.syncViewWithOptions()
         page.view.layoutSubtreeIfNeeded()
         XCTAssertFalse(page.allowlistNote.isHidden)
@@ -799,16 +857,36 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertLessThanOrEqual(thumbWheelNote.fittingSize.height, twoLines)
     }
 
-    /// What an app has of its own is joined in the app's language, not the Mac's region:
-    /// an English app on a Slovenian Mac says "and", never "in".
-    func testTheSummaryJoinsItsListInTheAppsLanguage() {
+    /// Every list of the window is joined one way (`InterfaceList`): in the app's language
+    /// with the Mac's region. An English app on a Mac set to Slovenian says "and", never
+    /// "in", with the comma before it that English has in Slovenia (as in the United States;
+    /// the region's English decides: in the United Kingdom there is none). The summary of
+    /// four kinds, a trigger line and a list of buttons.
+    func testEveryListIsJoinedInTheAppsLanguageWithTheMacsRegion() {
+        let mac = InterfaceList.macLocale
+        defer { InterfaceList.macLocale = mac }
         let application = Application(path: Self.calculator)
         application.inherit = false
-        application.setOwnThumbWheelFunction(.zoom)
-        XCTAssertEqual(ApplicationPagePart.summary(of: application, locale: Locale(identifier: "sl_SI")), "Own: scrolling in thumb wheel")
-        XCTAssertEqual(ApplicationPagePart.summary(of: application, locale: Locale(identifier: "en_SI")), "Own: scrolling and thumb wheel")
-        XCTAssertEqual(ApplicationPagePart.listLocale.identifier, Bundle.main.preferredLocalizations.first)
-        XCTAssertEqual(ApplicationPagePart.summary(of: application), "Own: scrolling and thumb wheel", "the app's own language")
+        application.setOwnButtonBindings([binding(3, "missionControl"), binding(4, "missionControl")])
+        application.setUsesGeneralGestures(false, general: .default)
+        application.setUsesGeneralRing(false, general: .default)
+        XCTAssertEqual(ApplicationPagePart.summary(of: application, locale: Locale(identifier: "sl_SI")), "Own: scrolling, 2 buttons, gestures in ring",
+                       "a locale handed in is the one used")
+        let rule = ApplicationTriggers(applicationNames: ["Figma", "Safari"], triggerTitles: ["Thumb panel", "Back button"])
+
+        InterfaceList.macLocale = { Locale(identifier: "sl_SI") }
+        XCTAssertEqual(InterfaceList.locale.language.languageCode, .english)
+        XCTAssertEqual(InterfaceList.locale.region, .slovenia)
+        XCTAssertEqual(ApplicationPagePart.summary(of: application), "Own: scrolling, 2 buttons, gestures, and ring")
+        XCTAssertEqual(rule.text, "Only in Figma and Safari: Thumb panel and Back button")
+        XCTAssertEqual(InterfaceList.joined(["Back button", "Forward button", "Middle button"]), "Back button, Forward button, and Middle button")
+
+        InterfaceList.macLocale = { Locale(identifier: "en_GB") }
+        XCTAssertEqual(ApplicationPagePart.summary(of: application), "Own: scrolling, 2 buttons, gestures and ring")
+        XCTAssertEqual(rule.text, "Only in Figma and Safari: Thumb panel and Back button")
+
+        InterfaceList.macLocale = { Locale(identifier: "en_US") }
+        XCTAssertEqual(ApplicationPagePart.summary(of: application), "Own: scrolling, 2 buttons, gestures, and ring")
     }
 
     /// The Buttons part's line under the list is a plain sentence that fits two lines, also
@@ -2186,7 +2264,7 @@ final class ApplicationPageTests: XCTestCase {
         long.setOwnButtonBindings([])
         let switchLines = [true, false].map { ApplicationDetailViewController.generalGesturesExplanation(on: $0, name: long.displayName!) }
         for (text, label) in switchLines.map({ ($0, part.generalGesturesRow.explanationLabel) }) + holds.map({ ($0, part.holdRow.explanationLabel) }) {
-            XCTAssertTrue(text.contains(long.displayName!))
+            XCTAssertTrue(text.contains("An Application"), text)
             XCTAssertGreaterThan(label.frame.width, 200)
             let height = (text as NSString).boundingRect(
                 with: NSSize(width: label.frame.width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
@@ -2400,13 +2478,90 @@ final class ApplicationPageTests: XCTestCase {
         ]
         let part = try XCTUnwrap(page.ringPart)
         for (text, label) in switchLines.map({ ($0, page.generalRingRow.explanationLabel) }) + rows.map({ ($0, part.triggerRow.explanationLabel) }) {
-            XCTAssertTrue(text.contains(name))
+            XCTAssertTrue(text.contains("An Application"), text)
             XCTAssertGreaterThan(label.frame.width, 200)
             let height = (text as NSString).boundingRect(
                 with: NSSize(width: label.frame.width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
             ).height
             XCTAssertLessThanOrEqual(height, twoLines, text)
         }
+    }
+
+    /// The first row's line of the Shortcut Ring and Gestures parts names the app: a long
+    /// name is cut short so that the line keeps to two lines beside "Show in …" at its
+    /// widest. The mixed line (one button as in other apps, two only in the app) with a
+    /// 45-character name took three; it takes two, on the page too.
+    func testTheTriggerLinesCutALongNameToTwoLines() throws {
+        let long = addApp(Self.calculator)
+        let name = "Remarkably Long Application Name For Its Kind"
+        XCTAssertEqual(name.count, 45)
+        long.displayName = name
+        let ring = SystemShortcut.shortcutRing.identifier
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        let general = [binding(5, ring), binding(6, gestures)]
+        Options.shared.buttons.binding = general
+        long.setOwnButtonBindings([binding(3, ring), binding(4, ring), binding(7, gestures), binding(8, gestures)])
+        let lines = ApplicationPagePart.LineCount(width: ApplicationTriggerRow.lineWidth, font: PreferencesGroupedForm.explanationFont)
+        for rule in [ApplicationTriggerRule.shortcutRing, .gestureNavigation] {
+            let whole = ApplicationTriggerRow.make(rule, application: long, general: general, width: 10_000).text
+            XCTAssertTrue(whole.hasSuffix("only in " + name), whole)
+            XCTAssertGreaterThan(lines.of(whole), 2, "\(rule): the whole name takes three lines")
+            let text = ApplicationTriggerRow.make(rule, application: long, general: general).text
+            XCTAssertLessThanOrEqual(lines.of(text), 2, text)
+            XCTAssertTrue(text.contains("only in Remarkably Long"), text)
+            XCTAssertTrue(text.hasSuffix("…"), text)
+        }
+
+        let pane = makePane()
+        _ = makeWindow(for: pane)
+        pane.openApplication(withID: Self.calculator, part: .ring)
+        let page = try XCTUnwrap(pane.detailController)
+        page.view.layoutSubtreeIfNeeded()
+        let row = try XCTUnwrap(page.ringPart?.triggerRow)
+        XCTAssertEqual(row.explanation, ApplicationTriggerRow.make(.shortcutRing, application: long, general: general).text)
+        let font = PreferencesGroupedForm.explanationFont
+        let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
+        XCTAssertLessThanOrEqual(row.explanationLabel.frame.height, twoLines)
+    }
+
+    /// A name is fitted by the lines its texts take, in any script: a Chinese name and one
+    /// with an emoji that fit are said whole (they were cut to "微…": their fallback fonts
+    /// make taller lines than two Latin ones); a 55-character Latin name is cut where the
+    /// line would take a third line, exactly where a label wraps it.
+    func testANameIsFittedByItsLinesInEveryScript() {
+        let width = PreferencesGroupedForm.boxWidth(paneWidth: ApplicationDetailViewController.paneWidth)
+            - 2 * PreferencesGroupedForm.rowHorizontalInset
+        let note = { (name: String) in [ApplicationDetailViewController.allowlistNoteText(name: name)] }
+        XCTAssertEqual(ApplicationPagePart.name("微信", fittingTwoLinesOf: width, in: note), "微信")
+        XCTAssertEqual(ApplicationDetailViewController.allowlistNoteText(fitting: "微信"), ApplicationDetailViewController.allowlistNoteText(name: "微信"))
+        XCTAssertEqual(ApplicationPagePart.name("企业微信", fittingTwoLinesOf: width, in: note), "企业微信")
+        XCTAssertEqual(ApplicationPagePart.name("🦊 Fox Notes", fittingTwoLinesOf: width, in: note), "🦊 Fox Notes")
+        XCTAssertEqual(ApplicationPagePart.name("ไลน์", fittingTwoLinesOf: width, in: note), "ไลน์")
+
+        // A Latin name that does not fit: cut where a label (measured as before, valid for
+        // Latin) still takes two lines and one more character would take three.
+        let long = "An Application With A Remarkably Long Name For Its Kind"
+        XCTAssertEqual(long.count, 55)
+        let measure = NSTextField(wrappingLabelWithString: "")
+        measure.font = PreferencesGroupedForm.explanationFont
+        measure.preferredMaxLayoutWidth = width
+        func height(_ text: String) -> CGFloat {
+            measure.stringValue = text
+            return measure.fittingSize.height
+        }
+        let twoLines = height("A\nA") + 0.5
+        let fitted = ApplicationPagePart.name(long, fittingTwoLinesOf: width, in: note)
+        XCTAssertTrue(fitted.hasSuffix("…"), fitted)
+        XCTAssertTrue(fitted.hasPrefix("An Application"), fitted)
+        XCTAssertLessThanOrEqual(height(note(fitted)[0]), twoLines, fitted)
+        func cut(_ length: Int) -> String {
+            return String(long.prefix(length)).trimmingCharacters(in: .whitespaces) + "…"
+        }
+        let length = (1..<long.count).last { cut($0) == fitted } ?? 0
+        let longer = cut(length + 1)
+        XCTAssertNotEqual(longer, fitted)
+        XCTAssertGreaterThan(height(note(longer)[0]), twoLines, "one character more takes a third line")
+        XCTAssertEqual(ApplicationPagePart.name(long, fittingTwoLinesOf: 10_000, in: note), long, "whole where it fits")
     }
 
     // MARK: - What opens the ring and runs the gestures, the apps' own buttons counted

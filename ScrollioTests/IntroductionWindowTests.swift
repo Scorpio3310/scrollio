@@ -489,7 +489,7 @@ final class IntroductionWindowTests: XCTestCase {
         controller.accessibilityPermissionsChecker(nil)
         XCTAssertEqual(
             controller.accessStep.statusBox.detailLabel.stringValue,
-            "Scrollio is running, but its menu bar icon is hidden. To reach Settings, open Scrollio again."
+            "Scrollio is running, but its menu bar icon is hidden. To reach Settings later, open Scrollio again."
         )
         world.menuBarIconHidden = false
         world.run = .stopped
@@ -2199,7 +2199,7 @@ final class IntroductionWindowTests: XCTestCase {
         let step = controller.finishStep
         XCTAssertEqual(
             step.textLabel.stringValue,
-            "Scrollio is running, but its menu bar icon is hidden. To reach Settings, open Scrollio again."
+            "Scrollio is running, but its menu bar icon is hidden. To reach Settings later, open Scrollio again."
         )
         // The picture shows no icon and no menu either.
         XCTAssertTrue(step.artwork.isIconHidden)
@@ -2212,7 +2212,7 @@ final class IntroductionWindowTests: XCTestCase {
         world.run = .paused
         step.refresh()
         XCTAssertEqual(step.titleLabel.stringValue, "Scrollio is paused")
-        XCTAssertEqual(step.textLabel.stringValue, "Scrollio's menu bar icon is hidden. To reach Settings, open Scrollio again.")
+        XCTAssertEqual(step.textLabel.stringValue, "Scrollio's menu bar icon is hidden. To reach Settings later, open Scrollio again.")
         XCTAssertEqual(WelcomeGuideFinishStep.titleKey(iconHidden: true, paused: true), "intro-finish-title-hidden-icon-paused")
         for (hidden, paused) in [(false, false), (false, true), (true, false)] {
             XCTAssertEqual(WelcomeGuideFinishStep.titleKey(iconHidden: hidden, paused: paused), "intro-finish-title", "\(hidden) \(paused)")

@@ -166,18 +166,18 @@ struct ApplicationTriggers: Equatable {
             let pairs = zip(applicationNames, appTriggerTitles).map { name, titles in
                 String(
                     format: NSLocalizedString("apps-trigger-app-with", comment: ""),
-                    name, ListFormatter.localizedString(byJoining: titles)
+                    name, InterfaceList.joined(titles)
                 )
             }
             return String(
                 format: NSLocalizedString("apps-trigger-only-in-each", comment: ""),
-                whereText(ListFormatter.localizedString(byJoining: pairs))
+                whereText(InterfaceList.joined(pairs))
             )
         }
         return String(
             format: NSLocalizedString("apps-trigger-only-in", comment: ""),
-            whereText(ListFormatter.localizedString(byJoining: applicationNames)),
-            ListFormatter.localizedString(byJoining: triggerTitles)
+            whereText(InterfaceList.joined(applicationNames)),
+            InterfaceList.joined(triggerTitles)
         )
     }
 
@@ -239,17 +239,35 @@ struct ApplicationTriggerRow: Equatable {
         }
     }
 
-    /// - Parameter titles: what the Buttons pane calls the triggers, in order.
+    /// The width of the row's line beside the row's button at its widest
+    /// (`buttonMaxWidth`, which "Show in <app>" reaches with a long name).
+    static var lineWidth: CGFloat {
+        let box = PreferencesGroupedForm.boxWidth(paneWidth: ApplicationDetailViewController.paneWidth)
+        return box - 2 * PreferencesGroupedForm.rowHorizontalInset - buttonMaxWidth - PreferencesGroupedForm.controlSpacing
+    }
+
+    /// - Parameters:
+    ///   - titles: what the Buttons pane calls the triggers, in order.
+    ///   - width: the line's width: a line that names the app says a long name cut short,
+    ///     so that it fits two lines (the whole name is in the app's box).
     static func make(
         _ rule: ApplicationTriggerRule, application: Application, general: [ButtonBinding],
-        titles: ([RecordedEvent]) -> [String] = { ButtonTriggerNaming.titles(for: $0) }
+        titles: ([RecordedEvent]) -> [String] = { ButtonTriggerNaming.titles(for: $0) },
+        width: CGFloat = lineWidth
     ) -> ApplicationTriggerRow {
-        let name = application.getName()
+        let fullName = application.getName()
+        func line(_ key: String, _ arguments: String...) -> String {
+            let format = NSLocalizedString(key, comment: "")
+            let name = ApplicationPagePart.name(fullName, fittingTwoLinesOf: width) { name in
+                [String(format: format, arguments: arguments + [name])]
+            }
+            return String(format: format, arguments: arguments + [name])
+        }
         let own = application.ownButtonBindings
         let everywhere = rule.bindings(general: general)
         let here = rule.bindings(general: general, own: own)
         guard !here.isEmpty else {
-            let text = String(format: NSLocalizedString("apps-trigger-none", comment: ""), name)
+            let text = line("apps-trigger-none")
             // A row of the app's own on what does it everywhere else: that row is why; the
             // row of that very trigger first, before one a press of it matches too (with
             // modifier keys).
@@ -266,7 +284,7 @@ struct ApplicationTriggerRow: Equatable {
             for title in titles(bindings.map(\.triggerEvent)) where !unique.contains(title) {
                 unique.append(title)
             }
-            return ListFormatter.localizedString(byJoining: unique)
+            return InterfaceList.joined(unique)
         }
         guard let first = onlyHere.first else {
             let text = String(format: NSLocalizedString("apps-trigger-everywhere", comment: ""), joined(shared))
@@ -275,8 +293,8 @@ struct ApplicationTriggerRow: Equatable {
             return ApplicationTriggerRow(text: text, destination: .buttonsPane, buttonsBindingID: named?.id)
         }
         let text = shared.isEmpty
-            ? String(format: NSLocalizedString("apps-trigger-only-here", comment: ""), joined(onlyHere), name)
-            : String(format: NSLocalizedString("apps-trigger-mixed", comment: ""), joined(shared), joined(onlyHere), name)
+            ? line("apps-trigger-only-here", joined(onlyHere))
+            : line("apps-trigger-mixed", joined(shared), joined(onlyHere))
         return ApplicationTriggerRow(text: text, destination: .applicationButtons(first.id))
     }
 }

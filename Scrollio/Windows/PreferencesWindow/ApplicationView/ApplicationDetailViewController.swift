@@ -209,8 +209,7 @@ final class ApplicationDetailViewController: NSViewController {
         let margin = PreferencesGroupedForm.margin
         controlUnderHeader = control.topAnchor.constraint(equalTo: header.bottomAnchor, constant: PreferencesGroupedForm.boxSpacing)
         controlUnderNote = control.topAnchor.constraint(equalTo: note.bottomAnchor, constant: PreferencesGroupedForm.boxSpacing)
-        // (The parts are not made yet: what is stored says whether the app is left to macOS.)
-        let showsNote = Self.showsAllowlistNote(choice: application.scrollingChoice)
+        let showsNote = Self.showsAllowlistNote(for: application)
         note.isHidden = !showsNote
         NSLayoutConstraint.activate([
             // The app's box begins where the first box of every pane does.
@@ -288,6 +287,22 @@ final class ApplicationDetailViewController: NSViewController {
         for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
             NotificationCenter.default.addObserver(self, selector: #selector(undoManagerDidChange(_:)), name: name, object: nil)
         }
+        // "Smooth Scrolling in …" of the menu bar changes an app's scrolling while its page
+        // is open: the page shows it when its window becomes key again.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowDidBecomeKey(_:)), name: NSWindow.didBecomeKeyNotification, object: nil
+        )
+    }
+
+    /// The page's window became key (back from the menu bar or another app): the Scrolling
+    /// part, the app's box and the line under it show what is stored now (as General shows
+    /// the login item and the access). The other parts hold nothing that changes from
+    /// outside the window.
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        guard isViewLoaded, let window = notification.object as? NSWindow, window === view.window else { return }
+        scrollingPart?.syncViewWithOptions()
+        showOwnSettings()
+        syncAllowlistNote()
     }
 
     /// An Undo or Redo ran: while the page is in a window and the bindings of Buttons are
@@ -313,6 +328,8 @@ final class ApplicationDetailViewController: NSViewController {
         super.viewWillAppear()
         // The Scrolling pane may have changed what an inheriting app shows.
         syncViewWithOptions()
+        // The page opens: the line under the app's box takes room only while it shows.
+        syncAllowlistNote(decidingRoom: true)
     }
 
     /// The controller of the part shown.
@@ -378,6 +395,8 @@ final class ApplicationDetailViewController: NSViewController {
         put(part)
         // (The selected segment's dot takes the selection's colour.)
         showOwnSettings()
+        // A part opens: the line under the app's box takes room only while it shows.
+        syncAllowlistNote(decidingRoom: true)
         onHeightChange?()
     }
 
@@ -433,19 +452,36 @@ final class ApplicationDetailViewController: NSViewController {
     }
 
     /// The line under the app's box: its words (the app's name may change with an Undo of
-    /// its removal), and whether it shows; the pane measures again when it comes or goes.
-    func syncAllowlistNote() {
+    /// its removal), and whether it shows. Its room is decided when the page or a part
+    /// opens (`decidingRoom`: there only while the line shows); while the page stays open
+    /// the room stays, and a pick in "Scrolling in Safari" only fades the line out or in,
+    /// so the pop-up under it does not move. A line that must show and has no room gets it
+    /// (the page opened while it did not show). The pane measures again when the room
+    /// comes or goes.
+    func syncAllowlistNote(decidingRoom: Bool = false) {
         guard isViewLoaded else { return }
         let text = Self.allowlistNoteText(fitting: application.getName())
         if allowlistNote.stringValue != text {
             allowlistNote.stringValue = text
         }
-        let showsNote = Self.showsAllowlistNote(choice: scrollingPart?.shownChoice ?? application.scrollingChoice)
-        guard allowlistNote.isHidden == showsNote else { return }
-        allowlistNote.isHidden = !showsNote
-        NSLayoutConstraint.deactivate([showsNote ? controlUnderHeader : controlUnderNote])
-        NSLayoutConstraint.activate([showsNote ? controlUnderNote : controlUnderHeader])
+        let showsNote = Self.showsAllowlistNote(for: application)
+        let alpha: CGFloat = showsNote ? 1 : 0
+        if allowlistNote.alphaValue != alpha {
+            allowlistNote.alphaValue = alpha
+            // (A line faded out is not read out either.)
+            allowlistNote.setAccessibilityElement(showsNote)
+        }
+        let hasRoom = showsNote || (!decidingRoom && !allowlistNote.isHidden)
+        guard allowlistNote.isHidden == hasRoom else { return }
+        allowlistNote.isHidden = !hasRoom
+        NSLayoutConstraint.deactivate([hasRoom ? controlUnderHeader : controlUnderNote])
+        NSLayoutConstraint.activate([hasRoom ? controlUnderNote : controlUnderHeader])
         onHeightChange?()
+    }
+
+    /// The line under the app's box shows (faded out, it may still keep its room).
+    var allowlistNoteShows: Bool {
+        return isViewLoaded && !allowlistNote.isHidden && allowlistNote.alphaValue > 0
     }
 
     /// What the app has of its own changed (a part, an Undo, the list's own refresh): the
@@ -495,10 +531,14 @@ final class ApplicationDetailViewController: NSViewController {
 
     /// The line under the app's box shows while "Change scrolling only in these apps" is
     /// on (every app on the list then scrolls as its Scrolling part says, also one added
-    /// only for its buttons, gestures or ring) and the part shows `choice` other than Left
-    /// to macOS (then the app scrolls as one off the list does).
-    static func showsAllowlistNote(choice: ApplicationScrollingChoice) -> Bool {
-        return Options.shared.application.allowlist && choice != .leftToMacOS
+    /// only for its buttons, gestures or ring) and what the app really gets is not left to
+    /// macOS (then it scrolls as an app off the list does): its own values, or with Same as
+    /// Scrolling the Scrolling settings' (which may be not smoothed and not reversed too),
+    /// whatever the pop-up shows (Own Settings held over values that say Left to macOS).
+    static func showsAllowlistNote(for application: Application) -> Bool {
+        guard Options.shared.application.allowlist else { return false }
+        let scroll = application.inherit ? Options.shared.scroll : application.scroll
+        return ApplicationScrollingChoice.of(inherit: false, scroll: scroll) != .leftToMacOS
     }
 
     /// "Safari is on the list, so Scrollio changes how it scrolls. To leave that to macOS,
