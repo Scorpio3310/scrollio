@@ -316,7 +316,7 @@ final class StatusMenuTests: XCTestCase {
             Row(title: "Quit Scrollio", shortcut: "⌘Q"),
         ])
         XCTAssertEqual(
-            StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: true, pauseEnd: end).toolTip,
+            StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: true, pauseEnd: end, canPostEvents: true).toolTip,
             Self.pausedUntilTitle(end) + "."
         )
         XCTAssertEqual(StatusMenu.titleText(.paused, pauseEnd: end), Self.pausedUntilTitle(end))
@@ -326,7 +326,7 @@ final class StatusMenuTests: XCTestCase {
         XCTAssertEqual(StatusMenu.titleText(.couldNotStart, pauseEnd: end), "Scrollio couldn't start and is trying again")
         XCTAssertEqual(rows(state(access: false, paused: true, pauseEnd: end)).first, Self.needsAccessTitle)
         XCTAssertEqual(
-            StatusMenu.IconLook(hasAccess: false, coresActive: false, isPaused: true, pauseEnd: end).toolTip,
+            StatusMenu.IconLook(hasAccess: false, coresActive: false, isPaused: true, pauseEnd: end, canPostEvents: true).toolTip,
             "Scrollio needs Accessibility access."
         )
 
@@ -512,13 +512,13 @@ final class StatusMenuTests: XCTestCase {
     /// "Couldn't start" by the icon's rule: a failed start while the cores are off, or a tap
     /// kept off while they run.
     func testTheStartProblemFollowsTheIconsRule() {
-        XCTAssertNil(StatusMenu.startProblem(coresActive: true, startFailed: false, tapRestartsThrottled: false))
-        XCTAssertNil(StatusMenu.startProblem(coresActive: false, startFailed: false, tapRestartsThrottled: false),
+        XCTAssertNil(StatusMenu.startProblem(coresActive: true, startFailed: false, tapRestartsThrottled: false, canPostEvents: true))
+        XCTAssertNil(StatusMenu.startProblem(coresActive: false, startFailed: false, tapRestartsThrottled: false, canPostEvents: true),
                      "waiting for the access, asleep or another user: not a start problem")
-        XCTAssertNil(StatusMenu.startProblem(coresActive: false, startFailed: false, tapRestartsThrottled: true))
-        XCTAssertEqual(StatusMenu.startProblem(coresActive: false, startFailed: true, tapRestartsThrottled: false), .retrying)
-        XCTAssertEqual(StatusMenu.startProblem(coresActive: false, startFailed: true, tapRestartsThrottled: true), .retrying)
-        XCTAssertEqual(StatusMenu.startProblem(coresActive: true, startFailed: false, tapRestartsThrottled: true), .tapOff)
+        XCTAssertNil(StatusMenu.startProblem(coresActive: false, startFailed: false, tapRestartsThrottled: true, canPostEvents: true))
+        XCTAssertEqual(StatusMenu.startProblem(coresActive: false, startFailed: true, tapRestartsThrottled: false, canPostEvents: true), .retrying)
+        XCTAssertEqual(StatusMenu.startProblem(coresActive: false, startFailed: true, tapRestartsThrottled: true, canPostEvents: true), .retrying)
+        XCTAssertEqual(StatusMenu.startProblem(coresActive: true, startFailed: false, tapRestartsThrottled: true, canPostEvents: true), .tapOff)
         // Under tests nothing fails and nothing is throttled: the live menu has no title for it.
         XCTAssertNil(StatusItemManager.liveState().startProblem)
     }
@@ -912,27 +912,27 @@ final class StatusMenuTests: XCTestCase {
     // MARK: - Icon
 
     func testTheIconDimsWhilePausedOrWithoutAccess() {
-        let running = StatusMenu.IconLook(hasAccess: true, coresActive: true, isPaused: false)
+        let running = StatusMenu.IconLook(hasAccess: true, coresActive: true, isPaused: false, canPostEvents: true)
         XCTAssertFalse(running.appearsDisabled)
         XCTAssertNil(running.toolTip)
 
-        let paused = StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: true)
+        let paused = StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: true, canPostEvents: true)
         XCTAssertTrue(paused.appearsDisabled)
         XCTAssertEqual(paused.toolTip, "Scrollio is paused.")
 
-        let noAccess = StatusMenu.IconLook(hasAccess: false, coresActive: false, isPaused: false)
+        let noAccess = StatusMenu.IconLook(hasAccess: false, coresActive: false, isPaused: false, canPostEvents: true)
         XCTAssertTrue(noAccess.appearsDisabled)
         XCTAssertEqual(noAccess.toolTip, "Scrollio needs Accessibility access.")
 
         // Regression: paused, then the access taken away: the menu's title says the access
         // is needed, and so does the tooltip (it said "paused").
-        let pausedWithoutAccess = StatusMenu.IconLook(hasAccess: false, coresActive: false, isPaused: true)
+        let pausedWithoutAccess = StatusMenu.IconLook(hasAccess: false, coresActive: false, isPaused: true, canPostEvents: true)
         XCTAssertTrue(pausedWithoutAccess.appearsDisabled)
         XCTAssertEqual(pausedWithoutAccess.toolTip, "Scrollio needs Accessibility access.")
 
         // The access back, the cores not started yet: the menu has no title, and the
         // tooltip no longer says the access is needed (it did).
-        let accessBack = StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: false)
+        let accessBack = StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: false, canPostEvents: true)
         XCTAssertTrue(accessBack.appearsDisabled)
         XCTAssertNil(accessBack.toolTip)
     }
@@ -943,23 +943,23 @@ final class StatusMenuTests: XCTestCase {
     func testTheIconSaysWhenScrollioCouldNotStart() {
         let couldNotStart = "Scrollio couldn't start and is trying again."
 
-        let failedStart = StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: false, startFailed: true)
+        let failedStart = StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: false, startFailed: true, canPostEvents: true)
         XCTAssertTrue(failedStart.appearsDisabled)
         XCTAssertEqual(failedStart.toolTip, couldNotStart)
 
-        let throttled = StatusMenu.IconLook(hasAccess: true, coresActive: true, isPaused: false, tapRestartsThrottled: true)
+        let throttled = StatusMenu.IconLook(hasAccess: true, coresActive: true, isPaused: false, tapRestartsThrottled: true, canPostEvents: true)
         XCTAssertTrue(throttled.appearsDisabled, "the not-active look while a tap stays off")
         XCTAssertEqual(throttled.toolTip, couldNotStart)
 
         // Back to normal by itself once the taps run.
-        XCTAssertEqual(StatusMenu.IconLook(hasAccess: true, coresActive: true, isPaused: false, startFailed: false, tapRestartsThrottled: false),
-                       StatusMenu.IconLook(hasAccess: true, coresActive: true, isPaused: false))
+        XCTAssertEqual(StatusMenu.IconLook(hasAccess: true, coresActive: true, isPaused: false, startFailed: false, tapRestartsThrottled: false, canPostEvents: true),
+                       StatusMenu.IconLook(hasAccess: true, coresActive: true, isPaused: false, canPostEvents: true))
 
         // With the access, a pause says "paused" whatever else is true.
-        XCTAssertEqual(StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: true, startFailed: true, tapRestartsThrottled: true).toolTip,
+        XCTAssertEqual(StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: true, startFailed: true, tapRestartsThrottled: true, canPostEvents: true).toolTip,
                        "Scrollio is paused.")
         // Without the access the start did not fail: it waits.
-        XCTAssertEqual(StatusMenu.IconLook(hasAccess: false, coresActive: false, isPaused: false, startFailed: false, tapRestartsThrottled: true).toolTip,
+        XCTAssertEqual(StatusMenu.IconLook(hasAccess: false, coresActive: false, isPaused: false, startFailed: false, tapRestartsThrottled: true, canPostEvents: true).toolTip,
                        "Scrollio needs Accessibility access.")
     }
 
@@ -1225,6 +1225,29 @@ final class AppRunControllerTests: XCTestCase {
         XCTAssertTrue(controller.coresActive)
         XCTAssertNil(controller.pauseTimer)
         XCTAssertEqual(world.log, ["start"], "started, and no Welcome Guide")
+    }
+
+    /// The live menu reads the shared poster's right to post events. (The UI tests hand the
+    /// start problem in; a `liveState` that lost the argument kept them all green.)
+    func testTheLiveMenuSaysWhenMacOSDoesNotLetScrollioPostEvents() {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        let poster = ScrollPoster.shared
+        let saved = poster.postEventAccess
+        defer {
+            poster.postEventAccess = saved
+            poster.checkPostEventAccess()
+            XCTAssertTrue(poster.canPostEvents)
+        }
+        XCTAssertNil(StatusItemManager.liveState(of: controller).startProblem)
+
+        poster.postEventAccess = { false }
+        poster.checkPostEventAccess()
+        XCTAssertEqual(StatusItemManager.liveState(of: controller).startProblem, .cannotPostEvents)
+        // Paused, the cores do not run: the pause is what the menu says.
+        controller.setPaused(true)
+        XCTAssertNil(StatusItemManager.liveState(of: controller).startProblem)
     }
 
     /// Those who show the pause also look from inside the controller's own notification

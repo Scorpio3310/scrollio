@@ -319,9 +319,11 @@ enum StatusMenu {
     }
 
     /// The run state's start problem, by the icon's rule. A tap kept off comes first: it
-    /// comes back by itself, and until then nothing reaches the poster anyway.
+    /// comes back by itself, and until then nothing reaches the poster anyway. No argument
+    /// has a default: every caller says what it read (one that lost `canPostEvents` kept
+    /// every test green).
     static func startProblem(
-        coresActive: Bool, startFailed: Bool, tapRestartsThrottled: Bool, canPostEvents: Bool = true
+        coresActive: Bool, startFailed: Bool, tapRestartsThrottled: Bool, canPostEvents: Bool
     ) -> StartProblem? {
         if !coresActive && startFailed { return .retrying }
         if coresActive && tapRestartsThrottled { return .tapOff }
@@ -745,7 +747,7 @@ enum StatusMenu {
         ///   - canPostEvents: macOS lets Scrollio post events (ScrollPoster.canPostEvents).
         init(
             hasAccess: Bool, coresActive: Bool, isPaused: Bool, startFailed: Bool = false,
-            tapRestartsThrottled: Bool = false, pauseEnd: Date? = nil, canPostEvents: Bool = true
+            tapRestartsThrottled: Bool = false, pauseEnd: Date? = nil, canPostEvents: Bool
         ) {
             let problem = StatusMenu.startProblem(
                 coresActive: coresActive, startFailed: startFailed, tapRestartsThrottled: tapRestartsThrottled,
