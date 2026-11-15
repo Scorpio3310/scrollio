@@ -3883,3 +3883,92 @@ extension PreferencesWindowRenderTests {
         })
     }
 }
+
+// MARK: - Round 3 C2
+
+extension PreferencesWindowRenderTests {
+
+    /// Undo shows where it acts (round 3, part of proposal 32; `r3-c2-<case>-<appearance>.png`),
+    /// each after a change, a move to General and Edit › Undo: `ring`, the Shortcut Ring
+    /// pane, its folded places open, the place lit and its row selected; `gestures`, the
+    /// Gestures pane the same for Click; `app-ring`, an app's page on its Shortcut Ring part,
+    /// the change made before the page closed.
+    func testRenderRound3C2UndoShowsWhereItActs() throws {
+        let stored = Options.shared.application.applications
+        let savedRing = Options.shared.ring
+        let savedGesture = Options.shared.gesture
+        let savedBindings = Options.shared.buttons.binding
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            Options.shared.ring = savedRing
+            Options.shared.gesture = savedGesture
+            Options.shared.buttons.binding = savedBindings
+            ShortcutRingController.forgetPreparedFaces()
+            ButtonUtils.shared.invalidateCache()
+        }
+        Options.shared.ring = .default
+        Options.shared.gesture = .default
+        Options.shared.buttons.binding = []
+        var split: PreferencesSplitViewController?
+        /// `change` as one step, General shown, then Undo.
+        func undo(_ change: () -> Void, in controller: NSViewController, before leaving: () -> Void = {}) {
+            guard let preferences = split, let undo = controller.view.window?.undoManager else {
+                return XCTFail("no window")
+            }
+            undo.groupsByEvent = false
+            undo.beginUndoGrouping()
+            change()
+            undo.endUndoGrouping()
+            leaving()
+            XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+            undo.undo()
+            // The rows that open fade in and their chevron turns, which a window never shown
+            // does not play: drawn as they end.
+            func finish(_ view: NSView) {
+                if let fold = view as? PreferencesDisclosureSection, fold.isExpanded {
+                    fold.body.alphaValue = 1
+                    fold.disclosure.chevron.turn = 1
+                }
+                view.subviews.forEach(finish)
+            }
+            if let content = preferences.view.window?.contentView {
+                finish(content)
+            }
+        }
+
+        try renderPane(RingPreferencesViewController.tabIdentifier, name: "r3-c2-ring", prepare: { split = $0 }, afterLoad: { controller in
+            guard let ring = controller as? RingPreferencesViewController, let places = ring.placesSection else {
+                return XCTFail("no ring")
+            }
+            places.setExpanded(true)
+            undo({ ring.placePopUps[6].onShortcutSelected?(SystemShortcut.copy) }, in: ring, before: { places.setExpanded(false) })
+        })
+
+        try renderPane(GesturesPreferencesViewController.tabIdentifier, name: "r3-c2-gestures", prepare: { split = $0 }, afterLoad: { controller in
+            guard let gestures = controller as? GesturesPreferencesViewController else { return XCTFail("no gestures") }
+            gestures.directionsSection.setExpanded(true)
+            undo(
+                { gestures.controls.actionPopUp(for: .click).onShortcutSelected?(nil) }, in: gestures,
+                before: { gestures.directionsSection.setExpanded(false) }
+            )
+        })
+
+        let path = "/System/Applications/Calculator.app"
+        let defaults = uiDefaults(advanced: false)
+        try renderPane(PANEL_IDENTIFIER.application, name: "r3-c2-app-ring", prepare: { preferences in
+            split = preferences
+            let calculator = Application(path: path)
+            calculator.setUsesGeneralRing(false, general: .default)
+            Options.shared.application.applications = EnhanceArray<Application>(withArray: [calculator], matchKey: "path")
+            (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                .uiStateDefaults = defaults
+        }, afterLoad: { controller in
+            guard let apps = controller as? PreferencesApplicationViewController else { return XCTFail("no apps") }
+            apps.openApplication(withID: path, part: .ring)
+            guard let ring = apps.detailController?.ringPart.ringController else { return XCTFail("no own ring") }
+            undo({ ring.placePopUps[5].onShortcutSelected?(SystemShortcut.paste) }, in: ring, before: {
+                apps.showList(focusList: false)
+            })
+        })
+    }
+}
