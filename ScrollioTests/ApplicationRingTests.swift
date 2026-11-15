@@ -3,7 +3,7 @@
 //  ScrollioTests
 //
 //  A Shortcut Ring of an app's own: how it is stored with the app's entry and what an
-//  entry from before reads as, the switch "Use the general ring", which ring opens for
+//  entry from before reads as, the switch "Use settings from Shortcut Ring", which ring opens for
 //  which app in front, and that the ring that opened stays the ring until it closes.
 //  (The app's page is in PreferencesApplicationTests, the settings file in
 //  SettingsFileTests.) Nothing is shown and nothing is posted.
@@ -715,5 +715,70 @@ final class ApplicationRingSuggestedRowTests: XCTestCase {
                 XCTAssertLessThanOrEqual(height, twoLines, text)
             }
         }
+    }
+}
+
+// MARK: - The words of an app's Shortcut Ring part
+
+/// One vocabulary (round 2, proposal 22): the switch follows the Shortcut Ring pane by its
+/// name, its lines say what follows what "in Calculator", and "Button or key" says "as in
+/// other apps".
+final class ApplicationRingWordsTests: XCTestCase {
+
+    private var savedApplications: EnhanceArray<Application>!
+    private var savedRing = ShortcutRingSettings.default
+    private var savedBindings: [ButtonBinding] = []
+
+    override func setUp() {
+        super.setUp()
+        savedApplications = Options.shared.application.applications
+        savedRing = Options.shared.ring
+        savedBindings = Options.shared.buttons.binding
+        Options.shared.ring = .default
+    }
+
+    override func tearDown() {
+        Options.shared.application.applications = savedApplications
+        Options.shared.ring = savedRing
+        Options.shared.buttons.binding = savedBindings
+        ShortcutRingController.forgetPreparedFaces()
+        savedApplications = nil
+        super.tearDown()
+    }
+
+    private func binding(_ code: UInt16) -> ButtonBinding {
+        return ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: SystemShortcut.shortcutRing.identifier
+        )
+    }
+
+    func testTheSwitchIsNamedAfterThePaneAndItsLinesSayInTheApp() {
+        let general = binding(4)
+        Options.shared.buttons.binding = [general]
+        let calculator = Application(path: calculatorPath)
+        calculator.displayName = "Calculator"
+        Options.shared.application.applications = list([calculator])
+        let part = ApplicationRingPartViewController(application: calculator)
+        _ = part.view
+        XCTAssertEqual(part.generalRingRow.title, "Use settings from Shortcut Ring")
+        XCTAssertEqual(part.generalRingRow.explanation, "Changes under Shortcut Ring apply to Calculator too.")
+        let button = ButtonTriggerNaming.title(for: general.triggerEvent)
+        XCTAssertEqual(part.triggerRow.explanation, "\(button), as in other apps")
+        part.generalRingRow.toggle.state = .off
+        part.generalRingClick(part.generalRingRow.toggle)
+        XCTAssertFalse(calculator.usesGeneralRing, "the switch does what it did")
+        XCTAssertEqual(part.generalRingRow.explanation, "Calculator keeps its own ring below.")
+    }
+
+    func testButtonOrKeySaysAsInOtherAppsAndOnlyInTheApp() {
+        let calculator = Application(path: calculatorPath)
+        calculator.displayName = "Calculator"
+        calculator.setOwnButtonBindings([binding(3)])
+        let titles: ([RecordedEvent]) -> [String] = { $0.map { $0.code == 4 ? "Back button" : "Middle button" } }
+        XCTAssertEqual(
+            ApplicationTriggerRow.make(.shortcutRing, application: calculator, general: [binding(4)], titles: titles).text,
+            "Back button as in other apps, Middle button only in Calculator"
+        )
     }
 }

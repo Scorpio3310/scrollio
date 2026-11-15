@@ -3,7 +3,7 @@
 //  ScrollioTests
 //
 //  Gestures of an app's own: how they are stored with the app's entry and what an entry
-//  from before reads as, the switch "Use the general gestures", which gesture settings a
+//  from before reads as, the switch "Use settings from Gestures", which gesture settings a
 //  hold begins with for which app in front (the actions, the mode, the speed, the freeze
 //  and a Logitech mouse's switches), and that a hold keeps them until it ends.
 //  (The app's page is in ApplicationPageTests, the settings file in SettingsFileTests.)
@@ -548,5 +548,101 @@ final class ApplicationGesturesHoldTests: XCTestCase {
         notes.setUsesGeneralGestures(true, general: Options.shared.gesture)
         hold(Self.notes, then: nil, moving: Self.up)
         XCTAssertEqual(logLines, ["Gestures: up ran copy"])
+    }
+}
+
+// MARK: - The words of an app's Gestures part
+
+/// One vocabulary (round 2, proposal 22): the switch follows the Gestures pane by its
+/// name, its lines say what follows what "in Calculator", and the first row says "as in
+/// other apps". No line says "general", "everywhere" or "while … is in front".
+final class ApplicationGesturesWordsTests: XCTestCase {
+
+    private var savedApplications: EnhanceArray<Application>!
+    private var savedBindings: [ButtonBinding] = []
+    private var savedGesture = MouseGestureSettings.default
+
+    override func setUp() {
+        super.setUp()
+        savedApplications = Options.shared.application.applications
+        savedBindings = Options.shared.buttons.binding
+        savedGesture = Options.shared.gesture
+        Options.shared.buttons.binding = []
+        Options.shared.gesture = .default
+    }
+
+    override func tearDown() {
+        Options.shared.application.applications = savedApplications
+        Options.shared.buttons.binding = savedBindings
+        Options.shared.gesture = savedGesture
+        savedApplications = nil
+        super.tearDown()
+    }
+
+    private func binding(_ code: UInt16) -> ButtonBinding {
+        return ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: SystemShortcut.mouseGestureNavigation.identifier
+        )
+    }
+
+    func testTheSwitchIsNamedAfterThePaneAndItsLinesSayInTheApp() {
+        let calculator = Application(path: calculatorPath)
+        calculator.displayName = "Calculator"
+        Options.shared.application.applications = list([calculator])
+        let part = ApplicationGesturesPartViewController(application: calculator)
+        _ = part.view
+        XCTAssertEqual(part.generalGesturesRow.title, "Use settings from Gestures")
+        XCTAssertEqual(part.generalGesturesRow.explanation, "Changes under Gestures apply to Calculator too.")
+        part.generalGesturesSwitch.state = .off
+        part.generalGesturesClick(part.generalGesturesSwitch)
+        XCTAssertFalse(calculator.usesGeneralGestures, "the switch does what it did")
+        XCTAssertEqual(part.generalGesturesRow.explanation, "Calculator keeps its own gestures below.")
+        XCTAssertEqual(
+            ApplicationDetailViewController.generalGesturesExplanation(on: true, name: "Safari"),
+            "Changes under Gestures apply to Safari too."
+        )
+    }
+
+    /// "Button to hold": Buttons' button "as in other apps", with one of the app's own
+    /// "only in" it.
+    func testTheFirstRowSaysAsInOtherApps() {
+        let calculator = Application(path: calculatorPath)
+        calculator.displayName = "Calculator"
+        let general = [binding(5)]
+        let titles: ([RecordedEvent]) -> [String] = { $0.map { $0.code == 5 ? "Forward button" : "Back button" } }
+        XCTAssertEqual(
+            ApplicationTriggerRow.make(.gestureNavigation, application: calculator, general: general, titles: titles).text,
+            "Forward button, as in other apps"
+        )
+        calculator.setOwnButtonBindings([binding(4)])
+        XCTAssertEqual(
+            ApplicationTriggerRow.make(.gestureNavigation, application: calculator, general: general, titles: titles).text,
+            "Forward button as in other apps, Back button only in Calculator"
+        )
+    }
+
+    /// The Apps pane's line under "Change scrolling only in these apps" names all three
+    /// that work in every app.
+    func testTheAllowlistLineSaysWhatWorksInEveryApp() {
+        XCTAssertEqual(
+            NSLocalizedString("apps-limit-hint", comment: ""),
+            "Apps not on the list scroll the way macOS does. Buttons, gestures and the Shortcut Ring work in every app."
+        )
+    }
+
+    /// The words AGENTS.md › "Words in the interface" leaves out are in none of these lines.
+    func testNoLineOfTheVocabularySaysGeneralEverywhereOrInFront() {
+        let keys = [
+            "apps-detail-gestures-general", "apps-detail-gestures-general-on", "apps-detail-gestures-general-off",
+            "apps-detail-ring-general", "apps-detail-ring-general-on", "apps-detail-ring-general-off",
+            "apps-trigger-everywhere", "apps-trigger-mixed", "apps-limit-hint",
+        ]
+        for key in keys {
+            let value = NSLocalizedString(key, comment: "").lowercased()
+            for word in ["general", "everywhere", "in front", "pane", "part"] {
+                XCTAssertFalse(value.contains(word), "\(key) says \"\(word)\": \(value)")
+            }
+        }
     }
 }

@@ -2972,7 +2972,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apps not in the list scroll the way macOS does. Buttons and gestures still work everywhere."
+            "value": "Apps not on the list scroll the way macOS does. Buttons, gestures and the Shortcut Ring work in every app."
           }
         }
       }
@@ -7811,31 +7811,31 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use the general ring"
+            "value": "Use settings from Shortcut Ring"
           }
         }
       }
     },
     "apps-detail-ring-general-on": {
-      "comment": "App page: explanation while \"Use the general ring\" is on; %@ is the app's name",
+      "comment": "App page: explanation while \"Use settings from Shortcut Ring\" is on; %@ is the app's name",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "While %@ is in front, the general ring opens."
+            "value": "Changes under Shortcut Ring apply to %@ too."
           }
         }
       }
     },
     "apps-detail-ring-general-off": {
-      "comment": "App page: explanation while \"Use the general ring\" is off; %@ is the app's name",
+      "comment": "App page: explanation while \"Use settings from Shortcut Ring\" is off; %@ is the app's name",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "While %@ is in front, the ring below opens."
+            "value": "%@ keeps its own ring below."
           }
         }
       }
@@ -8399,31 +8399,31 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use the general gestures"
+            "value": "Use settings from Gestures"
           }
         }
       }
     },
     "apps-detail-gestures-general-on": {
-      "comment": "App page: explanation while \"Use the general gestures\" is on; %@ is the app's name",
+      "comment": "App page: explanation while \"Use settings from Gestures\" is on; %@ is the app's name",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "While %@ is in front, the general gestures run."
+            "value": "Changes under Gestures apply to %@ too."
           }
         }
       }
     },
     "apps-detail-gestures-general-off": {
-      "comment": "App page: explanation while \"Use the general gestures\" is off; %@ is the app's name",
+      "comment": "App page: explanation while \"Use settings from Gestures\" is off; %@ is the app's name",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "While %@ is in front, the gestures below run."
+            "value": "%@ keeps its own gestures below."
           }
         }
       }
@@ -10267,7 +10267,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@, as everywhere"
+            "value": "%@, as in other apps"
           }
         }
       }
@@ -10291,7 +10291,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ as everywhere, %2$@ only in %3$@"
+            "value": "%1$@ as in other apps, %2$@ only in %3$@"
           }
         }
       }
