@@ -11,9 +11,11 @@
 //  ~/Library/Application Support/<bundle id>/Settings Backups, named by the moment (UTC)
 //  they were written: the last five, older ones are deleted. No two of them hold the same
 //  settings: when the settings an import is about to replace are already in a backup,
-//  that backup becomes the newest and no second one is written. (Going back and forth
-//  between two states would otherwise fill the five places with copies of those two, and
-//  the user's own settings from before the first import would be the ones deleted.)
+//  the new backup takes that one's place (it is written as any other, so the date it says
+//  it was saved on is the one "Restore…" lists it by, and the earlier file goes). (Going
+//  back and forth between two states would otherwise fill the five places with copies of
+//  those two, and the user's own settings from before the first import would be the ones
+//  deleted.)
 //  General's "Restore…" lists them by their local date and time; the chosen backup goes
 //  through the same import, with the same sheet before it, so going back can be undone
 //  the same way.
@@ -100,21 +102,26 @@ struct SettingsBackups {
     /// nothing else is touched then.
     ///
     /// `holdsTheSame` says of a backup that is already there whether it holds what `data`
-    /// holds. Then no second one is written: that backup becomes the newest, under the
-    /// name a new one would have got.
+    /// holds. Then the folder still has one backup of those settings: `data` is written
+    /// as the newest and the earlier files go. (The earlier file used to be renamed
+    /// instead: "Restore…" then listed it under the new date while its sheet said it was
+    /// saved on the old one.) A file that cannot be deleted stays; nothing reads two as
+    /// a fault.
     @discardableResult
     func write(_ data: Data, now: Date = Date(), holdsTheSame: ((Data) -> Bool)? = nil) throws -> URL {
         guard let directory else { throw Failure.noFolder }
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = freeURL(in: directory, from: moment(for: now))
-        if let holdsTheSame, let twin = entries().first(where: { entry in
-            guard case .success(let kept) = SettingsFile.data(ofFileAt: entry.url) else { return false }
-            return holdsTheSame(kept)
-        }), (try? fileManager.moveItem(at: twin.url, to: url)) != nil {
-            prune(keeping: url)
-            return url
-        }
+        let twins = holdsTheSame.map { holdsTheSame in
+            entries().filter { entry in
+                guard case .success(let kept) = SettingsFile.data(ofFileAt: entry.url) else { return false }
+                return holdsTheSame(kept)
+            }
+        } ?? []
         try data.write(to: url, options: .atomic)
+        for twin in twins {
+            try? fileManager.removeItem(at: twin.url)
+        }
         prune(keeping: url)
         return url
     }

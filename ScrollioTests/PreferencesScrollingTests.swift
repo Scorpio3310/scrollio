@@ -1898,6 +1898,29 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(controller.previewView.scene.reversed, "as macOS turns it: natural")
     }
 
+    /// Natural scrolling switched in System Settings while the tab stays on show: back in
+    /// Scrollio the preview moves the page as the wheel moves it now, and "Reset to
+    /// Defaults" compares with this Mac's defaults as they are now. Regression: both were
+    /// read only when the tab appeared, so they stayed as before until another pane had
+    /// been shown in between.
+    func testPreviewAndResetFollowNaturalScrollingWhenScrollioComesToTheFront() {
+        // A new installation on a Mac with Natural scrolling on: the defaults, nothing to reset.
+        let controller = makeController()
+        XCTAssertFalse(controller.previewView.scene.reversed, "turned back: classic")
+        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
+
+        macOSNaturalScrolling(false)
+        XCTAssertFalse(controller.previewView.scene.reversed, "not before Scrollio is back")
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApp)
+        XCTAssertTrue(controller.previewView.scene.reversed, "reversed on a Mac that scrolls classic: up the page")
+        XCTAssertTrue(controller.resetToDefaultsButton.isEnabled, "Reverse wheel direction is on, this Mac's default is off")
+
+        macOSNaturalScrolling(true)
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApp)
+        XCTAssertFalse(controller.previewView.scene.reversed)
+        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
+    }
+
     func testPreviewPointsOutAKeyWhileItsRowIsHoveredFocusedOrRecording() {
         let controller = makeController(advanced: true)
         XCTAssertEqual(controller.previewView.scene.emphasis, .wheel)

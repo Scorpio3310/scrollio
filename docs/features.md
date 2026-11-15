@@ -629,6 +629,11 @@ move to another Mac, to keep a copy, or to pass a setup on.
   each.
   That also holds for "Restore…": entries a newer version of Scrollio had stored (if
   you went back to an older version) are not kept by an import and do not come back.
+- Version 1.0.5 imports a file this version exported and leaves out what it does not
+  know without saying so (every name and icon, each app's own gestures, Shortcut Ring
+  and thumb wheel, and each thumb wheel action's own direction and "Follow the wheel";
+  its sheet counts only a gesture that sends recorded keys), so keep the file: imported
+  into this version again, it brings them back.
 
 ## Updates
 

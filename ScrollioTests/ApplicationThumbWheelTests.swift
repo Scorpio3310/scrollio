@@ -1208,7 +1208,7 @@ final class ApplicationThumbWheelScrollingTests: XCTestCase {
                        [ApplicationThumbWheelScrolling(ThumbWheelSettings(speed: 1.5, swapsDirection: true)), nil])
         XCTAssertEqual(contents.leftOutCount, 0)
         XCTAssertEqual(contents.correctedValues, 0)
-        XCTAssertTrue(SettingsFileText.items(of: contents).map(\.text).contains("2 apps with their own settings"), "\(SettingsFileText.items(of: contents).map(\.text))")
+        XCTAssertTrue(SettingsFileText.items(of: contents).map(\.text).contains("2 apps on the list"), "\(SettingsFileText.items(of: contents).map(\.text))")
         XCTAssertEqual(SettingsFileText.thumbWheelLines(of: contents), [], "no function of their own: no line")
 
         let target = ownOptions()

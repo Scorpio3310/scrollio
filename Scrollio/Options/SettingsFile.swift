@@ -592,6 +592,10 @@ enum SettingsFile {
 
     /// An app's entry as it goes to the decoder, changed in the JSON itself (changing the
     /// decoded object would tell the app's observers of a change):
+    /// - a name the file gives the app ("displayName") is left out: the app keeps the
+    ///   name of its file, the one the sheet showed for it. Nothing in Scrollio writes a
+    ///   name there and no pane can change one, so an imported one would rename the app
+    ///   for good (Safari listed as "Notes", with Safari's icon);
     /// - the numbers of its own scroll settings are brought into range;
     /// - of its own buttons, those that cannot be read or whose action this version does
     ///   not run are left out, one by one (as a whole they would take the app with them);
@@ -601,6 +605,7 @@ enum SettingsFile {
     /// Anything else is left for the decoder to judge. `counts` says what was changed.
     private static func applicationEntry(_ entry: Any, counts: inout EntryCounts) -> Any {
         guard var object = entry as? [String: Any] else { return entry }
+        object["displayName"] = nil
         if var scroll = object["scroll"] as? [String: Any] {
             for key in exportedKeys where key.kind == .number {
                 guard let number = number(scroll[key.name]) else { continue }
@@ -850,7 +855,9 @@ enum SettingsFile {
         options.saveOptions()
 
         let defaults = options.defaults
+        let keepsDirection = saysNothingOfTheDirection(contents)
         for key in exportedKeys where contents.groups.contains(key.group) {
+            if keepsDirection, directionKeys.contains(key.name) { continue }
             defaults.removeObject(forKey: key.name)
         }
         for (name, value) in values {
@@ -858,6 +865,20 @@ enum SettingsFile {
         }
         options.reloadFromStore(notifying: OptionsGroup.allCases.filter(contents.groups.contains))
         return true
+    }
+
+    /// The three stored flags of the wheel's direction ("Reverse wheel direction").
+    static let directionKeys: Set<String> = [
+        OptionItem.Scroll.Reverse, OptionItem.Scroll.ReverseVertical, OptionItem.Scroll.ReverseHorizontal,
+    ]
+
+    /// The file holds scroll settings and none of the three direction flags (only a file
+    /// made or trimmed by hand: Export… writes all three). An import then leaves the
+    /// stored direction as it is. Every other missing value becomes its default, but the
+    /// direction has none that is right on every Mac: a missing "reverse" reads as on,
+    /// which turns the wheel round on a Mac whose Natural scrolling is off.
+    static func saysNothingOfTheDirection(_ contents: Contents) -> Bool {
+        return contents.groups.contains(.scroll) && directionKeys.allSatisfy { contents.scrollSwitches[$0] == nil }
     }
 
     /// What goes into the store for `contents`, by key: a switch as a Bool, a number as a

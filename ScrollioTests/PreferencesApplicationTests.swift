@@ -1051,6 +1051,74 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertFalse(fresh.scroll.reversesWheel)
     }
 
+    /// An entry exactly as 1.0.5 stored it after "+": its own options are that version's
+    /// values of a new entry, "reverse" true on every Mac. `speed` is the one value that
+    /// differed between releases (6.3 in 1.0.0 and 1.0.1).
+    private static func entryStoredByAnOlderVersion(speed: String = "6.5", reverse: Bool = true) throws -> Application {
+        let stored = #"{"path":"/System/Applications/Calculator.app/Contents/MacOS/Calculator","displayName":"","inherit":true,"scroll":{"smooth":true,"reverse":\#(reverse),"reverseVertical":true,"reverseHorizontal":true,"dash":{"type":"keyboard","code":58},"toggle":{"type":"keyboard","code":56},"block":{"type":"keyboard","code":55},"step":33.6,"speed":\#(speed),"duration":3.69,"deadZone":1,"smoothSimTrackpad":false,"smoothVertical":true,"smoothHorizontal":true}}"#
+        return try JSONDecoder().decode(Application.self, from: Data(stored.utf8))
+    }
+
+    /// An app added under 1.0.5 that always followed Scrolling was never edited, also on a
+    /// Mac with Natural scrolling off: "Smooth Scrolling in …" of the menu bar and Own
+    /// Settings start from the Scrolling settings. Regression: "never edited" compared with
+    /// this Mac's new-entry values (Reverse off there), the stored "reverse": true read as
+    /// an edit, nothing was copied and the wheel turned round in that app alone.
+    func testAnAppAddedByAnOlderVersionIsStillNeverEditedWithoutNaturalScrolling() throws {
+        let originalNaturalScrolling = Options.naturalScrollingIsOn
+        defer { Options.naturalScrollingIsOn = originalNaturalScrolling }
+        Options.naturalScrollingIsOn = { false }
+        // The user's Scrolling settings there: the wheel as macOS turns it, a speed of his own.
+        let scrolling = OPTIONS_SCROLL_DEFAULT(reverse: false)
+        scrolling.speed = 3
+        let calculator = AppSmoothing.App(
+            name: "Calculator", bundlePath: Self.calculator, executablePath: Self.calculatorProgram
+        )
+
+        // The menu bar's item, for 1.0.5's entry and for one of 1.0.0 / 1.0.1 (Speed 6.3).
+        for speed in ["6.5", "6.3"] {
+            let entry = try Self.entryStoredByAnOlderVersion(speed: speed)
+            XCTAssertTrue(entry.scroll.reversesWheel, "as that version stored it")
+            let list = OPTIONS_APPLICATION_DEFAULT()
+            list.applications = Self.makeStore([entry])
+            XCTAssertEqual(
+                AppSmoothing.toggle(calculator, list: list, scrolling: scrolling), .ownSettingsWithSmoothingOff, speed
+            )
+            XCTAssertFalse(entry.scroll.reversesWheel, "the wheel turns as it did (\(speed))")
+            XCTAssertEqual(entry.scroll.speed, 3, speed)
+            XCTAssertEqual(entry.scrollingChoice, .leftToMacOS, speed)
+        }
+
+        // The page's Own Settings: a copy of the Scrolling settings.
+        let entry = try Self.entryStoredByAnOlderVersion()
+        entry.choose(.ownSettings, from: .sameAsScrolling, scrolling: scrolling)
+        XCTAssertEqual(entry.scroll, scrolling)
+        XCTAssertFalse(entry.scroll === scrolling)
+
+        // An entry made here before Natural scrolling was switched on in System Settings.
+        let earlier = Application(path: Self.textEdit)
+        XCTAssertFalse(earlier.scroll.reversesWheel)
+        Options.naturalScrollingIsOn = { true }
+        XCTAssertTrue(earlier.adoptScrollOptionsIfUnedited(from: scrolling))
+        XCTAssertEqual(earlier.scroll, scrolling)
+
+        // Values of its own stay: an older entry that was edited, and one this version
+        // gave its own settings (it has thumb wheel values by then), whatever they equal.
+        let edited = try Self.entryStoredByAnOlderVersion(speed: "2")
+        XCTAssertFalse(edited.adoptScrollOptionsIfUnedited(from: scrolling))
+        XCTAssertEqual(edited.scroll.speed, 2)
+        XCTAssertTrue(edited.scroll.reversesWheel)
+        Options.naturalScrollingIsOn = { false }
+        let own = try Self.entryStoredByAnOlderVersion()
+        own.setUsesScrollingSettings(false, scrolling: scrolling)
+        own.scroll.reversesWheel = true
+        own.scroll.speed = 6.5
+        own.setUsesScrollingSettings(true, scrolling: scrolling)
+        own.setUsesScrollingSettings(false, scrolling: scrolling)
+        XCTAssertTrue(own.scroll.reversesWheel, "the app's own direction")
+        XCTAssertEqual(own.scroll.speed, 6.5)
+    }
+
     func testThePageFollowsAdvancedAndTheSettingsEditOnlyTheApp() throws {
         let calculator = application(Self.calculator, inherit: false)
         Options.shared.application.applications = Self.makeStore([calculator])

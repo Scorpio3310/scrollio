@@ -691,7 +691,7 @@ final class SettingsFileFormatTests: XCTestCase {
             "Ring in Notes, Top right: Open App or File: sync.sh", "Ring in Notes, Left: No Action", "Ring in Mail, Top: Paste",
         ])
         let items = SettingsFileText.items(of: contents).map(\.text)
-        XCTAssertTrue(items.contains("2 apps with their own settings"), "\(items)")
+        XCTAssertTrue(items.contains("2 apps on the list"), "\(items)")
         XCTAssertTrue(items.contains("1 app with a Shortcut Ring of its own"), "the one in use: \(items)")
 
         let target = OwnSettings(for: self)
@@ -2099,6 +2099,48 @@ final class SettingsFileCenterTests: XCTestCase {
         return ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
     }
 
+    /// A file that says nothing about the wheel's direction (made or trimmed by hand: an
+    /// export holds all three flags) leaves the stored direction as it is. Regression: the
+    /// three keys were removed with the rest of Scrolling and a missing "reverse" reads as
+    /// on, so such a file turned the wheel round on a Mac that had reversing off (every
+    /// new installation on a Mac with Natural scrolling off). A file that names a flag is
+    /// taken at its word, and every other missing value still becomes its default.
+    func testAFileWithoutTheWheelsDirectionLeavesTheDirectionAlone() throws {
+        let own = OwnSettings(for: self)
+        own.options.readOptions()
+        own.options.scroll.reverse = false
+        own.options.scroll.reverseHorizontal = false
+        own.options.scroll.smooth = false
+        own.options.scroll.step = 20
+
+        let silent = try Fixture.contents(#""speed":5"#)
+        XCTAssertTrue(SettingsFile.saysNothingOfTheDirection(silent))
+        _ = try own.center.importSettings(silent).get()
+        XCTAssertEqual(own.options.scroll.speed, 5)
+        XCTAssertFalse(own.options.scroll.reverse, "the direction stays")
+        XCTAssertTrue(own.options.scroll.reverseVertical)
+        XCTAssertFalse(own.options.scroll.reverseHorizontal)
+        XCTAssertFalse(own.options.scroll.reversesWheel)
+        XCTAssertEqual(own.stored["reverse"] as? Bool, false)
+        XCTAssertTrue(own.options.scroll.smooth, "not in the file: the default, as before")
+        XCTAssertEqual(own.options.scroll.step, OPTIONS_SCROLL_DEFAULT().step)
+
+        // One flag named: the file speaks of the direction, the others are their defaults.
+        let named = try Fixture.contents(#""speed":4,"reverse":true"#)
+        XCTAssertFalse(SettingsFile.saysNothingOfTheDirection(named))
+        _ = try own.center.importSettings(named).get()
+        XCTAssertTrue(own.options.scroll.reverse)
+        XCTAssertTrue(own.options.scroll.reverseHorizontal)
+        XCTAssertTrue(own.options.scroll.reversesWheel)
+
+        // A file without scroll settings never touched them.
+        XCTAssertFalse(SettingsFile.saysNothingOfTheDirection(try Fixture.contents(#""buttonBindings":[]"#)))
+        own.options.scroll.reverse = false
+        _ = try own.center.importSettings(try Fixture.contents(#""buttonBindings":[]"#)).get()
+        XCTAssertFalse(own.options.scroll.reverse)
+        XCTAssertEqual(own.options.scroll.speed, 4)
+    }
+
     /// Nothing is lost by an import: the settings from before are a file that the same
     /// import reads, and importing it brings them back (and keeps what it replaced).
     func testTheSettingsFromBeforeAnImportAreKeptAndComeBack() throws {
@@ -2353,17 +2395,24 @@ final class SettingsFileCenterTests: XCTestCase {
         XCTAssertEqual(own.options.scroll.speed, 7.5)
         XCTAssertEqual(keptSpeeds(), [4, 3, 7.5])
 
-        // The folder's own rule, without the settings: a twin becomes the newest, under a new name.
+        // The date a backup says it was saved on is the one "Restore…" lists it by, also
+        // for settings that were kept before. Regression: the earlier file was renamed, so
+        // the list gave the new date and the sheet the old one.
+        for entry in own.center.backups.entries() {
+            XCTAssertEqual(try own.center.read(entry.url).get().header.exported, entry.date, entry.url.lastPathComponent)
+        }
+
+        // The folder's own rule, without the settings: the new file takes the twin's place.
         let folder = try temporaryFolder(for: self)
         let backups = SettingsBackups(directory: folder)
         let start = Date(timeIntervalSince1970: 1_794_476_527)
         let first = try backups.write(Data("a".utf8), now: start)
         _ = try backups.write(Data("b".utf8), now: start.addingTimeInterval(60))
         let again = try backups.write(Data("a, said again".utf8), now: start.addingTimeInterval(120), holdsTheSame: { $0 == Data("a".utf8) })
-        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path), "it moved")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path), "the earlier one is gone")
         XCTAssertEqual(again.lastPathComponent, "Scrollio Settings Backup 2026-11-12 09.44.07 UTC.json")
-        XCTAssertEqual(try String(contentsOf: again, encoding: .utf8), "a", "the backup that was there, not a second one")
-        XCTAssertEqual(backups.entries().count, 2)
+        XCTAssertEqual(try String(contentsOf: again, encoding: .utf8), "a, said again", "written as any other backup")
+        XCTAssertEqual(backups.entries().count, 2, "not a second one")
         XCTAssertEqual(backups.latest?.url.lastPathComponent, again.lastPathComponent)
         // Settings are compared, not who wrote the file or when.
         let one = Fixture.file(#""speed":3,"smooth":true"#, more: #","appVersion":"1.0","exported":"2026-01-01T00:00:00Z""#)
@@ -2460,7 +2509,7 @@ final class SettingsFileTextTests: XCTestCase {
         )
         XCTAssertEqual(SettingsFileText.items(of: everything).map(\.text), [
             "Scrolling settings", "Thumb wheel", "2 button and key actions", "Gestures", "Logitech mouse values",
-            "1 app with its own settings", "“Change scrolling only in these apps” is on", "Show in menu bar: on",
+            "1 app on the list", "“Change scrolling only in these apps” is on", "Show in menu bar: on",
         ])
         for item in SettingsFileText.items(of: everything) {
             XCTAssertNotNil(NSImage(systemSymbolName: item.symbolName, accessibilityDescription: nil), item.symbolName)
@@ -2475,7 +2524,14 @@ final class SettingsFileTextTests: XCTestCase {
         )
         XCTAssertEqual(SettingsFileText.counted(1, "general-settings-import-actions"), "1 button or key action")
         XCTAssertEqual(SettingsFileText.counted(12, "general-settings-import-actions"), "12 button and key actions")
-        XCTAssertEqual(SettingsFileText.counted(4, "general-settings-import-apps"), "4 apps with their own settings")
+        XCTAssertEqual(SettingsFileText.counted(4, "general-settings-import-apps"), "4 apps on the list")
+        // Every app of the list is counted, so the line does not call them apps "with
+        // their own settings": one that follows Scrolling, Buttons, Gestures and the ring
+        // has none (the list of apps says "Nothing of its own yet" for it).
+        XCTAssertEqual(
+            SettingsFileText.items(of: try Fixture.contents(#""applications":[{"path":"/Applications/Notes.app"},{"path":"/Applications/Maps.app"}]"#)).map(\.text),
+            ["2 apps on the list"]
+        )
         XCTAssertEqual(SettingsFileText.unreadable(count: 1), "1 entry this version of Scrollio does not know is left out.")
         XCTAssertEqual(SettingsFileText.unreadable(count: 3), "3 entries this version of Scrollio does not know are left out.")
     }
@@ -2571,6 +2627,19 @@ final class SettingsFileTextTests: XCTestCase {
             "Gestures in Safari: the default actions", "Gestures in Safari: Invert left and right is on",
             "Gestures in Mail: the default actions",
         ], "a set kept for later with the default actions changes nothing")
+
+        // The name the file stores for an app is not imported: after the import the app is
+        // called what the sheet called it. Regression: the name came in as it was, nothing
+        // in Scrollio could change it again, and Apps listed Safari as "Notes".
+        let renamed = try XCTUnwrap(contents.applications?.first)
+        XCTAssertEqual(renamed.path, "/Applications/Safari.app")
+        XCTAssertEqual(renamed.displayName, "")
+        XCTAssertEqual(renamed.getName(), Utils.getApplicationName(fromPath: "/Applications/Safari.app"))
+        XCTAssertEqual(renamed.buttons?.binding.count, 1, "the rest of the entry is as the file has it")
+        // What an import puts into the store for the list.
+        let values = try XCTUnwrap(SettingsFile.storeValues(of: contents, managedByScrollio: false))
+        let stored = try XCTUnwrap(values[OptionItem.Application.Applications] as? Data)
+        XCTAssertFalse(try XCTUnwrap(String(data: stored, encoding: .utf8)).contains("Notes"))
 
         let swapped = try Fixture.contents(#""applications":[{"path":"/Applications/Safari.app","gestures":{"inherit":true,"invertHorizontal":true}}]"#)
         XCTAssertEqual(SettingsFileText.gestureLines(of: swapped), ["Gestures in Safari: Invert left and right is on"])
@@ -2804,7 +2873,7 @@ final class SettingsImportSheetTests: XCTestCase {
         // What the sheet counts above is still there, with the apps that bring buttons of
         // their own.
         XCTAssertEqual(sheet.itemLabels.map(\.stringValue), [
-            "5 button and key actions", "Gestures", "2 apps with their own settings", "2 apps with buttons of their own",
+            "5 button and key actions", "Gestures", "2 apps on the list", "2 apps with buttons of their own",
         ])
 
         // Return does not import: it is Cancel, and so is Esc.
@@ -3276,6 +3345,39 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
         XCTAssertEqual(
             NSLocalizedString("general-settings-file-restore-message", comment: ""), "general-settings-file-restore-message"
         )
+    }
+
+    /// The window's Undo is the one the sheet went up on: an import clears it also when
+    /// General is out of the window by then. Regression: the manager was asked of the
+    /// pane's window at the import; with another pane shown under the sheet there was
+    /// none, and "Remove App" could still be undone into the new settings.
+    func testImportClearsTheUndoOfTheWindowTheSheetWentUpOn() throws {
+        let own = OwnSettings(for: self)
+        own.options.readOptions()
+        let world = World()
+        let pane = try makePane(own, world)
+        let window = NSWindow(
+            contentRect: NSRect(x: -20000, y: -20000, width: 520, height: 300), styleMask: [.titled], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = pane
+        let undo = try XCTUnwrap(pane.view.window?.undoManager)
+        undo.groupsByEvent = false
+        undo.beginUndoGrouping()
+        undo.registerUndo(withTarget: pane) { _ in }
+        undo.endUndoGrouping()
+
+        world.importAnswer = try write(#""speed":3"#)
+        click(pane.importSettingsButton)
+        let sheet = try XCTUnwrap(world.presented.last)
+        // Another pane takes General's place in the window.
+        window.contentViewController = nil
+        window.contentView = NSView()
+        XCTAssertNil(pane.view.window)
+        XCTAssertTrue(undo.canUndo)
+        click(try XCTUnwrap(sheet.importButton))
+        XCTAssertEqual(own.options.scroll.speed, 3)
+        XCTAssertFalse(undo.canUndo)
     }
 
     /// "Restore…" lists the kept settings newest first, at most five, each by its local

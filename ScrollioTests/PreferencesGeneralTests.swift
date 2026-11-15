@@ -596,6 +596,49 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.statusButton.title, "Pause")
     }
 
+    /// The row looks at the clock before it reads the pause (the end hangs on one timer,
+    /// which macOS may fire late in an idle menu bar app): read after the end with the
+    /// timer still waiting, the pause is over and the row says Scrollio is on, not "paused
+    /// until" a time that has passed.
+    func testTheStatusRowEndsAPauseWhoseTimeIsUpBeforeItReadsIt() throws {
+        var now = Date(timeIntervalSince1970: 1_794_488_440)
+        var log: [String] = []
+        let controller = AppRunController(environment: AppRunController.Environment(
+            hasAccess: { true },
+            startCores: { log.append("start"); return true },
+            stopCores: { log.append("stop") },
+            showWelcomeGuide: { log.append("guide") },
+            showAccessLostToast: {},
+            now: { now }
+        ))
+        addTeardownBlock {
+            controller.setPaused(false)
+            controller.stop()
+        }
+        controller.start()
+        controller.pause(for: .fifteenMinutes)
+        let end = try XCTUnwrap(controller.pauseEnd)
+        log = []
+
+        let pane = try makePane(World())
+        pane.isPaused = { controller.isPaused }
+        pane.pauseEnd = { controller.pauseEnd }
+        pane.endPauseIfDue = { controller.endPauseIfDue() }
+        pane.refreshRunStatus()
+        XCTAssertEqual(pane.runStatus.pauseEnd, end)
+        XCTAssertEqual(pane.statusButton.title, "Resume")
+        XCTAssertEqual(log, [])
+
+        // A minute past the end, and the timer has not fired.
+        now = end.addingTimeInterval(60)
+        pane.refreshRunStatus()
+        XCTAssertFalse(controller.isPaused)
+        XCTAssertEqual(log, ["start"])
+        XCTAssertNil(pane.runStatus.pauseEnd)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is on")
+        XCTAssertEqual(pane.statusButton.title, "Pause")
+    }
+
     /// The pane as the app makes it reads the run controller: under XCTest nothing runs
     /// and nothing failed, so the row says Scrollio is on (the cores never start in tests).
     func testTheLiveSeamsReadTheRunControllerAndTheStatusItemsRule() throws {

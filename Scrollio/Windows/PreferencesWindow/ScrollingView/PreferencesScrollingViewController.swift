@@ -271,7 +271,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// The key whose recorder button has the keyboard focus.
     private var focusedKey: ScrollHoldKey?
     /// Whether macOS's Natural scrolling is on, for the preview; read again each time the
-    /// tab appears.
+    /// tab appears, and when Scrollio comes to the front (`applicationDidBecomeActive`).
     private lazy var macScrollsNaturally = Options.naturalScrollingIsOn()
 
     private let keyRecorder = KeyRecorder()
@@ -435,6 +435,12 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         thumbWheelObserver = ThumbWheelSettingsChange.addObserver { [weak self] in
             self?.syncViewWithOptions()
         }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationDidBecomeActive(_:)),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
     }
 
     deinit {
@@ -449,6 +455,17 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         // The options may have changed while the tab was not showing, and macOS's Natural
         // scrolling too.
         macScrollsNaturally = Options.naturalScrollingIsOn()
+        syncViewWithOptions()
+    }
+
+    /// Back from System Settings, say, while the tab stayed on show: the preview moves
+    /// the page as the wheel moves it now, and "Reset to Defaults" compares with this
+    /// Mac's defaults as they are now. Nothing while Natural scrolling is as it was.
+    @objc private func applicationDidBecomeActive(_ notification: Notification) {
+        guard isViewLoaded else { return }
+        let natural = Options.naturalScrollingIsOn()
+        guard natural != macScrollsNaturally else { return }
+        macScrollsNaturally = natural
         syncViewWithOptions()
     }
 
