@@ -195,9 +195,9 @@ class ScrollPoster {
     var isEventTargetingChrome: (CGEvent) -> Bool = {
         ScrollUtils.shared.isEventTargetingChrome($0)
     }
-    /// Whether macOS lets Scrollio post events (the Post Event right). After some macOS
-    /// updates it is gone while the Accessibility access still shows as allowed, and the
-    /// system drops every frame Scrollio posts without an error. Read with
+    /// Whether macOS lets Scrollio post events (the Post Event right). Without it the system
+    /// drops every frame Scrollio posts without an error, while the Accessibility access may
+    /// still show as allowed. Read with
     /// `CGPreflightPostEventAccess`, which never asks the user (`CGRequestPostEventAccess`
     /// would, and is never called). Under XCTest the default says yes without asking; a test
     /// says what it needs here.

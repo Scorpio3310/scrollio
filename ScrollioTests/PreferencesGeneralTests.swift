@@ -552,9 +552,10 @@ final class PreferencesGeneralTests: XCTestCase {
 
         world.startProblem = .cannotPostEvents
         NotificationCenter.default.post(name: ScrollPoster.postEventAccessDidChangeNotification, object: nil)
-        XCTAssertEqual(pane.statusRow.title, "Scrollio can't send scroll events")
-        XCTAssertEqual(pane.statusRow.explanation,
-                       "Scrolling isn't smooth. In Privacy & Security › Accessibility, remove Scrollio with − and add it again.")
+        XCTAssertEqual(pane.statusRow.title, "Scrollio can't send events to apps")
+        // More than scrolling stops, and Pause comes before the removal: removing Scrollio
+        // from that list while its event taps run can stop the mouse and keyboard.
+        XCTAssertEqual(pane.statusRow.explanation, "Scrolling isn't smoothed, and buttons, gestures and the Shortcut Ring may not work. Pause Scrollio, then in Privacy & Security › Accessibility remove it with − and add it again. This usually brings it back.")
         XCTAssertEqual(pane.statusButton.title, "Pause", "the cores run: with the menu bar icon hidden this is the pause")
         XCTAssertEqual(shownButtons(titled: "Open System Settings", in: pane), [pane.openAccessibilitySettingsButton],
                        "one, in Permissions, beside \"Allowed\"")

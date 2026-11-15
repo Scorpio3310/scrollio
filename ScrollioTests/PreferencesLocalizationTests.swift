@@ -208,7 +208,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-paused-hint", "general-resume",
         // Round 4 D5: under "Scrollio is paused until 14:30"
         "general-paused-until-hint",
-        // Under "Scrollio can't send scroll events"
+        // Under "Scrollio can't send events to apps"
         "general-cannot-post-events-hint",
         "general-permissions-header", "general-accessibility", "general-accessibility-hint",
         "general-accessibility-hint-not-allowed",

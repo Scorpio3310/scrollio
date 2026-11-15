@@ -435,10 +435,11 @@ final class StatusMenuTests: XCTestCase {
         ])
     }
 
-    /// Without the right to post events (after some macOS updates the system drops what
-    /// Scrollio posts and says nothing) Scrollio runs but smooths nothing: the menu says so,
-    /// with the way out (System Settings › Privacy & Security › Accessibility) and Pause.
-    func testWithoutTheRightToPostEventsTheMenuSaysItCantSendScrollEvents() throws {
+    /// Without the right to post events the system drops what Scrollio posts and says
+    /// nothing: Scrollio runs but smooths nothing, and the shortcuts of buttons, gestures
+    /// and the ring do not reach apps. The menu says so, with the way out (System Settings ›
+    /// Privacy & Security › Accessibility, what to do there in its tooltip) and Pause.
+    func testWithoutTheRightToPostEventsTheMenuSaysItCantSendEventsToApps() throws {
         XCTAssertEqual(StatusMenu.startProblem(coresActive: true, startFailed: false, tapRestartsThrottled: false,
                                                canPostEvents: false), .cannotPostEvents)
         XCTAssertNil(StatusMenu.startProblem(coresActive: false, startFailed: false, tapRestartsThrottled: false,
@@ -452,7 +453,7 @@ final class StatusMenuTests: XCTestCase {
         XCTAssertEqual(StatusMenu.title(hasAccess: false, isPaused: false, startProblem: .cannotPostEvents), .needsAccess)
 
         XCTAssertEqual(rows(state(startProblem: .cannotPostEvents)), [
-            Row.title("Scrollio can't send scroll events"),
+            Row.title("Scrollio can't send events to apps"),
             Row(title: "Open Accessibility Settings…"),
             Row(title: "Pause Scrollio"),
             Row(title: "Pause For"),
@@ -461,12 +462,15 @@ final class StatusMenuTests: XCTestCase {
             .separator,
             Row(title: "Quit Scrollio", shortcut: "⌘Q"),
         ])
+        // The way out, in its tooltip: General's line, Pause first.
+        let open = try XCTUnwrap(menu(state(startProblem: .cannotPostEvents)).items.first { $0.title == "Open Accessibility Settings…" })
+        XCTAssertEqual(open.toolTip, "Scrolling isn't smoothed, and buttons, gestures and the Shortcut Ring may not work. Pause Scrollio, then in Privacy & Security › Accessibility remove it with − and add it again. This usually brings it back.")
         try choose("Open Accessibility Settings…", in: menu(state(startProblem: .cannotPostEvents)))
         XCTAssertEqual(calls.log, ["accessibility settings"])
 
         let look = StatusMenu.IconLook(hasAccess: true, coresActive: true, isPaused: false, canPostEvents: false)
         XCTAssertTrue(look.appearsDisabled)
-        XCTAssertEqual(look.toolTip, "Scrollio can't send scroll events.")
+        XCTAssertEqual(look.toolTip, "Scrollio can't send events to apps.")
         // The live menu reads the shared poster: under tests the right is there.
         XCTAssertNil(StatusItemManager.liveState().startProblem)
     }

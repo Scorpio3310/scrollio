@@ -605,7 +605,7 @@ class PreferencesGeneralViewController: NSViewController {
             center.addObserver(forName: Interceptor.restartThrottleDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 self?.refreshRunStatus()
             },
-            // macOS stopped or started letting Scrollio post events: "can't send scroll events".
+            // macOS stopped or started letting Scrollio post events: "can't send events to apps".
             center.addObserver(forName: ScrollPoster.postEventAccessDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 self?.refreshRunStatus()
             },
@@ -766,7 +766,7 @@ class PreferencesGeneralViewController: NSViewController {
         }
 
         /// The pause needs a line: what is off until Resume, or until the time the title
-        /// names. So does "can't send scroll events": what to do in System Settings.
+        /// names. So does "can't send events to apps": what is off, and what to do, Pause first.
         var explanationKey: String? {
             switch title {
             case .paused?: return pauseEnd == nil ? "general-paused-hint" : "general-paused-until-hint"
