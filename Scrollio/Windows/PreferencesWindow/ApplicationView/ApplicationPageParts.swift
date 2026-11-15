@@ -648,8 +648,8 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 /// ring's eight rows are folded under their "Shortcuts" title (`PreferencesDisclosureSection`),
 /// as the Shortcut Ring pane folds its places: a click opens them, all of it editable; the
 /// drawing, the freeze switch and "Reset to Defaults" stay in sight (a click on a place of
-/// the drawing opens the rows too). Once something opens the ring there, "Shortcuts" is a
-/// plain title.
+/// the drawing opens that place's menu at its drop and leaves the rows folded). Once
+/// something opens the ring there, "Shortcuts" is a plain title.
 final class ApplicationRingPartViewController: NSViewController, ApplicationPagePartController {
 
     enum Identifier {

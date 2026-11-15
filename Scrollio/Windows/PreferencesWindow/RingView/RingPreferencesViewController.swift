@@ -11,9 +11,13 @@
 //  trigger changes and when the pointer enters the "Button or key" row); on the right
 //  the ring as it stands open at the pointer, drawn by the code that draws it on
 //  screen (`ShortcutRingArtwork`): its nine drops, at rest and drawn plainly. The drawing and the rows point at each other: the place of
-//  the row under the pointer is lit in the drawing, a place under the pointer is lit too,
-//  and a click on a place selects its row (its pull-down takes the keyboard and is
-//  scrolled into view; the place stays lit). Then a box
+//  the row under the pointer is lit in the drawing, a place under the pointer is lit too.
+//  The drawing is an editor as well: a click on a drop opens that place's own menu under
+//  the drop (the row's menu itself; what it opens, the recorder, the name and icon and
+//  "Open App or File…", stands at the drop; nothing scrolls, unfolds or takes the
+//  keyboard, and the place stays lit), and a secondary click offers "Swap With" and
+//  "Clear" (`RingPlaceMenu`). "Swap With" also ends every place's own menu: the way of
+//  the keyboard and of VoiceOver, to which the drawing is one image. Then a box
 //  with what opens the ring: which button or key runs the Shortcut Ring is a binding of
 //  the Buttons pane, and the row names it and chooses it in place, as the Gestures pane does
 //  for its button: its pull-down (`TriggerChooser`) lists the connected mouse's buttons
@@ -32,8 +36,8 @@
 //  binding of Buttons, no app's own, or only apps that open their own ring: "Only in
 //  Figma, with its own ring: Thumb panel."), the places are folded under their title
 //  ("Shortcuts ›", `PreferencesDisclosureSection`): a click opens them and they can be
-//  edited as ever, and a click on a place of the drawing opens them too; once something
-//  opens the ring they show by themselves, with a plain title. Under the boxes "Reset to
+//  edited as ever (a click on a place of the drawing edits it and leaves them folded); once
+//  something opens the ring they show by themselves, with a plain title. Under the boxes "Reset to
 //  Defaults", as in the Scrolling pane (`PreferencesPaneReset`): the eight places and the
 //  freeze switch of a new ring; what opens the ring is a binding of Buttons and stays.
 //
@@ -124,14 +128,33 @@ struct ShortcutRingBindingSummary: Equatable {
     }
 }
 
-/// The ring on a card, as it opens at the pointer. A place can be pointed at and clicked.
+/// The ring on a card, as it opens at the pointer. A place can be pointed at and clicked,
+/// with either button. To VoiceOver it is one image: the rows hold what the drops open.
 final class ShortcutRingPreviewView: NSView {
 
     /// The pointer is over this place of the drawing, or over none (nil).
     var onPlaceHovered: ((Int?) -> Void)?
     /// A place of the drawing was clicked.
     var onPlaceClicked: ((Int) -> Void)?
+    /// The menu of a secondary click on a place (the right button, two fingers, a
+    /// Control-click); nil shows none.
+    var menuForPlace: ((Int) -> NSMenu?)?
+    /// Shows that menu for a Control-click that arrives as a click. The menu runs until it
+    /// closes, so tests replace it.
+    var presentContextMenu: (NSMenu, NSEvent, NSView) -> Void = { menu, event, view in
+        NSMenu.popUpContextMenu(menu, with: event, for: view)
+    }
 
+    /// Stands over a drop, for a popover to stand at. Flipped, as a pull-down is: a popover
+    /// that asks for `.maxY` stands under it. It draws nothing, takes no click and is
+    /// nothing to VoiceOver.
+    private final class DropAnchor: NSView {
+        override var isFlipped: Bool { return true }
+        override func hitTest(_ point: NSPoint) -> NSView? { return nil }
+    }
+
+    /// One per place, made when first asked for (`anchor(forPlace:)`).
+    private var dropAnchors: [Int: DropAnchor] = [:]
 
     /// The ring is drawn this much smaller than on screen.
     static let ringScale: CGFloat = 0.74
@@ -205,7 +228,51 @@ final class ShortcutRingPreviewView: NSView {
         guard let place = place(at: convert(event.locationInWindow, from: nil)) else {
             return super.mouseDown(with: event)
         }
+        // A Control-click that arrives as a click is the secondary click all the same.
+        if event.modifierFlags.contains(.control) {
+            if let menu = menuForPlace?(place) {
+                presentContextMenu(menu, event, self)
+            }
+            return
+        }
         onPlaceClicked?(place)
+    }
+
+    /// The secondary click: the menu of the place under it. None in the ring's middle (an
+    /// app's icon there is no target) and beside the ring.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let place = place(at: convert(event.locationInWindow, from: nil)) else { return nil }
+        return menuForPlace?(place)
+    }
+
+    /// The drop of `place` as it rests, in this view (an empty place's drop is drawn
+    /// smaller and a lit one larger and further out: their menus stand in the same spot).
+    func dropRect(ofPlace place: Int) -> NSRect {
+        // The geometry is the screen's: unscaled, and with y growing downwards.
+        let offset = ShortcutRingGeometry.offset(ofPlace: place)
+        let side = ShortcutRingGeometry.placeDiameter * Self.ringScale
+        let centre = NSPoint(x: bounds.midX + offset.x * Self.ringScale, y: bounds.midY - offset.y * Self.ringScale)
+        return NSRect(x: centre.x - side / 2, y: centre.y - side / 2, width: side, height: side)
+    }
+
+    /// The view over the drop of `place` that a popover stands at. Each place has its own,
+    /// as each row has its pull-down: a popover left open at one place stays there while
+    /// another place is edited.
+    func anchor(forPlace place: Int) -> NSView {
+        let anchor = dropAnchors[place] ?? DropAnchor()
+        if anchor.superview !== self {
+            dropAnchors[place] = anchor
+            addSubview(anchor)
+        }
+        anchor.frame = dropRect(ofPlace: place)
+        return anchor
+    }
+
+    override func layout() {
+        super.layout()
+        for (place, anchor) in dropAnchors {
+            anchor.frame = dropRect(ofPlace: place)
+        }
     }
 
     override var intrinsicContentSize: NSSize {
@@ -312,8 +379,8 @@ final class RingPreferencesViewController: NSViewController {
     private(set) var hoveredPlace: Int?
     /// The place under the pointer in the drawing.
     private(set) var pointedPlace: Int?
-    /// The place that was clicked in the drawing, or whose pull-down was last used: its
-    /// row is the selected one.
+    /// The place that was clicked in the drawing (with either button), or whose pull-down
+    /// was last used: its row is the selected one.
     private(set) var selectedPlace: Int?
 
     /// What the drawing lights: what is pointed at, else the selected place.
@@ -393,7 +460,8 @@ final class RingPreferencesViewController: NSViewController {
         let preview = ShortcutRingPreviewView()
         preview.identifier = Identifier.preview
         preview.onPlaceHovered = { [weak self] in self?.placePointedAt($0) }
-        preview.onPlaceClicked = { [weak self] in self?.selectPlace($0) }
+        preview.onPlaceClicked = { [weak self] in self?.openMenu(forPlace: $0) }
+        preview.menuForPlace = { [weak self] in self?.contextMenu(forPlace: $0) }
         previewView = preview
 
         let width = Self.boxWidth
@@ -591,7 +659,7 @@ final class RingPreferencesViewController: NSViewController {
         showLitPlace()
     }
 
-    /// A place of the drawing was clicked: its row is selected. The row's pull-down takes
+    /// An Undo or Redo changed `place`: its row is selected. The row's pull-down takes
     /// the keyboard (Space opens it) and is scrolled into view, and the place stays lit.
     /// Folded places open first.
     func selectPlace(_ place: Int) {
@@ -607,6 +675,89 @@ final class RingPreferencesViewController: NSViewController {
         let popUp = placePopUps[place]
         popUp.scrollToVisible(popUp.bounds)
         view.window?.makeFirstResponder(popUp)
+    }
+
+    // MARK: - The drawing as an editor
+
+    /// Shows a place's menu at its drop. The menu runs until it closes, so tests replace it.
+    var presentPlaceMenu: ((NSMenu, NSPoint, NSView) -> Void)? {
+        didSet {
+            guard let presentPlaceMenu else { return }
+            placePopUps.forEach { $0.presentMenu = presentPlaceMenu }
+        }
+    }
+
+    /// A place of the drawing was clicked: its row's own menu opens under its drop, and
+    /// what the menu opens stands at the drop. The place is the selected one; nothing
+    /// scrolls, folded places stay folded and the keyboard stays where it is.
+    func openMenu(forPlace place: Int) {
+        guard placePopUps.indices.contains(place), let preview = previewView else { return }
+        selectedPlace = place
+        showLitPlace()
+        let drop = preview.dropRect(ofPlace: place)
+        placePopUps[place].popUpMenu(
+            at: NSPoint(x: drop.minX, y: drop.minY - 4), in: preview, anchor: preview.anchor(forPlace: place)
+        )
+    }
+
+    /// What "Swap With" and "Clear" offer for `place` of the ring as it is stored now.
+    private func placeMenuModel(for place: Int) -> RingPlaceMenuModel {
+        return RingPlaceMenuModel.make(for: place, in: shownRing)
+    }
+
+    /// The menu of a secondary click on a place of the drawing: "Swap With" and "Clear".
+    /// The place is the selected one, as after a click: it stays lit under the menu.
+    func contextMenu(forPlace place: Int) -> NSMenu? {
+        guard placePopUps.indices.contains(place) else { return nil }
+        selectedPlace = place
+        showLitPlace()
+        return RingPlaceMenu.make(
+            placeMenuModel(for: place), target: self, swap: #selector(swapChosen(_:)), clear: #selector(clearChosen(_:))
+        )
+    }
+
+    @objc func swapChosen(_ sender: NSMenuItem) {
+        guard let swap = sender.representedObject as? RingPlaceSwap else { return }
+        swapPlace(swap.place, with: swap.other)
+    }
+
+    /// "Clear": the place is emptied as "No Action" of its menu empties it.
+    @objc func clearChosen(_ sender: NSMenuItem) {
+        setPlace(.empty, at: sender.tag)
+    }
+
+    /// Exchanges `place` and `other` as they are stored, whole: the action, what it opens,
+    /// the name and the icon (an action this version does not run moves as it is). One
+    /// write, and one step for Edit › Undo ("Undo Swap"). Nothing happens when the two hold
+    /// the same or neither holds anything that runs. `place` is the selected one.
+    func swapPlace(_ place: Int, with other: Int) {
+        guard placePopUps.indices.contains(place), placePopUps.indices.contains(other), place != other else { return }
+        selectedPlace = place
+        var ring = shownRing
+        let old = [ring[place], ring[other]]
+        guard old[0] != old[1], old[0].runs || old[1].runs else {
+            reload()
+            return
+        }
+        if let application {
+            // The app's own ring and nothing else; the general ring stays as it is.
+            guard application.ownRingPlaces != nil, var own = application.ring else { return }
+            own[place] = old[1]
+            own[other] = old[0]
+            application.ring = own
+        } else {
+            ring[place] = old[1]
+            ring[other] = old[0]
+            Options.shared.ring = ring
+        }
+        reload()
+        onPlaceChange?()
+        guard let undo = undoTarget, undo.groupsByEvent || undo.groupingLevel > 0 else { return }
+        let split = PreferencesButtonsViewController.splitViewController(of: self)
+        Self.registerSwapUndo(
+            back: old, at: [place, other], of: placeOwner, undoManager: undo,
+            showing: PlaceShowing(split: split, controller: self)
+        )
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -717,12 +868,65 @@ final class RingPreferencesViewController: NSViewController {
     private func registerUndo(back old: ShortcutRingPlace, from new: ShortcutRingPlace, at place: Int) {
         // (A manager that groups only by hand, as a test's, takes a step only inside a group.)
         guard !isEndingEditing, let undo = undoTarget, undo.groupsByEvent || undo.groupingLevel > 0 else { return }
-        let owner = application.map { PlaceOwner.application(path: $0.path) } ?? .general
         let split = PreferencesButtonsViewController.splitViewController(of: self)
         Self.registerUndo(
-            back: old, from: new, at: place, of: owner, undoManager: undo,
+            back: old, from: new, at: place, of: placeOwner, undoManager: undo,
             showing: PlaceShowing(split: split, controller: self)
         )
+    }
+
+    /// Whose ring the rows and the drawing edit.
+    private var placeOwner: PlaceOwner {
+        return application.map { PlaceOwner.application(path: $0.path) } ?? .general
+    }
+
+    /// Registers the step back from a swap: "Undo Swap" puts `old` back into `places`
+    /// (the two as they were, whatever happened to the ring since, as a place's Undo puts
+    /// back one) and shows the first of them, the place whose menu was used. Its target is
+    /// the settings too.
+    private static func registerSwapUndo(
+        back old: [ShortcutRingPlace], at places: [Int], of owner: PlaceOwner,
+        undoManager undo: UndoManager, showing: PlaceShowing
+    ) {
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            guard let place = places.first, let result = put(old, at: places, of: owner) else { return }
+            show(place, of: result.entry, in: showing)
+            guard let undo, result.was != old else { return }
+            registerSwapUndo(back: result.was, at: places, of: owner, undoManager: undo, showing: showing)
+        }
+        undo.setActionName(NSLocalizedString("ring-undo-swap", comment: ""))
+    }
+
+    /// Puts `values` into `places` of the owner's ring, in one write. What was there, and
+    /// the app's entry (nil: the general ring); nil when the app is no longer on the list
+    /// or has no ring of its own.
+    private static func put(
+        _ values: [ShortcutRingPlace], at places: [Int], of owner: PlaceOwner
+    ) -> (was: [ShortcutRingPlace], entry: Application?)? {
+        switch owner {
+        case .general:
+            var ring = Options.shared.ring
+            let was = places.map { ring[$0] }
+            for (place, value) in zip(places, values) {
+                ring[place] = value
+            }
+            if ring != Options.shared.ring {
+                Options.shared.ring = ring
+            }
+            return (was, nil)
+        case .application(let path):
+            guard let entry = PreferencesApplicationViewController.existingApplication(
+                forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: path)
+            ), var ring = entry.ring else { return nil }
+            let was = places.map { ring[$0] }
+            for (place, value) in zip(places, values) {
+                ring[place] = value
+            }
+            if ring != entry.ring {
+                entry.ring = ring
+            }
+            return (was, entry)
+        }
     }
 
     private static func registerUndo(
@@ -784,8 +988,8 @@ final class RingPreferencesViewController: NSViewController {
         }
     }
 
-    /// "Open App or File…" of a place: the Buttons pane's popover at the pull-down, with
-    /// what the place opens now.
+    /// "Open App or File…" of a place: the Buttons pane's popover at the pull-down, or at
+    /// the place's drop when its menu was opened there, with what the place opens now.
     private func presentOpenTargetPopover(forPlace place: Int) {
         guard placePopUps.indices.contains(place) else { return }
         openTargetPopover?.hide()
@@ -798,7 +1002,7 @@ final class RingPreferencesViewController: NSViewController {
         popover.onCancel = { [weak self] in
             self?.openTargetPopover = nil
         }
-        presentOpenTarget(popover, placePopUps[place], shownRing[place].openTarget)
+        presentOpenTarget(popover, placePopUps[place].popoverAnchor, shownRing[place].openTarget)
     }
 
     // MARK: - Reset
@@ -886,6 +1090,13 @@ final class RingPreferencesViewController: NSViewController {
         popUp.identifier = Identifier.action(place)
         popUp.setAccessibilityLabel(ShortcutRingPlaceName.localized(place))
         popUp.startShortcutRecorder = startShortcutRecorder
+        if let presentPlaceMenu {
+            popUp.presentMenu = presentPlaceMenu
+        }
+        // "Swap With" ends the place's menu: the keyboard's and VoiceOver's way to it.
+        popUp.trailingItem = RingPlaceMenu.swapItem(
+            model: { [weak self] in self?.placeMenuModel(for: place) }, target: self, action: #selector(swapChosen(_:))
+        )
         popUp.onShortcutSelected = { [weak self] shortcut in
             self?.setPlace(ShortcutRingPlace(action: shortcut?.identifier ?? ""), at: place)
         }
