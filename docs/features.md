@@ -436,9 +436,9 @@ Logitech mice work over a Logitech receiver (Bolt or Unifying) or Bluetooth. A l
 battery gets one notice at 10 % and one at 5 %, and its percentage stands next to the
 menu bar icon until the mouse charges.
 
-The same pane has two macOS settings for every mouse, "Tracking speed" and "Pointer
-acceleration", as in System Settings › Mouse. Scrollio changes them only when you move
-those controls.
+The same pane ends with "All mice (macOS)": two macOS settings for every mouse, "Tracking
+speed" and "Pointer acceleration", as in System Settings › Mouse. Scrollio changes them
+only when you move those controls.
 
 ## Menu bar
 

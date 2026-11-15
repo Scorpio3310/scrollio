@@ -4957,7 +4957,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pointer (macOS)"
+            "value": "All mice (macOS)"
           }
         }
       }
@@ -5304,7 +5304,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turn this on to change the settings below. Until then they show what the mouse reports."
+            "value": "Turn this on to change this mouse's settings below. Until then they show what the mouse reports."
           }
         }
       }
