@@ -46,6 +46,10 @@ enum ThumbWheelTuning {
     /// At most this many steps from one event; the travel of further steps is dropped, not
     /// carried, so a fast turn at speed 3 does not come out in bursts.
     static let maxStepsPerEvent = 2
+    /// ...and this many from a batch the stray-tick filter confirmed (held ticks and the
+    /// event that confirmed them): at speed 3 three ticks of 0.10 line were two desktops,
+    /// the second a quarter of a second after the thumb had stopped.
+    static let maxStepsPerConfirmedBatch = 1
 
     /// Volume: a slow roll of 9 events gives 3 steps, a flick of 10 events about 6, long
     /// rolling (35 events) roughly 11 to 16, so a roll no longer runs the whole range (16
@@ -248,7 +252,8 @@ struct ThumbWheelStepper: Equatable {
     ///     and the one that confirmed them): the time of the first held one
     ///     (`ThumbWheelTickFilter.Result.heldSince`). Nil: one event's own travel.
     /// - Returns: the steps to run: positive toward "next", negative toward "previous", 0 none;
-    ///   never more than `maxStepsPerEvent` either way.
+    ///   never more than `maxStepsPerEvent` either way, `maxStepsPerConfirmedBatch` for a
+    ///   confirmed batch.
     mutating func feed(travel: Double, function: ThumbWheelFunction, at now: TimeInterval,
                        heldSince: TimeInterval? = nil) -> Int {
         // Another function (changed in the middle of a roll) starts afresh.
@@ -280,8 +285,11 @@ struct ThumbWheelStepper: Equatable {
         carried += travel
         var steps = 0
         var threshold = stepped ? stepping.next : stepping.first
+        // Small ticks the filter confirmed are one deliberate nudge, however much travel
+        // the speed makes of them: one step at most.
+        let most = heldSince == nil ? ThumbWheelTuning.maxStepsPerEvent : ThumbWheelTuning.maxStepsPerConfirmedBatch
         while carried.magnitude + ThumbWheelTuning.thresholdSlack >= threshold {
-            if steps == ThumbWheelTuning.maxStepsPerEvent {
+            if steps == most {
                 // The travel of further steps is dropped; less than a step stays carried.
                 carried = carried.truncatingRemainder(dividingBy: threshold)
                 break

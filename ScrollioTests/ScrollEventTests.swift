@@ -807,6 +807,20 @@ final class ThumbWheelStepperTests: XCTestCase {
         XCTAssertTrue(steps.allSatisfy { $0 <= 2 }, "\(steps)")
     }
 
+    /// A batch the stray-tick filter confirmed gives one step at most, whatever the speed
+    /// makes of it; the travel of a further step is dropped, less than a step stays carried.
+    func testAConfirmedBatch_givesOneStepAtMost() {
+        var batch = ThumbWheelStepper()
+        XCTAssertEqual(batch.feed(travel: 9, function: .volume, at: 0.3, heldSince: 0), 1, "9 units: two steps' worth (2 + 3)")
+        XCTAssertEqual(batch.carried, 1, accuracy: 1e-12, "9 − 2 = 7: one more step's worth dropped, 1 carried")
+        var event = ThumbWheelStepper()
+        XCTAssertEqual(event.feed(travel: 9, function: .volume, at: 0.3), 2, "one event's own travel: two, as before")
+        var small = ThumbWheelStepper()
+        XCTAssertEqual(small.feed(travel: 4, function: .volume, at: 0.3, heldSince: 0), 1)
+        XCTAssertEqual(small.carried, 2, accuracy: 1e-12, "a batch of one step loses nothing")
+        XCTAssertEqual(ThumbWheelTuning.maxStepsPerConfirmedBatch, 1)
+    }
+
     // MARK: Speed
 
     func testSpeed_quarterOneAndThree() {
@@ -1522,6 +1536,49 @@ final class ThumbWheelEngineTests: XCTestCase {
             XCTAssertEqual(steps, desktops, "pause \(pause)")
             XCTAssertEqual(rig.performed.count, desktops, "pause \(pause): every desktop ran")
         }
+    }
+
+    /// Desktops at 3×: three ticks of 0.10 line 150 ms apart are one desktop, with nothing
+    /// waiting (they were two, the second 250 ms after the thumb had stopped: the batch the
+    /// filter confirms is 9 units, the first step and a next one). At 1× and 2× one, as before.
+    func testDesktops_threeSmallTicks_areOneDesktopAtAnySpeed() throws {
+        for speed in [1.0, 2.0, 3.0] {
+            let rig = Rig()
+            let settings = ThumbWheelSettings(function: .desktops, speed: speed)
+            var steps = 0
+            for time in [0, 0.15, 0.30] { steps += rig.turn(lines: -0.1, at: time, settings: settings) }
+            XCTAssertEqual(steps, 1, "x\(speed)")
+            XCTAssertEqual(rig.engine.pacer.waiting, 0, "x\(speed): nothing waiting")
+            rig.advance(to: 510)
+            XCTAssertEqual(rig.performed, [Performed(action: .named("moveSpaceRight"), times: 1)], "x\(speed)")
+            XCTAssertEqual(rig.performedAt.map { ($0 * 1000).rounded() }, [300], "x\(speed): with the third tick")
+            XCTAssertEqual(rig.lines.first?.droppedSteps, 0, "x\(speed)")
+        }
+    }
+
+    /// What does not change with it, at 1×, 2× and 3×: a flick (12 events of 8.6 lines 20 ms
+    /// apart) and a stroke that begins with a tick of 0.10 line (then 8 events of a line,
+    /// 94 ms apart) step at the same events as before: the tick and the event that
+    /// confirms it never made more than one step.
+    func testDesktops_flicksAndStrokesStepAsBefore_withOneStepPerConfirmedBatch() throws {
+        func steppedAt(_ lines: [Double], gap: Double, speed: Double) -> [Int] {
+            let rig = Rig()
+            let settings = ThumbWheelSettings(function: .desktops, speed: speed)
+            var events: [Int] = []
+            for (index, lines) in lines.enumerated() {
+                let steps = rig.turn(lines: lines, at: Double(index) * gap, settings: settings)
+                events += Array(repeating: index + 1, count: abs(steps))
+            }
+            return events
+        }
+        let flick = Array(repeating: -8.6, count: 12)
+        let stroke = [-0.1] + Array(repeating: -1.0, count: 8)
+        XCTAssertEqual(steppedAt(flick, gap: 0.02, speed: 1), [3, 8])
+        XCTAssertEqual(steppedAt(flick, gap: 0.02, speed: 2), [2, 4, 7, 9, 12])
+        XCTAssertEqual(steppedAt(flick, gap: 0.02, speed: 3), [1, 3, 5, 6, 8, 10, 11])
+        XCTAssertEqual(steppedAt(stroke, gap: 0.094, speed: 1), [3, 8])
+        XCTAssertEqual(steppedAt(stroke, gap: 0.094, speed: 2), [2, 4, 7, 9])
+        XCTAssertEqual(steppedAt(stroke, gap: 0.094, speed: 3), [2, 3, 5, 6, 8])
     }
 
     /// A roll of 15 lines toward the next desktop, then one tick of 0.10 line the other way
