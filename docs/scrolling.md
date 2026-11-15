@@ -36,10 +36,12 @@
   scrolling only in these apps" is on, an app added only for those has its scrolling
   changed too, and its page says so.
 - Calendar's month view aligns itself to weeks and takes a smoothed wheel badly (a small
-  turn barely moves it, a little more runs away). If that bothers you, add Calendar in
-  Apps and choose Left to macOS for it, or use "Smooth Scrolling in
-  Calendar" in the menu bar menu. Scrollio adds no app to the list by itself (version
-  1.0.4 added Calendar; an entry it made is yours to keep or remove).
+  turn barely moves it, a little more runs away). If that bothers you, use "Smooth
+  Scrolling in Calendar" in the menu bar menu, or add Calendar in Apps, choose Own
+  Settings for it and turn Smooth scrolling off there. Both keep the wheel's direction;
+  Left to macOS would also stop reversing the wheel in Calendar, so it would turn the
+  other way round there than in every other app. Scrollio adds no app to the list by
+  itself (version 1.0.4 added Calendar; an entry it made is yours to keep or remove).
 - Trackpads and the Magic Mouse are left alone. With several displays, the motion is
   timed to the display under the pointer.
 
