@@ -548,17 +548,24 @@ only when you move those controls.
   Accessibility access" with "Allow Accessibility Access…"; "Scrollio couldn't start and
   is trying again" with "Try Again Now" (or, while an event tap is kept off for up to a
   minute and comes back by itself, with the pause items alone); "Scrollio can't send
-  scroll events" with "Open Accessibility Settings…" (macOS does not let Scrollio post
-  events, which happens after some macOS updates while the access still shows as
-  allowed; read when Scrollio starts and after a wake, and every few seconds while it
-  lasts. Scrolling then goes through unsmoothed; removing Scrollio from Privacy &
-  Security › Accessibility and adding it again gives the right back).
+  events to apps" with "Open Accessibility Settings…" and the pause items (macOS does
+  not let Scrollio post events, while the access may still show as allowed: scrolling
+  goes through unsmoothed, and shortcuts from buttons, gestures and the Shortcut Ring
+  may not reach apps. Read when Scrollio starts and after a wake, every few seconds
+  while it runs, and when the Accessibility list changes. The item's tooltip and
+  General say what to do: pause Scrollio first, as removing it from Privacy & Security ›
+  Accessibility while it runs can stop the mouse and keyboard, then remove it with −
+  and add it again. This usually brings the right back; if the title stays, quit
+  Scrollio and open it again).
 - The icon is dimmed in the same four cases; its tooltip says which.
 - General says the same under its card, always: "Scrollio is on" with "Pause" (until
   you resume), or the
   menu's title with "Resume", "Try Again Now" (with "Pause" while an event tap is kept
-  off and comes back by itself, as in the menu) or, for the access and for "can't send
-  scroll events" (with a line that says what to do), "Open System Settings".
+  off and comes back by itself, as in the menu, and for "can't send events to apps",
+  with a line that says what to do; Permissions then shows its own "Open System
+  Settings") or, for the access, "Open System Settings". The Welcome Guide does not
+  say "Allowed" alone then either: its Accessibility step says the same with an orange
+  sign, and its sample page "Not smoothed: Scrollio can't send events".
 - The icon can be hidden (General › Show in menu bar). Opening Scrollio again then shows
   its settings, or the Welcome Guide while Accessibility access is missing.
 - General also has "Open at login", the state of the Accessibility access (without it

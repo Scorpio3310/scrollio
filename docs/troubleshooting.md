@@ -109,7 +109,9 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   could not be created or that macOS turned off, restarts, a display link that runs and
   sends no frames (one line each time; the wheel then goes on unsmoothed until frames
   come again), macOS not letting Scrollio post events and letting it again (checked at
-  each start and wake; without it nothing is smoothed), settings that could not be
+  each start and wake, every 5 seconds while Scrollio runs and when the Accessibility
+  list changes; without it nothing is smoothed and shortcuts may not reach apps; pause
+  or quit Scrollio before you remove it from that list), settings that could not be
   read or written, an app, a file or a script that could not be opened (never its name
   or path), a held action whose release never came, a scroll key let go at a wheel turn
   without its modifier (its release was not seen), each use of the Shortcut Ring ("opened
