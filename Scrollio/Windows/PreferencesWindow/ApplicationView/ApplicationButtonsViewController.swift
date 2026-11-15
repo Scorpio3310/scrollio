@@ -600,7 +600,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         defer { focusList() }
         let undoName = action.map(Self.setUpUndoName(for:))
         if let existing = ownBinding(for: trigger) {
-            if let action, Self.takesAction(existing) {
+            if let action, Self.takesAction(existing, action) {
                 setAction(of: existing.id, named: action.identifier, undoName: undoName)
                 list.select(AnyHashable(existing.id))
             } else {
@@ -834,10 +834,48 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     // MARK: - Recording
 
-    /// A row of the app's own that "Set Up…" gives its action: one with "Default" (no
-    /// action of its own here), as the Buttons pane's Set Up… takes a row without one.
-    static func takesAction(_ binding: ButtonBinding) -> Bool {
-        return !CellActionState(binding: binding).hasBoundAction
+    /// A row of the app's own that "Set Up…" gives `action`: every one that does not do it
+    /// already, in place of its "Default" or of the action it has, as the panes' choice of
+    /// the button replaces what the chosen button did (the recorder says what is replaced,
+    /// `replacedNote`, and Edit › Undo gives it back).
+    static func takesAction(_ binding: ButtonBinding, _ action: SystemShortcut.Shortcut) -> Bool {
+        return !(binding.isEnabled && binding.systemShortcutName == action.identifier)
+    }
+
+    /// The part of the page whose "Set Up…" gives a button `action`.
+    static func setUpPart(for action: SystemShortcut.Shortcut) -> ApplicationPagePart {
+        return action.identifier == SystemShortcut.shortcutRing.identifier ? .ring : .gestures
+    }
+
+    /// "Replaces: Copy": what a button or key that "Set Up…" caught loses in this app when
+    /// it gets `action`, in the words of the panes' "Record a Button…"
+    /// (`TriggerChoiceMenu.replaced`): the action of the app's own row, else the action a
+    /// press of it runs in other apps, or what "Default" certainly does ("Default
+    /// (Back)"). Nil when it does `action` already and when nothing certain is lost.
+    func replacedNote(for trigger: RecordedEvent, by action: SystemShortcut.Shortcut) -> String? {
+        let holdKeys = holdKeysThatCatch()
+        let outcome: ButtonDefaultOutcome
+        if let existing = ownBinding(for: trigger) {
+            if CellActionState(binding: existing).hasBoundAction {
+                return Self.takesAction(existing, action) ? resolver.actionName(of: existing).map(Self.replaces) : nil
+            }
+            let merged = ApplicationButtons.merged(general: generalBindings, own: ownBindings)
+            outcome = Self.ownDefaultOutcome(of: trigger, merged: merged, holdKeys: holdKeys)
+        } else {
+            outcome = ButtonDefaultOutcome.of(trigger, bindings: generalBindings, holdKeys: holdKeys)
+        }
+        switch outcome {
+        case .runs(let other):
+            return Self.takesAction(other, action) ? resolver.actionName(of: other).map(Self.replaces) : nil
+        case .passes(let effect):
+            return effect.map { Self.replaces(ButtonsMousePart.defaultTitle(effect: $0)) }
+        case .caught:
+            return nil
+        }
+    }
+
+    private static func replaces(_ name: String) -> String {
+        return String(format: NSLocalizedString("buttons-trigger-choice-recorded-replaces", comment: ""), name)
     }
 
     /// What Edit › Undo calls what "Set Up…" recorded: as the Gestures and Shortcut Ring
@@ -893,14 +931,23 @@ extension ApplicationButtonsViewController: KeyRecorderDelegate {
     }
 
     /// A button the app has already counts as a duplicate (the recorder says so), unless
-    /// "Set Up…" waits and its row has "Default"; every other button or key is taken, also
-    /// one that opens the ring or runs Gesture Navigation in Buttons. A key is never the
-    /// button to hold for the gestures.
+    /// "Set Up…" waits and its row does not do that already (`takesAction`); every other
+    /// button or key is taken, also one that opens the ring or runs Gesture Navigation in
+    /// Buttons. A key is never the button to hold for the gestures.
     func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool {
         let trigger = normalizedTrigger(for: event)
         if PreferencesButtonsViewController.needsMouseButton(pendingAction), trigger.type == .keyboard { return false }
         guard let existing = ownBinding(for: trigger) else { return true }
-        return pendingAction != nil && Self.takesAction(existing)
+        return pendingAction.map { Self.takesAction(existing, $0) } ?? false
+    }
+
+    /// While "Set Up…" shows the button or key it caught: what that loses in this app
+    /// ("Replaces: Copy"), as the panes' "Record a Button…" says it. "Record a Button or
+    /// Key…" of this part adds a row with what the button does everywhere: nothing is
+    /// lost, nothing is said.
+    func recordedNote(_ recorder: KeyRecorder, event: InputEvent) -> String? {
+        guard let action = pendingAction else { return nil }
+        return replacedNote(for: normalizedTrigger(for: event), by: action)
     }
 
     /// The recorder's hint for a refused event, as the Buttons pane's: a key while the
@@ -928,7 +975,7 @@ extension ApplicationButtonsViewController: KeyRecorderDelegate {
             pendingRecorded = nil
             return
         }
-        if let existing = ownBinding(for: trigger), !(pendingAction != nil && Self.takesAction(existing)) {
+        if let existing = ownBinding(for: trigger), !(pendingAction.map { Self.takesAction(existing, $0) } ?? false) {
             pendingRecorded = nil
             list.flash(AnyHashable(existing.id))
             return
