@@ -175,7 +175,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
 
     /// The modes with and without a Logitech mouse, no gesture button, and the MX Master 4
     /// with its haptics off because they were switched off under Mouse (the line under the
-    /// Logitech box with "Open Mouse").
+    /// Logitech box with "Show in Mouse").
     func testRenderGestures() throws {
         let master4 = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
         let master4HapticsOff = MouseGestureDeviceSupport(deviceTracking: true, haptics: true, hapticsOffOnMouse: true)
@@ -1514,7 +1514,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
     /// Each action's own "Reverse direction" and Switch Desktops' "Follow the wheel"
     /// (`thumb-wheel-options-<case>-<appearance>.png`): Scrolling › Thumb wheel with Switch
     /// Desktops, both switches on; with Volume, its reverse on (no follow row); the
-    /// Buttons row's menu with "Thumb Wheel Settings…" (a stand-in drawn from the menu the
+    /// Buttons row's menu with "Show in Scrolling" (a stand-in drawn from the menu the
     /// row builds); an app's Scrolling part with its own Switch Desktops that follows.
     func testRenderThumbWheelOptions() throws {
         func scrolling(_ name: String) throws {

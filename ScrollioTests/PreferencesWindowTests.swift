@@ -436,7 +436,7 @@ final class PreferencesSidebarTests: XCTestCase {
     func testAButtonThatSwitchesPanesLeavesTheFocusOnTheSidebar() throws {
         let (window, preferences) = try makeWindow()
         XCTAssertTrue(preferences.selectPane(withIdentifier: "gestures"))
-        // A control of the pane has the keyboard focus, as "Open Mouse" has when it is
+        // A control of the pane has the keyboard focus, as "Show in Mouse" has when it is
         // pressed with the keyboard.
         let focused = FocusTakingView(frame: NSRect(x: 0, y: 0, width: 10, height: 10))
         try XCTUnwrap(preferences.selectedController).view.addSubview(focused)

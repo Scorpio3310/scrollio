@@ -10,8 +10,10 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   key, another mouse button, one of the scroll keys, Gesture Navigation, the
   [Shortcut Ring](#shortcut-ring), or opening an app, a file or a script.
 - A row's menu ticks the action the row shows (a listed one inside its group, which gets
-  a dash). Under Gesture Navigation and the Shortcut Ring, while one is the row's action,
-  "Show in Gestures" or "Show in Shortcut Ring" leads to its pane.
+  a dash), and so do the menus of the Shortcut Ring's places and of the gesture
+  directions ("Default" or "No Action" is ticked while there is none). Under Gesture
+  Navigation and the Shortcut Ring, while one is the row's action, "Show in Gestures" or
+  "Show in Shortcut Ring" leads to its pane.
 - The listed shortcuts (Select All, Undo, Copy and the rest) press the right key on every
   keyboard layout, and keys are named as your keyboard names them.
 - To record a button or a key, click + and press it. Esc, a left click, closing the
@@ -67,8 +69,10 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
 - Removing a button or an app can be undone (Edit › Undo), and so can every change of a
   button's row, in Buttons and in an app's Buttons part: its action ("Undo Change
   Action"), the name or icon of its keys ("Undo Rename") and "Which Button Is This?"
-  ("Undo Which Button"); Undo selects the row it changes, and brings Buttons forward
-  from another pane. On a button of your mouse,
+  ("Undo Which Button"); Undo, of a removal too, selects the row it changes and shows
+  it: Buttons comes forward from another pane, or Apps with the app's page on its
+  Buttons part (also after that page closed); an app removed from Apps comes back
+  selected in the list, which comes forward too. On a button of your mouse,
   "−" and Delete set it back to "Default" ("Clear Action"), as "Default" in its menu
   does; on a row that reads "Default" already "−" is off.
 - A button without an action reads "Default": it does what it does by itself. Where that
@@ -153,7 +157,9 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   else its keys. Version 1.0.5 and older shows such a direction as "No Action" and runs
   nothing for it (what going back to 1.0.5 drops: [Buttons and keys](#buttons-and-keys)).
   A change, here or on an app's page, can be undone ("Undo Change Action", "Undo Rename"
-  for its name or icon): Undo shows the pane or the app's page with the row selected.
+  for its name or icon): Undo shows the pane or the app's page with the row selected
+  (not for Left and Right while the desktops follow the hand, whose rows then take no
+  choice: the value comes back all the same).
 - Two modes: "One action per hold", and "Follow the hand", in which moving sideways
   slides the desktops with your hand, like a trackpad swipe. "Follow the hand" uses a
   private macOS interface; where it is missing, the mode is not available.
@@ -459,7 +465,7 @@ only when you move those controls.
   "Smooth Scrolling in …" for the app in front, "Settings for …" (the app's page in
   Apps, or a line there that offers to add it: "Safari isn't on the list." with "Add
   Safari", or with "Add" when the name is too long to be read in both; also while
-  paused) and "Pause Scrollio", then "Settings…"
+  paused; never for Scrollio itself) and "Pause Scrollio", then "Settings…"
   (and "Check for Updates…"), then "Quit Scrollio". A pause stops everything and gives
   the Logitech mice their buttons back; it is not kept after Scrollio quits. With Option
   held the menu also lists Logitech Diagnostics, a developer window with the HID++
@@ -471,7 +477,9 @@ only when you move those controls.
   minute and comes back by itself, with "Pause Scrollio" alone).
 - The icon is dimmed in the same three cases; its tooltip says which.
 - General says the same under its card, always: "Scrollio is on" with "Pause", or the
-  menu's title with "Resume", "Try Again Now" or, for the access, "Open System Settings".
+  menu's title with "Resume", "Try Again Now" (with "Pause" while an event tap is kept
+  off and comes back by itself, as in the menu) or, for the access, "Open System
+  Settings".
 - The icon can be hidden (General › Show in menu bar). Opening Scrollio again then shows
   its settings, or the Welcome Guide while Accessibility access is missing.
 - General also has "Open at login", the state of the Accessibility access (without it

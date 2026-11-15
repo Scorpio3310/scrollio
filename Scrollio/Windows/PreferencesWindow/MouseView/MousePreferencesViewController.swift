@@ -671,8 +671,8 @@ final class MousePreferencesViewController: NSViewController {
     }
 
     /// "Some values you set are not on the mouse." at the rows' inset, "Send Again" (small) at
-    /// the right edge of the box above, in the column of its switch: as the Gestures tab puts
-    /// "Open Mouse" under its Logitech box.
+    /// the right edge of the box above, in the column of its switch: as the Gestures pane puts
+    /// "Show in Mouse" under its Logitech box.
     private func makeNotOnTheMouseNote() -> NSView {
         let label = Self.makeNote(MouseText.managedNote(.notOnTheMouse))
         label.identifier = Identifier.notOnTheMouseNote

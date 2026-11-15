@@ -7,10 +7,10 @@
 //  exist falling back to Scrolling, the page's height following the part), the marks of
 //  the list of apps, the Scrolling part: the box of "Scrolling in Safari" alone while the
 //  app uses the Scrolling settings, its own settings and "Copy from Scrolling" under it
-//  while it does not; the Buttons part: only the app's own rows with what they do
-//  everywhere, the "+" menu, changing, recording and removing a row, the Shortcut Ring and
-//  Gesture Navigation offered as everything else, "Show Gesture Settings" leading to the
-//  Gestures part; the Gestures part: the switch, the app's own five rows and invert switch,
+//  while it does not; the Buttons part: only the app's own rows with what they do in
+//  other apps, the "+" menu, changing, recording and removing a row, the Shortcut Ring and
+//  Gesture Navigation offered as everything else, "Show in Safari › Gestures" leading to
+//  the Gestures part; the Gestures part: the switch, the app's own five rows and invert switch,
 //  the line on the button to hold here; and the Shortcut Ring part's line on what opens
 //  the ring here. Nothing is shown on screen: menus and recorders go through seams,
 //  windows are never ordered in.
@@ -1369,8 +1369,8 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// A row's menu is the Buttons pane's for its trigger: "Default" first, the Shortcut
-    /// Ring, Gesture Navigation for a mouse button (not for a key), "Show Gesture Settings"
-    /// while Gesture Navigation is the action, the Logitech actions for a Logitech button,
+    /// Ring, Gesture Navigation for a mouse button (not for a key), "Show in Calculator ›
+    /// Gestures" while Gesture Navigation is the action, the Logitech actions for a Logitech button,
     /// "Open App or File…" and "Keyboard Shortcut…". Choosing the ring or Gesture
     /// Navigation there stores it, for this app only.
     func testARowsMenuIsTheButtonsPanesMenuAndTakesTheRingAndGestureNavigation() throws {
@@ -2002,7 +2002,7 @@ final class ApplicationPageTests: XCTestCase {
 
     /// As in the Gestures pane: while a mouse has its haptics off because they were switched
     /// off under Mouse, the app's own "Logitech mouse" box has the line that says so, with
-    /// "Open Mouse", close under the box; it folds with the box (F18).
+    /// "Show in Mouse", close under the box; it folds with the box (F18).
     func testTheGesturesPartSaysWhenHapticsAreOffUnderMouse() throws {
         let savedHaptics = Options.shared.logiMouse.hapticsOn
         Options.shared.logiMouse.hapticsOn = false
