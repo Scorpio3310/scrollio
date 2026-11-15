@@ -1985,7 +1985,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio is running, but its menu bar icon is hidden. To reach Settings, open Scrollio again."
+            "value": "Scrollio is running, but its menu bar icon is hidden. To reach Settings later, open Scrollio again."
           }
         }
       }
@@ -6331,7 +6331,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio's menu bar icon is hidden. To reach Settings, open Scrollio again."
+            "value": "Scrollio's menu bar icon is hidden. To reach Settings later, open Scrollio again."
           }
         }
       }
@@ -10256,7 +10256,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ as in other apps, %2$@ only in %3$@"
+            "value": "%1$@ as in other apps; %2$@ only in %3$@"
           }
         }
       }

@@ -778,7 +778,7 @@ final class ApplicationRingWordsTests: XCTestCase {
         let titles: ([RecordedEvent]) -> [String] = { $0.map { $0.code == 4 ? "Back button" : "Middle button" } }
         XCTAssertEqual(
             ApplicationTriggerRow.make(.shortcutRing, application: calculator, general: [binding(4)], titles: titles).text,
-            "Back button as in other apps, Middle button only in Calculator"
+            "Back button as in other apps; Middle button only in Calculator"
         )
     }
 }
