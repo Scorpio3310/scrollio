@@ -67,7 +67,8 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
 - Removing a button or an app can be undone (Edit › Undo), and so can every change of a
   button's row, in Buttons and in an app's Buttons part: its action ("Undo Change
   Action"), the name or icon of its keys ("Undo Rename") and "Which Button Is This?"
-  ("Undo Which Button"); Undo selects the row it changes. On a button of your mouse,
+  ("Undo Which Button"); Undo selects the row it changes, and brings Buttons forward
+  from another pane. On a button of your mouse,
   "−" and Delete set it back to "Default" ("Clear Action"), as "Default" in its menu
   does; on a row that reads "Default" already "−" is off.
 - A button without an action reads "Default": it does what it does by itself. Where that
@@ -151,6 +152,8 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   Forward button, which is the Back or Forward click). The preview shows its icon, or
   else its keys. Version 1.0.5 and older shows such a direction as "No Action" and runs
   nothing for it (what going back to 1.0.5 drops: [Buttons and keys](#buttons-and-keys)).
+  A change, here or on an app's page, can be undone ("Undo Change Action", "Undo Rename"
+  for its name or icon): Undo shows the pane or the app's page with the row selected.
 - Two modes: "One action per hold", and "Follow the hand", in which moving sideways
   slides the desktops with your hand, like a trackpad swipe. "Follow the hand" uses a
   private macOS interface; where it is missing, the mode is not available.
@@ -237,7 +240,8 @@ app's Buttons part. The pane also sets what the eight places hold.
 - A place holds what a button can: one of the listed keyboard shortcuts (Mission Control
   and Spaces, apps and windows, editing, Finder, system, screenshots, navigation), the
   Back or Forward click, a key combination you record ("Keyboard Shortcut…"), or an
-  app, a file or a script to open ("Open App or File…"); or nothing. An app shows its
+  app, a file or a script to open ("Open App or File…"); or nothing. A change, in the
+  pane or an app's own ring, can be undone as a direction of Gestures can. An app shows its
   icon in the ring, a key combination its keys, and the drop in the middle of the ring
   names what is lit. A key combination with a name and an icon (see
   [Buttons and keys](#buttons-and-keys)) shows the icon in its drop, and in the middle

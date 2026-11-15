@@ -278,6 +278,8 @@ final class RingPreferencesViewController: NSViewController {
     var bindingSummary: () -> ShortcutRingBindingSummary = { .current }
     /// What the pane shows of it now: "Show in Buttons" goes where the row says.
     private var shownSummary: ShortcutRingBindingSummary?
+    /// The ring the rows and the drawing show now (an Undo reloads them when it differs).
+    private var shownStoredRing: ShortcutRingSettings?
     /// "Show in Buttons": shows the Buttons pane, with the row of what opens the ring
     /// selected when something does. Tests replace it.
     var openButtonsPane: (() -> Void)?
@@ -454,10 +456,11 @@ final class RingPreferencesViewController: NSViewController {
         reload()
     }
 
-    /// An Undo or Redo ran: the pane on screen shows what opens the ring now, when that
-    /// changed (an Undo of typing elsewhere changes nothing here).
+    /// An Undo or Redo ran: the pane on screen shows what opens the ring now and its
+    /// places, when either changed (an Undo of typing elsewhere changes nothing here).
     @objc private func undoDidRun(_ notification: Notification) {
-        guard isViewLoaded, view.window != nil, bindingSummary() != shownSummary else { return }
+        guard isViewLoaded, view.window != nil,
+              bindingSummary() != shownSummary || shownRing != shownStoredRing else { return }
         reload()
     }
 
@@ -482,10 +485,17 @@ final class RingPreferencesViewController: NSViewController {
     /// Ends a recording that still waits for a key and closes "Open App or File": the
     /// rows are about to go (the pane is left, or an app's page takes its ring away).
     func endEditing() {
+        isEndingEditing = true
+        defer { isEndingEditing = false }
         placePopUps.forEach { $0.cancelShortcutRecording() }
         openTargetPopover?.hide()
         openTargetPopover = nil
     }
+
+    /// While `endEditing` runs: what it stores (a name typed and not confirmed) takes no
+    /// Undo of its own. What ended the editing ("Reset to Defaults") takes it back with the
+    /// rest, the name included.
+    private var isEndingEditing = false
 
     // MARK: - Refresh
 
@@ -493,6 +503,7 @@ final class RingPreferencesViewController: NSViewController {
     func reload() {
         guard isViewLoaded, previewView != nil else { return }
         let ring = shownRing
+        shownStoredRing = ring
         if application == nil {
             let summary = bindingSummary()
             shownSummary = summary
@@ -654,6 +665,7 @@ final class RingPreferencesViewController: NSViewController {
 
     /// Puts `new` into `place`. What a place cannot hold (a recorded mouse button, a
     /// modifier key by itself) is not stored: the pull-down shows again what was there.
+    /// Edit › Undo puts back what was there (`registerUndo`).
     func setPlace(_ new: ShortcutRingPlace, at place: Int) {
         guard placePopUps.indices.contains(place) else { return }
         // The row whose pull-down was used is the selected one.
@@ -663,6 +675,7 @@ final class RingPreferencesViewController: NSViewController {
             reload()
             return
         }
+        let old = ring[place]
         if let application {
             // The app's own ring and nothing else; the general ring stays as it is.
             guard application.ownRingPlaces != nil else { return }
@@ -673,11 +686,103 @@ final class RingPreferencesViewController: NSViewController {
         }
         reload()
         onPlaceChange?()
+        registerUndo(back: old, from: new, at: place)
     }
 
     /// A row changed a place or the freeze switch (the app's page: its "Reset to Defaults"
     /// follows).
     var onPlaceChange: (() -> Void)?
+
+    // MARK: - Undo of a place
+
+    /// Whose ring an Undo of a place changes: the general one, or an app's own, found by
+    /// the path it is stored with when the Undo runs (an app removed and added again is a
+    /// new entry; an own ring kept for later takes it too, as "Reset to Defaults" does).
+    private enum PlaceOwner {
+        case general
+        case application(path: String)
+    }
+
+    /// Where an Undo of a place shows what it did: the window's panes; without them (the
+    /// pane in no split view) the pane that made the change. Neither is held.
+    private struct PlaceShowing {
+        weak var split: PreferencesSplitViewController?
+        weak var controller: RingPreferencesViewController?
+    }
+
+    /// Registers the step back from `new` to `old` in `place`: "Undo Change Action", or
+    /// "Undo Rename" when only the name or the icon of the same recorded key combination
+    /// changed (as Buttons calls them, `ButtonRowChange.Kind`). The target is the settings,
+    /// not this pane: an Undo after an app's page closed still works.
+    private func registerUndo(back old: ShortcutRingPlace, from new: ShortcutRingPlace, at place: Int) {
+        // (A manager that groups only by hand, as a test's, takes a step only inside a group.)
+        guard !isEndingEditing, let undo = undoTarget, undo.groupsByEvent || undo.groupingLevel > 0 else { return }
+        let owner = application.map { PlaceOwner.application(path: $0.path) } ?? .general
+        let split = PreferencesButtonsViewController.splitViewController(of: self)
+        Self.registerUndo(
+            back: old, from: new, at: place, of: owner, undoManager: undo,
+            showing: PlaceShowing(split: split, controller: self)
+        )
+    }
+
+    private static func registerUndo(
+        back old: ShortcutRingPlace, from new: ShortcutRingPlace, at place: Int, of owner: PlaceOwner,
+        undoManager undo: UndoManager, showing: PlaceShowing
+    ) {
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            guard let result = put(old, at: place, of: owner) else { return }
+            show(place, of: result.entry, in: showing)
+            guard let undo, result.was != old else { return }
+            registerUndo(back: result.was, from: old, at: place, of: owner, undoManager: undo, showing: showing)
+        }
+        let renames = old.action == new.action && old.openTarget == new.openTarget && old.label != new.label
+        undo.setActionName((renames ? ButtonRowChange.Kind.rename : .action).actionName)
+    }
+
+    /// Puts `value` into `place` of the owner's ring. What was there, and the app's entry
+    /// (nil: the general ring); nil when the app is no longer on the list or has no ring
+    /// of its own.
+    private static func put(
+        _ value: ShortcutRingPlace, at place: Int, of owner: PlaceOwner
+    ) -> (was: ShortcutRingPlace, entry: Application?)? {
+        switch owner {
+        case .general:
+            let was = Options.shared.ring[place]
+            if was != value {
+                Options.shared.ring[place] = value
+            }
+            return (was, nil)
+        case .application(let path):
+            guard let entry = PreferencesApplicationViewController.existingApplication(
+                forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: path)
+            ), let was = entry.ring?[place] else { return nil }
+            if was != value {
+                entry.ring?[place] = value
+            }
+            return (was, entry)
+        }
+    }
+
+    /// Shows the place an Undo or Redo changed where it is: the Shortcut Ring pane, or the
+    /// app's page under Apps on its Shortcut Ring part, comes forward and shows the ring as
+    /// stored, with the place's row selected (`selectPlace`).
+    private static func show(_ place: Int, of entry: Application?, in showing: PlaceShowing) {
+        if let split = showing.split {
+            if let entry {
+                let part = split.bringForward(pageOf: entry, part: .ring)?.ringPart
+                part?.syncViewWithOptions()
+                part?.ringController?.selectPlace(place)
+            } else {
+                let pane = split.bringForward(pane: tabIdentifier) as? RingPreferencesViewController
+                pane?.reload()
+                pane?.selectPlace(place)
+            }
+        } else if let controller = showing.controller, controller.application === entry {
+            controller.reload()
+            controller.onPlaceChange?()
+            controller.selectPlace(place)
+        }
+    }
 
     /// "Open App or File…" of a place: the Buttons pane's popover at the pull-down, with
     /// what the place opens now.
@@ -851,5 +956,33 @@ final class RingPreferencesViewController: NSViewController {
         label.preferredMaxLayoutWidth = boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
+    }
+}
+
+// MARK: - Where an Undo shows itself
+
+/// An Undo or Redo of a place of the ring (`RingPreferencesViewController`), of a
+/// direction of Gesture Navigation (`MouseGestureSettingsControls`) or of a row of Buttons
+/// (`PreferencesButtonsViewController.takeBack`) shows where it acts: its pane, or the
+/// app's page on its part, comes forward.
+extension PreferencesSplitViewController {
+
+    /// The pane `identifier` comes forward, unless it is on show (`selectPane` would take
+    /// it back to its top); its controller.
+    @discardableResult
+    func bringForward(pane identifier: String) -> NSViewController? {
+        if selectedPaneIdentifier != identifier {
+            selectPane(withIdentifier: identifier)
+        }
+        return controller(for: identifier)
+    }
+
+    /// Apps comes forward with the page of `application` on `part`; nil when the list has
+    /// no row for it.
+    func bringForward(pageOf application: Application, part: ApplicationPagePart) -> ApplicationDetailViewController? {
+        guard let apps = bringForward(pane: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController,
+              let id = apps.rowID(for: application) else { return nil }
+        apps.openApplication(withID: id, part: part)
+        return apps.detailController
     }
 }

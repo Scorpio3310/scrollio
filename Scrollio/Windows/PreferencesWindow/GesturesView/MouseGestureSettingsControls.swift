@@ -295,8 +295,15 @@ final class MouseGestureSettingsControls: NSObject {
     /// Ends a recording that still waits for a key and closes the popover of a name: the
     /// rows are about to go (the pane is left).
     func endEditing() {
+        isEndingEditing = true
+        defer { isEndingEditing = false }
         actionPopUps.forEach { $0.cancelShortcutRecording() }
     }
+
+    /// While `endEditing` runs: what it stores (a name typed and not confirmed) takes no
+    /// Undo of its own. What ended the editing ("Reset to Defaults") takes it back with the
+    /// rest, the name included.
+    private var isEndingEditing = false
 
     // MARK: - Sync
 
@@ -415,6 +422,7 @@ final class MouseGestureSettingsControls: NSObject {
 
     /// Puts `action` into `slot`. What a direction cannot run (a recorded mouse button, a
     /// modifier key by itself) is not stored: the pull-down shows again what was there.
+    /// Edit › Undo of the window puts back what was there (`registerUndo`).
     func store(_ action: GestureAction, in slot: Slot) {
         var settings = editedSettings
         guard action.isEmpty || action.resolvedAction != nil else {
@@ -425,10 +433,140 @@ final class MouseGestureSettingsControls: NSObject {
             applyModePresentation()
             return
         }
+        let old = slot.action(in: settings)
         slot.store(action, in: &settings)
         write(settings)
         applyModePresentation()
         onChange?()
+        if slot.action(in: editedSettings) == action {
+            registerUndo(back: old, from: action, in: slot)
+        }
+    }
+
+    // MARK: - Undo of a direction
+
+    /// Whose gestures an Undo of a direction changes: the general ones, or an app's own
+    /// set, found by the path it is stored with when the Undo runs (an app removed and
+    /// added again is a new entry; a set kept for later takes it too, as "Reset to
+    /// Defaults" does).
+    private enum DirectionOwner {
+        case general
+        case application(path: String)
+    }
+
+    /// Where an Undo of a direction shows what it did: the window's panes; without them
+    /// (controls in a window of their own) the controls that made the change. Neither is
+    /// held.
+    private struct DirectionShowing {
+        weak var split: PreferencesSplitViewController?
+        weak var controls: MouseGestureSettingsControls?
+    }
+
+    /// Registers the step back from `new` to `old` in `slot` on the undo manager of the
+    /// window the row is in: "Undo Change Action", or "Undo Rename" when only the name or
+    /// the icon of the same recorded key combination changed (as Buttons calls them,
+    /// `ButtonRowChange.Kind`). The target is the settings, not these controls: an Undo
+    /// after an app's page closed still works.
+    private func registerUndo(back old: GestureAction, from new: GestureAction, in slot: Slot) {
+        // (A manager that groups only by hand, as a test's, takes a step only inside a group.)
+        guard !isEndingEditing, let window = actionPopUp(for: slot).window, let undo = window.undoManager,
+              undo.groupsByEvent || undo.groupingLevel > 0 else { return }
+        let owner: DirectionOwner
+        switch edited {
+        case .general:
+            owner = .general
+        case .application(let application):
+            owner = .application(path: application.path)
+        }
+        let showing = DirectionShowing(split: window.contentViewController as? PreferencesSplitViewController, controls: self)
+        Self.registerUndo(back: old, from: new, in: slot, of: owner, undoManager: undo, showing: showing)
+    }
+
+    private static func registerUndo(
+        back old: GestureAction, from new: GestureAction, in slot: Slot, of owner: DirectionOwner,
+        undoManager undo: UndoManager, showing: DirectionShowing
+    ) {
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            guard let result = put(old, in: slot, of: owner) else { return }
+            show(slot, of: result.entry, in: showing)
+            guard let undo, result.was != old else { return }
+            registerUndo(back: result.was, from: old, in: slot, of: owner, undoManager: undo, showing: showing)
+        }
+        let renames = old.action == new.action && old.label != new.label
+        undo.setActionName((renames ? ButtonRowChange.Kind.rename : .action).actionName)
+    }
+
+    /// Puts `value` into `slot` of the owner's gestures. What was there, and the app's
+    /// entry (nil: the general gestures); nil when the app is no longer on the list or has
+    /// no set of its own.
+    private static func put(
+        _ value: GestureAction, in slot: Slot, of owner: DirectionOwner
+    ) -> (was: GestureAction, entry: Application?)? {
+        switch owner {
+        case .general:
+            let was = slot.action(in: Options.shared.gesture)
+            if was != value {
+                Options.shared.gesture.actions[keyPath: slot.path] = value
+            }
+            return (was, nil)
+        case .application(let path):
+            guard let entry = PreferencesApplicationViewController.existingApplication(
+                forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: path)
+            ), let was = entry.gestures?.actions[keyPath: slot.path] else { return nil }
+            if was != value {
+                entry.gestures?.actions[keyPath: slot.path] = value
+            }
+            return (was, entry)
+        }
+    }
+
+    /// Shows the direction an Undo or Redo changed where it is: the Gestures pane, or the
+    /// app's page under Apps on its Gestures part, comes forward and shows the gestures as
+    /// stored, with the direction's row selected (`selectRow`).
+    private static func show(_ slot: Slot, of entry: Application?, in showing: DirectionShowing) {
+        if let split = showing.split {
+            if let entry {
+                let part = split.bringForward(pageOf: entry, part: .gestures)?.gesturesPart
+                part?.syncViewWithOptions()
+                part?.controls?.selectRow(of: slot)
+            } else {
+                let pane = split.bringForward(pane: GesturesPreferencesViewController.tabIdentifier) as? GesturesPreferencesViewController
+                pane?.reload()
+                pane?.controls?.selectRow(of: slot)
+            }
+            return
+        }
+        guard let controls = showing.controls else { return }
+        switch controls.edited {
+        case .general where entry == nil:
+            break
+        case .application(let application) where application === entry:
+            break
+        default:
+            return
+        }
+        controls.sync()
+        controls.onChange?()
+        controls.selectRow(of: slot)
+    }
+
+    /// The row of `slot` as the one an Undo or Redo changed: a folded section around it
+    /// opens, its pull-down comes into view and takes the keyboard (the Gestures pane's
+    /// preview then shows that direction), as a place of the ring does (`selectPlace`).
+    private func selectRow(of slot: Slot) {
+        let popup = actionPopUp(for: slot)
+        var ancestor = popup.superview
+        while let view = ancestor {
+            if let fold = view as? PreferencesDisclosureSection, !fold.showsBody {
+                fold.setExpanded(true, animated: true)
+                // (The pane refits itself; an app's page measures again.)
+                fold.onExpandedChange?(true)
+            }
+            ancestor = view.superview
+        }
+        popup.window?.contentView?.layoutSubtreeIfNeeded()
+        popup.scrollToVisible(popup.bounds)
+        popup.window?.makeFirstResponder(popup)
     }
 
     /// Actions that make sense as a one-shot gesture: system shortcuts, mouse clicks and,

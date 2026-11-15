@@ -899,9 +899,10 @@ class PreferencesButtonsViewController: NSViewController {
         undo.setActionName(change.kind.actionName)
     }
 
-    /// Undo or Redo of a change of rows: the bindings it touched as they were, the changed
-    /// row selected and the list given the keyboard (as the Undo of a removal); the change
-    /// the other way round goes to the undo manager.
+    /// Undo or Redo of a change of rows: the bindings it touched as they were, the pane
+    /// brought forward while another one shows, the changed row selected and the list
+    /// given the keyboard (as the Undo of a removal); the change the other way round goes
+    /// to the undo manager.
     private func takeBack(_ change: ButtonRowChange, undoManager undo: UndoManager?) {
         let placed: (ButtonBinding) -> ButtonBinding = { [self] binding in
             let trigger = placedLikeItsButton(binding.triggerEvent, except: binding.id)
@@ -910,6 +911,14 @@ class PreferencesButtonsViewController: NSViewController {
         guard let result = change.applied(to: buttonBindings, sameTrigger: { $0.triggerEvent == $1.triggerEvent }, place: placed) else { return }
         buttonBindings = result.bindings
         save()
+        // Undo shows where it acts, as for a place of the ring or a direction of Gestures.
+        if let showPane {
+            if !isViewLoaded || view.window == nil {
+                showPane(PANEL_IDENTIFIER.buttons)
+            }
+        } else if let split = Self.splitViewController(of: self) {
+            split.bringForward(pane: PANEL_IDENTIFIER.buttons)
+        }
         reloadRows()
         if let first = change.states.first {
             if rows.contains(where: { $0.isStored && $0.binding.id == first.id }) {
