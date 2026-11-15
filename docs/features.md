@@ -335,12 +335,14 @@ wheel.
   ends when the wheel stops for a moment (0.15 s); one that went part of the way settles
   when the wheel rests (about half a second): half a desktop or more goes on to the next
   one, less goes back. No swipe begins while the last one settles. At the first or the
-  last desktop (macOS did not switch) the wheel stops trying that way until it rests.
+  last desktop (macOS did not switch) the wheel stops trying that way until it rests or
+  the desktop changes after all.
   While a gesture's swipe runs the wheel waits; a gesture that starts one takes over.
   Where macOS cannot be sent a swipe, the desktops go in steps.
-- For every action but Scroll Sideways, a single small tick of the wheel (where the
-  thumb lets go of it or takes it again) does nothing on its own: the next tick that way
-  counts it, one the other way drops it. A deliberate turn back acts one tick later.
+- For every action but Scroll Sideways, a small tick of the wheel, or a pair of them
+  (where the thumb lets go of it or takes it again), does nothing on its own: the ticks
+  that way count once they make half a line or a third comes, one the other way drops
+  them. A deliberate turn back acts a tick or two later.
 - Speed: how far a sideways scroll goes, how little of a turn each step needs, or how far
   a turn slides the desktop.
 - The Thumb wheel row's menu in Buttons ends with "Thumb Wheel Settings…", which opens

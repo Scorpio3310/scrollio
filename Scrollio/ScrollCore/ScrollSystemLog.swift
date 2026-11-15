@@ -488,7 +488,8 @@ enum ScrollSystemLog {
 
     /// What the swipes of a roll that followed the wheel did, each in order: how far it went
     /// (a share of one desktop), how it ended, and for an end where a switch was expected the
-    /// time to the Space change, or "no change"; past `ThumbWheelRoll.listedSwipes` they are
+    /// time to the Space change ("late" when it came after the gate's timeout), "no change",
+    /// or "stopped" when Scrollio stopped first; past `ThumbWheelRoll.listedSwipes` they are
     /// summed. For example `swipes 1.00 chained +240 ms, 0.62 ended no change`, `swipes 0.12
     /// back`, `+3 more (2 chained, 1 full stop)`, `1 stroke waited for another swipe`.
     static func followMessage(for roll: ThumbWheelRoll) -> String {
@@ -510,9 +511,9 @@ enum ScrollSystemLog {
         var text = String(format: "%.2f ", swipe.furthest) + swipe.ending.logName
         if swipe.expectsSwitch {
             if let after = swipe.spaceChangedAfter {
-                text += String(format: " +%.0f ms", after * 1000)
+                text += String(format: swipe.late ? " late +%.0f ms" : " +%.0f ms", after * 1000)
             } else {
-                text += " no change"
+                text += swipe.stopped ? " stopped" : " no change"
             }
         }
         return text

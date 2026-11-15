@@ -58,9 +58,10 @@ enum ThumbWheelTuning {
     /// Desktops: the first desktop after 3 events, each further one after 5 more, so one long
     /// roll moves several (at 0.7× steps at events 5, 12, 19; with "next" 12 the second
     /// needed four times the first, and the owner's rolls of 16 to 18 events gave one). Their
-    /// pacing (`desktopsPacing`) keeps the Dock from stacking switches. A second quick stroke
-    /// after 0.3 s of rest steps again after 3 events.
-    static let desktops = ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.3)
+    /// pacing (`desktopsPacing`) keeps the Dock from stacking switches. The rest is the
+    /// turn's: the thumb takes the wheel again after 250 to 580 ms (the owner's log), and a
+    /// shorter rest made the desktops of a roll depend on how quickly it did.
+    static let desktops = ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.6)
     /// Back / forward: one stroke of 3 to 14 events gives one step, 15 events two.
     static let backForward = ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3)
 
@@ -78,10 +79,13 @@ enum ThumbWheelTuning {
 
     /// The stray-tick filter (`ThumbWheelTickFilter`), for every function but Scroll Sideways:
     /// an event of fewer lines than this is small, and a small one at a start or against the
-    /// roll waits for a second event within `tickWindow` (s). The ticks where the thumb takes
-    /// the wheel again are about 0.1 line (the owner's log, 2026-11-14/15).
+    /// roll waits until the events that way within `tickWindow` (s) make this many lines in
+    /// all, or `tickConfirmingEvents` of them came. The ticks where the thumb takes the wheel
+    /// again are about 0.1 line, where it lets go a pair of 0.20 to 0.23 line in all (the
+    /// owner's log, 2026-11-14/15).
     static let tickSmallLines = 0.5
     static let tickWindow: TimeInterval = 0.45
+    static let tickConfirmingEvents = 3
 
     /// A pause this long (s) ends a roll for the log: its line is written.
     static let logRollRest: TimeInterval = 0.6
@@ -129,8 +133,17 @@ enum ThumbWheelTuning {
     static let followFullStopRest: TimeInterval = 0.15
     /// After an end where a switch is expected (half a Space or more), no swipe begins until
     /// macOS says the Space changed or this long (s) has passed; no change by then: the
-    /// desktop was the first or the last that way.
+    /// desktop was the first or the last that way...
     static let followSpaceChangeTimeout: TimeInterval = 0.5
+    /// ...this long (s) after an end at the rest (part of the way, which macOS settles without
+    /// speed, more slowly than a swipe it was handed at a full Space).
+    static let followSettleSpaceChangeTimeout: TimeInterval = 1.0
+    /// A gate that timed out keeps its swipe this long (s) more: a change meanwhile is logged
+    /// as late ("late +N ms"), none as "no change".
+    static let followLateSpaceChangeWindow: TimeInterval = 1.5
+    /// A change this soon (s) after an end is too soon to be that end's own: while an older
+    /// swipe waits as late, it is the older one's.
+    static let followSpaceChangeTooSoon: TimeInterval = 0.12
     /// Travel kept meanwhile for the next swipe, at most this many units either way (a Space).
     static let followGatePendingCap = 6.0
 }
