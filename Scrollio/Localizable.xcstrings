@@ -8491,13 +8491,13 @@
       }
     },
     "apps-detail-thumb-wheel-shared": {
-      "comment": "Apps, an app's Scrolling part: the muted line under its Thumb wheel box (Own Settings and Left to macOS). Its Action is the same value as the thumb wheel's row of the app's Buttons part; with Same as Scrolling its Speed and Reverse direction follow Scrolling; %@ is the app's name",
+      "comment": "Apps, an app's Scrolling part: the muted line under its Thumb wheel box (Own Settings and Left to macOS). Its Action is the same value as the thumb wheel's row of the app's Buttons part; with Same as Scrolling its Speed, Reverse direction and Follow the wheel follow Scrolling; %@ is the app's name",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The action is also set in %@ › Buttons. With Same as Scrolling, speed and direction follow Scrolling."
+            "value": "The action is also set in %@ › Buttons. With Same as Scrolling, speed, direction and Follow the wheel follow Scrolling."
           }
         }
       }
