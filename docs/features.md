@@ -243,8 +243,11 @@ name) shows that app's Buttons part. The pane also sets what the eight places ho
     shortcut and click it. A click anywhere else (an empty place too), Esc, the button
     again, or ten seconds without moving the pointer close the ring; nothing runs.
 - Letting go with a shortcut lit runs it; letting go with nothing lit leaves the ring
-  open, however long you pressed. Right after the press a shortcut lights only after a
-  longer movement, so that the press itself does not choose.
+  open, however long you pressed, up to ten seconds: a ring held longer than that
+  closes by itself and runs nothing (a button's release can get lost, as for a gesture
+  hold), so read a new ring's names with the ring left open rather than held. Right
+  after the press a shortcut lights only after a longer movement, so that the press
+  itself does not choose.
 - The ring never takes the keyboard: the app you are in stays in front, so Copy, Paste
   and the other shortcuts go to it. The ring is gone before its shortcut runs (a
   screenshot does not show it).
