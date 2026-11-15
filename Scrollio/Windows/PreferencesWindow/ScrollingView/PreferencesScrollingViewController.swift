@@ -31,7 +31,8 @@
 //  its own action goes (so does what Undo and its offer say: "Undo", "Copy from Scrolling
 //  in Figma").
 //  For an app left to macOS ("Scrolling in Safari": Left to macOS) only what still acts
-//  there shows: the Thumb wheel and "While you hold a key" boxes (`isLeftToMacOS`).
+//  there shows: the Thumb wheel box, without its Speed while it scrolls sideways
+//  (`isLeftToMacOS`).
 //
 //  Created by Caldis on 2017/1/26.
 //  Copyright © 2017年 Caldis. All rights reserved.
@@ -243,9 +244,11 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// Scrolling part decides what "Scrolling in Safari" shows.
     var onApplicationScrollChange: ((_ byHand: Bool) -> Void)?
 
-    /// On an app's page with Left to macOS: only what still acts shows, the Thumb wheel and
-    /// "While you hold a key" boxes. The main box (smoothing, feel, speed, direction),
-    /// "Advanced" and "Copy from Scrolling" are hidden; their values stay stored.
+    /// On an app's page with Left to macOS: only what still acts shows, the Thumb wheel box.
+    /// The main box (smoothing, feel, speed, direction), "While you hold a key" (its keys
+    /// act on a smoothed wheel only), "Advanced", "Copy from Scrolling" and, while the thumb
+    /// wheel scrolls sideways, its Speed (applied to a smoothed wheel only) are hidden; their
+    /// values stay stored.
     var isLeftToMacOS = false {
         didSet {
             guard isLeftToMacOS != oldValue else { return }
@@ -522,11 +525,13 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// keys (5× the distance, a fifth of it, sideways, pause) act on a smoothed wheel only. The keys
     /// stay editable: they apply again once smoothing is on. A line sits close under its
     /// box; without it the next box keeps the gap between boxes. The pane's height follows.
+    /// Under Left to macOS the keys' box is out of sight, and its line with it.
     private func syncKeysNote(smoothing: Bool) {
-        guard let holder = keysNote.superview, holder.isHidden != smoothing else { return }
-        holder.isHidden = smoothing
+        let shows = !smoothing && !isLeftToMacOS
+        guard let holder = keysNote.superview, holder.isHidden == shows else { return }
+        holder.isHidden = !shows
         contentStack.setCustomSpacing(
-            smoothing ? PreferencesGroupedForm.boxSpacing : PreferencesGroupedForm.noteSpacing,
+            shows ? PreferencesGroupedForm.noteSpacing : PreferencesGroupedForm.boxSpacing,
             after: keysSection
         )
         // Not while the view is still being built (`loadView` sizes it once at the end).
@@ -579,6 +584,15 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             speedRow.explanation = speedHint
         }
         speedRow.isEnabled = editable
+        // Left to macOS: Scroll Sideways' speed applies to a smoothed wheel only, so it acts
+        // nowhere there; the stepped actions use it all the same.
+        let showsSpeed = !(isLeftToMacOS && function == .scroll)
+        if speedRow.isHidden == showsSpeed {
+            speedRow.isHidden = !showsSpeed
+            if isBuilt {
+                contentHeightDidChange()
+            }
+        }
 
         thumbWheelReverseRow.isOn = settings.swapsDirection
         let reverseHint = ThumbWheelPresentation.reverseHint(for: function)
@@ -739,16 +753,21 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     }
 
     /// Hides or shows what Left to macOS leaves out (`isLeftToMacOS`); the pane's height
-    /// follows. A reset's "Undo Reset" is not offered for a button out of sight.
+    /// follows. A reset's "Undo Reset" is not offered for a button out of sight. The keys of
+    /// "While you hold a key" act on a smoothed wheel only, so their box goes too (with its
+    /// line), and so does the thumb wheel's Speed while it scrolls sideways.
     private func applyLeftToMacOS() {
         guard isViewLoaded else { return }
         let hidden = isLeftToMacOS
-        for view: NSView in [sections[0], advancedSection, resetFooter] where view.isHidden != hidden {
+        for view: NSView in [sections[0], advancedSection, resetFooter, keysSection] where view.isHidden != hidden {
             view.isHidden = hidden
         }
         if hidden {
             endUndoOffer()
         }
+        // (Each measures again only while built, and only for what it changed.)
+        syncKeysNote(smoothing: getTargetApplicationScrollOptions().smooth)
+        syncThumbWheel()
         if isBuilt {
             contentHeightDidChange()
         }

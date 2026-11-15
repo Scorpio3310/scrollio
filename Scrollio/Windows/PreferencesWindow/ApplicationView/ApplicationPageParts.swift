@@ -230,9 +230,9 @@ extension ApplicationTriggerRow {
 /// Scrolling, Own Settings or Left to macOS, worked out from what is stored. Under its box
 /// the Scrolling settings editing the app's own options (PreferencesScrollingViewController
 /// with a target application: no preview, "Copy from Scrolling") for Own Settings; for Left
-/// to macOS only what still acts there, the Thumb wheel and "While you hold a key" boxes
-/// (`isLeftToMacOS`); for Same as Scrolling nothing, the choice's box alone, as the
-/// Gestures and Shortcut Ring parts show what is under their switch. The settings' "Thumb
+/// to macOS only what still acts there, the Thumb wheel box (`isLeftToMacOS`); for Same
+/// as Scrolling nothing, the choice's box alone, as the Gestures and Shortcut Ring parts
+/// show what is under their switch. The settings' "Thumb
 /// wheel" box has the app's own speed and swap (scroll values like the others) and its own
 /// action, which is the thumb wheel's row of the Buttons part: with Same as Scrolling that
 /// row is where the action is set.

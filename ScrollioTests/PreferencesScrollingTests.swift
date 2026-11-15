@@ -1961,9 +1961,13 @@ final class PreferencesScrollingTests: XCTestCase {
     }
 
     /// Left to macOS on an app's page: only what still acts there shows, the Thumb wheel
-    /// box (editable: its action, speed and Reverse stay as set) and "While you hold a key";
-    /// the main box, "Advanced" and "Copy from Scrolling" are hidden, their values kept. The
-    /// pane hears of its new height, and of the old one when it goes back.
+    /// box (editable: its action and Reverse stay as set). The main box, "Advanced", "Copy
+    /// from Scrolling" and "While you hold a key" with its line are hidden (the engine lets an
+    /// unsmoothed wheel through untouched, the keys act on a smoothed one only), and so is
+    /// the thumb wheel's Speed while it scrolls sideways (applied to smoothed events only);
+    /// a stepped action keeps it (its steps run unsmoothed). No line that shows names the
+    /// hidden "Smooth scrolling". Every value stays stored. The pane hears of its new
+    /// height, and of the old one when it goes back.
     func testLeftToMacOSShowsOnlyWhatStillActs() {
         let application = makeApplication(inherit: false)
         application.scroll.smooth = false
@@ -1972,16 +1976,25 @@ final class PreferencesScrollingTests: XCTestCase {
         let controller = makeController(target: application, advanced: true)
         let full = controller.view.fittingSize.height
         XCTAssertFalse(controller.isLeftToMacOS)
+        XCTAssertFalse(controller.keysNote.isHiddenOrHasHiddenAncestor, "smoothing is off: the keys' line")
+        XCTAssertFalse(controller.thumbWheelSpeedRow.isHiddenOrHasHiddenAncestor)
+        func visibleTexts() -> [String] {
+            return allSubviews(of: controller.view).compactMap { $0 as? NSTextField }
+                .filter { !$0.isHiddenOrHasHiddenAncestor }.map(\.stringValue)
+        }
+        XCTAssertTrue(visibleTexts().contains { $0.contains("Smooth scrolling") }, "the check below can see it")
 
         controller.isLeftToMacOS = true
         for view: NSView in [controller.smoothSwitch, controller.feelControl, controller.scrollSpeedSlider, controller.reverseSwitch,
-                             controller.advancedButton, controller.glideTimeSlider, controller.resetToDefaultsButton] {
+                             controller.advancedButton, controller.glideTimeSlider, controller.resetToDefaultsButton,
+                             controller.keysSection, controller.keyBindButtons[0], controller.keysNote, controller.thumbWheelSpeedSlider] {
             XCTAssertTrue(view.isHiddenOrHasHiddenAncestor)
         }
-        for view: NSView in [controller.thumbWheelSection, controller.thumbWheelNote, controller.keysSection, controller.keyBindButtons[0]] {
+        for view: NSView in [controller.thumbWheelSection, controller.thumbWheelNote, controller.thumbWheelFunctionPopUp,
+                             controller.thumbWheelReverseSwitch] {
             XCTAssertFalse(view.isHiddenOrHasHiddenAncestor)
         }
-        XCTAssertTrue(controller.thumbWheelSpeedRow.isEnabled)
+        XCTAssertEqual(visibleTexts().filter { $0.contains("Smooth scrolling") }, [])
         XCTAssertTrue(controller.thumbWheelReverseRow.isEnabled)
         XCTAssertTrue(controller.thumbWheelFunctionPopUp.isEnabled)
         XCTAssertLessThan(controller.view.fittingSize.height, full - 250)
@@ -1989,9 +2002,26 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertFalse(controller.view.hasAmbiguousLayout)
         XCTAssertEqual(application.scroll.speed, 2.5, "kept")
 
+        // A stepped action uses the speed unsmoothed too: its row comes back, and its line
+        // does not name smoothing.
+        let folded = controller.view.fittingSize.height
+        application.setOwnThumbWheelFunction(.tabs)
+        controller.syncViewWithOptions()
+        XCTAssertFalse(controller.thumbWheelSpeedSlider.isHiddenOrHasHiddenAncestor)
+        XCTAssertTrue(controller.thumbWheelSpeedRow.isEnabled)
+        XCTAssertGreaterThan(controller.view.fittingSize.height, folded + 20)
+        XCTAssertEqual(visibleTexts().filter { $0.contains("Smooth scrolling") }, [])
+        application.setOwnThumbWheelFunction(nil)
+        controller.syncViewWithOptions()
+        XCTAssertTrue(controller.thumbWheelSpeedSlider.isHiddenOrHasHiddenAncestor)
+        XCTAssertEqual(controller.view.fittingSize.height, folded, accuracy: 0.5)
+
         controller.isLeftToMacOS = false
         XCTAssertFalse(controller.smoothSwitch.isHiddenOrHasHiddenAncestor)
         XCTAssertFalse(controller.resetToDefaultsButton.isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(controller.keysNote.isHiddenOrHasHiddenAncestor, "the keys and their line come back")
+        XCTAssertFalse(controller.keyBindButtons[0].isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(controller.thumbWheelSpeedSlider.isHiddenOrHasHiddenAncestor)
         XCTAssertEqual(controller.view.fittingSize.height, full, accuracy: 0.5)
     }
 
