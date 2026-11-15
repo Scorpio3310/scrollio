@@ -31,10 +31,10 @@ glance, with the features, help and what is new.
 
 - ✅ **Smooth scrolling** – each click of the wheel glides out like a trackpad, in five feels from Direct to Float.
 - ✅ **Per-app settings** – an app follows your settings or has its own: scrolling (or left to macOS), buttons, the thumb wheel, gestures and a Shortcut Ring, with suggested shortcuts for 100 apps.
-- ✅ **Buttons and keys** – give a mouse button, or a key with modifiers, a shortcut, a system action or an app to open.
+- ✅ **Buttons and keys** – give a mouse button, or a key with modifiers, a shortcut (with a name and an icon if you like), a system action or an app to open.
 - ✅ **Mouse gestures** – hold a button and move the mouse to switch desktops, open Mission Control and more.
-- ✅ **Shortcut Ring** – a button or a key opens a ring of eight shortcuts around the pointer: hold and move, or press and click.
-- ✅ **Thumb wheel actions** – the sideways wheel can scroll, zoom, switch tabs or desktops, go back and forward, or set the volume.
+- ✅ **Shortcut Ring** – a button or a key opens a ring of eight shortcuts around the pointer: hold and move, or press and click. Click a place in the ring's drawing to set it, or swap two.
+- ✅ **Thumb wheel actions** – the sideways wheel can scroll, zoom, switch tabs or desktops, go back and forward, or set the volume, each action with its own speed and direction; Switch Desktops can follow the wheel like a trackpad swipe.
 - ✅ **Logitech MX settings** – battery, pointer speed, wheel mode and haptics of a Logitech MX mouse.
 - ✅ **Menu bar item** – battery, Pause (also for 15 minutes or an hour), and for the app in front smoothing on or off and its settings; the icon can be hidden.
 - ✅ **Settings in a file** – export all your settings to one file and import them on another Mac; an import shows first what the file holds and keeps your settings from before.
@@ -47,7 +47,7 @@ glance, with the features, help and what is new.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/scrolling-dark.png">
-  <img src="assets/readme/scrolling-light.png" width="520" alt="The Scrolling pane: smooth scrolling on, the Smooth feel chosen, the speed slider and Reverse wheel direction">
+  <img src="assets/readme/scrolling-light.png" width="520" alt="The Scrolling pane: a drawing of a mouse and a moving preview of a page, smooth scrolling on, the Smooth feel chosen, the speed at 6.5× and Reverse wheel direction on">
 </picture>
 
 <table>
@@ -55,14 +55,14 @@ glance, with the features, help and what is new.
     <td width="50%" valign="top">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="assets/readme/buttons-dark.png">
-        <img src="assets/readme/buttons-light.png" width="400" alt="The Buttons pane with an MX Master 4: a drawing of the mouse with the gesture button lit, and the mouse's buttons in the order they sit, each with its action">
+        <img src="assets/readme/buttons-light.png" width="400" alt="The Buttons pane with an MX Master 4: a drawing of the mouse with the gesture button lit, and the mouse's buttons in the order they sit, each with its action or with Default and what the button does by itself; the free thumb panel reads Good for the Shortcut Ring">
       </picture>
       <p><b>Buttons</b>: an MX Master 4's buttons in the order they sit on the mouse.</p>
     </td>
     <td width="50%" valign="top">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="assets/readme/mouse-dark.png">
-        <img src="assets/readme/mouse-light.png" width="400" alt="The Mouse pane with an MX Master 4: the mouse and its battery, Let Scrollio manage this mouse, pointer speed in DPI and the scroll wheel's mode">
+        <img src="assets/readme/mouse-light.png" width="400" alt="The Mouse pane with an MX Master 4: the mouse and its battery, Let Scrollio manage this mouse, pointer speed in DPI, and the scroll wheel's mode, SmartShift sensitivity and click firmness">
       </picture>
       <p><b>Mouse</b>: the settings of a Logitech MX mouse.</p>
     </td>
@@ -71,7 +71,7 @@ glance, with the features, help and what is new.
     <td width="50%" valign="top">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="assets/readme/gestures-dark.png">
-        <img src="assets/readme/gestures-light.png" width="400" alt="The Gestures pane: a moving preview, the button to hold, the mode, and an action for each direction">
+        <img src="assets/readme/gestures-light.png" width="400" alt="The Gestures pane with an MX Master 4: the mouse moving left with its gesture button lit, a moving preview of the desktops, the button to hold chosen from a menu, the mode, and an action for each direction">
       </picture>
       <p><b>Gestures</b>: an action for each direction.</p>
     </td>
@@ -81,6 +81,22 @@ glance, with the features, help and what is new.
         <img src="assets/readme/welcome-guide-light.png" width="400" alt="The Welcome Guide: choose how scrolling feels, from Direct to Float">
       </picture>
       <p><b>Welcome Guide</b>: choose how scrolling feels.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/readme/ring-dark.png">
+        <img src="assets/readme/ring-light.png" width="400" alt="The Shortcut Ring pane with an MX Master 4: the mouse with its thumb panel lit, the default ring of eight shortcuts, the thumb panel as the button that opens it, and Freeze pointer while the ring is held">
+      </picture>
+      <p><b>Shortcut Ring</b>: eight shortcuts around the pointer.</p>
+    </td>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/readme/app-dark.png">
+        <img src="assets/readme/app-light.png" width="400" alt="Safari's page in Apps, on its Shortcut Ring: Own: ring, Use settings from Shortcut Ring off, and Safari's own ring around its icon with the suggested New Tab, Reload, Forward, Next Tab, Close Tab, Previous Tab, Back and Reopen Closed Tab">
+      </picture>
+      <p><b>Safari › Shortcut Ring</b>: Safari's own ring, with its suggested shortcuts.</p>
     </td>
   </tr>
 </table>
@@ -144,14 +160,15 @@ codesign -dv --verbose=2 /Applications/Scrollio.app 2>&1 | grep -E "Authority|Te
 ## 📚 More
 
 Settings are in one window with a sidebar: Scrolling, Buttons, Gestures, Shortcut Ring,
-Mouse, Apps and General. On the first launch a Welcome Guide leads through Accessibility access, the feel
+Mouse, Apps and General (⌘1 to ⌘7, in the View menu). On the first launch a Welcome Guide leads through Accessibility access, the feel
 of scrolling and the menu bar icon. The details are in `docs/`:
 
 - [Smooth scrolling](docs/scrolling.md): the feels, per-app settings, the keys that change
   a scroll, and Trackpad-style scrolling (Experimental): where it works and where not.
 - [Buttons, gestures, the Shortcut Ring, the thumb wheel and the rest](docs/features.md):
-  actions for buttons and keys, mouse gestures, the Shortcut Ring, the thumb wheel,
-  Logitech MX mice, the menu bar, the settings file and updates.
+  actions for buttons and keys, mouse gestures, the Shortcut Ring, the thumb wheel, an
+  app's own buttons, gestures and ring, Logitech MX mice, the menu bar, the Settings
+  window, the settings file and updates.
 - [Permissions and privacy](docs/privacy.md): what Scrollio asks macOS for and why, and
   what it reads, keeps and sends.
 - [Uninstalling and diagnostics](docs/troubleshooting.md): removing Scrollio completely,
@@ -195,9 +212,10 @@ licence.
 
 **This work has been modified.** Scrollio is not the original Mos. Among the changes: a
 new name, icon and bundle identifier; a reworked smooth-scrolling engine and simpler
-scroll settings; the "Follow the hand" gesture mode; the thumb wheel's actions; settings
-for Logitech MX mice (pointer speed, wheel, haptics, press force) and gestures tracked by
-the mouse; the Mouse and Gestures panes, a battery in the menu bar, a main menu and a new
+scroll settings; the "Follow the hand" gesture mode; the Shortcut Ring; settings for each
+app (buttons, gestures and a ring, with suggested rings for 100 apps); the thumb wheel's
+actions; settings for Logitech MX mice (pointer speed, wheel, haptics, press force) and
+gestures tracked by the mouse; the Mouse and Gestures panes, a battery in the menu bar, a main menu and a new
 Welcome Guide; English as the only language; the original website and release tooling
 removed, and updates set up anew (Sparkle 2, fed from this repository's GitHub
 releases); macOS 14 as the minimum. The history of Mos up to
