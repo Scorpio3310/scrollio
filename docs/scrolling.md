@@ -19,9 +19,11 @@
   are the other three, and ⌃ with the wheel is the screen zoom of macOS for those who
   turned that on. Held together, "Scroll faster" and "Scroll slower" cancel. A mouse
   button can hold them too. These keys work while Smooth scrolling is on (an app left to
-  macOS does not show them). A key that is ⌥, ⇧, ⌘ or ⌃ counts as let go at the first
-  turn of the wheel without it, also when another app (a window switcher, a key
-  remapper) swallowed its release; a button, another key and fn wait for their own.
+  macOS does not show them). A key that is ⌥, ⇧, ⌘ or ⌃, pressed on a keyboard, counts
+  as let go at the first turn of the wheel without it once the keyboard says it is up,
+  also when another app (a window switcher) swallowed its release. A turn a driver
+  posts (Logi Options+, SteerMouse, USB Overdrive) lets no key go; a key another app
+  pressed, a button, another key and fn wait for their own release.
 - "Reset to Defaults" can be taken back: for a few seconds the button reads "Undo Reset".
 - Per app (Apps): on an app's page, "Scrolling in Safari" is Same as Scrolling, Own
   Settings (its own settings, under the pop-up) or Left to macOS (not smoothed, not
