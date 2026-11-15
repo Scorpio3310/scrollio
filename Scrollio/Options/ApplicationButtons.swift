@@ -123,13 +123,14 @@ enum ApplicationButtons {
     }
 
     /// What a press of exactly `trigger` does in an app without buttons of its own: the
-    /// general binding of the same trigger, else the general binding such a press matches
-    /// best (a button bound without modifier keys also runs with them; a standard middle,
-    /// back or forward button and its Logitech code are one button). Nil: none, the button
-    /// does what it does by itself.
+    /// general binding of the same trigger while it is on, else the general binding such a
+    /// press matches best (a button bound without modifier keys also runs with them; a
+    /// standard middle, back or forward button and its Logitech code are one button; a
+    /// binding without an action is skipped, as the input side skips it). Nil: none, the
+    /// button does what it does by itself.
     static func generalBinding(for trigger: RecordedEvent, in general: [ButtonBinding]) -> ButtonBinding? {
         let identity = ButtonBindingIdentity(trigger)
-        if let same = general.first(where: { $0.identity == identity }) {
+        if let same = general.first(where: { $0.identity == identity && $0.isEnabled }) {
             return same
         }
         let press = InputEvent(

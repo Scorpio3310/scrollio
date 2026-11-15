@@ -85,6 +85,9 @@ class PreferencesButtonsViewController: NSViewController {
         let scroll = Options.shared.scroll
         return [scroll.dash, scroll.slow, scroll.toggle, scroll.block].compactMap { $0 }
     }
+    /// Every key of While you hold a key the mouse is asked for (the Scrolling pane's and
+    /// the apps'): a Logitech one keeps its button with Scrollio.
+    var holdKeysThatCatch: () -> [ScrollHotkey] = { ButtonDefaultOutcome.holdKeysThatCatch() }
     /// Starts recording a button at "+". nil: the real recorder, which taps the system's
     /// events; tests never use it.
     var startRecording: ((NSView) -> Void)?
@@ -377,16 +380,16 @@ class PreferencesButtonsViewController: NSViewController {
                 let binding = partRow.binding ?? defaultBinding(for: part)
                 let isStored = partRow.binding != nil
                 let title = titles[binding.id] ?? ButtonTriggerNaming.title(for: binding.triggerEvent)
+                let outcome = defaultOutcome(of: binding.triggerEvent, part: part, excluding: partRow.binding?.id)
                 let note = CellActionState(binding: binding).hasBoundAction
                     ? note(for: binding)
-                    : defaultNote(for: part, trigger: binding.triggerEvent)
-                let effect = defaultEffect(of: binding.triggerEvent, part: part)
+                    : defaultNote(for: part, trigger: binding.triggerEvent, outcome: outcome)
                 let row: ButtonBindingRow
                 if let existing = old.first(where: { $0.id == AnyHashable(part) }) {
-                    existing.update(binding: binding, title: title, note: note, mouse: mouse, isStored: isStored, defaultEffect: effect)
+                    existing.update(binding: binding, title: title, note: note, mouse: mouse, isStored: isStored, defaultOutcome: outcome)
                     row = existing
                 } else {
-                    row = makeRow(for: binding, title: title, note: note, part: part, isStored: isStored, defaultEffect: effect)
+                    row = makeRow(for: binding, title: title, note: note, part: part, isStored: isStored, defaultOutcome: outcome)
                 }
                 shown.append(row)
                 listed.append(row)
@@ -398,13 +401,13 @@ class PreferencesButtonsViewController: NSViewController {
             case .other(let binding):
                 let title = titles[binding.id] ?? title(for: binding.triggerEvent)
                 let note = note(for: binding)
-                let effect = defaultEffect(of: binding.triggerEvent)
+                let outcome = defaultOutcome(of: binding.triggerEvent, excluding: binding.id)
                 let row: ButtonBindingRow
                 if let existing = old.first(where: { $0.id == AnyHashable(binding.id) }) {
-                    existing.update(binding: binding, title: title, note: note, mouse: mouse, defaultEffect: effect)
+                    existing.update(binding: binding, title: title, note: note, mouse: mouse, defaultOutcome: outcome)
                     row = existing
                 } else {
-                    row = makeRow(for: binding, title: title, note: note, defaultEffect: effect)
+                    row = makeRow(for: binding, title: title, note: note, defaultOutcome: outcome)
                 }
                 shown.append(row)
                 listed.append(row)
@@ -521,26 +524,22 @@ class PreferencesButtonsViewController: NSViewController {
     }
 
     /// The line of a button of the mouse without an action.
-    func defaultNote(for part: ButtonsMousePart, trigger: RecordedEvent) -> ButtonRowNote? {
+    func defaultNote(for part: ButtonsMousePart, trigger: RecordedEvent, outcome: ButtonDefaultOutcome? = nil) -> ButtonRowNote? {
         return ButtonRowNote.makeDefault(
             for: part,
             trigger: trigger,
             scrollHoldKeys: scrollHoldKeys(),
-            isCaught: ButtonsListLayout.catchesControl(of: part, in: buttonBindings)
+            outcome: outcome ?? defaultOutcome(of: trigger, part: part)
         )
     }
 
-    /// Scrollio catches the Logitech control of the part `trigger` presses (`part`, else
-    /// the one it presses without modifiers) for another binding.
-    private func catchesControl(of trigger: RecordedEvent, part: ButtonsMousePart? = nil) -> Bool {
-        guard let part = part ?? ButtonsListLayout.plainPart(of: trigger) else { return false }
-        return ButtonsListLayout.catchesControl(of: part, in: buttonBindings)
-    }
-
-    /// What "Default" does on a row of `trigger` (`part`: a button of the mouse), where that
-    /// is certain: the row then reads "Default (Back)".
-    func defaultEffect(of trigger: RecordedEvent, part: ButtonsMousePart? = nil) -> ButtonsMousePart? {
-        return ButtonsMousePart.defaultEffect(of: trigger, part: part, isCaught: catchesControl(of: trigger, part: part))
+    /// What a press of `trigger` (`part`: a button of the mouse) does while its row has no
+    /// action: "Default (Back)" or "Default" where it passes through, else "No Action".
+    /// `excluding`: the row's own binding, which "Default" takes away (or keeps without an
+    /// action).
+    func defaultOutcome(of trigger: RecordedEvent, part: ButtonsMousePart? = nil, excluding id: UUID? = nil) -> ButtonDefaultOutcome {
+        let bindings = id.map { id in buttonBindings.filter { $0.id != id } } ?? buttonBindings
+        return ButtonDefaultOutcome.of(trigger, part: part, bindings: bindings, holdKeys: holdKeysThatCatch())
     }
 
     func note(for binding: ButtonBinding) -> ButtonRowNote? {
@@ -559,7 +558,7 @@ class PreferencesButtonsViewController: NSViewController {
             scrollHoldKeys: scrollHoldKeys(),
             standardButtonName: standard,
             standardButtonLosesPulse: mouse == .mxMaster4 && binding.isEnabled && pulses.contains(binding.systemShortcutName),
-            isCaught: catchesControl(of: trigger)
+            outcome: CellActionState(binding: binding).hasBoundAction ? nil : defaultOutcome(of: trigger, excluding: binding.id)
         )
     }
 
@@ -569,7 +568,7 @@ class PreferencesButtonsViewController: NSViewController {
         note: ButtonRowNote?,
         part: ButtonsMousePart? = nil,
         isStored: Bool = true,
-        defaultEffect: ButtonsMousePart? = nil
+        defaultOutcome: ButtonDefaultOutcome = .passes(nil)
     ) -> ButtonBindingRow {
         let rowID = part.map { AnyHashable($0) } ?? AnyHashable(binding.id)
         let pullDown = ButtonActionPullDown(binding: binding)
@@ -587,7 +586,7 @@ class PreferencesButtonsViewController: NSViewController {
         }
         let row = ButtonBindingRow(
             binding: binding, title: title, note: note, mouse: mouse, pullDown: pullDown, part: part, isStored: isStored,
-            defaultEffect: defaultEffect
+            defaultOutcome: defaultOutcome
         )
         row.infoButton.target = self
         row.infoButton.action = #selector(infoClicked(_:))

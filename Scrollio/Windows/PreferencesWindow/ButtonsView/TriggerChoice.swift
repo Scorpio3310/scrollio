@@ -11,8 +11,10 @@
 //  nothing of Buttons does it, "Multiple" while two or more do. Its menu: the buttons of
 //  the connected mouse in the order they sit on it (`ButtonsListLayout`, the rows of the
 //  Buttons pane), each with what it does now in grey ("Back button — Copy, will be
-//  replaced"; without an action what Buttons says, "Default (Back), will be replaced" where
-//  what it then does is certain, else "Default"; the one that does it is ticked); then
+//  replaced"; without an action what a press does (`ButtonDefaultOutcome`): "Default
+//  (Back), will be replaced" where what it then does is certain, another row's action that
+//  a press runs ("Mission Control, will be replaced"), else what Buttons says, "Default"
+//  or "No Action"; the one that does it is ticked); then
 //  "Record a Button…" (the ring: "Record a Button or Key…"), the recorder's popover at the
 //  pull-down, which says what the caught button or key loses ("Replaces: Copy",
 //  `TriggerChoiceMenu.replaced`); then "Show in Buttons", which says where it goes: "Show in Notes" while only
@@ -56,17 +58,27 @@ struct TriggerChoiceMenu: Equatable {
         let action: String?
         /// It does it now.
         let isChosen: Bool
-        /// Without an action: what "Default" does, where that is certain ("Default (Back)").
-        var defaultEffect: ButtonsMousePart? = nil
+        /// Without an action: what a press does (`ButtonDefaultOutcome`).
+        var defaultOutcome: ButtonDefaultOutcome = .passes(nil)
+        /// The action of another row that a press runs (`defaultOutcome` is `.runs`), as
+        /// Buttons names it.
+        var runsAction: String? = nil
 
-        /// Choosing it replaces an action it has, or what "Default" certainly does.
-        var replacesAction: Bool {
-            return (action != nil || defaultEffect != nil) && !isChosen
+        /// Without an action: what "Default" does, where that is certain ("Default (Back)").
+        var defaultEffect: ButtonsMousePart? {
+            return defaultOutcome.effect
         }
 
-        /// What it does now, as the row of Buttons says it: "Copy", "Default (Back)".
+        /// Choosing it replaces an action it has, one a press runs, or what "Default"
+        /// certainly does.
+        var replacesAction: Bool {
+            return (action != nil || runsAction != nil || defaultEffect != nil) && !isChosen
+        }
+
+        /// What it does now: "Copy", "Mission Control" (another row's, which a press runs),
+        /// "Default (Back)", "No Action".
         var shownAction: String {
-            return action ?? ButtonsMousePart.defaultTitle(effect: defaultEffect)
+            return action ?? runsAction ?? defaultOutcome.title
         }
     }
 
@@ -94,6 +106,8 @@ struct TriggerChoiceMenu: Equatable {
     ///   - mouse: the drawing of the connected mouse.
     ///   - recordedTrigger: what "+" of Buttons records for a button of the mouse.
     ///   - actionName: what Buttons calls a binding's action.
+    ///   - holdKeys: the keys of While you hold a key the mouse is asked for
+    ///     (`ButtonDefaultOutcome.holdKeysThatCatch`).
     static func make(
         rule: ApplicationTriggerRule,
         triggerTitles: [String],
@@ -101,6 +115,7 @@ struct TriggerChoiceMenu: Equatable {
         mouse: MouseArtworkModel,
         recordedTrigger: (ButtonsMousePart) -> RecordedEvent,
         actionName: (ButtonBinding) -> String?,
+        holdKeys: [ScrollHotkey] = [],
         logitechRole: @escaping (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forScrollioCode: $0) },
         titles: ([RecordedEvent]) -> [String] = { ButtonTriggerNaming.titles(for: $0) },
         title: (RecordedEvent) -> String = { ButtonTriggerNaming.title(for: $0) }
@@ -115,33 +130,39 @@ struct TriggerChoiceMenu: Equatable {
                 ?? TriggerChoiceEdit.defaultTrigger(for: row.part, in: bindings, recordedTrigger: recordedTrigger)
             guard ButtonUtils.isRunnable(trigger) else { return nil }
             let action = row.binding.flatMap { CellActionState(binding: $0).hasBoundAction ? actionName($0) : nil }
-            let effect = action != nil ? nil : ButtonsMousePart.defaultEffect(
-                of: trigger, part: row.part,
-                isCaught: ButtonsListLayout.catchesControl(of: row.part, in: bindings, logitechRole: logitechRole),
-                logitechRole: logitechRole
+            let outcome = action != nil ? .passes(nil) : ButtonDefaultOutcome.of(
+                trigger, part: row.part, bindings: bindings, holdKeys: holdKeys, logitechRole: logitechRole
             )
+            var runs: String?
+            if case .runs(let other) = outcome {
+                runs = actionName(other)
+            }
             return Item(
                 part: row.part,
                 trigger: trigger,
                 title: row.binding.flatMap { names[$0.id] } ?? title(trigger),
                 action: action,
                 isChosen: row.binding.map(rule.takes) ?? false,
-                defaultEffect: effect
+                defaultOutcome: outcome,
+                runsAction: runs
             )
         }
         return TriggerChoiceMenu(title: triggerTitles.first.map(Title.trigger) ?? .choose, items: items)
     }
 
     /// What choosing `trigger` (a button or key "Record a Button…" caught) takes the place
-    /// of, named as the menu names it: the action of the binding it gets ("Copy"), or what
+    /// of, named as the menu names it: the action of the binding it gets ("Copy"), the
+    /// action of another binding a press of it runs now ("Mission Control"), or what
     /// "Default" certainly does there ("Default (Back)"). Nil when it does it already, when
-    /// nothing certain is lost, and when it cannot be chosen.
+    /// nothing certain is lost (a press that does nothing loses nothing), and when it
+    /// cannot be chosen.
     static func replaced(
         by trigger: RecordedEvent,
         rule: ApplicationTriggerRule,
         bindings: [ButtonBinding],
         mouse: MouseArtworkModel,
         actionName: (ButtonBinding) -> String?,
+        holdKeys: [ScrollHotkey] = [],
         logitechRole: @escaping (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forScrollioCode: $0) }
     ) -> String? {
         if rule == .gestureNavigation, trigger.type != .mouse { return nil }
@@ -159,10 +180,14 @@ struct TriggerChoiceMenu: Equatable {
         if let existing, CellActionState(binding: existing).hasBoundAction {
             return rule.takes(existing) ? nil : actionName(existing)
         }
-        let pressed = part ?? ButtonsListLayout.plainPart(of: trigger, logitechRole: logitechRole)
-        let caught = pressed.map { ButtonsListLayout.catchesControl(of: $0, in: bindings, logitechRole: logitechRole) } ?? false
-        let effect = ButtonsMousePart.defaultEffect(of: trigger, part: part, isCaught: caught, logitechRole: logitechRole)
-        return effect.map { ButtonsMousePart.defaultTitle(effect: $0) }
+        switch ButtonDefaultOutcome.of(trigger, part: part, bindings: bindings, holdKeys: holdKeys, logitechRole: logitechRole) {
+        case .runs(let other):
+            return rule.takes(other) ? nil : actionName(other)
+        case .passes(let effect):
+            return effect.map { ButtonsMousePart.defaultTitle(effect: $0) }
+        case .caught:
+            return nil
+        }
     }
 }
 
@@ -316,6 +341,9 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
     var deviceSource: ButtonsDeviceSource = .live
     /// Buttons' bindings, read and written.
     var bindings: () -> [ButtonBinding] = { Options.shared.buttons.binding }
+    /// Every key of While you hold a key the mouse is asked for: a Logitech one keeps its
+    /// button with Scrollio.
+    var holdKeys: () -> [ScrollHotkey] = { ButtonDefaultOutcome.holdKeysThatCatch() }
     var store: ([ButtonBinding]) -> Void = { Options.shared.buttons.binding = $0 }
     /// Takes Undo and Redo of a choice.
     var undoManager: () -> UndoManager? = { nil }
@@ -402,7 +430,8 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
             bindings: bindings(),
             mouse: mouse,
             recordedTrigger: deviceSource.recordedTrigger,
-            actionName: { [resolver] in resolver.actionName(of: $0) }
+            actionName: { [resolver] in resolver.actionName(of: $0) },
+            holdKeys: holdKeys()
         )
         let menu = pullDown.menu ?? NSMenu()
         menu.removeAllItems()
@@ -583,7 +612,8 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
     func replacedNote(for trigger: RecordedEvent) -> String? {
         let replaced = TriggerChoiceMenu.replaced(
             by: trigger, rule: rule, bindings: bindings(), mouse: mouse,
-            actionName: { [resolver] in resolver.actionName(of: $0) }
+            actionName: { [resolver] in resolver.actionName(of: $0) },
+            holdKeys: holdKeys()
         )
         return replaced.map { String(format: text("buttons-trigger-choice-recorded-replaces"), $0) }
     }

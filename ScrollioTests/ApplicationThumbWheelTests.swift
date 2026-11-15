@@ -353,7 +353,7 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         XCTAssertEqual(part.rows[1].pullDown.toolTip, "Goes back in apps that support it.")
 
         let wheel = try XCTUnwrap(part.thumbWheelRow)
-        XCTAssertEqual(wheel.explanation, "In other apps: Scroll Sideways")
+        XCTAssertEqual(wheel.explanation, "In other apps: Default\u{A0}(Scroll\u{A0}Sideways)")
         let wheelItems = try XCTUnwrap(wheel.pullDown.menu?.items)
         XCTAssertEqual(wheelItems[1].title, "Same as Other Apps (Scroll Sideways)")
         XCTAssertTrue(wheelItems[1] === wheel.pullDown.sameAsOtherAppsItem)
@@ -505,14 +505,32 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
     }
 
     /// The row's pull-down changes the app's function only; the line under it follows the
-    /// general one; the row stays the same view. With the thumb wheel alone the note says
-    /// what the rows do, not how to add one.
+    /// general one, named as Buttons names it ("Default (Scroll Sideways)" kept together,
+    /// round 2 fix Y6) in one or two lines; the row stays the same view. With the thumb
+    /// wheel alone the note says what the rows do, not how to add one.
     func testTheRowsPullDownChangesTheAppsFunctionNotTheGeneralOne() throws {
         let calculator = addCalculator()
         calculator.setOwnThumbWheelFunction(.zoom)
         let part = try buttonsPart()
         let row = try XCTUnwrap(part.thumbWheelRow)
-        XCTAssertEqual(row.explanation, "In other apps: Scroll Sideways", "what the wheel does there, by its name")
+        XCTAssertEqual(row.explanation, "In other apps: Default\u{A0}(Scroll\u{A0}Sideways)", "what the wheel does there, as Buttons says it")
+        // Right of the row's picture, left of the pull-down: one or two lines, the name whole.
+        let column = ApplicationButtonsViewController.boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset
+            - PreferencesListRow.imageIconSize - PreferencesListRow.iconSpacing
+            - ButtonActionPullDown.width - PreferencesGroupedForm.controlSpacing
+        let font = PreferencesGroupedForm.explanationFont
+        let oneLine = NSTextField(labelWithString: "Xg")
+        oneLine.font = font
+        for function in ThumbWheelFunction.allCases {
+            let line = ApplicationThumbWheelRow.everywhere(function)
+            let label = NSTextField(wrappingLabelWithString: line)
+            label.font = font
+            label.preferredMaxLayoutWidth = column
+            XCTAssertLessThanOrEqual(label.fittingSize.height, 2 * oneLine.fittingSize.height + 1, line)
+            let name = NSTextField(labelWithString: ThumbWheelPresentation.buttonsTitle(for: function))
+            name.font = font
+            XCTAssertLessThanOrEqual(name.fittingSize.width, column, "\(line): the name fits a line of its own")
+        }
         XCTAssertEqual(part.noteLabel.stringValue, "In Calculator, these do this. Everything else works as set in Buttons.",
                        "the wheel is no button")
 

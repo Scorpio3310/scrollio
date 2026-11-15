@@ -3677,3 +3677,139 @@ extension PreferencesWindowRenderTests {
         popover.hide()
     }
 }
+
+// MARK: - Round 2 fix Y
+
+/// Round 2 fix Y (`round2-fix-y-*-<appearance>.png`): "Default" only where a press passes
+/// through, "No Action" with why elsewhere (Y1); a Logitech key of While you hold a key
+/// keeps its button (Y2); a key's row (Y5); an app's Buttons part with "In other apps: …"
+/// by the same rule (Y1, Y3, Y4) and its thumb wheel's line (Y6); the trigger chooser and
+/// the recorder's note (Y1, Y2).
+extension PreferencesWindowRenderTests {
+
+    /// Buttons on an MX Master 4: Back runs Mission Control, ⌥ Back has none (a press runs
+    /// Mission Control), ⌃ Gesture runs Copy (the gesture button's row and ⌥ Gesture: a
+    /// press does nothing), a key without an action, and Forward a Logitech key of While you
+    /// hold a key. Then with ⌥ Back's row selected (the card says what the row says).
+    func testRenderRound2FixYButtons() throws {
+        let gesture = LogiCenter.shared.scrollioCode(for: .gesture)
+        let forward = LogiCenter.shared.scrollioCode(for: .forward)
+        Options.shared.buttons.binding = [
+            round2Binding(3, SystemShortcut.missionControl.identifier),
+            round2Binding(3, modifiers: .maskAlternate),
+            round2Binding(gesture, SystemShortcut.copy.identifier, modifiers: .maskControl),
+            round2Binding(gesture, modifiers: .maskAlternate),
+            round2Binding(40, modifiers: [.maskControl, .maskAlternate], type: .keyboard),
+        ]
+        let keys = [ScrollHotkey(type: .mouse, code: forward)]
+        let optionBack = Options.shared.buttons.binding[1].id
+        for selected in [false, true] {
+            try renderButtons(
+                name: "round2-fix-y-buttons" + (selected ? "-option-back-selected" : ""),
+                source: round2Source("MX Master 4"), scrollKeys: keys
+            ) { buttons in
+                buttons.holdKeysThatCatch = { keys }
+                buttons.reload()
+                XCTAssertEqual(buttons.row(for: optionBack)?.explanation, "A press runs Mission Control.")
+                XCTAssertEqual(buttons.row(for: ButtonsMousePart.gesture)?.pullDown.menu?.items.first?.title, "No Action")
+                XCTAssertEqual(buttons.row(for: ButtonsMousePart.forward)?.pullDown.menu?.items.first?.title, "No Action")
+                if selected {
+                    buttons.list.select(buttons.rowID(forBinding: optionBack))
+                }
+            }
+        }
+    }
+
+    /// Safari's Buttons part on an MX Master 4: ⌥ Back of its own (in other apps ⌥ Back
+    /// runs Back's Mission Control), ⌥ Gesture (in other apps caught for ⌃ Gesture: "No
+    /// Action"), its own "Default" on the standard Forward while the Logitech one is caught
+    /// for ⌥ Forward ("No Action": the press never reaches it), and the thumb wheel's
+    /// function ("In other apps: Default (Scroll Sideways)"); and a row's menu.
+    func testRenderRound2FixYAppButtons() throws {
+        let stored = Options.shared.application.applications
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            ButtonUtils.shared.invalidateCache()
+        }
+        let gesture = LogiCenter.shared.scrollioCode(for: .gesture)
+        let forward = LogiCenter.shared.scrollioCode(for: .forward)
+        Options.shared.buttons.binding = [
+            round2Binding(3, SystemShortcut.missionControl.identifier),
+            round2Binding(3, modifiers: .maskAlternate),
+            round2Binding(gesture, SystemShortcut.paste.identifier, modifiers: .maskControl),
+            round2Binding(forward, SystemShortcut.copy.identifier, modifiers: .maskAlternate),
+        ]
+        let safari = Application(path: "/Applications/Safari.app")
+        safari.setOwnButtonBindings([
+            round2Binding(3, SystemShortcut.copy.identifier, modifiers: .maskAlternate),
+            round2Binding(gesture, SystemShortcut.copy.identifier, modifiers: .maskAlternate),
+            ButtonBinding(
+                triggerEvent: RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil), systemShortcutName: "", isEnabled: true
+            ),
+        ])
+        safari.setOwnThumbWheelFunction(.zoom)
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [safari], matchKey: "path")
+        let defaults = uiDefaults(advanced: false)
+        var part: ApplicationButtonsViewController?
+        try renderPane(PANEL_IDENTIFIER.application, name: "round2-fix-y-app-buttons", prepare: { preferences in
+            (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                .uiStateDefaults = defaults
+        }, afterLoad: { controller in
+            let apps = controller as? PreferencesApplicationViewController
+            apps?.openApplication(withID: safari.path, part: .buttons)
+            part = apps?.detailController?.buttonsPart
+            part?.deviceSource = self.round2Source("MX Master 4")
+            part?.holdKeysThatCatch = { [] }
+            part?.reloadRows()
+        })
+        let shown = try XCTUnwrap(part)
+        XCTAssertEqual(shown.rows.map(\.explanation), [
+            "In other apps: Mission Control", "In other apps: No\u{A0}Action", "In other apps: No\u{A0}Action",
+        ])
+        XCTAssertEqual(shown.rows.last?.pullDown.menu?.items.first?.title, "No Action")
+        XCTAssertEqual(shown.thumbWheelRow?.explanation, "In other apps: Default\u{A0}(Scroll\u{A0}Sideways)")
+        try round2Menu(try round2Shown(try XCTUnwrap(shown.rows.first).pullDown), name: "round2-fix-y-menu-app-row")
+    }
+
+    /// The Gestures pane's trigger chooser on an MX Master 3S: Back runs the gestures,
+    /// ⌃ Gesture runs Copy (the gesture button: "No Action", nothing replaced), Forward is a
+    /// Logitech key of While you hold a key ("No Action"); and the recorder's note for ⌥
+    /// Back while Back runs Mission Control in the ring's chooser: "Replaces: Mission
+    /// Control".
+    func testRenderRound2FixYTriggerChoice() throws {
+        let gesture = LogiCenter.shared.scrollioCode(for: .gesture)
+        let forward = LogiCenter.shared.scrollioCode(for: .forward)
+        Options.shared.buttons.binding = [
+            round2Binding(3, SystemShortcut.mouseGestureNavigation.identifier),
+            round2Binding(gesture, SystemShortcut.copy.identifier, modifiers: .maskControl),
+        ]
+        Options.shared.gesture = .default
+        let pane = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+        pane.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        _ = pane.view
+        let chooser: TriggerChooser = try XCTUnwrap(pane.triggerChooser)
+        chooser.deviceSource = round2Source("MX Master 3S")
+        chooser.holdKeys = { [ScrollHotkey(type: .mouse, code: forward)] }
+        chooser.update(triggerTitles: chooser.triggerTitles)
+        try round2Menu(Array(try XCTUnwrap(chooser.pullDown.menu).items.dropFirst()), name: "round2-fix-y-menu-trigger-choice")
+
+        Options.shared.buttons.binding = [round2Binding(3, SystemShortcut.missionControl.identifier)]
+        let ring = TriggerChooser(rule: .shortcutRing)
+        ring.deviceSource = round2Source("MX Master 3S")
+        ring.holdKeys = { [] }
+        let note = try XCTUnwrap(ring.replacedNote(for: RecordedEvent(
+            type: .mouse, code: 3, modifiers: UInt(CGEventFlags.maskAlternate.rawValue), deviceFilter: nil
+        )))
+        XCTAssertEqual(note, "Replaces: Mission Control")
+        let popover = KeyPopover()
+        popover.announce = { _ in }
+        popover.testingPrepareContent(waitingHint: NSLocalizedString("buttons-recorder-waiting-gesture", comment: ""))
+        popover.keyPreview.update(from: ["⌥", "Back button"], status: .recorded)
+        popover.showRecordedNote(note)
+        let view = try XCTUnwrap(popover.testingContentView)
+        view.layoutSubtreeIfNeeded()
+        view.setFrameSize(view.fittingSize)
+        try renderInPopoverMaterial(view, name: "round2-fix-y-recorder-replaces")
+        popover.hide()
+    }
+}

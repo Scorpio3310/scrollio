@@ -535,6 +535,95 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertNil(ApplicationButtons.generalBinding(for: binding(4, "").triggerEvent, in: general))
     }
 
+    /// The app's Buttons part, in no window, with an MX Master 3S and the keys of While you
+    /// hold a key given.
+    private func buttonsPart(_ application: Application, holdKeys: [ScrollHotkey] = []) -> ApplicationButtonsViewController {
+        let part = ApplicationButtonsViewController(application: application)
+        part.deviceSource = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { "MX Master 3S" }, isBusy: { false }, refresh: {},
+            warnBluetoothButton: { _ in }
+        )
+        part.holdKeysThatCatch = { holdKeys }
+        part.presentMenu = { _, _ in }
+        part.openActionMenu = { _ in }
+        part.startRecording = { _ in }
+        part.stopRecording = {}
+        part.presentOpenTarget = { _, _, _ in }
+        part.paneUndoManager = UndoManager()
+        _ = part.view
+        return part
+    }
+
+    /// In other apps a binding without an action is skipped, as the input side skips it
+    /// (round 2 fix Y3): ⌥ Back without an action while Back runs Mission Control runs
+    /// Mission Control there. An app's ⌥ Back says so in its line and in "Same as Other
+    /// Apps (…)", and a new ⌥ Back of the app starts with it.
+    func testInOtherAppsABindingWithoutAnActionIsSkipped() throws {
+        let option = UInt(CGEventFlags.maskAlternate.rawValue)
+        let missionControl = SystemShortcut.missionControl.identifier
+        let none = ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: option, deviceFilter: nil),
+            systemShortcutName: "", isEnabled: false
+        )
+        let general = [binding(3, missionControl), none]
+        let safari = set(general: general, safari: [binding(3, "copy", modifiers: option)])
+        XCTAssertEqual(action(3, modifiers: .maskAlternate, in: Self.textEdit), missionControl, "what really runs")
+
+        XCTAssertEqual(ApplicationButtons.generalBinding(for: none.triggerEvent, in: general)?.systemShortcutName, missionControl)
+        XCTAssertEqual(ApplicationButtonsViewController.newBinding(for: none.triggerEvent, general: general).systemShortcutName, missionControl)
+        let row = try XCTUnwrap(buttonsPart(safari).rows.first)
+        XCTAssertEqual(row.explanation, "In other apps: Mission Control")
+        XCTAssertEqual(row.pullDown.sameAsOtherAppsItem?.title, "Same as Other Apps (Mission Control)")
+    }
+
+    /// "In other apps: …" says "No Action" where a press there does nothing: Scrollio
+    /// catches the button for another binding (round 2 fix Y1), or for a Logitech key of
+    /// While you hold a key (Y2; a standard key only listens).
+    func testInOtherAppsACaughtButtonDoesNothing() throws {
+        let option = UInt(CGEventFlags.maskAlternate.rawValue)
+        let control = UInt(CGEventFlags.maskControl.rawValue)
+        let gesture = LogiCenter.shared.scrollioCode(for: .gesture)
+        let back = LogiCenter.shared.scrollioCode(for: .back)
+        let safari = set(general: [binding(gesture, "paste", modifiers: control)], safari: [
+            binding(gesture, "copy", modifiers: option), binding(3, "copy"),
+        ])
+        var rows = buttonsPart(safari).rows
+        XCTAssertEqual(rows.map(\.explanation), ["In other apps: No\u{A0}Action", "In other apps: Default\u{A0}(Back)"])
+        XCTAssertEqual(rows.map { $0.pullDown.sameAsOtherAppsItem?.title }, [
+            "Same as Other Apps (No Action)", "Same as Other Apps (Back)",
+        ])
+
+        rows = buttonsPart(safari, holdKeys: [ScrollHotkey(type: .mouse, code: back)]).rows
+        XCTAssertEqual(rows[1].explanation, "In other apps: No\u{A0}Action")
+        rows = buttonsPart(safari, holdKeys: [ScrollHotkey(type: .mouse, code: 3)]).rows
+        XCTAssertEqual(rows[1].explanation, "In other apps: Default\u{A0}(Back)")
+    }
+
+    /// The app's own "Default" of a button Scrollio catches for another binding names Back
+    /// only where the press reaches it (round 2 fix Y4): stored under the Logitech code it
+    /// goes on as the standard Back button; stored as the standard button it is never
+    /// reached (the caught press arrives as the Logitech control) and does nothing.
+    func testAnAppsOwnDefaultOfACaughtButtonNamesBackOnlyWhereThePressReachesIt() throws {
+        let option = UInt(CGEventFlags.maskAlternate.rawValue)
+        let back = LogiCenter.shared.scrollioCode(for: .back)
+        let general = [binding(back, "copy", modifiers: option)]
+
+        var safari = set(general: general, safari: [binding(3, "")])
+        front = Self.safari
+        XCTAssertNil(ButtonUtils.shared.getBestMatchingBinding(for: press(back)), "the caught press never reaches it")
+        var row = try XCTUnwrap(buttonsPart(safari).rows.first)
+        XCTAssertEqual(row.pullDown.menu?.items.first?.title, "No Action")
+        XCTAssertNil(row.pullDown.toolTip)
+
+        safari = set(general: general, safari: [binding(back, "")])
+        let reached = try XCTUnwrap(ButtonUtils.shared.getBestMatchingBinding(for: press(back)))
+        XCTAssertNotNil(InputProcessor.standardButton(
+            forAppsOwnDefault: reached, of: press(back), scope: ButtonBindingScope(applicationPath: safari.path)
+        ), "it goes on as the standard Back button")
+        row = try XCTUnwrap(buttonsPart(safari).rows.first)
+        XCTAssertEqual(row.pullDown.menu?.items.first?.title, "Default (Back)")
+    }
+
     // MARK: - Storage
 
     /// Own buttons are stored under "buttons" with the app; an app without them is stored

@@ -1097,6 +1097,32 @@ final class ShortcutRingAppMarkTests: XCTestCase {
     /// shows an empty middle (and is named by its path), its mark is made after it closed,
     /// and the next ring has the icon. The general ring never has one, also when marks of
     /// apps are there.
+    /// The panel never becomes key, so VoiceOver hears whose ring opened from the announce
+    /// path (round 2 fix Y8): an app's own ring says "Shortcut Ring for Notes" once, when it
+    /// shows and before the place it lights; the general ring says nothing of its own.
+    func testAnAppsOwnRingIsAnnouncedOnceWhenItShows() {
+        front = FrontApp(bundlePath: Self.notes, executablePath: nil)
+        controller.triggerPressed(by: RingHarness.button(.down))
+        XCTAssertTrue(harness.announced.isEmpty, "not before it shows")
+        harness.runScheduled()
+        XCTAssertEqual(harness.announced, ["Shortcut Ring for Notes"])
+        harness.moveHand(by: CGPoint(x: 0, y: -50))
+        harness.runScheduled()
+        XCTAssertEqual(harness.announced.count, 2, "then the lit place")
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertEqual(harness.announced.filter { $0 == "Shortcut Ring for Notes" }.count, 1, "once")
+
+        let before = harness.announced.count
+        front = FrontApp(bundlePath: Self.calculator, executablePath: nil)
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertEqual(harness.presenter.owners.last, .general)
+        XCTAssertEqual(harness.announced.count, before, "the general ring: nothing")
+        controller.cancel()
+        harness.runScheduled()
+    }
+
     func testNothingIsLoadedAtTheOpenAndTheMarkIsMadeAfterTheRingClosed() {
         front = FrontApp(bundlePath: Self.notes, executablePath: nil)
         controller.triggerPressed(by: RingHarness.button(.down))

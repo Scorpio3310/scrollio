@@ -81,6 +81,9 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     var stopRecording: (() -> Void)?
     /// Opens a row's action menu. The menu runs until it closes, so tests replace it.
     var openActionMenu: (NSPopUpButton) -> Void = { $0.performClick(nil) }
+    /// Every key of While you hold a key the mouse is asked for: a Logitech one keeps its
+    /// button with Scrollio.
+    var holdKeysThatCatch: () -> [ScrollHotkey] = { ButtonDefaultOutcome.holdKeysThatCatch() }
     /// Shows "Open App or File" at a row's pull-down. Tests replace it: nothing is shown.
     var presentOpenTarget: (OpenTargetConfigPopover, NSView, OpenTargetPayload?) -> Void = { popover, anchor, existing in
         popover.show(at: anchor, existing: existing)
@@ -271,19 +274,23 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         let titles = ButtonTriggerNaming.titles(for: own.map(\.triggerEvent))
         let old = rows
         var shown: [ButtonBindingRow] = []
-        // What the app's bindings with an action catch while it is in front.
-        let catching = ApplicationButtons.merged(general: general, own: own).filter { CellActionState(binding: $0).hasBoundAction }
+        let holdKeys = holdKeysThatCatch()
         for (index, binding) in own.enumerated() {
             let title = titles[index]
-            let elsewhere = otherApps(for: binding.triggerEvent, general: general)
+            let elsewhere = otherApps(for: binding.triggerEvent, general: general, holdKeys: holdKeys)
             let note = ButtonRowNote(kind: .everywhere, text: String(format: text("apps-buttons-everywhere"), elsewhere.title))
-            let effect = Self.ownDefaultEffect(of: binding.triggerEvent, catching: catching)
+            // What a press goes by while the app is in front, with this row at "Default".
+            let asDefault = ButtonBinding(
+                id: binding.id, triggerEvent: binding.triggerEvent, systemShortcutName: "", isEnabled: true, createdAt: binding.createdAt
+            )
+            let merged = ApplicationButtons.merged(general: general, own: own.map { $0.id == binding.id ? asDefault : $0 })
+            let outcome = Self.ownDefaultOutcome(of: binding.triggerEvent, merged: merged, holdKeys: holdKeys)
             let row: ButtonBindingRow
             if let existing = old.first(where: { $0.id == AnyHashable(binding.id) }) {
-                existing.update(binding: binding, title: title, note: note, mouse: mouse, isStored: false, defaultEffect: effect)
+                existing.update(binding: binding, title: title, note: note, mouse: mouse, isStored: false, defaultOutcome: outcome)
                 row = existing
             } else {
-                row = makeRow(for: binding, title: title, note: note, defaultEffect: effect)
+                row = makeRow(for: binding, title: title, note: note, defaultOutcome: outcome)
             }
             row.pullDown.sameAsOtherAppsTitle = String(format: text("apps-buttons-same-as-other-apps"), elsewhere.bracket)
             shown.append(row)
@@ -305,42 +312,56 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     /// What a press of `trigger` does in other apps, named as the Buttons pane names it
     /// ("Shortcut Ring" and "Gesture Navigation" too): the action of the binding of Buttons
-    /// it goes by, else "Default", with what that does where it is certain.
+    /// that runs on it (`ButtonDefaultOutcome`: its own, or one it matches), else "Default",
+    /// with what that does where it is certain, or "No Action" where the press does nothing.
     struct OtherApps: Equatable {
-        /// The action's name; nil: "Default".
+        /// The action's name; nil: no action runs.
         let action: String?
+        /// Without an action: what the press does there.
+        let outcome: ButtonDefaultOutcome
+
         /// What "Default" does there, where that is certain.
-        let effect: ButtonsMousePart?
+        var effect: ButtonsMousePart? {
+            return action == nil ? outcome.effect : nil
+        }
 
-        /// "Mission Control", "Default (Back)", "Default": the row's line. "Default (Switch
-        /// Wheel Mode)" is kept on one line (no-break spaces), as one name.
+        /// "Mission Control", "Default (Back)", "Default", "No Action": the row's line.
+        /// "Default (Switch Wheel Mode)" is kept on one line (no-break spaces), as one name.
         var title: String {
-            return action ?? ButtonsMousePart.defaultTitle(effect: effect).replacingOccurrences(of: " ", with: "\u{A0}")
+            return action ?? outcome.title.replacingOccurrences(of: " ", with: "\u{A0}")
         }
 
-        /// "Mission Control", "Back", "Default": the parenthesis of "Same as Other Apps (…)".
+        /// "Mission Control", "Back", "Default", "No Action": the parenthesis of "Same as
+        /// Other Apps (…)".
         var bracket: String {
-            return action ?? effect?.defaultEffectName ?? NSLocalizedString("buttons-default", comment: "")
+            return action ?? effect?.defaultEffectName ?? outcome.title
         }
     }
 
-    func otherApps(for trigger: RecordedEvent, general: [ButtonBinding]) -> OtherApps {
-        let generalBinding = ApplicationButtons.generalBinding(for: trigger, in: general)
-        if let action = generalBinding.flatMap({ $0.isEnabled ? resolver.actionName(of: $0) : nil }) {
-            return OtherApps(action: action, effect: nil)
+    func otherApps(for trigger: RecordedEvent, general: [ButtonBinding], holdKeys: [ScrollHotkey]? = nil) -> OtherApps {
+        let outcome = ButtonDefaultOutcome.of(trigger, bindings: general, holdKeys: holdKeys ?? holdKeysThatCatch())
+        if case .runs(let binding) = outcome, let action = resolver.actionName(of: binding) {
+            return OtherApps(action: action, outcome: outcome)
         }
-        let caught = ButtonsListLayout.plainPart(of: trigger).map { ButtonsListLayout.catchesControl(of: $0, in: general) } ?? false
-        return OtherApps(action: nil, effect: ButtonsMousePart.defaultEffect(of: trigger, isCaught: caught))
+        return OtherApps(action: nil, outcome: outcome)
     }
 
-    /// What the app's own "Default" on `trigger` does in the app, where that is certain:
-    /// `catching` are the bindings with an action while the app is in front.
-    static func ownDefaultEffect(of trigger: RecordedEvent, catching: [ButtonBinding]) -> ButtonsMousePart? {
-        let caught = ButtonsListLayout.plainPart(of: trigger).map { ButtonsListLayout.catchesControl(of: $0, in: catching) } ?? false
-        return ButtonsMousePart.defaultEffect(of: trigger, isCaught: caught, isAppsOwn: true)
+    /// What a press of the app's own "Default" on `trigger` does in the app (`merged`: the
+    /// bindings a press goes by while it is in front): "Default (Back)" where it passes
+    /// through, also where Scrollio catches the control for another binding and the press
+    /// reaches the app's "Default" (it goes on as the standard button); else "No Action".
+    static func ownDefaultOutcome(
+        of trigger: RecordedEvent, merged: [ButtonBinding], holdKeys: [ScrollHotkey] = []
+    ) -> ButtonDefaultOutcome {
+        return ButtonDefaultOutcome.of(
+            trigger, bindings: merged, catching: merged.filter { CellActionState(binding: $0).hasBoundAction },
+            holdKeys: holdKeys, isAppsOwn: true
+        )
     }
 
-    private func makeRow(for binding: ButtonBinding, title: String, note: ButtonRowNote, defaultEffect: ButtonsMousePart?) -> ButtonBindingRow {
+    private func makeRow(
+        for binding: ButtonBinding, title: String, note: ButtonRowNote, defaultOutcome: ButtonDefaultOutcome
+    ) -> ButtonBindingRow {
         let id = binding.id
         let pullDown = ButtonActionPullDown(binding: binding)
         pullDown.onShortcutSelected = { [weak self] shortcut in
@@ -363,7 +384,8 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         // (No place menu here: where a numbered button is, the Buttons pane says.) Without
         // an action the button does what it does by itself here: "Default".
         return ButtonBindingRow(
-            binding: binding, title: title, note: note, mouse: mouse, pullDown: pullDown, isStored: false, defaultEffect: defaultEffect
+            binding: binding, title: title, note: note, mouse: mouse, pullDown: pullDown, isStored: false,
+            defaultOutcome: defaultOutcome
         )
     }
 
@@ -564,7 +586,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         }
         guard ButtonUtils.isRunnable(trigger) else { return nil }
         let added = action.map { ButtonBinding(triggerEvent: trigger, systemShortcutName: $0.identifier, isEnabled: true) }
-            ?? Self.newBinding(for: trigger, general: generalBindings)
+            ?? Self.newBinding(for: trigger, general: generalBindings, holdKeys: holdKeysThatCatch())
         let own = ownBindings
         store(own + [added])
         list.select(AnyHashable(added.id))
@@ -588,12 +610,14 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     }
 
     /// A new binding of the app's own for `trigger`, with the action a press of it has
-    /// everywhere, the one its "In other apps" line names (`otherApps`): the general
-    /// binding of that trigger, else the one such a press matches (a button bound without
-    /// modifier keys runs with them too), the Shortcut Ring and Gesture Navigation too;
-    /// "Default" when there is none.
-    static func newBinding(for trigger: RecordedEvent, general: [ButtonBinding]) -> ButtonBinding {
-        if let model = ApplicationButtons.generalBinding(for: trigger, in: general), model.isEnabled {
+    /// everywhere, the one its "In other apps" line names (`otherApps`,
+    /// `ButtonDefaultOutcome`): the general binding of that trigger while it has an action,
+    /// else the one such a press runs (a button bound without modifier keys runs with them
+    /// too), the Shortcut Ring and Gesture Navigation too; "Default" when none runs.
+    static func newBinding(
+        for trigger: RecordedEvent, general: [ButtonBinding], holdKeys: [ScrollHotkey] = []
+    ) -> ButtonBinding {
+        if case .runs(let model) = ButtonDefaultOutcome.of(trigger, bindings: general, holdKeys: holdKeys) {
             if let payload = model.openTarget {
                 return ButtonBinding(triggerEvent: trigger, openTarget: payload)
             }
