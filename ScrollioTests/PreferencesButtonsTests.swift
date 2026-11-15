@@ -248,8 +248,8 @@ final class PreferencesButtonsTests: XCTestCase {
 
     /// An MX Master 4 with nothing set up: a row for each of its buttons, in the order they
     /// sit on it, each "Default", with what it then does in parentheses where that is
-    /// certain ("Default (Back)", its sentence in the pull-down's tooltip and no line) and
-    /// else "Does what the mouse does on its own." under it. Left and right clicks are not
+    /// certain ("Default (Back)", its sentence in the pull-down's tooltip and no line); the
+    /// free Gesture button and Thumb panel say what they are good for. Left and right clicks are not
     /// listed, nothing is stored, the list has no title inside, and "−" and Delete never
     /// remove one.
     func testAnMXMaster4ListsEveryButtonInTheOrderTheySit() throws {
@@ -262,7 +262,7 @@ final class PreferencesButtonsTests: XCTestCase {
             "Default (Middle Click)", "Default (Switch Wheel Mode)", "Default", "Default (Forward)", "Default (Back)", "Default",
         ])
         XCTAssertEqual(pane.rows.map(\.explanation), [
-            nil, nil, "Does what the mouse does on its own.", nil, nil, "Does what the mouse does on its own.",
+            nil, nil, "Good for Gestures or the Shortcut Ring.", nil, nil, "Good for Gestures or the Shortcut Ring.",
         ])
         XCTAssertEqual(pane.rows.map(\.pullDown.toolTip), [
             "Middle click.",
@@ -277,7 +277,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(pane.rows.map(\.picture), ButtonsMousePart.listed(on: .mxMaster4).map { ButtonTriggerPicture.mouse(part: $0, number: nil) })
         XCTAssertEqual(pane.rows[4].accessibilityLabel(), "Back button")
         XCTAssertEqual(pane.rows[4].pullDown.accessibilityHelp(), "Goes back in apps that support it.", "VoiceOver hears it")
-        XCTAssertEqual(pane.rows[2].accessibilityLabel(), "Gesture button, Does what the mouse does on its own.")
+        XCTAssertEqual(pane.rows[2].accessibilityLabel(), "Gesture button, Good for Gestures or the Shortcut Ring.")
         XCTAssertTrue(pane.list.groupTitles.isEmpty)
         XCTAssertNil(pane.list.emptyRow.superview, "never empty")
 
@@ -326,7 +326,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(pane.rows.map(\.title), ["Middle button", "Mode shift button", "Forward button", "Back button", "Gesture button",
                                                 "⌥ Back button", "⌃ K"])
         XCTAssertEqual(pane.rows[4].picture, .mouse(part: .gesture, number: nil))
-        XCTAssertEqual(pane.rows[4].explanation, "Does what the mouse does on its own.")
+        XCTAssertEqual(pane.rows[4].explanation, "Good for Gestures or the Shortcut Ring.")
         XCTAssertEqual(pane.list.groupTitles[AnyHashable(added[0].id)]?.title, "Other buttons and keys")
         XCTAssertEqual(pane.list.groupTitles.count, 1)
 
@@ -1086,7 +1086,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertTrue(Options.shared.buttons.binding.isEmpty)
         XCTAssertTrue(row.isDefault)
         XCTAssertEqual(row.title, "Gesture button (button 6)")
-        XCTAssertEqual(row.explanation, "Does what the mouse does on its own.")
+        XCTAssertEqual(row.explanation, "Good for Gestures or the Shortcut Ring.", "a numbered button there passes through too")
 
         let gestureItem = try XCTUnwrap(row.pullDown.gestureNavigationItem)
         row.pullDown.shortcutSelected(gestureItem)
@@ -1135,7 +1135,7 @@ final class PreferencesButtonsTests: XCTestCase {
         captureStatus = [2000 + 0x01A0: .bleHIDPPUnstable]
         let pane = makePane()
         let panel = try XCTUnwrap(pane.row(for: ButtonsMousePart.thumbPanel))
-        XCTAssertEqual(panel.explanation, "Does what the mouse does on its own.")
+        XCTAssertEqual(panel.explanation, "Good for Gestures or the Shortcut Ring.")
         panel.pullDown.shortcutSelected(try XCTUnwrap(item("copy", in: panel.pullDown.menu)))
         XCTAssertEqual(warnedCodes, [2000 + 0x01A0])
         XCTAssertEqual(panel.explanation, "May stop working while Logi Options+ runs.")
@@ -3355,7 +3355,7 @@ final class PreferencesButtonsTests: XCTestCase {
             try XCTUnwrap(pane.row(for: controlGesture.id)?.pullDown.noActionItem)
         )
         XCTAssertEqual(shown(gestureRow.pullDown), "Default")
-        XCTAssertEqual(gestureRow.explanation, "Does what the mouse does on its own.")
+        XCTAssertEqual(gestureRow.explanation, "Good for Gestures or the Shortcut Ring.", "it passes through again")
         XCTAssertEqual(shown(try XCTUnwrap(pane.row(for: optionGesture.id)).pullDown), "Default")
     }
 
@@ -3461,5 +3461,215 @@ final class PreferencesButtonsTests: XCTestCase {
         calculator.setOwnButtonBindings([])
         XCTAssertEqual(ApplicationTriggerRow.make(.shortcutRing, application: calculator, general: [binding(4, SystemShortcut.shortcutRing.identifier)]).destination,
                        .buttonsPane)
+    }
+
+    // MARK: - What a free Gesture button and Thumb panel are good for (round 4, D2)
+
+    private var gesturesAction: String { SystemShortcut.mouseGestureNavigation.identifier }
+    private var ringAction: String { SystemShortcut.shortcutRing.identifier }
+
+    /// The lines of the Gesture button's and the Thumb panel's rows on an MX Master 4.
+    private func freeLines(_ pane: PreferencesButtonsViewController) -> [String?] {
+        return [ButtonsMousePart.gesture, .thumbPanel].map { pane.row(for: $0)?.explanation }
+    }
+
+    /// While nothing of Buttons runs the gestures or opens the ring, the free Gesture
+    /// button and Thumb panel name what they are good for: only what no button does yet,
+    /// then the old line. A line only: plain, no sign, no ⓘ, "Default" stays and nothing
+    /// is stored.
+    func testAFreeGestureButtonAndThumbPanelSayWhatTheyAreGoodFor() throws {
+        let both = "Good for Gestures or the Shortcut Ring."
+        let pane = makePane()
+        let (window, _) = makeWindow(for: pane)
+        XCTAssertEqual(freeLines(pane), [both, both])
+        XCTAssertEqual(text("buttons-default-good-for-both"), both)
+        XCTAssertTrue(both.contains(text("gestures-tab-title")) && both.contains(text("ring-tab-title")), "the sidebar's names")
+        for part in [ButtonsMousePart.gesture, .thumbPanel] {
+            let row = try XCTUnwrap(pane.row(for: part))
+            XCTAssertEqual(row.note?.kind, .goodFor([.gestures, .ring]))
+            XCTAssertEqual(row.note?.tone, .plain)
+            XCTAssertEqual(row.note?.hasDetails, false)
+            XCTAssertTrue(row.infoButton.isHidden, "no ⓘ")
+            XCTAssertEqual(row.explanationLabel.stringValue, both, "plain text: no light bulb before it")
+            XCTAssertEqual(row.explanationLabel.textColor, PreferencesGroupedForm.explanationColor(enabled: true))
+            XCTAssertEqual(shown(row.pullDown), "Default")
+            XCTAssertNil(row.pullDown.toolTip)
+            XCTAssertTrue(row.isDefault && !row.isStored)
+        }
+        XCTAssertEqual(pane.row(for: ButtonsMousePart.gesture)?.accessibilityLabel(), "Gesture button, \(both)")
+        XCTAssertEqual(pane.row(for: ButtonsMousePart.thumbPanel)?.accessibilityLabel(), "Thumb panel, \(both)")
+        // The line fits the row (one line of the two it may take).
+        window.contentView?.layoutSubtreeIfNeeded()
+        let oneLine = NSTextField(labelWithString: "Xg")
+        oneLine.font = PreferencesGroupedForm.explanationFont
+        let label = try XCTUnwrap(pane.row(for: ButtonsMousePart.gesture)).explanationLabel
+        XCTAssertLessThanOrEqual(label.frame.height, 2 * oneLine.fittingSize.height + 1)
+        XCTAssertTrue(Options.shared.buttons.binding.isEmpty, "showing the line stores nothing")
+
+        // Something opens the ring already (a button, or a key): only Gestures is named.
+        XCTAssertEqual(freeLines(makePane([binding(3, ringAction)])), ["Good for Gestures.", "Good for Gestures."])
+        XCTAssertEqual(
+            freeLines(makePane([binding(40, ringAction, modifiers: control, type: .keyboard)])),
+            ["Good for Gestures.", "Good for Gestures."], "a key that opens the ring counts as taken"
+        )
+        // A button runs the gestures already: only the ring.
+        let ringOnly = makePane([binding(3, gesturesAction)])
+        XCTAssertEqual(freeLines(ringOnly), ["Good for the Shortcut Ring.", "Good for the Shortcut Ring."])
+        XCTAssertEqual(ringOnly.row(for: ButtonsMousePart.thumbPanel)?.note?.kind, .goodFor(.ring))
+        // A key cannot run the gestures: they still want a button.
+        XCTAssertEqual(freeLines(makePane([binding(40, gesturesAction, type: .keyboard), binding(3, ringAction)])),
+                       ["Good for Gestures.", "Good for Gestures."])
+        // Both have their button: the line every such button had.
+        let neither = makePane([binding(3, gesturesAction), binding(4, ringAction)])
+        XCTAssertEqual(freeLines(neither), ["Does what the mouse does on its own.", "Does what the mouse does on its own."])
+        XCTAssertEqual(neither.row(for: ButtonsMousePart.gesture)?.note?.kind, .defaultAction)
+
+        // The Gesture button takes the gestures: its own line, and the Thumb panel names the ring.
+        let gesture = LogiCenter.shared.scrollioCode(for: .gesture)
+        let taken = makePane([binding(gesture, gesturesAction)])
+        XCTAssertEqual(freeLines(taken), ["Hold and move the mouse. Set the directions under Gestures.", "Good for the Shortcut Ring."])
+
+        // The three lines and what they name.
+        XCTAssertEqual(ButtonRowNote.Uses([.gestures, .ring]).lineKey, "buttons-default-good-for-both")
+        XCTAssertEqual(ButtonRowNote.Uses.gestures.lineKey, "buttons-default-good-for-gestures")
+        XCTAssertEqual(ButtonRowNote.Uses.ring.lineKey, "buttons-default-good-for-ring")
+        XCTAssertNil(ButtonRowNote.Uses([]).lineKey)
+        XCTAssertEqual(text("buttons-default-good-for-gestures"), "Good for Gestures.")
+        XCTAssertEqual(text("buttons-default-good-for-ring"), "Good for the Shortcut Ring.")
+    }
+
+    /// The hint is only for a row whose press passes through to the mouse with no certain
+    /// effect (`ButtonDefaultOutcome`): not for a row with an action, one Scrollio keeps
+    /// for another row, a key of While you hold a key, another part, or a row under "Other
+    /// buttons and keys".
+    func testTheHintIsOnlyForARowThatPassesThrough() throws {
+        let gesture = LogiCenter.shared.scrollioCode(for: .gesture)
+        let free: ButtonRowNote.Uses = [.gestures, .ring]
+        let trigger = RecordedEvent(type: .mouse, code: gesture, modifiers: 0, deviceFilter: nil)
+        func kind(
+            _ part: ButtonsMousePart, _ outcome: ButtonDefaultOutcome, keys: [ScrollHotkey] = [], free: ButtonRowNote.Uses = [.gestures, .ring]
+        ) -> ButtonRowNote.Kind? {
+            return ButtonRowNote.makeDefault(for: part, trigger: trigger, scrollHoldKeys: keys, outcome: outcome, free: free)?.kind
+        }
+        XCTAssertEqual(kind(.gesture, .passes(nil)), .goodFor(free))
+        XCTAssertEqual(kind(.thumbPanel, .passes(nil)), .goodFor(free))
+        XCTAssertEqual(kind(.gesture, .passes(nil), free: []), .defaultAction, "nothing is free: the old line")
+        XCTAssertEqual(kind(.gesture, .caught), .doesNothing)
+        XCTAssertEqual(kind(.gesture, .runs(binding(3, "copy"))), .runsAnother)
+        XCTAssertEqual(kind(.gesture, .passes(nil), keys: [ScrollHotkey(type: .mouse, code: gesture)]), .alsoScrollKey)
+        XCTAssertEqual(kind(.pointerSpeed, .passes(nil)), .defaultAction, "it does something useful by itself")
+        XCTAssertEqual(kind(.middle, .passes(nil)), .defaultAction, "a numbered button on another part")
+        XCTAssertNil(kind(.back, .passes(.back)), "Default (Back) has no line")
+        XCTAssertEqual(
+            ButtonRowNote.makeDefault(for: .gesture, trigger: trigger, scrollHoldKeys: [], outcome: .passes(nil))?.kind, .defaultAction,
+            "without the argument (an app's rows never pass it) the old line"
+        )
+
+        // In the pane. With an action: the action's own line, or none.
+        let withAction = makePane([binding(gesture, "copy")])
+        XCTAssertNil(withAction.row(for: ButtonsMousePart.gesture)?.explanation)
+        XCTAssertEqual(withAction.row(for: ButtonsMousePart.thumbPanel)?.explanation, "Good for Gestures or the Shortcut Ring.")
+
+        // "⌥ Gesture button" has an action: Scrollio keeps the control, the plain press does
+        // nothing. Its row says so, and the ⌥ row under "Other buttons and keys" has no hint.
+        let optionGesture = binding(gesture, "copy", modifiers: option)
+        let caught = makePane([optionGesture])
+        let caughtRow = try XCTUnwrap(caught.row(for: ButtonsMousePart.gesture))
+        XCTAssertEqual(shown(caughtRow.pullDown), "No Action")
+        XCTAssertEqual(caughtRow.explanation, "Scrollio keeps it for another row, so a press does nothing.")
+        XCTAssertEqual(caught.row(for: ButtonsMousePart.thumbPanel)?.explanation, "Good for Gestures or the Shortcut Ring.")
+
+        // A row under "Other buttons and keys" without an action keeps its line.
+        let other = binding(gesture, modifiers: option)
+        let withOther = makePane([other])
+        XCTAssertEqual(try XCTUnwrap(withOther.row(for: other.id)).note?.kind, .defaultAction)
+        XCTAssertEqual(withOther.row(for: ButtonsMousePart.gesture)?.explanation, "Good for Gestures or the Shortcut Ring.")
+
+        // The Gesture button is a key of Scrolling › While you hold a key: that line, with its sign.
+        scrollKeys = [ScrollHotkey(type: .mouse, code: gesture)]
+        let scrollKey = makePane()
+        let scrollRow = try XCTUnwrap(scrollKey.row(for: ButtonsMousePart.gesture))
+        XCTAssertEqual(scrollRow.note?.kind, .alsoScrollKey)
+        XCTAssertEqual(scrollRow.note?.tone, .problem)
+        XCTAssertEqual(scrollKey.row(for: ButtonsMousePart.thumbPanel)?.note?.kind, .goodFor(free))
+    }
+
+    /// A mouse without those buttons gets no such line: an MX Anywhere 3 and the MX
+    /// Vertical (whose top button keeps the old line), a plain mouse (no rows of its own),
+    /// and an app's Buttons part, whose rows say what the button does in other apps.
+    func testNoHintOnAMouseWithoutThoseButtons() throws {
+        func isHint(_ row: ButtonBindingRow) -> Bool {
+            if case .goodFor = row.note?.kind { return true }
+            return false
+        }
+        deviceName = "MX Anywhere 3"
+        let anywhere = makePane()
+        XCTAssertEqual(anywhere.rows.compactMap(\.part), [.middle, .modeShift, .forward, .back])
+        XCTAssertEqual(anywhere.rows.map(\.explanation), [nil, nil, nil, nil])
+
+        deviceName = "MX Vertical"
+        let vertical = makePane()
+        XCTAssertEqual(vertical.rows.compactMap(\.part), [.middle, .pointerSpeed, .forward, .back])
+        XCTAssertEqual(vertical.rows.map(\.explanation), [nil, "Does what the mouse does on its own.", nil, nil])
+        XCTAssertFalse(vertical.rows.contains(where: isHint))
+
+        deviceName = nil
+        let plain = makePane([binding(5), binding(6, "copy")])
+        XCTAssertTrue(plain.rows.allSatisfy { $0.part == nil })
+        XCTAssertFalse(plain.rows.contains(where: isHint))
+        XCTAssertEqual(plain.rows.first?.explanation, "Does what the mouse does on its own.")
+
+        // An app's own "Default" on the Gesture button of an MX Master 4.
+        Options.shared.buttons.binding = []
+        let gesture = LogiCenter.shared.scrollioCode(for: .gesture)
+        let notes = Application(path: "/System/Applications/Notes.app")
+        notes.setOwnButtonBindings([ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: gesture, modifiers: 0, deviceFilter: nil), systemShortcutName: "", isEnabled: true
+        )])
+        let part = ApplicationButtonsViewController(application: notes)
+        part.deviceSource = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { "MX Master 4" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        part.holdKeysThatCatch = { [] }
+        part.presentMenu = { _, _ in }
+        part.openActionMenu = { _ in }
+        part.startRecording = { _ in }
+        part.stopRecording = {}
+        part.presentOpenTarget = { _, _, _ in }
+        part.paneUndoManager = UndoManager()
+        _ = part.view
+        XCTAssertEqual(part.rows.count, 1)
+        XCTAssertEqual(part.rows.first?.note?.kind, .everywhere)
+        XCTAssertFalse(part.rows.contains(where: isHint))
+    }
+
+    /// The line follows what the other rows do: the Thumb panel gets the ring, the Gesture
+    /// button's line names only Gestures; Undo names both again, Redo one.
+    func testTheHintFollowsUndo() throws {
+        let pane = makePane()
+        let undo = try XCTUnwrap(pane.paneUndoManager)
+        undo.groupsByEvent = false
+        let gestureRow = try XCTUnwrap(pane.row(for: ButtonsMousePart.gesture))
+        let panel = try XCTUnwrap(pane.row(for: ButtonsMousePart.thumbPanel))
+        XCTAssertEqual(freeLines(pane), ["Good for Gestures or the Shortcut Ring.", "Good for Gestures or the Shortcut Ring."])
+
+        try step(undo) { panel.pullDown.shortcutSelected(try XCTUnwrap(item(ringAction, in: panel.pullDown.menu))) }
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.systemShortcutName), [ringAction])
+        XCTAssertEqual(gestureRow.explanation, "Good for Gestures.", "the other row's line is derived again")
+        XCTAssertEqual(gestureRow.accessibilityLabel(), "Gesture button, Good for Gestures.")
+        XCTAssertNotEqual(panel.explanation, "Good for Gestures.")
+        XCTAssertFalse(gestureRow.isStored, "the hint assigned nothing")
+
+        undo.undo()
+        XCTAssertTrue(Options.shared.buttons.binding.isEmpty)
+        XCTAssertEqual(freeLines(pane), ["Good for Gestures or the Shortcut Ring.", "Good for Gestures or the Shortcut Ring."])
+        undo.redo()
+        XCTAssertEqual(gestureRow.explanation, "Good for Gestures.")
+
+        // The Gesture button takes the gestures: nothing is left to name.
+        try step(undo) { gestureRow.pullDown.shortcutSelected(try XCTUnwrap(item(gesturesAction, in: gestureRow.pullDown.menu))) }
+        XCTAssertEqual(gestureRow.explanation, "Hold and move the mouse. Set the directions under Gestures.")
+        undo.undo()
+        XCTAssertEqual(gestureRow.explanation, "Good for Gestures.")
     }
 }

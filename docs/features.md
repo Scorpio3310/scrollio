@@ -83,7 +83,10 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   "No Action" and says why: "A press runs Mission Control." (another row's button with
   fewer modifier keys runs) or "Scrollio keeps it for another row, so a press does
   nothing." (Scrollio catches that control for another row or a hold key). A key without
-  an action reads "Default", "Does what the key does on its own."
+  an action reads "Default", "Does what the key does on its own." On an MX Master, the
+  free Gesture button and Thumb panel say what they are good for while no button does it
+  yet: "Good for Gestures or the Shortcut Ring." (or only the one still without a
+  button); a line only, nothing is assigned.
 - Buttons for one app: an app's page in Apps (add the app there, or open it in the list)
   has four parts, chosen at its top: Scrolling, Buttons, Gestures and Shortcut Ring; the page
   opens on the part you looked at last, for any app. Scrolling asks "Scrolling in Figma":

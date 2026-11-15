@@ -10958,6 +10958,42 @@
           }
         }
       }
+    },
+    "buttons-default-good-for-both": {
+      "comment": "Buttons pane: under the Gesture button or the Thumb panel of the connected mouse while it has no action and no button runs Gesture Navigation or opens the Shortcut Ring yet; Gestures and Shortcut Ring are named as in the sidebar",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Good for Gestures or the Shortcut Ring."
+          }
+        }
+      }
+    },
+    "buttons-default-good-for-gestures": {
+      "comment": "Buttons pane: the same line while something already opens the Shortcut Ring and no button runs Gesture Navigation yet",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Good for Gestures."
+          }
+        }
+      }
+    },
+    "buttons-default-good-for-ring": {
+      "comment": "Buttons pane: the same line while a button already runs Gesture Navigation and nothing opens the Shortcut Ring yet",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Good for the Shortcut Ring."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

@@ -127,6 +127,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-trigger-choice-recorded-replaces",
         "buttons-default-runs-another", "buttons-default-caught", "buttons-default-key-own",
         "buttons-show-ring-settings", "buttons-show-in-app-part",
+        "buttons-default-good-for-both", "buttons-default-good-for-gestures", "buttons-default-good-for-ring",
     ]
 
     /// Gestures pane and its gesture controls.
