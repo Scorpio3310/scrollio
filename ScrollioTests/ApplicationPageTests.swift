@@ -1314,9 +1314,7 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(Options.shared.buttons.binding, general)
         XCTAssertEqual(part.rows.count, 1)
         XCTAssertEqual(part.list.selectedID, AnyHashable(calculator.ownButtonBindings[0].id))
-        let opens = expectation(description: "the row's menu opens")
-        DispatchQueue.main.async { opens.fulfill() }
-        wait(for: [opens], timeout: 1)
+        drainMainQueue()
         XCTAssertTrue(opened.first === part.rows.first?.pullDown)
 
         // A Logitech button without a binding of Buttons: "Default" until one is chosen.
@@ -1326,6 +1324,25 @@ final class ApplicationPageTests: XCTestCase {
         part.addChosen(gesture)
         XCTAssertEqual(calculator.ownButtonBindings.last?.systemShortcutName, "")
         XCTAssertEqual(calculator.ownButtonBindings.last?.isEnabled, true)
+    }
+
+    /// The new row's menu opens from the run loop, not from a block of the main queue (QA
+    /// B5): a menu runs until it closes, and a run loop that starts inside a block of the
+    /// main queue does not serve that queue (gesture actions, the thumb wheel's steps).
+    func testANewRowsMenuOpensWhereTheMainQueueGoesOn() throws {
+        addApp(Self.calculator)
+        var served: [Bool] = []
+        let (_, part) = try buttonsPart(actionMenus: { _ in
+            // As a menu does: a run loop of its own until it closes.
+            var ran = false
+            DispatchQueue.main.async { ran = true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            served.append(ran)
+        })
+        _ = makeWindow(for: part)
+        part.addOwnBinding(for: RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertEqual(served, [true], "the menu opened once, and the main queue went on behind it")
     }
 
     /// A button with modifier keys that Buttons has no binding of its own for runs the
@@ -2112,10 +2129,12 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertTrue(calculator.usesGeneralGestures, "the switch was only tried")
     }
 
-    /// Lets the blocks queued on the main queue run (a new row's menu opens from one).
+    /// Lets what waits on the main run loop and on the main queue run: a new row's menu
+    /// opens from a timer of the run loop (QA B5), and timers fire in the order they were
+    /// set, so this one comes after it.
     private func drainMainQueue() {
-        let drained = expectation(description: "the main queue ran")
-        DispatchQueue.main.async { drained.fulfill() }
+        let drained = expectation(description: "the run loop's timers and the main queue ran")
+        UpdateWindows.fromTheRunLoop { DispatchQueue.main.async { drained.fulfill() } }
         wait(for: [drained], timeout: 1)
     }
 

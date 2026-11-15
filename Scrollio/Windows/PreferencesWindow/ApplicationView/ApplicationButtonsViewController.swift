@@ -624,7 +624,10 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         }
         guard action == nil else { return added.id }
         // The new row's menu opens by itself, once the "+" menu or the recorder is gone.
-        DispatchQueue.main.async { [weak self] in
+        // From the run loop, never from a block of the main queue: a menu runs until it
+        // closes, and a run loop that starts inside such a block does not serve the queue
+        // (gesture actions, the thumb wheel's steps; AGENTS.md, "Module boundaries").
+        UpdateWindows.fromTheRunLoop { [weak self] in
             guard let self, self.view.window != nil, let row = self.row(for: added.id),
                   self.list.selectedID == AnyHashable(added.id) else { return }
             self.openActionMenu(row.pullDown)

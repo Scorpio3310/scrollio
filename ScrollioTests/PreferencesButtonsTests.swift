@@ -1053,6 +1053,29 @@ final class PreferencesButtonsTests: XCTestCase {
         pane.onRecordingStopped(recorder, didRecord: false)
     }
 
+    /// The new row's menu opens from the run loop, not from a block of the main queue (QA
+    /// B5): a menu runs until it closes, and a run loop that starts inside a block of the
+    /// main queue does not serve that queue, so gesture actions and the thumb wheel's steps
+    /// waited for the menu to close.
+    func testTheNewRowsMenuOpensWhereTheMainQueueGoesOn() {
+        let pane = makePane([binding(3, "copy")])
+        var served: [Bool] = []
+        pane.openActionMenu = { _ in
+            // As a menu does: a run loop of its own until it closes.
+            var ran = false
+            DispatchQueue.main.async { ran = true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            served.append(ran)
+        }
+        let recorder = KeyRecorder()
+        pane.beginAddingBinding()
+        pane.onRecordingStarted(recorder)
+        pane.onEventRecorded(recorder, didRecordEvent: mouseEvent(4, modifiers: .maskAlternate), isDuplicate: false)
+        pane.onRecordingStopped(recorder, didRecord: true)
+        flush(0.3)
+        XCTAssertEqual(served, [true], "the menu opened once, and the main queue went on behind it")
+    }
+
     /// A "Default" row says what the button then does ("Default (Back)") only where that is
     /// certain: while Scrollio catches its Logitech control for a binding with modifiers (the
     /// plain press then reaches only Scrollio and does nothing), "No Action" and why; a

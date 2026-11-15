@@ -214,7 +214,8 @@ extension ApplicationButtonsViewController {
         onOwnButtonsChange?()
         list.select(ButtonsListLayout.thumbWheelRowID)
         // The row's menu opens by itself, once the "+" menu is gone.
-        DispatchQueue.main.async { [weak self] in
+        // (From the run loop, never from a block of the main queue: `addOwnBinding`.)
+        UpdateWindows.fromTheRunLoop { [weak self] in
             guard let self, self.view.window != nil, let row = self.thumbWheelRow,
                   self.list.selectedID == ButtonsListLayout.thumbWheelRowID else { return }
             self.openActionMenu(row.pullDown)

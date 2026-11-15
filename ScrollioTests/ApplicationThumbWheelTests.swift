@@ -491,8 +491,10 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         XCTAssertEqual(row.accessibilityLabel(), "Thumb wheel, In other apps: Switch Tabs")
         XCTAssertTrue(row.isRemovable)
         XCTAssertEqual(part.list.selectedID, ButtonsListLayout.thumbWheelRowID)
+        // (The menu opens from a timer of the run loop, QA B5; timers fire in the order
+        // they were set, so this one comes after it.)
         let opens = expectation(description: "the row's menu opens")
-        DispatchQueue.main.async { opens.fulfill() }
+        UpdateWindows.fromTheRunLoop { opens.fulfill() }
         wait(for: [opens], timeout: 1)
         XCTAssertTrue(opened.first === row.pullDown)
 
@@ -502,6 +504,24 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         // Return on the row opens its menu too.
         part.list.onOpen?(ButtonsListLayout.thumbWheelRowID)
         XCTAssertTrue(opened.last === row.pullDown)
+    }
+
+    /// The wheel's new row opens its menu from the run loop, not from a block of the main
+    /// queue (QA B5), as a button's new row does.
+    func testTheThumbWheelsMenuOpensWhereTheMainQueueGoesOn() throws {
+        addCalculator()
+        var served: [Bool] = []
+        let part = try buttonsPart(actionMenus: { _ in
+            // As a menu does: a run loop of its own until it closes.
+            var ran = false
+            DispatchQueue.main.async { ran = true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            served.append(ran)
+        })
+        _ = makeWindow(for: part)
+        part.addOwnThumbWheel()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertEqual(served, [true], "the menu opened once, and the main queue went on behind it")
     }
 
     /// The row's pull-down changes the app's function only; the line under it follows the

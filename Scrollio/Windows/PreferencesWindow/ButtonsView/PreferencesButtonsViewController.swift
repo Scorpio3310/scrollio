@@ -1407,8 +1407,12 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
         updateHeader()
         guard action == nil, isNew else { return }
         // The recorder's popover is gone: the new button's menu opens by itself (not when
-        // the pane went away meanwhile).
-        DispatchQueue.main.async { [weak self] in
+        // the pane went away meanwhile). From the run loop, never from a block of the main
+        // queue: a menu runs until it closes, and a run loop that starts inside such a
+        // block does not serve the queue, so gesture actions, the thumb wheel's steps and
+        // the Logitech follow-ups would all wait for the menu to close (AGENTS.md, "Module
+        // boundaries").
+        UpdateWindows.fromTheRunLoop { [weak self] in
             guard let self, !self.isAway, let row = self.row(for: id),
                   self.list.selectedID == AnyHashable(id) else { return }
             self.openActionMenu(row.pullDown)
