@@ -456,10 +456,19 @@ final class EventTapLogTests: XCTestCase {
         ))
     }
 
-    func testOnlyTheTwoTurnedOffTypesAreCounted() {
-        // Anything else is ignored before a counter is touched; this must not log or crash.
-        EventTapDisableLog.note(.scroll, .scrollWheel)
-        EventTapDisableLog.note(.buttonsAndKeys, .otherMouseDown)
+    /// `note` gets every event type a tap's callback does not handle. It goes on only with
+    /// what `problem(for:)` names, so none of these reaches a counter or the log. (The test
+    /// only called `note` twice and asserted nothing; its name was of the time when a tap
+    /// switched off on purpose counted too.)
+    func testAnEventThatIsNoTimeoutIsNotCounted() {
+        for type in [CGEventType.scrollWheel, .otherMouseDown, .keyDown, .tapDisabledByUserInput] {
+            XCTAssertNil(EventTapDisableLog.problem(for: type), "\(type.rawValue)")
+            EventTapDisableLog.note(.scroll, type)
+            EventTapDisableLog.note(.buttonsAndKeys, type)
+        }
+        // A counter that was never told of a timeout has nothing to write.
+        var counter = EventTapDisableCounter()
+        XCTAssertEqual(counter.flush(tap: .scroll, now: 100), EventTapDisableCounter.Decision.none)
     }
 
     // MARK: Restarts and their throttle

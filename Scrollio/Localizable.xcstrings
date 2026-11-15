@@ -3556,18 +3556,6 @@
         }
       }
     },
-    "buttons-note-no-action": {
-      "comment": "Buttons pane: under a button without an action",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose what this button does."
-          }
-        }
-      }
-    },
     "buttons-note-extra-button": {
       "comment": "Buttons pane row: under a button the Mac knows only by its number (Button 5)",
       "extractionState": "manual",
@@ -6118,30 +6106,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Applies where Smooth scrolling is on."
-          }
-        }
-      }
-    },
-    "scrolling-thumb-wheel-swap": {
-      "comment": "Scrolling pane, Thumb wheel group: the switch that turns the thumb wheel's direction around",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Swap direction"
-          }
-        }
-      }
-    },
-    "scrolling-thumb-wheel-swap-hint": {
-      "comment": "Scrolling pane, Thumb wheel group: under Swap direction",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Swaps what the two directions of the thumb wheel do."
           }
         }
       }

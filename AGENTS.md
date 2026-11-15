@@ -66,7 +66,11 @@ these rules anywhere.
   `sign_update` or `generate_keys` against the keychain (macOS then asks the owner for
   the key). `CHANGELOG.md` has one part per released version; the update window and the
   release notes show it. What is merged between releases goes under `## Unreleased`
-  above them, which becomes the next version's part.
+  above them, which becomes the next version's part. A part is written for the people
+  who use the app, in the form of 1.0.5's: one bold line that sums it up, then `### New`
+  and `### Fixed` (no `### Changed`: a step between two unreleased states is no news),
+  short bullets, about 25 at most, in the interface's words (below: no "pane", "part" or
+  "in front"). `ReleaseReadinessTests` reads the newest part for the headings and words.
 - A release is made by hand with `scripts/release.sh` (see Commands)
   and published by the owner, from a commit that carries the tag `v<version>` (`v1.0.0`);
   the version of a release is its tag's. Never create, move, delete or push a tag unless
@@ -93,6 +97,13 @@ scripts/update-key.sh          # shows whether the update key in the keychain is
 ```
 
 - Always use the shared scheme `Debug`. Never build with `-target Scrollio`.
+- `-only-testing:ScrollioTests/<name>` takes a test class, not a file. A name that is no
+  class runs nothing and still ends "TEST SUCCEEDED", and eleven test files hold classes
+  under other names (`MousePreferencesTests.swift`, `PreferencesWindowTests.swift`,
+  `SettingsFileTests.swift`, `ShortcutRingTests.swift` among them:
+  `grep -h "^final class" ScrollioTests/<file>` lists a file's classes). After a narrow
+  run, see in its output that the suites you meant ran (`Test Suite '<Class>' passed`).
+  A test class this file names is one: `ReleaseReadinessTests` checks it.
 - `scripts/release.sh` builds the app for other people's Macs. It passes the Developer ID
   identity to that one build and leaves the project's signing settings alone. Without
   `--check` it uploads the build to Apple's notary service: run it only when the owner
@@ -228,7 +239,8 @@ See `.agents/docs/code-map.md` for the map. The rules:
   binding and while a button is recorded, and given back when Scrollio pauses or quits; a
   button that only an app binds, or that an app sets to "Default", is diverted or given
   back as that app comes to or leaves the front (so is raw XY tracking of a gesture
-  button; `LogiUsageBootstrap`), and a button that is down waits until it is up; a
+  button; `LogiUsageBootstrap`), and a diverted button that is down stays diverted until
+  it is up (one that is down while the mouse handles it is diverted mid-press); a
   Logitech button action writes when its button is pressed; a cue of a gesture or of the
   Shortcut Ring plays a pulse and may switch the haptics on. Reading needs no switch. The header of
   `LogiDeviceSession` has the whole list; the Logitech Diagnostics window writes in debug
@@ -238,7 +250,9 @@ See `.agents/docs/code-map.md` for the map. The rules:
   persistence and execution. When you change one, check the others.
 - Only `AppRunController` (`Scrollio/Managers/`) starts and stops the cores (the scroll
   and button event taps and the Logitech sessions): launch, sleep and wake, fast user
-  switching, lost Accessibility access, "Pause Scrollio", quit. An active event tap that
+  switching, lost Accessibility access, "Pause Scrollio", the end of a "Pause For" (its
+  end is a moment, `pauseEnd`, looked at by `endPauseIfDue()`: it starts the cores as
+  Resume does), quit. An active event tap that
   is not serviced freezes input system-wide: never leave one installed while the cores
   count as stopped, and never block the main thread while one runs. The pointer-movement
   tap of gesture holds (and of a Shortcut Ring that is held open) is made on demand
@@ -253,7 +267,7 @@ that must stay separate:
 
 | File | Strings | Keys |
 | --- | --- | --- |
-| `Scrollio/Localizable.xcstrings` | Used from Swift with `NSLocalizedString` | Readable phrases (older keys) or identifiers: those of `SystemShortcut.Shortcut`, and by area `general-*`, `scrolling-*`, `buttons-*`, `mouse-*`, `gesture-*` / `gestures-*`, `ring-*`, `apps-*`, `about-*`, `preferences-*`, `main-menu-*`, `status-menu-*` / `status-item-*`, `intro-*`, `toast-*` |
+| `Scrollio/Localizable.xcstrings` | Used from Swift with `NSLocalizedString` | Readable phrases (older keys) or identifiers: those of `SystemShortcut.Shortcut`, and by area `general-*`, `scrolling-*`, `buttons-*`, `mouse-*`, `gesture-*` / `gestures-*`, `ring-*`, `apps-*`, `about-*`, `preferences-*`, `main-menu-*`, `status-menu-*` / `status-item-*`, `intro-*`, `toast-*`, `key-recorder-*`, `open-target-*`, `thumb-wheel-*`, `logi-*`, `launch-location-*` |
 | `Scrollio/mul.lproj/Main.xcstrings` | The storyboard (`Scrollio/Base.lproj/Main.storyboard`) | Interface Builder object ids (`AYu-sK-qS6.title`) |
 
 - Every user-visible string is localized. In Swift use `NSLocalizedString(_:comment:)`,
@@ -279,7 +293,11 @@ that must stay separate:
   `menuKeys`, `introKeys`), and that each string formatted with `String(format:)` takes
   the arguments its call site passes (`formatArguments`). Add a new key to the array of
   its area, and a formatted one to `formatArguments` too: several keys are built from
-  variables, and a missing one would only show up as the raw key in the UI.
+  variables, and a missing one would only show up as the raw key in the UI. The test
+  reads the rule from the catalog: a key written as an identifier (`ring-freeze-pointer`)
+  that is in no array fails it (the names of the recorder's icons,
+  `key-recorder-icon-name-*`, are `ShortcutIconChooserTests`'). A key no code uses any
+  more goes from the catalog and from its array together.
 - Words in the interface: one vocabulary everywhere the window speaks (the Settings
   window, the menus, the Welcome Guide, the toasts).
   - Name a place as the sidebar does ("Buttons", "Shortcut Ring"), and an app's part as
@@ -317,10 +335,10 @@ Choose by risk, and run it: reading the code is not verification.
 | Swift logic | the related `ScrollioTests` class | full test run |
 | New, moved or deleted Swift file; project or target change | Debug build | related tests |
 | ScrollCore hot path | `ScrollClassicPathTests`, `ScrollMotionTests`, `ScrollFilterTests`, `ScrollPoster*Tests`, `ScrollSystemLogTests` | full run; by hand: scroll and read the `scroll` log |
-| ButtonCore, Shortcut, InputEvent | ButtonBinding, InputProcessor, ShortcutExecutor tests | by hand: the Buttons pane |
-| App lifecycle (`AppRunController`, `AppDelegate`, status-bar menu) | `AppRunControllerTests`, `StatusMenuTests` | by hand: sleep and wake, another user, Pause / Resume, Accessibility turned off and on |
+| ButtonCore, Shortcut, InputEvent | `ButtonBindingTests`, `InputProcessorTests`, `ShortcutExecutorFixesTests`, `ShortcutExecutorOpenTargetTests` | by hand: the Buttons pane |
+| App lifecycle (`AppRunController`, `AppDelegate`, status-bar menu) | `AppRunControllerTests`, `StatusMenuTests` | by hand: sleep and wake, another user, Pause / Resume, a "Pause For" that ends by itself (also across a sleep), Accessibility turned off and on |
 | Logi, HID | the `ScrollioTests/Logi*` tests and the boundary lint | real-device tests and the `logi` log, by hand |
-| Preferences panes | the pane's `Preferences*Tests` / `MousePreferencesTests`, `PreferencesWindowTests` | by hand: look at the pane (its render test can draw it); previews stop when it is hidden |
+| Preferences panes | the pane's `Preferences*Tests` (for Mouse the classes of `MousePreferencesTests.swift`), the classes of `PreferencesWindowTests.swift` | by hand: look at the pane (its render test can draw it); previews stop when it is hidden |
 | The Shortcut Ring (`Scrollio/Ring/`, its hooks in `InputProcessor`) | the classes of `ShortcutRingTests.swift`, `ShortcutRingControllerTests.swift` and `ShortcutRingDropsTests.swift`, `InputProcessorTests`, `PreferencesRingTests` | by hand, on a screen: open it with a button and with a key, both ways of choosing, at a screen edge, over a full-screen app; that the app in front keeps the keyboard (`ShortcutRingRenderTests` only draws it) |
 | UI text | catalogs in sync, `PreferencesLocalizationTests` | long text, dark mode |
 | `scripts/`, licence and notices, `Acknowledgements.txt`, the DGCharts exclusion | `ReleaseReadinessTests`, `bash -n` on the script, `scripts/install.sh --check` | a Release build; `scripts/release.sh --check` when the owner asked (it signs with the Developer ID) |

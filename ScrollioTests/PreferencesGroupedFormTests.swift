@@ -1553,38 +1553,58 @@ final class PreferencesGroupedFormTests: XCTestCase {
         XCTAssertNil(PreferencesListSection(list: PreferencesListBox(width: boxWidth, emptyTitle: "x")).titleLabel)
     }
 
+    /// The blink's four steps are taken from the list and run here one by one. (By the
+    /// clock, 0.12 s apart and looked at after 0.18 s, a late main queue ran the second step
+    /// in the turn of the look: "blinked off" failed now and then.)
     func testFlashingARowSelectsItAndBlinksItsSelection() {
         let (list, _) = makeList()
+        var steps: [(delay: TimeInterval, run: () -> Void)] = []
+        list.scheduleFlashStep = { delay, step in steps.append((delay, step)) }
         list.flash("b")
         XCTAssertEqual(list.selectedID, "b")
         XCTAssertNotNil(list.selectionRect)
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        /// Runs the main queue for `seconds`.
-        func wait(_ seconds: TimeInterval) {
-            let done = expectation(description: "\(seconds) s")
-            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { done.fulfill() }
-            self.wait(for: [done], timeout: seconds + 2)
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            XCTAssertTrue(steps.isEmpty, "Reduce Motion: only selected")
+            return
         }
+        XCTAssertEqual(steps.map { ($0.delay * 100).rounded() }, [12, 24, 36, 48], "0.12 s apart")
 
-        wait(0.18)
+        steps[0].run()
         XCTAssertNil(list.selectionRect, "blinked off")
         XCTAssertEqual(list.selectedRow?.isSelected, false)
         XCTAssertEqual(list.selectedID, "b", "still the selection")
-        wait(0.6)
+        steps[1].run()
+        XCTAssertNotNil(list.selectionRect, "on again")
+        steps[2].run()
+        XCTAssertNil(list.selectionRect, "off a second time")
+        steps[3].run()
         XCTAssertNotNil(list.selectionRect, "on again at the end")
         XCTAssertEqual(list.selectedRow?.isSelected, true)
 
         // Another selection during a blink shows at once and ends the blink.
+        steps.removeAll()
         list.flash("b")
-        wait(0.18)
+        steps[0].run()
         XCTAssertNil(list.selectionRect)
         list.select("c")
         XCTAssertNotNil(list.selectionRect)
         XCTAssertEqual(list.selectedRow?.isSelected, true)
-        wait(0.5)
+        steps[1...].forEach { $0.run() }
         XCTAssertEqual(list.selectedID, "c")
         XCTAssertNotNil(list.selectionRect)
         XCTAssertEqual(list.rows.map(\.isSelected), [false, false, true])
+
+        // A second flash of the same row starts the blink anew: the first one's steps are spent.
+        steps.removeAll()
+        list.flash("c")
+        list.flash("c")
+        XCTAssertEqual(steps.count, 8)
+        steps[0].run()
+        XCTAssertNotNil(list.selectionRect, "a step of the blink that was replaced does nothing")
+        steps[4].run()
+        XCTAssertNil(list.selectionRect)
+        steps[5...].forEach { $0.run() }
+        XCTAssertNotNil(list.selectionRect)
     }
 }
 

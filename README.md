@@ -9,8 +9,9 @@
 **Smooth scrolling and shortcuts for any mouse.**
 
 Scrollio is a menu bar app for macOS. It makes a mouse's scroll wheel glide like a
-trackpad, lets mouse buttons and keys run actions, adds mouse gestures and settings for
-the sideways (thumb) wheel, and can manage the settings of Logitech MX mice.
+trackpad, lets mouse buttons and keys run actions, and adds mouse gestures, the Shortcut
+Ring (eight shortcuts around the pointer) and settings for the sideways (thumb) wheel;
+an app can have its own of each. It can also manage the settings of Logitech MX mice.
 
 It is based on [Mos](https://github.com/Caldis/Mos) by Caldis, may be used only for
 non-commercial purposes, and is not affiliated with Apple or Logitech. See
@@ -29,13 +30,13 @@ glance, with the features, help and what is new.
 ## ✨ Features
 
 - ✅ **Smooth scrolling** – each click of the wheel glides out like a trackpad, in five feels from Direct to Float.
-- ✅ **Per-app settings** – an app follows the Scrolling settings or keeps its own, or is left to macOS.
+- ✅ **Per-app settings** – an app follows your settings or has its own: scrolling (or left to macOS), buttons, the thumb wheel, gestures and a Shortcut Ring, with suggested shortcuts for 100 apps.
 - ✅ **Buttons and keys** – give a mouse button, or a key with modifiers, a shortcut, a system action or an app to open.
 - ✅ **Mouse gestures** – hold a button and move the mouse to switch desktops, open Mission Control and more.
 - ✅ **Shortcut Ring** – a button or a key opens a ring of eight shortcuts around the pointer: hold and move, or press and click.
 - ✅ **Thumb wheel actions** – the sideways wheel can scroll, zoom, switch tabs or desktops, go back and forward, or set the volume.
 - ✅ **Logitech MX settings** – battery, pointer speed, wheel mode and haptics of a Logitech MX mouse.
-- ✅ **Menu bar item** – battery, Pause, and smoothing on or off for the app in front; the icon can be hidden.
+- ✅ **Menu bar item** – battery, Pause (also for 15 minutes or an hour), and for the app in front smoothing on or off and its settings; the icon can be hidden.
 - ✅ **Settings in a file** – export all your settings to one file and import them on another Mac; an import shows first what the file holds and keeps your settings from before.
 - ✅ **Updates itself** – a released Scrollio asks GitHub once a day for a newer version, if you allow it, and installs only what carries the author's signature.
 - ✅ **No tracking** – no analytics, no crash reporter. The update check is the only network request, and you can switch it off.
@@ -61,7 +62,7 @@ glance, with the features, help and what is new.
     <td width="50%" valign="top">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="assets/readme/mouse-dark.png">
-        <img src="assets/readme/mouse-light.png" width="400" alt="The Mouse pane with an MX Master 4: battery, tracking speed, Let Scrollio manage this mouse, pointer speed in DPI and the scroll wheel's mode">
+        <img src="assets/readme/mouse-light.png" width="400" alt="The Mouse pane with an MX Master 4: the mouse and its battery, Let Scrollio manage this mouse, pointer speed in DPI and the scroll wheel's mode">
       </picture>
       <p><b>Mouse</b>: the settings of a Logitech MX mouse.</p>
     </td>
@@ -89,9 +90,10 @@ glance, with the features, help and what is new.
 ## 💻 Requirements
 
 - macOS 14 or later.
-- Any mouse for scrolling, buttons and gestures. The Mouse pane's settings, the button
-  list in mouse order and the mouse drawings are for Logitech MX mice (the drawings: MX
-  Master 4, MX Master 3 and 3S, and a generic mouse).
+- Any mouse for scrolling, buttons, gestures and the Shortcut Ring. The Mouse pane's
+  settings, the button list in mouse order and the mouse drawings are for Logitech MX
+  mice (the drawings: MX Master 4, MX Master 3 and 3S, MX Anywhere 3 and 3S, MX
+  Vertical; any other mouse is drawn as a plain one).
 
 ---
 
@@ -216,7 +218,8 @@ product names used here are trademarks of Logitech.
 
 - [Mos](https://github.com/Caldis/Mos), the project Scrollio is built on.
 - [Mac Mouse Fix](https://github.com/noah-nuebling/mac-mouse-fix) by Noah Nübling, the
-  reference for the events behind "Follow the hand". Scrollio's code for it is its own,
+  reference for the events behind "Follow the hand" and the thumb wheel's "Follow the
+  wheel", which makes the same swipe. Scrollio's code for it is its own,
   written from what Mac Mouse Fix's source shows, and so derived from it: the layout of
   the Dock swipe events (the event fields, and the HID event the Dock reads on macOS 27),
   the empty event that follows each of them, the 63 pt gap the Dock draws between two

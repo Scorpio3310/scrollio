@@ -68,8 +68,8 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   may take it over.
 - Removing a button or an app can be undone (Edit › Undo), and so can every change of a
   button's row, in Buttons and in an app's Buttons part: its action ("Undo Change
-  Action"), the name or icon of its keys ("Undo Rename") and "Which Button Is This?"
-  ("Undo Which Button"); Undo, of a removal too, selects the row it changes and shows
+  Action"), the name or icon of its keys ("Undo Rename") and, in Buttons, "Which Button
+  Is This?" ("Undo Which Button"); Undo, of a removal too, selects the row it changes and shows
   it: Buttons comes forward from another pane, or Apps with the app's page on its
   Buttons part (also after that page closed); an app removed from Apps comes back
   selected in the list, which comes forward too. On a button of your mouse,
@@ -363,8 +363,9 @@ name) shows that app's Buttons part. The pane also sets what the eight places ho
 - Not in a place: the left, right and middle click (they would click where your hand
   ended up), the modifier keys and the scroll keys (they only mean something while
   held), Gesture Navigation, the Logitech actions and the ring itself.
-- Not in this version: rings inside rings; your own symbols; more or fewer than eight
-  places; a step of the Welcome Guide.
+- Not in this version: rings inside rings; pictures of your own as icons (a key
+  combination you record takes a listed symbol, a character or an emoji); more or fewer
+  than eight places; a step of the Welcome Guide.
 
 ## Thumb wheel
 
@@ -490,8 +491,10 @@ Apart from those settings, and whatever that switch says:
   tracks itself, Scrollio asks the mouse to send that button to Scrollio, and gives it
   back when Scrollio pauses or quits. A button that only an app gives an action, or that
   an app sets to "Default", is taken or given back as that app comes to or leaves the
-  front (so is the mouse's tracking of a gesture button); a button that is down waits
-  until it is up.
+  front (so is the mouse's tracking of a gesture button). A button Scrollio has that is
+  down stays with Scrollio until it is up; one that is down while the mouse handles it
+  can be taken in the middle of its press, and the app's own action may then run without
+  a new press, or macOS may not get its release.
 - While you record a button in the Buttons pane, Scrollio asks the mouse for every
   button it can send (never the left or the right one), so that it can tell which one
   you press, and gives them back when the recording ends.

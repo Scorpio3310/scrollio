@@ -79,9 +79,10 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   and the desktops went in steps, the steps. A roll's line is written once its steps
   ran and its swipes ended, so with Follow the wheel it can come up to three seconds
   after the roll, and after a later roll's line. For any action the line ends with the
-  stray ticks it held and dropped. For now it is followed by a `thumb wheel trace:` line
-  for a roll that runs an action (each event's gap in ms and its lines, 128 at most;
-  it is there while the wheel is tuned, and a release is not made with it), and at
+  stray ticks it held and dropped. A copy you built yourself with `scripts/install.sh`,
+  and the debug build, follow it with a `thumb wheel trace:` line for a roll that runs
+  an action (each event's gap in ms and its lines, 128 at most; the wheel is tuned from
+  it, and a released copy never writes it). Also at
   most one line per reason every 3 seconds while wheel events are let through unsmoothed
   (trackpad events, a remote desktop, smoothing off for that event or that axis, no
   display link, a Step or Speed that is not a number).

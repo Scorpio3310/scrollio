@@ -10,118 +10,60 @@ it for the people who use the app, and give the version its part before you tag 
 
 ## Unreleased
 
+**Every app gets its own:** buttons, gestures and a Shortcut Ring for each app, with
+suggested shortcuts for 100 of them.
+
 ### New
 
-- **Buttons for each app.** In Apps, give any button, or the thumb wheel, something else
-  to do in one app, the Shortcut Ring and Gesture Navigation too; every other button does
-  what Buttons says.
-- **Gestures for each app.** On an app's page in Apps, give the app its own action for
-  each gesture direction and the click: they run in that app.
-- **A Shortcut Ring for each app.** On an app's page in Apps, give the app eight shortcuts
-  of its own: that ring opens in that app.
-- **An app's page has everything Scrolling, Gestures and Shortcut Ring have.** The thumb
-  wheel's speed and direction, the gestures' mode, swipe speed and switches, and the
-  ring's "Freeze pointer" can be set for each app too.
+- **Buttons for each app.** In Apps, give any button, or the thumb wheel, something else to
+  do in one app; every other button does what Buttons says.
+- **Gestures and a Shortcut Ring for each app.** Safari › Gestures and Safari › Shortcut
+  Ring give the app its own directions and its own eight shortcuts.
 - **Suggested shortcuts for 100 apps.** Turn off "Use settings from Shortcut Ring" for Figma,
-  Photoshop, Safari, Word, Discord, Zed and many more, and the app's ring starts with
-  its most used shortcuts, on your keyboard layout.
-- **Name your shortcuts.** A key combination you record can have a name and an icon: the
-  ring and Settings show them, with the keys smaller beside them.
-- **Key combinations for gestures.** A gesture direction or its click can send a key
-  combination you record, with a name and an icon, as a ring's place can.
-- **Your button in the picture.** Gestures and Shortcut Ring draw the button or key that
-  really runs them, on your mouse; with none yet, a dashed outline shows where it goes.
-- **Quiet until it runs, and a way back per app.** Gestures and Shortcut Ring fold their
-  settings while nothing runs them; Safari › Scrolling shows its settings only while
-  Safari has its own, as Safari › Gestures and Safari › Shortcut Ring do; each of them
-  has a button that puts it back.
-- **Thumb wheel, your way round.** Each thumb wheel action has its own "Reverse
-  direction" and its own Speed (Switch Desktops can be slower without shortening a
-  sideways scroll; your one speed stays every action's until you move a slider), and
-  Switch Desktops can follow the wheel like a trackpad swipe.
-- **Pause for a while.** In the menu bar, "Pause For" under "Pause Scrollio" pauses
-  Scrollio for 15 minutes or an hour; the menu and General say until when, and Scrollio
-  starts again by itself.
-- **Edit the ring where you see it.** Click a place in the Shortcut Ring's drawing to
-  choose its shortcut right there; a secondary click swaps two places, names and icons
-  included, or clears one.
-- **See which apps differ.** Scrolling, Buttons, Gestures and Shortcut Ring each end with
-  a line such as "Different in Safari and Figma"; click a name to open that app's page
-  there.
-- **A View menu for Settings.** ⌘1 to ⌘7 open Scrolling, Buttons, Gestures, Shortcut Ring,
-  Mouse, Apps and General; Back (⌘[) and Forward (⌘]) go through the places you looked at.
-
-### Changed
-
-- **The wheel starts the right way round.** A new installation follows macOS's Natural
-  scrolling, so the wheel starts in the classic direction on every Mac, and Reset to
-  Defaults in Scrolling brings that direction back; your settings keep theirs.
-- **The Scrolling preview moves the page the way your wheel does**, with Natural
-  scrolling on or off.
-- **The menu bar menu says when Scrollio is not working.** Paused, waiting for
-  Accessibility or unable to start, its first line says so, with the way out under it; a
-  click on a mouse's battery opens Settings › Mouse.
+  Photoshop, Safari, Word, Discord, Zed and many more, and the app's ring starts with its
+  most used shortcuts. They follow your keyboard layout.
+- **Name your shortcuts.** A key combination you record can have a name and an icon. A
+  gesture direction can send one too.
+- **Scrolling in an app is one choice:** Same as Scrolling, Own Settings or Left to macOS.
 - **Choose the button where you use it.** Gestures and Shortcut Ring list your mouse's
-  buttons, with what each does now, and record one in place: no trip to Buttons.
-- **Undo for a button's action.** In Buttons and in Safari › Buttons, Edit › Undo takes
-  back a changed action, name or "Which Button Is This?"; "−" sets your mouse's button
-  back to Default.
-- **An app's page says which button runs its gestures and ring.** Figma › Gestures and
-  Figma › Shortcut Ring begin with that button ("Back button, only in Figma") and a
-  button that goes there, or sets one up for that app only.
-- **Apps says what each app has of its own.** "Own: scrolling and 2 buttons" in
-  the list and on the app's page, where a dot marks each of them.
-- **An app's buttons say what they do.** "Remove All Buttons", "Copy from Gestures",
-  "Use Suggested Shortcuts" and "Copy from Scrolling" instead of "Reset to Defaults".
-- **Suggested rings are easy to find.** Figma › Shortcut Ring offers its suggested
-  shortcuts, and + in Apps marks the apps that have them.
-- **A click while you hold the ring's button belongs to the ring.** It runs the shortcut
-  that is lit (nothing lit: the ring closes), and nothing reaches the app under the ring.
-  A click right as you press the button does nothing.
-- **Scrolling in an app is one choice.** Safari › Scrolling asks "Scrolling in Safari":
-  Same as Scrolling, Own Settings or Left to macOS (not smoothed, not reversed).
-  Nothing you set changes; an app whose own settings already had both off reads Left to
-  macOS.
-- **"Default" means one thing.** Every button without an action says "Default", with what
-  it then does where that is certain ("Default (Back)", "Default (Switch Wheel Mode)");
-  Safari › Buttons says "In other apps: …" under each row, and each row's menu starts
-  with "Same as Other Apps (…)", which gives the button back to Buttons.
-- **One set of words.** Safari › Gestures and Safari › Shortcut Ring say "Use settings
-  from Gestures" and "Use settings from Shortcut Ring", and their first line "…, as in
-  other apps".
-- **The Welcome Guide says where to go next.** Its last step leads on to Buttons, Gestures
-  or the Shortcut Ring.
-- **An app's own ring shows whose it is.** The app's icon sits faintly in the middle of its
-  own Shortcut Ring until a place lights.
-- **Record a Button… says what it replaces** ("Replaces: Copy"), and "Show in Buttons"
-  selects the row it names.
-- **Menus show what is set.** An action menu ticks the action in use (its group shows a
-  dash), and every jump inside Settings reads "Show in …": Show in Gestures, Show in
-  Scrolling, Show in Mouse, Show in Shortcut Ring, "Show in Safari › Gestures".
-- **Undo for the ring's places and the gesture directions.** In Shortcut Ring, Gestures,
-  Safari › Shortcut Ring and Safari › Gestures, Edit › Undo takes back a changed action,
-  name or icon, and shows it: that place comes forward with the row selected. So does
-  Undo in Buttons and Safari › Buttons, and of an app removed from Apps.
-- **Pause from Settings.** The top of General always says whether Scrollio works, in the
-  menu bar's words, with Pause (or Resume, Try Again Now, Open System Settings).
-- **Restore by date.** Restore… in General lists the kept settings by date and time.
-- **Settings for the app in front.** The menu bar menu has "Settings for Safari…": it
-  opens that app's page in Apps, or offers "Add Safari" there.
-- **Mouse starts with your mouse.** With a Logitech mouse, Mouse starts with "Let Scrollio
-  manage this mouse" and that mouse's settings; "All mice (macOS)" comes last.
-- **Freeze pointer says what really happens.** While "Let the mouse track the gesture"
-  keeps the pointer still, "Freeze pointer during a gesture" reads on and is dimmed, with
-  the reason.
-- **A free Gesture button or Thumb panel says what it is good for** in Buttons ("Good for
-  Gestures or the Shortcut Ring."), until a button does it.
-- **Speeds read one way.** Scrolling, the thumb wheel and Gestures write a speed as "1.0×"
-  or "1.25×".
-- **The thumb wheel reaches the next desktop.** Switch Desktops moves a desktop every few
-  notches of one roll (at most one each quarter second) and goes on where you left off when
-  you take the wheel again; with Follow the wheel one long roll moves several desktops,
-  each sliding in before the next, and the end of the row no longer leaves the wheel dead.
-  A stray tick or two of the wheel does nothing, and Back and Forward takes a hard flick as
-  one page.
+  buttons, record one in place and draw it on your mouse.
+- **Edit the ring where you see it.** Click a place in the ring's drawing to set it; a
+  secondary click swaps two places or clears one.
+- **Thumb wheel.** Each action has its own Speed and "Reverse direction"; your one speed
+  stays every action's until you move a slider. Switch Desktops can follow the wheel like
+  a trackpad swipe: a long roll moves several desktops, each sliding in before the next.
+- **Pause For** 15 minutes or an hour, in the menu bar: Scrollio starts again by itself.
+- **The menu bar menu says when Scrollio is not working**, with the way out under it;
+  General says the same. "Settings for Safari…" opens the page of the app you are in.
+- **Undo.** Edit › Undo takes back a changed action, name or icon in Buttons, Gestures and
+  Shortcut Ring, and shows where.
+- **"Default" says what the button does:** "Default (Back)", "Default (Switch Wheel Mode)".
+  Menus tick the action in use.
+- **See which apps differ.** Scrolling, Buttons, Gestures and Shortcut Ring end with a line
+  such as "Different in Safari and Figma"; click a name to go there.
+- **A View menu.** ⌘1 to ⌘7 open Scrolling, Buttons, Gestures, Shortcut Ring, Mouse, Apps
+  and General; ⌘[ and ⌘] go back and forward.
+- **Mouse starts with your mouse;** "All mice (macOS)" comes last. Restore… in General
+  lists the kept settings by date.
+- **A new installation** starts the wheel in the classic direction, with Natural scrolling
+  on or off. Your settings keep theirs.
+- **The settings file holds all of this.** Going back to 1.0.5 drops names, icons and an
+  app's own gestures, ring and thumb wheel: export your settings first.
+
+### Fixed
+
+- **Switch Desktops on the thumb wheel** moves a desktop every few notches and goes on when
+  you take the wheel again; a stray tick or two does nothing, and Back and Forward takes a
+  hard flick as one page.
+- **A click while you hold the ring's button** runs the lit shortcut and no longer reaches
+  the app under the ring.
+- **Middle, Back and Forward of a Logitech mouse** set up on its receiver work over
+  Bluetooth too.
+- **A key combination sent from the ring** no longer leaves its modifier keys held.
+- **A Logitech button with a modifier key** (⌥ + the mode shift button) runs its own
+  action, no longer the plain button's (SmartShift).
+- **"Freeze pointer during a gesture"** reads on, dimmed, while the mouse itself keeps the
+  pointer still.
 
 ## 1.0.5
 

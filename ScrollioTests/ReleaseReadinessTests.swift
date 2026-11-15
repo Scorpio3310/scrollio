@@ -202,6 +202,99 @@ final class ReleaseReadinessTests: XCTestCase {
                        "the app's Release configuration, and only it, leaves DGCharts out")
     }
 
+    // MARK: - The changelog
+
+    /// The newest part of CHANGELOG.md is what the update window shows next. It keeps the
+    /// form of the released parts: "New" and "Fixed" (a "Changed" list described steps
+    /// between two unreleased states, which nobody with the last release ever saw), in the
+    /// window's own words (AGENTS.md, "Words in the interface").
+    func testTheNewestPartOfTheChangelogKeepsTheReleasedForm() throws {
+        let parts = try text("CHANGELOG.md").components(separatedBy: "\n## ")
+        let newest = try XCTUnwrap(parts.dropFirst().first, "CHANGELOG.md has no version part")
+        let headings = newest.components(separatedBy: "\n").filter { $0.hasPrefix("### ") }
+        XCTAssertTrue(Set(headings).isSubset(of: ["### New", "### Fixed"]), "\(headings)")
+        for words in ["(pane|part)s?", "everywhere", "in front"] {
+            let found = newest.range(of: "\\b\(words)\\b", options: [.regularExpression, .caseInsensitive])
+            XCTAssertNil(found, "the newest part of the changelog says \"\(found.map { String(newest[$0]) } ?? "")\"")
+        }
+    }
+
+    // MARK: - The test classes the agent files name
+
+    /// `-only-testing:ScrollioTests/<name>` with a name that is no test class runs nothing
+    /// and still ends "TEST SUCCEEDED". AGENTS.md named two files as classes
+    /// (`MousePreferencesTests`, `PreferencesWindowTests`: each holds classes under other
+    /// names), and the narrow runs it asks for after a change to a pane tested nothing.
+    func testEveryTestClassTheAgentFilesNameIsOne() throws {
+        let name = try NSRegularExpression(pattern: "`([A-Za-z0-9]+Tests)(\\.swift)?`")
+        var classes: Set<String> = []
+        for file in ["AGENTS.md", ".agents/docs/code-map.md"] {
+            let source = try text(file)
+            for match in name.matches(in: source, range: NSRange(source.startIndex..., in: source)) {
+                let word = String(source[try XCTUnwrap(Range(match.range(at: 1), in: source))])
+                if match.range(at: 2).location != NSNotFound {
+                    let path = Self.root.appendingPathComponent("ScrollioTests/\(word).swift").path
+                    XCTAssertTrue(FileManager.default.fileExists(atPath: path), "\(file) names the file \(word).swift")
+                } else if word != "ScrollioTests" {
+                    classes.insert(word)
+                    XCTAssertTrue(NSClassFromString("ScrollioTests.\(word)") is XCTestCase.Type,
+                                  "\(file) names `\(word)` as a test class; it is none (a file? write `\(word).swift`)")
+                }
+            }
+        }
+        XCTAssertGreaterThan(classes.count, 20, "the names were found")
+        XCTAssertTrue(classes.contains("ReleaseReadinessTests"))
+    }
+
+    // MARK: - The thumb wheel's trace line is not in a release
+
+    /// The trace line (every event of a thumb wheel roll) is what the wheel is tuned from. A
+    /// debug build writes it, and a build of `scripts/install.sh`, which passes
+    /// SCROLLIO_TRACE; a release must not, and `scripts/release.sh` finds the words only
+    /// after the whole universal build. This says so earlier: whatever makes or writes the
+    /// line stands between `#if DEBUG || SCROLLIO_TRACE` and its `#endif`.
+    func testTheThumbWheelTraceIsOnlyInDebugAndTraceBuilds() throws {
+        let gate = "#if DEBUG || SCROLLIO_TRACE"
+        let traceCode = ["thumb wheel trace:", "thumbWheelTraceMessage", "noteThumbWheelTrace", "writeTrace"]
+        let sources = Self.root.appendingPathComponent("Scrollio")
+        let files = try XCTUnwrap(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
+        var gated: Set<String> = []
+        for case let url as URL in files where url.pathExtension == "swift" {
+            let source = try String(contentsOf: url, encoding: .utf8)
+            guard traceCode.contains(where: { source.contains($0) }) else { continue }
+            // One entry per open `#if`: whether it is the trace's gate (its `#else` is not).
+            var open: [Bool] = []
+            for (number, line) in source.components(separatedBy: "\n").enumerated() {
+                let code = line.trimmingCharacters(in: .whitespaces)
+                if code.hasPrefix("#if ") {
+                    open.append(code == gate)
+                } else if code.hasPrefix("#else") {
+                    if !open.isEmpty { open[open.count - 1] = false }
+                } else if code.hasPrefix("#endif") {
+                    _ = open.popLast()
+                } else if !code.hasPrefix("//"), traceCode.contains(where: { code.contains($0) }) {
+                    XCTAssertTrue(open.contains(true), "\(url.lastPathComponent):\(number + 1) is in every build: \(code)")
+                    gated.insert(url.lastPathComponent)
+                }
+            }
+        }
+        XCTAssertEqual(gated, ["ScrollSystemLog.swift", "ThumbWheelEngine.swift"])
+
+        // Only the install script asks for it; the release script still looks for the words.
+        let install = commands(of: try text("scripts/install.sh"))
+        XCTAssertEqual(install.filter { $0.contains("SCROLLIO_TRACE") }.count, 1)
+        XCTAssertTrue(install.contains { $0.contains("SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) SCROLLIO_TRACE'") })
+        let release = try text("scripts/release.sh")
+        for script in [release, try text("scripts/release-lib.sh")] {
+            // (The refusal's own message names the condition; nothing else may.)
+            let lines = commands(of: script).filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("fail ") }
+            XCTAssertFalse(lines.contains { $0.contains("SCROLLIO_TRACE") || $0.contains("SWIFT_ACTIVE_COMPILATION_CONDITIONS") })
+        }
+        XCTAssertTrue(release.contains("if grep -a -q -F \"thumb wheel trace:\" \"$BINARY\"; then\n    fail "))
+        XCTAssertFalse(try text("Scrollio.xcodeproj/project.pbxproj").contains("SCROLLIO_TRACE"),
+                       "no configuration of the project switches the trace on by itself")
+    }
+
     // MARK: - The build scripts
 
     func testTheScriptsAreValidShell() throws {

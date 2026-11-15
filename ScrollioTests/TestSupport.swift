@@ -224,6 +224,13 @@ final class TestIsolationTests: XCTestCase {
             "Scrollio/Windows/IntroductionWindow/IntroductionViewController.swift",
             "Scrollio/Windows/PreferencesWindow/GeneralView/PreferencesGeneralViewController.swift",
         ]),
+        // Finder, brought forward with a file selected ("Show in Finder", the guide's
+        // "Show Scrollio in Finder"): each through a closure that does nothing under XCTest.
+        Effect(name: "shows a file in Finder", pattern: #"\.activateFileViewerSelecting\("#, allowed: [
+            "Scrollio/Windows/IntroductionWindow/IntroductionViewController.swift",
+            "Scrollio/Windows/PreferencesWindow/GeneralView/PreferencesGeneralViewController.swift",
+            "Scrollio/Windows/PreferencesWindow/ApplicationView/ApplicationDetailViewController.swift",
+        ]),
         // The system's Emoji & Symbols viewer, a panel on the screen: the chooser of icons
         // opens it through a closure that does nothing under XCTest.
         Effect(name: "opens the Emoji & Symbols viewer", pattern: #"orderFrontCharacterPalette\("#, allowed: [
@@ -267,6 +274,37 @@ final class TestIsolationTests: XCTestCase {
             }
         }
         XCTAssertGreaterThan(files, 100, "the app's sources were found")
+    }
+
+    /// The Welcome Guide's three ways out of the process (the system's prompt for the
+    /// Accessibility permission, System Settings, Finder) and every "Show in Finder" were
+    /// seams whose default did the real thing: a test that forgot to replace one showed the
+    /// prompt or opened another app on the Mac it ran on. Each call now stands right under
+    /// the line that leaves under XCTest. (Read from the sources: calling a default to see
+    /// that nothing happens would be the very effect if the line were ever lost.)
+    func testAskingForAccessOpeningSystemSettingsAndShowingInFinderAreInertUnderXCTest() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let inert = "guard !AppRuntime.isRunningXCTest else { return }"
+        let calls: [(call: String, files: [String])] = [
+            ("Utils.requireAccessibilityPermissions()", ["Scrollio/Windows/IntroductionWindow/IntroductionViewController.swift"]),
+            ("NSWorkspace.shared.open(accessibilityPaneURL)", ["Scrollio/Windows/IntroductionWindow/IntroductionViewController.swift"]),
+            (".activateFileViewerSelecting(", [
+                "Scrollio/Windows/IntroductionWindow/IntroductionViewController.swift",
+                "Scrollio/Windows/PreferencesWindow/GeneralView/PreferencesGeneralViewController.swift",
+                "Scrollio/Windows/PreferencesWindow/ApplicationView/ApplicationDetailViewController.swift",
+            ]),
+        ]
+        for (call, files) in calls {
+            for file in files {
+                let lines = try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
+                    .components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+                let uses = lines.indices.filter { lines[$0].contains(call) && !lines[$0].hasPrefix("//") }
+                XCTAssertEqual(uses.count, 1, "\(file): \(call)")
+                for use in uses where use > 0 {
+                    XCTAssertEqual(lines[use - 1], inert, "\(file):\(use + 1) \(call) runs under XCTest too")
+                }
+            }
+        }
     }
 
     /// The test host as the tests find it: nothing of the app was started, and what would
