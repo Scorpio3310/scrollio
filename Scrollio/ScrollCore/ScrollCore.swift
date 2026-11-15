@@ -246,8 +246,19 @@ class ScrollCore: ScrollActionPort {
         }
         let willShiftVerticalToHorizontal = ScrollCore.shared.toggleScroll && hasVerticalDelta && !hasHorizontalDelta
         let verticalReversePreference = willShiftVerticalToHorizontal ? enableReverseHorizontal : enableReverseVertical
-        if hasVerticalDelta && verticalReversePreference {
+        // The event itself, when it goes on unsmoothed (smoothing off, a silent display link),
+        // stays vertical unless it carries Shift: `reversesRawVertical`. With "Scroll
+        // sideways" on another key it took the horizontal rule, against the user's setting.
+        let rawVerticalReverse = ScrollCore.reversesRawVertical(
+            shiftsToSideways: willShiftVerticalToHorizontal, carriesShift: event.flags.contains(.maskShift),
+            reverseVertical: enableReverseVertical, reverseHorizontal: enableReverseHorizontal
+        )
+        if hasVerticalDelta && rawVerticalReverse {
             ScrollEvent.reverseY(scrollEvent)
+        }
+        if hasVerticalDelta && rawVerticalReverse != verticalReversePreference {
+            // The distance the poster smooths: by the rule of the axis it scrolls on.
+            scrollEvent.Y.usableValue = -scrollEvent.Y.usableValue
         }
         // While the sideways wheel scrolls, its "Reverse direction" turns it around once more,
         // after "Reverse wheel direction" (global or the app's): X is turned around once or not
@@ -395,6 +406,14 @@ class ScrollCore: ScrollActionPort {
     /// direction" only.)
     static func flipsHorizontal(reverseRule: Bool, swapsSideways: Bool) -> Bool {
         return reverseRule != swapsSideways
+    }
+
+    /// Whether the vertical delta the event itself carries (what goes on when the poster
+    /// does not take it) is turned around. While "Scroll sideways" holds, only the poster
+    /// turns the wheel sideways; macOS does it for an event that carries Shift. So the
+    /// event takes the horizontal rule with Shift, and the vertical rule otherwise.
+    static func reversesRawVertical(shiftsToSideways: Bool, carriesShift: Bool, reverseVertical: Bool, reverseHorizontal: Bool) -> Bool {
+        return shiftsToSideways && carriesShift ? reverseHorizontal : reverseVertical
     }
 
     /// What the poster gets for one smoothed wheel event: each axis's distance (max(Step,
