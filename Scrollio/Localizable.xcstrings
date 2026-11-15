@@ -6804,7 +6804,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "1 app with its own settings"
+            "value": "1 app on the list"
           }
         }
       }
@@ -6815,7 +6815,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%d apps with their own settings"
+            "value": "%d apps on the list"
           }
         }
       }

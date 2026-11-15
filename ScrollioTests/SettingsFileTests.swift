@@ -691,7 +691,7 @@ final class SettingsFileFormatTests: XCTestCase {
             "Ring in Notes, Top right: Open App or File: sync.sh", "Ring in Notes, Left: No Action", "Ring in Mail, Top: Paste",
         ])
         let items = SettingsFileText.items(of: contents).map(\.text)
-        XCTAssertTrue(items.contains("2 apps with their own settings"), "\(items)")
+        XCTAssertTrue(items.contains("2 apps on the list"), "\(items)")
         XCTAssertTrue(items.contains("1 app with a Shortcut Ring of its own"), "the one in use: \(items)")
 
         let target = OwnSettings(for: self)
@@ -2353,17 +2353,24 @@ final class SettingsFileCenterTests: XCTestCase {
         XCTAssertEqual(own.options.scroll.speed, 7.5)
         XCTAssertEqual(keptSpeeds(), [4, 3, 7.5])
 
-        // The folder's own rule, without the settings: a twin becomes the newest, under a new name.
+        // The date a backup says it was saved on is the one "Restore…" lists it by, also
+        // for settings that were kept before. Regression: the earlier file was renamed, so
+        // the list gave the new date and the sheet the old one.
+        for entry in own.center.backups.entries() {
+            XCTAssertEqual(try own.center.read(entry.url).get().header.exported, entry.date, entry.url.lastPathComponent)
+        }
+
+        // The folder's own rule, without the settings: the new file takes the twin's place.
         let folder = try temporaryFolder(for: self)
         let backups = SettingsBackups(directory: folder)
         let start = Date(timeIntervalSince1970: 1_794_476_527)
         let first = try backups.write(Data("a".utf8), now: start)
         _ = try backups.write(Data("b".utf8), now: start.addingTimeInterval(60))
         let again = try backups.write(Data("a, said again".utf8), now: start.addingTimeInterval(120), holdsTheSame: { $0 == Data("a".utf8) })
-        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path), "it moved")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path), "the earlier one is gone")
         XCTAssertEqual(again.lastPathComponent, "Scrollio Settings Backup 2026-11-12 09.44.07 UTC.json")
-        XCTAssertEqual(try String(contentsOf: again, encoding: .utf8), "a", "the backup that was there, not a second one")
-        XCTAssertEqual(backups.entries().count, 2)
+        XCTAssertEqual(try String(contentsOf: again, encoding: .utf8), "a, said again", "written as any other backup")
+        XCTAssertEqual(backups.entries().count, 2, "not a second one")
         XCTAssertEqual(backups.latest?.url.lastPathComponent, again.lastPathComponent)
         // Settings are compared, not who wrote the file or when.
         let one = Fixture.file(#""speed":3,"smooth":true"#, more: #","appVersion":"1.0","exported":"2026-01-01T00:00:00Z""#)
@@ -2460,7 +2467,7 @@ final class SettingsFileTextTests: XCTestCase {
         )
         XCTAssertEqual(SettingsFileText.items(of: everything).map(\.text), [
             "Scrolling settings", "Thumb wheel", "2 button and key actions", "Gestures", "Logitech mouse values",
-            "1 app with its own settings", "“Change scrolling only in these apps” is on", "Show in menu bar: on",
+            "1 app on the list", "“Change scrolling only in these apps” is on", "Show in menu bar: on",
         ])
         for item in SettingsFileText.items(of: everything) {
             XCTAssertNotNil(NSImage(systemSymbolName: item.symbolName, accessibilityDescription: nil), item.symbolName)
@@ -2475,7 +2482,14 @@ final class SettingsFileTextTests: XCTestCase {
         )
         XCTAssertEqual(SettingsFileText.counted(1, "general-settings-import-actions"), "1 button or key action")
         XCTAssertEqual(SettingsFileText.counted(12, "general-settings-import-actions"), "12 button and key actions")
-        XCTAssertEqual(SettingsFileText.counted(4, "general-settings-import-apps"), "4 apps with their own settings")
+        XCTAssertEqual(SettingsFileText.counted(4, "general-settings-import-apps"), "4 apps on the list")
+        // Every app of the list is counted, so the line does not call them apps "with
+        // their own settings": one that follows Scrolling, Buttons, Gestures and the ring
+        // has none (the list of apps says "Nothing of its own yet" for it).
+        XCTAssertEqual(
+            SettingsFileText.items(of: try Fixture.contents(#""applications":[{"path":"/Applications/Notes.app"},{"path":"/Applications/Maps.app"}]"#)).map(\.text),
+            ["2 apps on the list"]
+        )
         XCTAssertEqual(SettingsFileText.unreadable(count: 1), "1 entry this version of Scrollio does not know is left out.")
         XCTAssertEqual(SettingsFileText.unreadable(count: 3), "3 entries this version of Scrollio does not know are left out.")
     }
@@ -2804,7 +2818,7 @@ final class SettingsImportSheetTests: XCTestCase {
         // What the sheet counts above is still there, with the apps that bring buttons of
         // their own.
         XCTAssertEqual(sheet.itemLabels.map(\.stringValue), [
-            "5 button and key actions", "Gestures", "2 apps with their own settings", "2 apps with buttons of their own",
+            "5 button and key actions", "Gestures", "2 apps on the list", "2 apps with buttons of their own",
         ])
 
         // Return does not import: it is Cancel, and so is Esc.

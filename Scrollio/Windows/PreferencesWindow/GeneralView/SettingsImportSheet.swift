@@ -8,7 +8,7 @@
 //      Import these settings?
 //      “Scrollio Settings 2026-11-12.json”. It says it was saved by Scrollio 1.0.1 on …
 //      ┌ Scrolling settings · Thumb wheel · 3 button and key actions · Gestures ·
-//      └ Logitech mouse values · 4 apps with their own settings · Show in menu bar: on
+//      └ Logitech mouse values · 4 apps on the list · Show in menu bar: on
 //      ┌ ⚠ 1 action opens an app or a file, or runs a script
 //      │ Each starts at a press of its button or key. …
 //      └ ⌥ F5: runs the script /Users/…/sync.sh (arguments: --all)
@@ -91,6 +91,9 @@ enum SettingsFileText {
             items.append(Item(symbolName: "computermouse", text: text("general-settings-import-logitech")))
         }
         if contents.groups.contains(.application) {
+            // Every app of the file's list ("3 apps on the list"), with or without settings
+            // of its own: the list is what an import replaces. The lines after it count
+            // the apps that have something of their own.
             items.append(Item(
                 symbolName: "square.grid.2x2",
                 text: counted(contents.applications?.count ?? 0, "general-settings-import-apps")
