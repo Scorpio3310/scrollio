@@ -3723,13 +3723,13 @@
       }
     },
     "buttons-show-gesture-settings": {
-      "comment": "Action menu of a button with Gesture Navigation",
+      "comment": "Action menu of a button with Gesture Navigation: shows the Gestures pane (on an app's Buttons part buttons-show-in-app-part says the app's Gestures part)",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show Gesture Settings"
+            "value": "Show in Gestures"
           }
         }
       }
@@ -4903,13 +4903,13 @@
       }
     },
     "gestures-open-mouse": {
-      "comment": "Gestures pane: small button next to \"Haptic feedback is off under Mouse.\"; shows the Mouse pane",
+      "comment": "Gestures pane and an app's Gestures part: small button next to \"Haptic feedback is off under Mouse.\"; shows the Mouse pane",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Mouse"
+            "value": "Show in Mouse"
           }
         }
       }
@@ -9967,13 +9967,13 @@
       }
     },
     "buttons-thumb-wheel-settings": {
-      "comment": "Buttons pane and an app's Buttons part: the last item of the thumb wheel row's menu; opens Scrolling › Thumb wheel (an app's Scrolling part), as “Show Gesture Settings” opens Gestures",
+      "comment": "Buttons pane: last item of the thumb wheel row's menu; shows Scrolling › Thumb wheel (on an app's Buttons part buttons-show-in-app-part says the app's Scrolling part)",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Thumb Wheel Settings…"
+            "value": "Show in Scrolling"
           }
         }
       }
@@ -10906,6 +10906,30 @@
           "stringUnit": {
             "state": "translated",
             "value": "Show in Finder"
+          }
+        }
+      }
+    },
+    "buttons-show-ring-settings": {
+      "comment": "Action menu of a button with the Shortcut Ring: shows the Shortcut Ring pane (on an app's Buttons part buttons-show-in-app-part says the app's Shortcut Ring part)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in Shortcut Ring"
+          }
+        }
+      }
+    },
+    "buttons-show-in-app-part": {
+      "comment": "An app's Buttons part: an item of a row's menu that shows another part of the app's page. %1$@ is the app's name, %2$@ the part as its segment names it (“Show in Safari › Gestures”)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in %1$@ › %2$@"
           }
         }
       }

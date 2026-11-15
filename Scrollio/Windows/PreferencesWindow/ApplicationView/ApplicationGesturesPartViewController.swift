@@ -60,7 +60,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     /// What the connected mice can do: the "Logitech mouse" section shows as the Gestures
     /// pane's does. Tests replace it.
     var deviceSource: MouseGestureDeviceSource = .live
-    /// "Open Mouse": shows the Mouse pane. Tests replace it.
+    /// "Show in Mouse": shows the Mouse pane. Tests replace it.
     var openMousePane: (() -> Void)?
     /// "Show in Buttons" of "Button to hold": the Buttons pane, the gesture button's row
     /// selected. Tests replace it.
@@ -104,7 +104,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     private(set) var logitechFold: PreferencesDisclosureSection?
     private(set) var deviceTrackingRow: PreferencesSwitchRow?
     private(set) var hapticsRow: PreferencesSwitchRow?
-    /// "Haptic feedback is off under Mouse." with "Open Mouse", under the "Logitech mouse"
+    /// "Haptic feedback is off under Mouse." with "Show in Mouse", under the "Logitech mouse"
     /// box, as the Gestures pane has it: in sight while the box shows its rows and a mouse
     /// has its haptics off because they were switched off under Mouse (no pulse comes).
     private(set) var hapticsOffNote: NSView?
@@ -529,7 +529,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         }
     }
 
-    /// "Open Mouse", next to the line that says the haptics are off there.
+    /// "Show in Mouse", next to the line that says the haptics are off there.
     @objc func openMouseClicked(_ sender: NSButton) {
         if let openMousePane {
             openMousePane()

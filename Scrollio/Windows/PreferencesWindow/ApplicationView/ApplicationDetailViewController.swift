@@ -249,8 +249,10 @@ final class ApplicationDetailViewController: NSViewController {
                 // "Set Up…" of the Gestures and Ring parts records there while the part is
                 // out of the window: its Undo goes to the page's window.
                 buttons.pageUndoManager = { [weak self] in self?.viewIfLoaded?.window?.undoManager }
-                // "Show Gesture Settings" of a row: the gestures of this app, not the pane.
+                // "Show in Safari › Gestures" (and › Shortcut Ring) of a row: the gestures
+                // and the ring of this app, not the panes.
                 buttons.onGestureSettingsRequested = { [weak self] in self?.show(.gestures) }
+                buttons.onRingSettingsRequested = { [weak self] in self?.show(.ring) }
                 buttons.onThumbWheelSettingsRequested = { [weak self] in self?.showThumbWheelSettings() }
             }
             if let ring = controller as? ApplicationRingPartViewController {
@@ -351,7 +353,7 @@ final class ApplicationDetailViewController: NSViewController {
 
     // MARK: - Parts
 
-    /// "Thumb Wheel Settings…" of the Buttons part's thumb wheel row: the app's Scrolling
+    /// "Show in Safari › Scrolling" of the Buttons part's thumb wheel row: the app's Scrolling
     /// part, with its Thumb wheel box in view while the app has its own settings (Own
     /// Settings or Left to macOS). With Same as Scrolling the part shows that choice and its
     /// line, and no box: the general Scrolling pane would show the general action's values,

@@ -597,7 +597,7 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         XCTAssertEqual(calculator.ownThumbWheelFunction, .desktops)
     }
 
-    /// The row's "Thumb Wheel Settings…" shows the app's Scrolling part, the app's
+    /// The row's "Show in Calculator › Scrolling" shows the app's Scrolling part, the app's
     /// function unchanged: with the app's own settings its Thumb wheel box; while the app
     /// uses the Scrolling settings the part's switch (the general pane would show the
     /// general action's values, not this app's).
@@ -608,7 +608,7 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         let part = try buttonsPart(pane: pane)
         let page = try XCTUnwrap(pane.detailController)
         let item = try XCTUnwrap(part.thumbWheelRow?.pullDown.settingsItem)
-        XCTAssertEqual(item.title, "Thumb Wheel Settings…")
+        XCTAssertEqual(item.title, "Show in \(calculator.getName()) › Scrolling")
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
         XCTAssertEqual(page.shownPart, .scrolling)
         XCTAssertFalse(page.scrollingPart.showsSettings, "the app uses the Scrolling settings: the switch")

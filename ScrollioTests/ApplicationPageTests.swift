@@ -1418,13 +1418,13 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName),
                        [SystemShortcut.mouseGestureNavigation.identifier, SystemShortcut.missionControl.identifier, SystemShortcut.shortcutRing.identifier])
         XCTAssertTrue(calculator.ownButtonBindings.allSatisfy(\.isEnabled))
-        XCTAssertEqual(part.rows[0].pullDown.gestureSettingsItem?.isHidden, false, "Show Gesture Settings, while Gesture Navigation is the action")
+        XCTAssertEqual(part.rows[0].pullDown.gestureSettingsItem?.isHidden, false, "Show in Gestures, while Gesture Navigation is the action")
         XCTAssertEqual(part.rows[2].pullDown.menu?.items.first?.title, SystemShortcut.shortcutRing.localizedName)
         XCTAssertEqual(Options.shared.buttons.binding, general, "Buttons is not touched")
     }
 
-    /// "Show Gesture Settings" on a row shows the app's own Gestures part, not the Gestures
-    /// pane.
+    /// "Show in Calculator › Gestures" on a row shows the app's own Gestures part, not the
+    /// Gestures pane.
     func testShowGestureSettingsOnARowShowsTheAppsGesturesPart() throws {
         let calculator = addApp(Self.calculator)
         calculator.setOwnButtonBindings([binding(3, SystemShortcut.mouseGestureNavigation.identifier)])
@@ -1433,10 +1433,28 @@ final class ApplicationPageTests: XCTestCase {
         let pullDown = try XCTUnwrap(part.rows.first?.pullDown)
         let settings = try XCTUnwrap(pullDown.gestureSettingsItem)
         XCTAssertFalse(settings.isHidden)
+        XCTAssertEqual(settings.title, "Show in \(calculator.getName()) › Gestures")
         pullDown.shortcutSelected(settings)
         XCTAssertEqual(page.shownPart, .gestures)
         XCTAssertTrue(page.gesturesPart.view.isDescendant(of: page.partContainer))
         XCTAssertEqual(calculator.ownButtonBindings.first?.systemShortcutName, SystemShortcut.mouseGestureNavigation.identifier, "the action stays")
+    }
+
+    /// "Show in Calculator › Shortcut Ring" under the Shortcut Ring shows the app's own
+    /// Shortcut Ring part, not the pane; the action stays.
+    func testShowRingSettingsOnARowShowsTheAppsRingPart() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(3, SystemShortcut.shortcutRing.identifier)])
+        let (page, part) = try buttonsPart()
+        let pullDown = try XCTUnwrap(part.rows.first?.pullDown)
+        XCTAssertEqual(pullDown.gestureSettingsItem?.isHidden, true)
+        let settings = try XCTUnwrap(pullDown.ringSettingsItem)
+        XCTAssertFalse(settings.isHidden)
+        XCTAssertEqual(settings.title, "Show in \(calculator.getName()) › Shortcut Ring")
+        pullDown.shortcutSelected(settings)
+        XCTAssertEqual(page.shownPart, .ring)
+        XCTAssertTrue(page.ringPart.view.isDescendant(of: page.partContainer))
+        XCTAssertEqual(calculator.ownButtonBindings.first?.systemShortcutName, SystemShortcut.shortcutRing.identifier, "the action stays")
     }
 
     /// "−" gives the button back to Buttons (nothing is stored once none is left); Undo
@@ -1999,7 +2017,7 @@ final class ApplicationPageTests: XCTestCase {
         let fold = try XCTUnwrap(part.logitechFold)
         XCTAssertFalse(note.isHidden)
         XCTAssertEqual(part.hapticsOffLabel?.stringValue, "Haptic feedback is off under Mouse.")
-        XCTAssertEqual(part.openMouseButton?.title, "Open Mouse")
+        XCTAssertEqual(part.openMouseButton?.title, NSLocalizedString("gestures-open-mouse", comment: ""))
         XCTAssertEqual(part.hapticsRow?.isOn, true, "the switch stays as it is")
         var opened = 0
         part.openMousePane = { opened += 1 }

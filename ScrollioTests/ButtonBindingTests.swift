@@ -54,7 +54,7 @@ final class ButtonBindingTests: XCTestCase {
         let menu = try XCTUnwrap(gesture.menu)
         let item = try XCTUnwrap(gesture.gestureSettingsItem)
         XCTAssertFalse(item.isHidden)
-        XCTAssertEqual(item.title, "Show Gesture Settings")
+        XCTAssertEqual(item.title, "Show in Gestures")
         // Right under Gesture Navigation.
         let gestureIndex = try XCTUnwrap(menu.items.firstIndex {
             ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == SystemShortcut.mouseGestureNavigation.identifier
@@ -1581,5 +1581,230 @@ final class ButtonBindingTests: XCTestCase {
         let binding = try! decoder.decode(ButtonBinding.self, from: json)
         XCTAssertEqual(binding.systemShortcutName, "copy")
         XCTAssertNil(binding.openTarget)
+    }
+}
+
+// MARK: - The tick at the action a row shows (round 3)
+
+extension ButtonBindingTests {
+
+    /// Every item of `menu` and of its submenus in `state`.
+    private func items(of menu: NSMenu, in state: NSControl.StateValue) -> [NSMenuItem] {
+        return menu.items.flatMap { item -> [NSMenuItem] in
+            (item.state == state ? [item] : []) + (item.submenu.map { items(of: $0, in: state) } ?? [])
+        }
+    }
+
+    /// Opens and closes the menu as AppKit does (its delegate is told) and returns the one
+    /// ticked item; fails unless there is exactly one.
+    private func ticked(_ pullDown: ButtonActionPullDown, file: StaticString = #filePath, line: UInt = #line) throws -> NSMenuItem {
+        let menu = try XCTUnwrap(pullDown.menu, file: file, line: line)
+        pullDown.menuWillOpen(menu)
+        let on = items(of: menu, in: .on)
+        pullDown.menuDidClose(menu)
+        XCTAssertEqual(on.count, 1, "exactly one ticked item: \(on.map(\.title))", file: file, line: line)
+        return try XCTUnwrap(on.first, file: file, line: line)
+    }
+
+    private func shortcut(of item: NSMenuItem) -> String? {
+        return (item.representedObject as? SystemShortcut.Shortcut)?.identifier
+    }
+
+    private func marker(of item: NSMenuItem) -> String? {
+        return item.representedObject as? String
+    }
+
+    /// A listed action is ticked inside its category, and the category has the dash; the
+    /// ticked item reads what the row shows. Key equivalents still show only while open.
+    func testTheMenuTicksTheListedActionInsideItsCategory() throws {
+        let pullDown = makePullDown(binding: makeBinding(SystemShortcut.copy))
+        let item = try ticked(pullDown)
+        XCTAssertEqual(shortcut(of: item), SystemShortcut.copy.identifier)
+        XCTAssertEqual(item.title, shownTitle(pullDown))
+        let menu = try XCTUnwrap(pullDown.menu)
+        let dashed = items(of: menu, in: .mixed)
+        XCTAssertEqual(dashed.count, 1)
+        XCTAssertTrue(dashed.first?.submenu === item.menu, "the dash is on the category that holds it")
+        XCTAssertTrue((menu.items + menu.items.compactMap(\.submenu).flatMap(\.items)).allSatisfy { $0.keyEquivalent.isEmpty })
+    }
+
+    /// Without an action "Default" is ticked (the Buttons pane), as the row reads.
+    func testTheMenuTicksDefaultWithoutAnAction() throws {
+        let pullDown = makePullDown(binding: ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil),
+            systemShortcutName: "", isEnabled: false
+        ))
+        let item = try ticked(pullDown)
+        XCTAssertTrue(item === pullDown.noActionItem)
+        XCTAssertEqual(item.title, shownTitle(pullDown))
+        XCTAssertTrue(items(of: try XCTUnwrap(pullDown.menu), in: .mixed).isEmpty)
+    }
+
+    /// Recorded keys tick "Keyboard Shortcut…", with a name or without; keys that are a
+    /// listed action (and have no name) read and tick as that action.
+    func testTheMenuTicksKeyboardShortcutForRecordedKeys() throws {
+        let trigger = RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil)
+        let keys = makePullDown(binding: ButtonBinding(triggerEvent: trigger, systemShortcutName: "custom::40:1048576"))
+        XCTAssertEqual(marker(of: try ticked(keys)), ShortcutManager.MenuMarker.keyboardShortcut)
+
+        let named = makePullDown(binding: ButtonBinding(
+            triggerEvent: trigger, systemShortcutName: "custom::40:1048576", isEnabled: true,
+            label: ShortcutLabel(name: "Kill Line", icon: nil)
+        ))
+        XCTAssertEqual(marker(of: try ticked(named)), ShortcutManager.MenuMarker.keyboardShortcut)
+
+        let modifiers = UInt64(NSEvent.ModifierFlags.command.union(.shift).rawValue)
+        let listed = makePullDown(binding: ButtonBinding(triggerEvent: trigger, systemShortcutName: "custom::21:\(modifiers)"))
+        let item = try ticked(listed)
+        XCTAssertEqual(shortcut(of: item), "screenshotSelection")
+        XCTAssertEqual(item.title, shownTitle(listed))
+    }
+
+    func testTheMenuTicksOpenAppOrFileForAnApp() throws {
+        let pullDown = makePullDown(binding: ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil),
+            openTarget: OpenTargetPayload(path: "/Applications/Safari.app", bundleID: "com.apple.Safari", arguments: "", kind: .application)
+        ))
+        XCTAssertEqual(marker(of: try ticked(pullDown)), ShortcutManager.MenuMarker.openTarget)
+    }
+
+    /// Gesture Navigation and the Shortcut Ring tick their own items, at the top level.
+    func testTheMenuTicksGestureNavigationAndTheShortcutRingThemselves() throws {
+        for action in [SystemShortcut.mouseGestureNavigation, SystemShortcut.shortcutRing] {
+            let pullDown = makePullDown(binding: makeBinding(action))
+            let item = try ticked(pullDown)
+            XCTAssertEqual(shortcut(of: item), action.identifier)
+            XCTAssertTrue(item.menu === pullDown.menu)
+            XCTAssertEqual(item.title, shownTitle(pullDown))
+        }
+    }
+
+    /// "Same as Other Apps (…)" (an app's Buttons part) is never ticked: the row's own
+    /// "Default" is.
+    func testSameAsOtherAppsIsNeverTicked() throws {
+        let pullDown = makePullDown(binding: ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil),
+            systemShortcutName: "", isEnabled: false
+        ))
+        pullDown.sameAsOtherAppsTitle = "Same as Other Apps (Copy)"
+        XCTAssertTrue(try ticked(pullDown) === pullDown.noActionItem)
+        XCTAssertEqual(pullDown.sameAsOtherAppsItem?.state, .off)
+    }
+
+    /// The tick follows the row: after a choice in the menu, and after the pane shows
+    /// another binding (`configure(with:)`), the next opening ticks the new action only.
+    func testTheTickMovesAfterAChoiceAndAfterConfigure() throws {
+        let pullDown = makePullDown(binding: makeBinding(SystemShortcut.copy))
+        let menu = try XCTUnwrap(pullDown.menu)
+        XCTAssertEqual(shortcut(of: try ticked(pullDown)), SystemShortcut.copy.identifier)
+
+        let paste = try XCTUnwrap(menu.items.compactMap(\.submenu).flatMap(\.items).first {
+            shortcut(of: $0) == SystemShortcut.paste.identifier
+        })
+        pullDown.shortcutSelected(paste)
+        XCTAssertTrue(try ticked(pullDown) === paste)
+
+        pullDown.configure(with: makeBinding(SystemShortcut.mouseGestureNavigation))
+        XCTAssertEqual(shortcut(of: try ticked(pullDown)), SystemShortcut.mouseGestureNavigation.identifier)
+        XCTAssertTrue(items(of: menu, in: .mixed).isEmpty, "no category holds it")
+
+        pullDown.configure(with: makeBinding(SystemShortcut.copy).disabledCopy())
+        XCTAssertTrue(try ticked(pullDown) === pullDown.noActionItem)
+    }
+
+    /// A place of the ring and a direction of the gestures use the same pull-down: "No
+    /// Action" or the listed action, ticked the same way.
+    func testRingPlacesAndGestureDirectionsTickTheirActionToo() throws {
+        let trigger = RecordedEvent(type: .mouse, code: 3, modifiers: 0, displayComponents: ["🖱4"], deviceFilter: nil)
+        for use in [ButtonActionPullDown.Use.ringPlace, .gesture(showsLogiActions: false)] {
+            let empty = ButtonActionPullDown(binding: ButtonBinding(triggerEvent: trigger, systemShortcutName: "", isEnabled: false), use: use)
+            let none = try ticked(empty)
+            XCTAssertTrue(none === empty.noActionItem)
+            XCTAssertEqual(none.title, "No Action")
+
+            let first = try XCTUnwrap(try XCTUnwrap(empty.menu).items.compactMap(\.submenu).first?.items.first)
+            let action = try XCTUnwrap(first.representedObject as? SystemShortcut.Shortcut)
+            let bound = ButtonActionPullDown(binding: makeBinding(action), use: use)
+            let item = try ticked(bound)
+            XCTAssertEqual(shortcut(of: item), action.identifier)
+            XCTAssertEqual(item.title, shownTitle(bound))
+            XCTAssertEqual(items(of: try XCTUnwrap(bound.menu), in: .mixed).count, 1)
+        }
+    }
+}
+
+private extension ButtonBinding {
+    /// The same trigger without an action.
+    func disabledCopy() -> ButtonBinding {
+        return ButtonBinding(id: id, triggerEvent: triggerEvent, systemShortcutName: "", isEnabled: false, createdAt: createdAt)
+    }
+}
+
+// MARK: - "Show in <Place>" (round 3)
+
+extension ButtonBindingTests {
+
+    /// "Show in Shortcut Ring" stands right under the Shortcut Ring while the ring is the
+    /// action, as "Show in Gestures" under Gesture Navigation; it asks for the pane and
+    /// changes nothing, and is never ticked.
+    func testShowInShortcutRing_onlyWhileTheRingIsTheAction() throws {
+        var requests = 0
+        var selected = 0
+        let ring = makePullDown(binding: makeBinding(SystemShortcut.shortcutRing), onShortcutSelected: { _ in selected += 1 })
+        ring.onRingSettingsRequested = { requests += 1 }
+        let menu = try XCTUnwrap(ring.menu)
+        let item = try XCTUnwrap(ring.ringSettingsItem)
+        XCTAssertFalse(item.isHidden)
+        XCTAssertEqual(item.title, "Show in Shortcut Ring")
+        XCTAssertNotNil(item.image)
+        let ringIndex = try XCTUnwrap(menu.items.firstIndex {
+            ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == SystemShortcut.shortcutRing.identifier
+        })
+        XCTAssertEqual(menu.index(of: item), ringIndex + 1)
+        XCTAssertEqual(ring.gestureSettingsItem?.isHidden, true)
+
+        ring.menuWillOpen(menu)
+        XCTAssertEqual(item.state, .off)
+        ring.menuDidClose(menu)
+
+        ring.shortcutSelected(item)
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(selected, 0)
+        XCTAssertEqual(shownTitle(ring), SystemShortcut.shortcutRing.localizedName)
+
+        XCTAssertEqual(makePullDown(binding: makeBinding(SystemShortcut.copy)).ringSettingsItem?.isHidden, true)
+        let gesture = makePullDown(binding: makeBinding(SystemShortcut.mouseGestureNavigation))
+        XCTAssertEqual(gesture.ringSettingsItem?.isHidden, true)
+        XCTAssertEqual(gesture.gestureSettingsItem?.isHidden, false)
+    }
+
+    /// A place of the ring and a direction of the gestures have no "Show in" items.
+    func testRingPlacesAndGestureDirectionsHaveNoShowInItems() {
+        for use in [ButtonActionPullDown.Use.ringPlace, .gesture(showsLogiActions: false)] {
+            let pullDown = ButtonActionPullDown(binding: makeBinding(SystemShortcut.copy), use: use)
+            XCTAssertNil(pullDown.gestureSettingsItem)
+            XCTAssertNil(pullDown.ringSettingsItem)
+        }
+    }
+
+    /// On an app's Buttons part the items name the app's part, as the sidebar and the
+    /// page's segments name places; without an app, the panes.
+    func testShowInItemsNameTheAppsPartOnAnAppsPage() throws {
+        let pullDown = makePullDown(binding: makeBinding(SystemShortcut.shortcutRing))
+        pullDown.showsInApplication = "Safari"
+        XCTAssertEqual(pullDown.gestureSettingsItem?.title, "Show in Safari › Gestures")
+        XCTAssertEqual(pullDown.ringSettingsItem?.title, "Show in Safari › Shortcut Ring")
+        // (A trigger of another kind builds the menu anew: the titles stay the app's.)
+        pullDown.configure(with: ButtonBinding(
+            triggerEvent: RecordedEvent(type: .keyboard, code: 40, modifiers: 0, displayComponents: ["K"], deviceFilter: nil),
+            systemShortcutName: SystemShortcut.shortcutRing.identifier
+        ))
+        XCTAssertEqual(pullDown.ringSettingsItem?.title, "Show in Safari › Shortcut Ring")
+        pullDown.showsInApplication = nil
+        XCTAssertEqual(pullDown.gestureSettingsItem?.title, "Show in Gestures")
+        XCTAssertEqual(pullDown.ringSettingsItem?.title, "Show in Shortcut Ring")
+
+        XCTAssertEqual(ThumbWheelPresentation.settingsItemTitle, "Show in Scrolling")
+        XCTAssertEqual(ThumbWheelPresentation.settingsItemTitle(application: "Safari"), "Show in Safari › Scrolling")
     }
 }

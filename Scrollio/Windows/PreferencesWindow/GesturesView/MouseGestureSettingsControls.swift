@@ -586,7 +586,7 @@ enum MouseGestureRows {
         )
     }
 
-    /// "Haptic feedback is off under Mouse." at the rows' inset and "Open Mouse" (small) at
+    /// "Haptic feedback is off under Mouse." at the rows' inset and "Show in Mouse" (small) at
     /// the right edge of a box `boxWidth` wide, in the column of its switches: the muted line
     /// under the "Logitech mouse" box, of the pane and of an app's Gestures part. Hidden
     /// until it is shown.

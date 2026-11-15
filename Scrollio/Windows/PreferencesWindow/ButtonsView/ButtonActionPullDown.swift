@@ -3,8 +3,11 @@
 //  Mos
 //  The action of one button in the Buttons pane: a pull-down 240 pt wide that shows the
 //  action as the pull-downs of the Gestures pane do (a symbol and a name), and opens the
-//  menu of ShortcutManager. "Open App or File…", "Keyboard Shortcut…" and "Show Gesture
-//  Settings" are handed to the pane (or recorded here); every other item binds directly.
+//  menu of ShortcutManager. "Open App or File…", "Keyboard Shortcut…", "Show in Gestures"
+//  and "Show in Shortcut Ring" are handed to the pane (or recorded here); every other item
+//  binds directly. The two "Show in" items stand under their action while it is the row's;
+//  on an app's Buttons part they name the app's part ("Show in Safari › Gestures",
+//  `showsInApplication`).
 //  On every row of Buttons (`offersDefault`) "No Action" is "Default": the button or key
 //  keeps doing what it does by itself (a press without an action is passed on), and the
 //  pane removes the binding of a button of the connected mouse. Where what it then does is
@@ -27,6 +30,12 @@
 //  The rows of the Shortcut Ring pane and of the Gestures pane use it too (`Use`): their
 //  menus offer what a place or a direction can hold, and their recorder takes only what a
 //  place of the ring can run (a key combination, the Back or the Forward button).
+//
+//  The open menu ticks what the row shows (`shownActionItem`), every time it opens: a
+//  listed action inside its category, which gets the dash; "Keyboard Shortcut…" for
+//  recorded keys, "Open App or File…" for an app or a file, Gesture Navigation and the
+//  Shortcut Ring their own items, "Default" or "No Action" without an action. Nothing
+//  else, "Same as Other Apps (…)" never. The order of the menu stays.
 //
 
 import Cocoa
@@ -65,8 +74,10 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     var onCustomShortcutRecorded: ((String, ShortcutLabel?) -> Void)?
     /// "Open App or File…" was chosen.
     var onOpenTargetSelectionRequested: (() -> Void)?
-    /// "Show Gesture Settings" was chosen.
+    /// "Show in Gestures" was chosen.
     var onGestureSettingsRequested: (() -> Void)?
+    /// "Show in Shortcut Ring" was chosen.
+    var onRingSettingsRequested: (() -> Void)?
     /// "Same as Other Apps (…)" was chosen (an app's Buttons part).
     var onSameAsOtherApps: (() -> Void)?
 
@@ -103,6 +114,14 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         didSet {
             guard sameAsOtherAppsTitle != oldValue else { return }
             applySameAsOtherApps()
+        }
+    }
+    /// The app whose page the "Show in" items lead to (its name): "Show in Safari ›
+    /// Gestures". nil: the panes ("Show in Gestures").
+    var showsInApplication: String? {
+        didSet {
+            guard showsInApplication != oldValue else { return }
+            applyShowInTitles()
         }
     }
     private var isCustomRecordingActive = false
@@ -154,6 +173,8 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         super.init(frame: .zero, pullsDown: true)
         translatesAutoresizingMaskIntoConstraints = false
         widthAnchor.constraint(equalToConstant: Self.width).isActive = true
+        // The tick is the menu's own (`tickShownAction`), not the item AppKit last chose.
+        (cell as? NSPopUpButtonCell)?.altersStateOfSelectedItem = false
         configure(with: binding)
     }
 
@@ -181,6 +202,7 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
             buildMenu()
         }
         gestureSettingsItem?.isHidden = !isGestureNavigationBound
+        ringSettingsItem?.isHidden = !isShortcutRingBound
         // Gesture Navigation is held while the mouse moves: a key cannot run it (the input
         // side passes such a binding through), so a key is not offered it. A key that
         // already has it keeps the item, so the menu still shows what is set.
@@ -219,6 +241,24 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         self.menu = menu
         applyNoActionTitle()
         applySameAsOtherApps()
+        applyShowInTitles()
+    }
+
+    /// "Show in Gestures" (`paneKey`), or on an app's page that app's part: "Show in
+    /// Safari › Gestures" (`application`: the app's name). Places are named as the sidebar
+    /// and the page's segments name them.
+    static func showInTitle(paneKey: String, part: ApplicationPagePart, application: String?) -> String {
+        guard let application else { return NSLocalizedString(paneKey, comment: "") }
+        return String(format: NSLocalizedString("buttons-show-in-app-part", comment: ""), application, part.title)
+    }
+
+    private func applyShowInTitles() {
+        gestureSettingsItem?.title = Self.showInTitle(
+            paneKey: "buttons-show-gesture-settings", part: .gestures, application: showsInApplication
+        )
+        ringSettingsItem?.title = Self.showInTitle(
+            paneKey: "buttons-show-ring-settings", part: .ring, application: showsInApplication
+        )
     }
 
     /// The item that clears the action ("No Action", or "Default").
@@ -292,9 +332,14 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         }
     }
 
-    /// "Show Gesture Settings", shown while Gesture Navigation is the action.
+    /// "Show in Gestures", shown while Gesture Navigation is the action.
     var gestureSettingsItem: NSMenuItem? {
         return menu?.items.first { $0.representedObject as? String == ShortcutManager.MenuMarker.gestureSettings }
+    }
+
+    /// "Show in Shortcut Ring", shown while the Shortcut Ring is the action.
+    var ringSettingsItem: NSMenuItem? {
+        return menu?.items.first { $0.representedObject as? String == ShortcutManager.MenuMarker.ringSettings }
     }
 
     private var isLogitechTrigger: Bool {
@@ -304,6 +349,11 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     var isGestureNavigationBound: Bool {
         guard case .namedShortcut(let shortcut) = CellActionState(binding: binding) else { return false }
         return shortcut.identifier == SystemShortcut.mouseGestureNavigation.identifier
+    }
+
+    var isShortcutRingBound: Bool {
+        guard case .namedShortcut(let shortcut) = CellActionState(binding: binding) else { return false }
+        return shortcut.identifier == SystemShortcut.shortcutRing.identifier
     }
 
     /// Puts the action into the title (item 0).
@@ -467,6 +517,10 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
             refreshActionDisplay()
             onGestureSettingsRequested?()
             return
+        case ShortcutManager.MenuMarker.ringSettings?:
+            refreshActionDisplay()
+            onRingSettingsRequested?()
+            return
         default:
             break
         }
@@ -484,7 +538,75 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        tickShownAction(in: menu)
         enableKeyEquivalents(in: menu)
+    }
+
+    // MARK: The tick
+
+    /// The item of what the row shows, and the category it sits in (nil: the menu's own
+    /// level); nil when the menu has none. A listed action is its item; recorded keys
+    /// "Keyboard Shortcut…", unless they read as a listed action (no name of their own);
+    /// an app or a file "Open App or File…"; Gesture Navigation and the Shortcut Ring their
+    /// own items; no action "Default" or "No Action". "Same as Other Apps (…)" never.
+    var shownActionItem: (item: NSMenuItem, category: NSMenuItem?)? {
+        guard let menu else { return nil }
+        // (What is stored: a recording that waits for a key changes nothing yet.)
+        let state = CellActionState(binding: binding)
+        if resolver.resolve(state: state).kind == .unbound {
+            return noActionItem.map { ($0, nil) }
+        }
+        switch state {
+        case .unbound, .recordingPrompt:
+            return noActionItem.map { ($0, nil) }
+        case .namedShortcut(let shortcut):
+            return Self.item(of: shortcut.identifier, in: menu)
+        case .customBinding(let name, let label):
+            if label == nil, let shortcut = SystemShortcut.displayShortcut(matchingBindingName: name),
+               let listed = Self.item(of: shortcut.identifier, in: menu) {
+                return listed
+            }
+            return Self.item(marked: ShortcutManager.MenuMarker.keyboardShortcut, in: menu)
+        case .openTarget:
+            return Self.item(marked: ShortcutManager.MenuMarker.openTarget, in: menu)
+        }
+    }
+
+    /// Clears every state, then ticks what the row shows and puts the dash on its category.
+    private func tickShownAction(in menu: NSMenu) {
+        Self.clearStates(in: menu)
+        guard let shown = shownActionItem else { return }
+        shown.item.state = .on
+        shown.category?.state = .mixed
+    }
+
+    private static func clearStates(in menu: NSMenu) {
+        for item in menu.items {
+            item.state = .off
+            if let submenu = item.submenu {
+                clearStates(in: submenu)
+            }
+        }
+    }
+
+    /// The first item that binds `identifier` (after the title), at the menu's level or in
+    /// a category.
+    private static func item(of identifier: String, in menu: NSMenu) -> (item: NSMenuItem, category: NSMenuItem?)? {
+        for item in menu.items.dropFirst() {
+            if (item.representedObject as? SystemShortcut.Shortcut)?.identifier == identifier {
+                return (item, nil)
+            }
+            if let found = item.submenu?.items.first(where: {
+                ($0.representedObject as? SystemShortcut.Shortcut)?.identifier == identifier
+            }) {
+                return (found, item)
+            }
+        }
+        return nil
+    }
+
+    private static func item(marked marker: String, in menu: NSMenu) -> (item: NSMenuItem, category: NSMenuItem?)? {
+        return menu.items.first { $0.representedObject as? String == marker }.map { ($0, nil) }
     }
 
     func menuDidClose(_ menu: NSMenu) {

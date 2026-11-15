@@ -10,7 +10,7 @@
 //  of every direction and of Click, a box with how a gesture behaves (invert, freeze,
 //  swipe speed) and, when a connected mouse can do it, a box with what a Logitech mouse
 //  does itself; under it, while the mouse has its haptics off because the user switched
-//  them off under Mouse, a muted line that says so and leads there ("Open Mouse"). Last,
+//  them off under Mouse, a muted line that says so and leads there ("Show in Mouse"). Last,
 //  "Reset to Defaults", as in the Scrolling pane (`PreferencesPaneReset`): every gesture
 //  setting of a new installation; the button to hold is a binding of Buttons and stays.
 //  Mode, actions, invert and freeze come from MouseGestureSettingsControls, the rows from
@@ -77,7 +77,7 @@ final class GesturesPreferencesViewController: NSViewController {
     /// "Show in Buttons" while only an app's own button runs Gesture Navigation: shows that
     /// app's Buttons part, its row selected. Tests replace it.
     var openApplicationButtons: ((ApplicationTriggers) -> Void)?
-    /// "Open Mouse": shows the Mouse pane. Tests replace it.
+    /// "Show in Mouse": shows the Mouse pane. Tests replace it.
     var openMousePane: (() -> Void)?
     /// Takes Undo and Redo of "Reset to Defaults"; the window's when nil.
     var paneUndoManager: UndoManager?
@@ -122,7 +122,7 @@ final class GesturesPreferencesViewController: NSViewController {
     private(set) var logitechBox: PreferencesGroupBox!
     private(set) var deviceTrackingRow: PreferencesSwitchRow!
     private(set) var hapticsRow: PreferencesSwitchRow!
-    /// "Haptic feedback is off under Mouse." with "Open Mouse", under the Logitech box.
+    /// "Haptic feedback is off under Mouse." with "Show in Mouse", under the Logitech box.
     private(set) var hapticsOffNote: NSView!
     private(set) var hapticsOffLabel: NSTextField!
     private(set) var openMouseButton: NSButton!
@@ -597,7 +597,7 @@ final class GesturesPreferencesViewController: NSViewController {
         return row
     }
 
-    /// "Haptic feedback is off under Mouse." at the rows' inset, "Open Mouse" (small) at the
+    /// "Haptic feedback is off under Mouse." at the rows' inset, "Show in Mouse" (small) at the
     /// right edge of the box above, in the column of its switches.
     private func makeHapticsOffNote() -> NSView {
         let note = MouseGestureRows.hapticsOffNote(boxWidth: Self.boxWidth, target: self, action: #selector(openMouseClicked(_:)))
