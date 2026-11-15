@@ -20,9 +20,11 @@ final class PreferencesScrollingTests: XCTestCase {
     private var originalScroll: OPTIONS_SCROLL_DEFAULT!
     private var originalThumbWheel = ThumbWheelSettings.default
     private var uiDefaults: UserDefaults!
+    private var originalNaturalScrolling: (() -> Bool)!
 
     override func setUp() {
         super.setUp()
+        originalNaturalScrolling = Options.naturalScrollingIsOn
         originalScroll = Options.shared.scroll
         originalThumbWheel = Options.shared.thumbWheel
         // A fresh container, so the tests never edit the one they restore.
@@ -32,6 +34,7 @@ final class PreferencesScrollingTests: XCTestCase {
     }
 
     override func tearDown() {
+        Options.naturalScrollingIsOn = originalNaturalScrolling
         Options.shared.scroll = originalScroll
         Options.shared.thumbWheel = originalThumbWheel
         originalScroll = nil
@@ -40,6 +43,11 @@ final class PreferencesScrollingTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// What macOS's Natural scrolling answers for the test (under XCTest: on, unless set).
+    private func macOSNaturalScrolling(_ on: Bool) {
+        Options.naturalScrollingIsOn = { on }
+    }
 
     private var storyboard: NSStoryboard {
         return NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesScrollingViewController.self))
@@ -1457,6 +1465,34 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
     }
 
+    /// On a Mac with Natural scrolling off a new installation starts with "Reverse wheel
+    /// direction" off (the main flag; the axes keep theirs): nothing differs from the
+    /// defaults then, and a reset keeps the wheel in the classic direction.
+    func testResetKeepsTheClassicDirectionOfAMacWithoutNaturalScrolling() {
+        macOSNaturalScrolling(false)
+        Options.shared.scroll.reverse = false
+        let controller = makeController()
+        XCTAssertEqual(controller.reverseSwitch.state, .off)
+        XCTAssertFalse(controller.hasSettingsToReset)
+        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
+
+        choose(.glide, in: controller)
+        XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
+        send(controller.resetToDefaultsButton)
+
+        XCTAssertFalse(Options.shared.scroll.reversesWheel)
+        XCTAssertEqual(Options.shared.scroll.duration, OPTIONS_SCROLL_DEFAULT().duration)
+        XCTAssertEqual(controller.reverseSwitch.state, .off)
+        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
+
+        // The direction turned on by hand differs from this Mac's defaults, and a reset
+        // turns it off again.
+        set(controller.reverseSwitch, true)
+        XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
+        send(controller.resetToDefaultsButton)
+        XCTAssertFalse(Options.shared.scroll.reversesWheel)
+    }
+
     func testResetRestoresTheDefaultsAndLeavesAdvancedOpen() {
         let controller = makeController(advanced: true)
         let scroll = Options.shared.scroll
@@ -1614,7 +1650,9 @@ final class PreferencesScrollingTests: XCTestCase {
         expected.smoothing = true
         expected.duration = 3.69
         expected.speed = 6.5
-        expected.reversed = true
+        // With Natural scrolling on (the tests' answer) "Reverse wheel direction" turns the
+        // wheel back to the classic direction: down the page.
+        expected.reversed = false
         expected.emphasis = .wheel
         XCTAssertEqual(controller.previewView.scene, expected)
         XCTAssertFalse(controller.previewView.isHidden)
@@ -1627,7 +1665,7 @@ final class PreferencesScrollingTests: XCTestCase {
         expected.smoothing = false
         expected.duration = 4.6
         expected.speed = 8.5
-        expected.reversed = false
+        expected.reversed = true
         XCTAssertEqual(controller.previewView.scene, expected)
 
         send(controller.resetToDefaultsButton)
@@ -1636,24 +1674,45 @@ final class PreferencesScrollingTests: XCTestCase {
     }
 
     /// The preview shows the vertical wheel: only the horizontal axis reversed (settings
-    /// from older builds) leaves it running the normal way, while the switch is on.
+    /// from older builds) leaves it as macOS turns it (with Natural scrolling, up the page),
+    /// while the switch is on.
     func testPreviewIsReversedOnlyWhenTheVerticalWheelIs() {
         Options.shared.scroll.reverse = true
         Options.shared.scroll.reverseVertical = false
         Options.shared.scroll.reverseHorizontal = true
         let controller = makeController()
         XCTAssertTrue(controller.reverseRow.isOn, "the switch: either axis")
-        XCTAssertFalse(controller.previewView.scene.reversed, "the preview: the vertical wheel")
+        XCTAssertTrue(controller.previewView.scene.reversed, "the preview: the vertical wheel, as macOS turns it")
 
         Options.shared.scroll.reverseVertical = true
         Options.shared.scroll.reverseHorizontal = false
         controller.syncViewWithOptions()
-        XCTAssertTrue(controller.previewView.scene.reversed)
+        XCTAssertFalse(controller.previewView.scene.reversed, "turned back: down the page")
 
         Options.shared.scroll.reverse = false
         Options.shared.scroll.reverseVertical = true
         controller.syncViewWithOptions()
-        XCTAssertFalse(controller.previewView.scene.reversed, "the main flag off stops both axes")
+        XCTAssertTrue(controller.previewView.scene.reversed, "the main flag off stops both axes")
+    }
+
+    /// The preview moves the page as the wheel really moves it on this Mac: with Natural
+    /// scrolling off the wheel is classic (down the page) while the switch is off, the other
+    /// way while it is on; with it on, the opposite. Read again when the tab appears.
+    /// Regression: the preview followed the switch alone and showed the default wheel
+    /// (Natural on, switch on: classic) going up the page.
+    func testPreviewShowsTheDirectionTheWheelHasOnThisMac() {
+        macOSNaturalScrolling(false)
+        Options.shared.scroll.reverse = false
+        let controller = makeController()
+        XCTAssertFalse(controller.previewView.scene.reversed, "classic: down the page")
+        set(controller.reverseSwitch, true)
+        XCTAssertTrue(controller.previewView.scene.reversed)
+
+        macOSNaturalScrolling(true)
+        controller.viewWillAppear()
+        XCTAssertFalse(controller.previewView.scene.reversed, "turned back: classic")
+        set(controller.reverseSwitch, false)
+        XCTAssertTrue(controller.previewView.scene.reversed, "as macOS turns it: natural")
     }
 
     func testPreviewPointsOutAKeyWhileItsRowIsHoveredFocusedOrRecording() {

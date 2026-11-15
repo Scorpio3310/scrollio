@@ -49,6 +49,9 @@ class Application: Codable, Equatable {
     // 初始化
     init(path: String) {
         self.path = path
+        // A new entry's own options are those of a new installation on this Mac: never
+        // edited (`adoptScrollOptionsIfUnedited`).
+        self.scroll = .installationDefaults()
     }
     
     // Codable
@@ -61,7 +64,7 @@ class Application: Codable, Equatable {
         // 继承
         inherit = try container.decodeIfPresent(Bool.self, forKey: .inherit) ?? true
         // 滚动
-        scroll = try container.decodeIfPresent(OPTIONS_SCROLL_DEFAULT.self, forKey: .scroll) ?? OPTIONS_SCROLL_DEFAULT()
+        scroll = try container.decodeIfPresent(OPTIONS_SCROLL_DEFAULT.self, forKey: .scroll) ?? .installationDefaults()
         // One-time migration: settings stored while "Trackpad-style events" locked Duration get
         // the Duration from before the lock back. The remembered value is not kept in the model,
         // so the next save drops it.
@@ -142,13 +145,16 @@ extension Application {
 
 extension Application {
     /// Before "Use settings from Scrolling" is switched off: scroll options of the app's
-    /// own that were never edited (exactly those of a new entry, `OPTIONS_SCROLL_DEFAULT()`)
-    /// become a copy of `global`, so the app scrolls on as it did until the user changes
-    /// something. Options that were edited are kept. Returns whether they were copied.
-    /// The app keeps its own container: only its values change, stored as before.
+    /// own that were never edited (exactly those of a new entry,
+    /// `OPTIONS_SCROLL_DEFAULT.installationDefaults()`: on a Mac with Natural scrolling off
+    /// the wheel's direction is classic there, so an app whose own "Reverse wheel direction"
+    /// was turned on keeps it) become a copy of `global`, so the app scrolls on as it did
+    /// until the user changes something. Options that were edited are kept. Returns whether
+    /// they were copied. The app keeps its own container: only its values change, stored
+    /// as before.
     @discardableResult
     func adoptScrollOptionsIfUnedited(from global: OPTIONS_SCROLL_DEFAULT) -> Bool {
-        guard scroll == OPTIONS_SCROLL_DEFAULT(), scroll != global else { return false }
+        guard scroll == OPTIONS_SCROLL_DEFAULT.installationDefaults(), scroll != global else { return false }
         Self.copyScrollValues(from: global, to: scroll)
         return true
     }

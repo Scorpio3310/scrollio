@@ -253,9 +253,14 @@ extension Options {
     func readOptions() {
         // 配置项如果不存在则尝试用当前设置(默认设置)保存一次
         if defaults.object(forKey: OptionItem.General.OptionsExist) == nil {
-            let isFresh = Self.isFreshInstallation(defaults)
-            saveOptions()
-            if isFresh { seedWheelDirectionFromTheSystem() }
+            if Self.isFreshInstallation(defaults) {
+                saveOptions()
+                seedWheelDirectionFromTheSystem()
+            } else if writesToDefaults {
+                // Settings that lost the mark (every save writes it): the mark only, so the
+                // stored direction is read as it is, not written over.
+                defaults.set("optionsExist", forKey: OptionItem.General.OptionsExist)
+            }
         }
         // 锁定
         readingOptionsLock = true
@@ -372,25 +377,35 @@ extension Options {
     }
 
     /// Whether macOS's Natural scrolling is on (System Settings › Mouse; the same setting
-    /// for every pointing device). Read for a fresh installation only. Under XCTest the
+    /// for every pointing device). Read for the scroll options of a new installation
+    /// (`OPTIONS_SCROLL_DEFAULT.installationDefaults`: the first settings, and Scrolling ›
+    /// Reset to Defaults) and for the direction the Scrolling preview shows, never to
+    /// change stored settings. Under XCTest the
     /// Mac's setting is not read: on, macOS's own default, so a test store starts as
     /// before; a test that needs the other answer replaces this.
     static var naturalScrollingIsOn: () -> Bool = {
+        return naturalScrollingIsOn(in: .standard)
+    }
+
+    /// The reader behind `naturalScrollingIsOn`, from `defaults` (the app's: macOS's
+    /// global setting shows through it). Under XCTest it answers on without reading.
+    static func naturalScrollingIsOn(in defaults: UserDefaults) -> Bool {
         guard !AppRuntime.isRunningXCTest else { return true }
         // The key the dock swipe of "Follow the hand" reads too; absent means on (the
         // default since OS X 10.7).
-        return (UserDefaults.standard.object(forKey: "com.apple.swipescrolldirection") as? NSNumber)?.boolValue ?? true
+        return (defaults.object(forKey: "com.apple.swipescrolldirection") as? NSNumber)?.boolValue ?? true
     }
 
     /// The wheel's first direction on a fresh installation: the classic direction for this
     /// Mac. With Natural scrolling on macOS turns the wheel too, and "Reverse wheel
     /// direction" (on) turns it back; with Natural scrolling off the wheel is classic
     /// already, and the switch starts off: the main flag off, as the switch turns it off
-    /// (`reversesWheel`), the axes' flags at their defaults. Written to the store, which
-    /// the read that follows takes; nothing else changes and nobody is told.
+    /// (`reversesWheel`), the axes' flags at their defaults
+    /// (`OPTIONS_SCROLL_DEFAULT.installationDefaults`). Written to the store, which the read
+    /// that follows takes; nothing else changes and nobody is told.
     private func seedWheelDirectionFromTheSystem() {
         guard writesToDefaults else { return }
-        let reverses = Self.naturalScrollingIsOn()
+        let reverses = OPTIONS_SCROLL_DEFAULT.installationDefaults().reverse
         defaults.set(reverses, forKey: OptionItem.Scroll.Reverse)
         AppSystemLog.note("Settings: a fresh installation; the wheel starts in the classic direction for this Mac "
             + "(Natural scrolling \(reverses ? "on, Reverse wheel direction on" : "off, Reverse wheel direction off"))")

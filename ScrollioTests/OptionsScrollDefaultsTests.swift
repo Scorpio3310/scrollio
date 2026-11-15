@@ -161,17 +161,30 @@ final class OptionsScrollDefaultsTests: XCTestCase {
         defaults.set(5.0, forKey: OptionItem.Scroll.Speed)
         XCTAssertTrue(Options.isFreshInstallation(defaults))
 
+        // The stored direction is read as it is and not written over (regression: the read
+        // first saved the settings in memory over it); only the mark is written.
         let lostTheMark = TestDefaults.make(for: self)
         lostTheMark.set(false, forKey: OptionItem.Scroll.ReverseVertical)
+        lostTheMark.set(5.0, forKey: OptionItem.Scroll.Speed)
+        Options.shared.scroll.reverseVertical = true
         Options.shared.defaults = lostTheMark
         macOSNaturalScrolling(false)
         Options.shared.readOptions()
         XCTAssertEqual(naturalScrollingQuestions, 0)
+        XCTAssertFalse(Options.shared.scroll.reverseVertical)
+        XCTAssertEqual(Options.shared.scroll.speed, 5.0)
+        XCTAssertEqual(lostTheMark.object(forKey: OptionItem.Scroll.ReverseVertical) as? Bool, false)
+        XCTAssertEqual(lostTheMark.object(forKey: OptionItem.Scroll.Speed) as? Double, 5.0)
+        XCTAssertNotNil(lostTheMark.object(forKey: OptionItem.General.OptionsExist))
+        XCTAssertNil(lostTheMark.object(forKey: OptionItem.Scroll.Reverse), "nothing else written")
     }
 
-    /// Under XCTest the Mac's own setting is never read: the answer is macOS's default.
+    /// Under XCTest the Mac's own setting is never read: the answer is macOS's default, also
+    /// from a store that says Natural scrolling is off (read, it would answer off).
     func testTheTestsDoNotReadTheMacsSetting() {
         XCTAssertTrue(Self.liveNaturalScrollingIsOn())
+        defaults.set(false, forKey: "com.apple.swipescrolldirection")
+        XCTAssertTrue(Options.naturalScrollingIsOn(in: defaults))
     }
 
     // MARK: - Migration: the old Duration lock of "Trackpad-style events"
