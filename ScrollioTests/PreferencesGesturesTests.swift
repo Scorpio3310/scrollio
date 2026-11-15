@@ -521,10 +521,10 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(row.title, "Button to hold")
         XCTAssertEqual(row.explanation, "No button yet. Set one up to use gestures.")
         XCTAssertTrue(row.accessory === controller.gestureButtonButton)
-        XCTAssertEqual(controller.gestureButtonButton.title, "Set Up…")
-        XCTAssertEqual(controller.gestureButtonButton.bezelStyle, .push)
+        XCTAssertEqual(controller.gestureButtonButton.shownTitle, "Choose")
+        XCTAssertTrue(controller.gestureButtonButton.pullsDown, "a pull-down")
         XCTAssertEqual(controller.gestureButtonButton.identifier, GesturesPreferencesViewController.Identifier.gestureButton)
-        XCTAssertTrue(controller.gestureButtonButton.accessibilityTitleUIElement() as? NSTextField === row.titleLabel, "named by the row")
+        XCTAssertEqual(controller.gestureButtonButton.accessibilityLabel(), "Button to hold", "named by the row")
         controller.view.layoutSubtreeIfNeeded()
         XCTAssertGreaterThan(frame(of: row, in: controller).minY, frame(of: controller.modeRow, in: controller).maxY - 0.5, "first, above the mode")
         XCTAssertTrue(row.superview === controller.modeRow.superview, "in the first box")
@@ -533,7 +533,7 @@ final class PreferencesGesturesTests: XCTestCase {
         controller.reload()
         XCTAssertFalse(row.isHidden, "always shown")
         XCTAssertEqual(row.explanation, "Back button and Gesture button.")
-        XCTAssertEqual(controller.gestureButtonButton.title, "Change", "it only leads to the Buttons pane: no …")
+        XCTAssertEqual(controller.gestureButtonButton.shownTitle, "Multiple", "two buttons: which one stays is chosen in Buttons")
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
         // The old line under the boxes is gone.
         let texts = controller.view.allSubviewsForTests.compactMap { ($0 as? NSTextField)?.stringValue }
@@ -682,7 +682,7 @@ final class PreferencesGesturesTests: XCTestCase {
         window.isReleasedWhenClosed = false
         window.contentViewController = controller
         addTeardownBlock { window.close() }
-        XCTAssertEqual(controller.gestureButtonButton.title, "Set Up…")
+        XCTAssertEqual(controller.gestureButtonRow.explanation, "No button yet. Set one up to use gestures.")
 
         let notes = ApplicationTriggers(applicationNames: ["Notes"], triggerTitles: ["Back button"], path: "/System/Applications/Notes.app")
         let runs = MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false, onlyInApps: notes)
@@ -695,20 +695,20 @@ final class PreferencesGesturesTests: XCTestCase {
         }
         undo.endUndoGrouping()
         undo.undo()
-        XCTAssertEqual(controller.gestureButtonButton.title, "Change", "shown at once")
-        XCTAssertEqual(controller.gestureButtonRow.explanation, "Only in Notes: Back button.")
+        XCTAssertEqual(controller.gestureButtonRow.explanation, "Only in Notes: Back button.", "shown at once")
+        XCTAssertEqual(controller.gestureButtonButton.shownTitle, "Choose", "nothing of Buttons runs them")
         XCTAssertTrue(controller.foldingSections.allSatisfy { !$0.isCollapsible })
         undo.redo()
-        XCTAssertEqual(controller.gestureButtonButton.title, "Set Up…")
+        XCTAssertEqual(controller.gestureButtonRow.explanation, "No button yet. Set one up to use gestures.")
         XCTAssertTrue(controller.foldingSections.allSatisfy { $0.isCollapsible })
 
-        // The button does what the row says, also when the bindings changed unseen.
-        var added: [Bool] = []
-        controller.openButtonsPane = { added.append($0) }
+        // "Show in Buttons" goes where the row says, also when the bindings changed unseen.
+        var opened = 0
+        controller.openButtonsPane = { opened += 1 }
         controller.openApplicationButtons = { _ in XCTFail("the row says that no button runs them") }
         summary = runs
-        controller.gestureButtonButton.performClick(nil)
-        XCTAssertEqual(added, [true], "Set Up…")
+        XCTAssertTrue(controller.gestureButtonButton.chooseItemForTests(TriggerChooser.Identifier.showInButtons))
+        XCTAssertEqual(opened, 1)
     }
 
     func testTheGestureButtonSummaryNamesEachButtonOnce() {
@@ -732,23 +732,23 @@ final class PreferencesGesturesTests: XCTestCase {
                        "No button yet. Set one up to use gestures.")
     }
 
-    func testSetUpAndChangeLeadToTheButtonsPane() {
-        var requests: [Bool] = []
+    func testShowInButtonsLeadsToTheButtonsPaneWithOrWithoutAButton() {
+        var opened = 0
         summary = MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false)
         let controller = makeController()
-        controller.openButtonsPane = { requests.append($0) }
-        controller.gestureButtonButton.performClick(nil)
-        XCTAssertEqual(requests, [true], "Set Up… records a new gesture button")
+        controller.openButtonsPane = { opened += 1 }
+        XCTAssertTrue(controller.gestureButtonButton.chooseItemForTests(TriggerChooser.Identifier.showInButtons))
+        XCTAssertEqual(opened, 1)
 
         summary = MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"])
         controller.reload()
-        controller.gestureButtonButton.performClick(nil)
-        XCTAssertEqual(requests, [true, false], "Change shows the list, with the gesture button's row selected")
+        XCTAssertTrue(controller.gestureButtonButton.chooseItemForTests(TriggerChooser.Identifier.showInButtons))
+        XCTAssertEqual(opened, 2)
     }
 
-    /// "Change" in the window: the Buttons pane opens with the row of the button that runs
-    /// Gesture Navigation selected and lit on the card, and nothing is recorded or changed.
-    /// (It only switched panes, and the user had to find the row.)
+    /// "Show in Buttons" in the window: the Buttons pane opens with the row of the button
+    /// that runs Gesture Navigation selected and lit on the card, and nothing is recorded or
+    /// changed.
     func testChangeInTheWindowSelectsTheGestureButtonsRowInButtons() throws {
         let savedBindings = Options.shared.buttons.binding
         defer { Options.shared.buttons.binding = savedBindings }
@@ -779,9 +779,9 @@ final class PreferencesGesturesTests: XCTestCase {
         var openedMenus = 0
         buttons.openActionMenu = { _ in openedMenus += 1 }
         XCTAssertTrue(preferences.selectPane(withIdentifier: GesturesPreferencesViewController.tabIdentifier))
-        XCTAssertEqual(gestures.gestureButtonButton.title, "Change")
+        XCTAssertEqual(gestures.gestureButtonButton.shownTitle, "Back button")
 
-        gestures.gestureButtonButton.performClick(nil)
+        XCTAssertTrue(gestures.gestureButtonButton.chooseItemForTests(TriggerChooser.Identifier.showInButtons))
 
         XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.buttons)
         XCTAssertEqual(buttons.list.selectedID, buttons.rowID(forBinding: gesture.id), "the gesture button's row, not the first")
@@ -793,7 +793,10 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(Options.shared.buttons.binding, [copy, gesture], "nothing is changed")
     }
 
-    func testSetUpInTheWindowSelectsButtonsAndTheRecordedButtonGetsGestureNavigation() throws {
+    /// "Record a Button…" in the window: the recorder opens at the pull-down, in the pane;
+    /// the button pressed gets Gesture Navigation in Buttons, the pane shows it at once, and
+    /// the Buttons pane shows it when it opens. Edit › Undo takes it away again.
+    func testRecordAButtonInTheWindowRecordsInPlaceAndTheButtonGetsGestureNavigation() throws {
         let savedBindings = Options.shared.buttons.binding
         defer { Options.shared.buttons.binding = savedBindings }
         Options.shared.buttons.binding = []
@@ -807,36 +810,78 @@ final class PreferencesGesturesTests: XCTestCase {
         _ = preferences.view
         let gestures = try XCTUnwrap(preferences.controller(for: GesturesPreferencesViewController.tabIdentifier) as? GesturesPreferencesViewController)
         gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
-        gestures.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false) }
+        gestures.bindingSummary = { MouseGestureBindingSummary(bindings: Options.shared.buttons.binding, isLogitechCode: { _ in false }) }
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        gestures.paneUndoManager = undo
+        _ = gestures.view
+        let chooser = try XCTUnwrap(gestures.triggerChooser)
+        chooser.deviceSource = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        var recorderAnchors: [NSView] = []
+        let recording = expectation(description: "the recorder starts")
+        chooser.startRecording = {
+            recorderAnchors.append($0)
+            recording.fulfill()
+        }
         let buttons = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController)
         buttons.deviceSource = ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
-        var recorderAnchors: [NSView] = []
-        buttons.startRecording = { recorderAnchors.append($0) }
-        var openedMenus = 0
-        buttons.openActionMenu = { _ in openedMenus += 1 }
+        buttons.startRecording = { _ in XCTFail("not the Buttons pane's recorder") }
         XCTAssertTrue(preferences.selectPane(withIdentifier: GesturesPreferencesViewController.tabIdentifier))
+        XCTAssertTrue(gestures.foldingSections.allSatisfy { $0.isCollapsible })
 
-        gestures.gestureButtonButton.performClick(nil)
-
-        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.buttons)
+        XCTAssertTrue(gestures.gestureButtonButton.chooseItemForTests(TriggerChooser.Identifier.record))
+        wait(for: [recording], timeout: 5)
         XCTAssertEqual(recorderAnchors.count, 1)
-        XCTAssertTrue(recorderAnchors.first === buttons.list.addButton, "recorded at +")
-        XCTAssertEqual(buttons.pendingAction?.identifier, SystemShortcut.mouseGestureNavigation.identifier)
+        XCTAssertTrue(recorderAnchors.first === gestures.gestureButtonButton, "at the pull-down")
+        XCTAssertEqual(preferences.selectedPaneIdentifier, GesturesPreferencesViewController.tabIdentifier, "the pane stays")
 
         // The user presses the Back button.
         let recorder = KeyRecorder()
-        buttons.onRecordingStarted(recorder)
-        buttons.onEventRecorded(recorder, didRecordEvent: InputEvent(type: .mouse, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil), isDuplicate: false)
-        buttons.onRecordingStopped(recorder, didRecord: true)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        let back = InputEvent(type: .mouse, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        XCTAssertEqual(chooser.waitingHint(recorder, mode: .combination), "Press a mouse button")
+        chooser.onRecordingStarted(recorder)
+        XCTAssertTrue(chooser.validateRecordedEvent(recorder, event: back))
+        chooser.onEventRecorded(recorder, didRecordEvent: back, isDuplicate: false)
+        undo.beginUndoGrouping()
+        chooser.onRecordingStopped(recorder, didRecord: true)
+        undo.endUndoGrouping()
 
         let added = try XCTUnwrap(Options.shared.buttons.binding.first)
         XCTAssertEqual(Options.shared.buttons.binding.count, 1)
         XCTAssertEqual(added.systemShortcutName, SystemShortcut.mouseGestureNavigation.identifier)
         XCTAssertTrue(added.isEnabled)
-        XCTAssertNil(added.triggerEvent.deviceFilter, "no device limit")
-        XCTAssertEqual(buttons.list.selectedID, AnyHashable(added.id))
-        XCTAssertEqual(openedMenus, 0, "the action is set: no menu to choose from")
+        XCTAssertEqual(added.triggerEvent, RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil))
+        XCTAssertEqual(gestures.gestureButtonRow.explanation, "Back button.", "shown at once")
+        XCTAssertEqual(gestures.gestureButtonButton.shownTitle, "Back button")
+        XCTAssertTrue(gestures.foldingSections.allSatisfy { $0.showsBody }, "the sections open")
+        XCTAssertEqual(undo.undoActionName, "Change Button to Hold")
+
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons))
+        XCTAssertEqual(buttons.buttonBindings, [added], "the one place it is stored")
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [])
+        XCTAssertEqual(buttons.buttonBindings, [], "the Buttons pane on show follows the Undo")
+        undo.redo()
+        XCTAssertEqual(Options.shared.buttons.binding, [added])
+        XCTAssertEqual(buttons.buttonBindings, [added])
+    }
+
+    /// A key cannot be the button to hold: the recorder refuses it and says why, and
+    /// nothing is stored.
+    func testRecordAButtonRefusesAKey() throws {
+        let savedBindings = Options.shared.buttons.binding
+        defer { Options.shared.buttons.binding = savedBindings }
+        Options.shared.buttons.binding = []
+        let controller = makeController()
+        let chooser = try XCTUnwrap(controller.triggerChooser)
+        let recorder = KeyRecorder()
+        let key = InputEvent(type: .keyboard, code: 49, modifiers: [.maskControl, .maskAlternate], phase: .down, source: .hidPP, device: nil)
+        chooser.onRecordingStarted(recorder)
+        XCTAssertFalse(chooser.validateRecordedEvent(recorder, event: key))
+        XCTAssertEqual(chooser.refusalHint(recorder, event: key), "Gestures need a mouse button")
+        chooser.onEventRecorded(recorder, didRecordEvent: key, isDuplicate: true)
+        chooser.onRecordingStopped(recorder, didRecord: false)
+        XCTAssertEqual(Options.shared.buttons.binding, [])
     }
 
     func testLogiActionsAreOfferedOnceALogitechButtonRunsGestures() {
@@ -934,7 +979,7 @@ final class PreferencesGesturesTests: XCTestCase {
         controller.bindingSummary = { .current }
         controller.reload()
         XCTAssertEqual(controller.gestureButtonRow.explanation, "Only in Calculator: Back button.")
-        XCTAssertEqual(controller.gestureButtonButton.title, "Change")
+        XCTAssertEqual(controller.gestureButtonButton.shownTitle, "Choose", "none of Buttons: one can be chosen for every app")
         // The picture shows the app's button, with the app; the pane hands it to the preview.
         XCTAssertEqual(MouseGestureBindingSummary.current.picture,
                        TriggerPictureSource(event: gesture.triggerEvent, onlyInAppPath: "/System/Applications/Calculator.app"))
@@ -1202,7 +1247,7 @@ final class PreferencesGesturesTests: XCTestCase {
         controller.reload()
         let controls = controller.controls!
         let held = controller.gestureButtonRow.explanation
-        XCTAssertEqual(controller.gestureButtonButton.title, "Change")
+        XCTAssertEqual(controller.gestureButtonButton.shownTitle, "Back button")
         XCTAssertEqual(controls.modeControl.selectedSegment, 1)
         XCTAssertEqual(title(of: controls.actionPopUp(for: .up)), SystemShortcut.copy.localizedName)
         XCTAssertEqual(controller.deviceTrackingSwitch.state, .on)
@@ -1247,7 +1292,7 @@ final class PreferencesGesturesTests: XCTestCase {
         // The button to hold, and the Mouse pane's switch: as they were.
         XCTAssertEqual(Options.shared.buttons.binding, bindings)
         XCTAssertEqual(controller.gestureButtonRow.explanation, held)
-        XCTAssertEqual(controller.gestureButtonButton.title, "Change")
+        XCTAssertEqual(controller.gestureButtonButton.shownTitle, "Back button")
         XCTAssertEqual(Options.shared.logiMouse, LogiMouseSettings(hapticsOn: false))
 
         XCTAssertFalse(controller.resetToDefaultsButton.isEnabled, "nothing differs any more")
@@ -1384,7 +1429,8 @@ final class PreferencesGesturesTests: XCTestCase {
             "gesture-tracking-speed-slower", "gesture-tracking-speed-faster",
             "gesture-invert-horizontal-hint", "gesture-freeze-pointer-hint",
             "gestures-gesture-button", "gestures-gesture-button-none",
-            "gestures-gesture-button-set-up", "gestures-gesture-button-change",
+            "gestures-trigger-choice-record", "gestures-undo-choose-button", "buttons-trigger-choice-choose",
+            "buttons-trigger-choice-several", "buttons-trigger-choice-show",
             "gestures-directions-header", "gestures-directions-hint", "gestures-behaviour-header",
             "gestures-logitech-needs",
         ]

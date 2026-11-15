@@ -229,6 +229,15 @@ class PreferencesButtonsViewController: NSViewController {
         thumbWheelObserver = ThumbWheelSettingsChange.addObserver { [weak self] in
             self?.syncThumbWheel()
         }
+        // Edit › Undo or Redo of a button chosen in the Gestures or Shortcut Ring pane
+        // (`TriggerChooser`) changes the stored bindings under the list: it shows them, and
+        // never writes its older copy back.
+        for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
+                guard let self, Options.shared.buttons.binding != self.buttonBindings else { return }
+                self.reload()
+            })
+        }
     }
 
     override func viewWillAppear() {
