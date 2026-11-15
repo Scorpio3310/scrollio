@@ -381,7 +381,7 @@ wheel.
   that way count once they make half a line or a third comes, one the other way drops
   them. A deliberate turn back acts a tick or two later.
 - Speed: how far a sideways scroll goes, how little of a turn each step needs, or how far
-  a turn slides the desktop.
+  a turn slides the desktop. It is written as every speed in Settings: "1.0×", "1.25×".
 - The Thumb wheel row's menu in Buttons ends with "Show in Scrolling", which opens
   Scrolling › Thumb wheel (on an app's Buttons part "Show in Safari › Scrolling": the app's
   Scrolling part).

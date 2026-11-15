@@ -294,6 +294,12 @@ that must stay separate:
   - Buttons say "Default", with the effect in parentheses where it is known ("Default
     (Back)"). The places of Gestures and of the Shortcut Ring say "No Action".
   - What macOS does by itself: "the way macOS does", or "Left to macOS".
+  - A factor next to a slider is written by `FactorText`: one decimal, and a second only
+    when it is not zero ("6.5×", "1.0×", "1.25×"), with the region's decimal mark. A number
+    with a unit ("1000 DPI", "40%") and a factor inside a sentence ("5×") stay whole.
+  - One tagline, the key `about-tagline`: General's card, the About panel and the Welcome
+    Guide's first step read it, and README's first line is the same sentence
+    (`ReleaseReadinessTests`). It promises only what a new installation does.
   - The exact runtime rule is written only in `docs/features.md`: scrolling follows the
     app under the pointer, while buttons, gestures and the ring follow the app in front.
 - Adding a language: add it to `knownRegions` in the project for both catalogs, translate

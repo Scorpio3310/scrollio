@@ -528,7 +528,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(ScrollingSlider.speed.shownText(for: 6.3, locale: english), "6.3×")
         XCTAssertEqual(ScrollingSlider.speed.shownText(for: 10, locale: english), "10.0×")
         XCTAssertEqual(ScrollingSlider.speed.shownText(for: 1, locale: english), "1.0×")
-        XCTAssertEqual(ScrollingSlider.speed.shownText(for: 6.31, locale: english), "6.3×", "the slider's one decimal")
+        XCTAssertEqual(ScrollingSlider.speed.shownText(for: 6.31, locale: english), "6.31×", "a value off the grid is not shown as another")
         XCTAssertEqual(ScrollingSlider.speed.shownText(for: 6.3, locale: slovenian), "6,3×", "a decimal comma")
         XCTAssertEqual(ScrollingSlider.speed.shownText(for: 7.5, locale: Locale(identifier: "de_DE")), "7,5×")
         XCTAssertEqual(ScrollingSlider.speed.spokenValue(for: 6.3, locale: english), "6.3×", "VoiceOver reads what is shown")
@@ -573,7 +573,7 @@ final class PreferencesScrollingTests: XCTestCase {
             "loading and showing writes nothing"
         )
         XCTAssertEqual(controller.scrollSpeedSlider.doubleValue, 6.31, accuracy: 1e-9, "the knob shows the value itself")
-        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, speedText(6.3))
+        XCTAssertEqual(controller.scrollSpeedValueLabel.stringValue, speedText(6.31), "not shown as 6.3, which it is not")
         XCTAssertEqual(controller.glideTimeSlider.doubleValue, 3.687, accuracy: 1e-9)
         XCTAssertEqual(controller.glideTimeValueLabel.stringValue, "")
         XCTAssertEqual(controller.feelControl.selectedSegment, ScrollFeel.smooth.rawValue, "3.687 reads as Smooth")
@@ -1005,10 +1005,11 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(Options.shared.thumbWheel.speed, 2.0, accuracy: 1e-9, "let go: the move is written")
     }
 
-    func testThumbWheelSpeedIsWrittenWithTwoDecimalsInTheUsersLocale() {
+    /// One decimal, a second only when it is not zero: as Speed and the Swipe speed of Gestures.
+    func testThumbWheelSpeedIsWrittenAsEveryFactor() {
         XCTAssertEqual(ThumbWheelPresentation.speedText(1.25, locale: Locale(identifier: "en_US")), "1.25×")
-        XCTAssertEqual(ThumbWheelPresentation.speedText(1.0, locale: Locale(identifier: "en_US")), "1.00×")
-        XCTAssertEqual(ThumbWheelPresentation.speedText(3.0, locale: Locale(identifier: "en_US")), "3.00×")
+        XCTAssertEqual(ThumbWheelPresentation.speedText(1.0, locale: Locale(identifier: "en_US")), "1.0×")
+        XCTAssertEqual(ThumbWheelPresentation.speedText(3.0, locale: Locale(identifier: "en_US")), "3.0×")
         XCTAssertEqual(ThumbWheelPresentation.speedText(1.25, locale: Locale(identifier: "sl_SI")), "1,25×")
         XCTAssertEqual(ThumbWheelPresentation.speedSetting.snapped(1.274), 1.25)
         XCTAssertEqual(ThumbWheelPresentation.speedSetting.snapped(1.276), 1.3)

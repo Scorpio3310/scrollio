@@ -6,7 +6,7 @@
 
 <img src="assets/readme/app-icon.png" alt="Scrollio's icon: a white mouse on a purple tile" width="128" height="128">
 
-**Smooth, trackpad-like scrolling for any mouse.**
+**Smooth scrolling and shortcuts for any mouse.**
 
 Scrollio is a menu bar app for macOS. It makes a mouse's scroll wheel glide like a
 trackpad, lets mouse buttons and keys run actions, adds mouse gestures and settings for
