@@ -81,8 +81,12 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   own gestures if it has them, else the general ones. A Logitech
   button that no binding of the Buttons pane uses is taken from the mouse only while an
   app that gives it an action is in front, and is the mouse's own again in every other
-  app. In the list of apps, small marks say what an app has of its own (scrolling
-  settings, buttons, gestures, a ring); a click on one opens the page on that part.
+  app. In the list of apps, each app's line says in words what it has of its own
+  ("Own scrolling and 2 buttons", "Own ring", "Nothing of its own yet"; cut off in
+  a narrow window, whole in the tooltip with where the app is), and small marks say it
+  too (scrolling settings, buttons, gestures, a ring); a click on one opens the page on
+  that part. The page's box says the same under the app's name, with "Show in Finder",
+  and a small dot marks each part the app has settings of its own in.
   While "Change scrolling only in these apps" is on, every app on the list has its
   scrolling changed, also one you added only for its buttons, gestures or ring, and its
   page says so under the app's box: to leave its scrolling to macOS, turn off "Use

@@ -492,7 +492,80 @@ final class ApplicationPageTests: XCTestCase {
         pane.reloadRows()
         let again = try XCTUnwrap(pane.list.rows.compactMap { $0 as? ApplicationListRow }.first { $0.id == AnyHashable(own.path) })
         XCTAssertEqual(again.marks, [.buttons])
-        XCTAssertEqual(again.accessibilityLabel(), "Calculator, Uses your scrolling settings., Own button settings")
+        XCTAssertEqual(again.accessibilityLabel(), "Calculator, Own 1 button, Own button settings")
+    }
+
+    /// The list and the page's header say in words what an app has of its own, in the
+    /// parts' order ("Own scrolling, 2 buttons and ring"), or that it has nothing yet; the
+    /// list's line is one line, cut off at its end, and the tooltip has all of it with where
+    /// the app is. The page's segments carry a dot for each part of its own, and the header
+    /// follows a change made on the page at once.
+    func testTheListAndThePageSayWhatAnAppHasOfItsOwn() throws {
+        let calculator = addApp(Self.calculator, inherit: false)
+        calculator.setOwnButtonBindings([binding(3, "copy"), binding(4, "paste")])
+        calculator.setUsesGeneralRing(false, general: .default)
+        let textEdit = addApp(Self.textEdit)
+        // (Joined as the locale joins a list.)
+        func own(_ items: String...) -> String { return "Own " + ListFormatter.localizedString(byJoining: items) }
+        let three = own("scrolling", "2 buttons", "ring")
+        XCTAssertEqual(ApplicationPagePart.summary(of: calculator), three)
+        XCTAssertEqual(ApplicationPagePart.summary(of: textEdit), "Nothing of its own yet")
+        textEdit.setUsesGeneralRing(false, general: .default)
+        XCTAssertEqual(ApplicationPagePart.summary(of: textEdit), "Own ring")
+        textEdit.setOwnButtonBindings([binding(3, "copy")])
+        textEdit.setOwnThumbWheelFunction(.tabs)
+        textEdit.setUsesGeneralGestures(false, general: .default)
+        XCTAssertEqual(ApplicationPagePart.summary(of: textEdit), own("1 button", "thumb wheel", "gestures", "ring"))
+        textEdit.setOwnButtonBindings([])
+        textEdit.setOwnThumbWheelFunction(nil)
+        textEdit.setUsesGeneralGestures(true, general: .default)
+        textEdit.setUsesGeneralRing(true, general: .default)
+
+        let pane = makePane()
+        let rows = pane.list.rows
+        XCTAssertEqual(rows.map(\.explanation), [three, "Nothing of its own yet"])
+        XCTAssertEqual(rows[0].explanationLabel.maximumNumberOfLines, 1)
+        XCTAssertEqual(rows[0].explanationLabel.lineBreakMode, .byTruncatingTail)
+        XCTAssertEqual(rows[0].toolTip, "Calculator\n\(three)\n" + Self.calculator)
+
+        pane.openApplication(withID: Self.calculator, part: .buttons)
+        let page = try XCTUnwrap(pane.detailController)
+        XCTAssertEqual(page.headerRow.explanation, three)
+        XCTAssertEqual(page.headerRow.toolTip, "Calculator\n\(three)\n" + Self.calculator)
+        let dotted = { (0..<page.partControl.segmentCount).map { page.partControl.image(forSegment: $0) != nil } }
+        XCTAssertEqual(dotted(), [true, true, false, true], "a dot on Scrolling, Buttons and Shortcut Ring")
+        XCTAssertEqual(page.partControl.toolTip(forSegment: 1), "Own button settings")
+        XCTAssertEqual(page.partControl.image(forSegment: 0)?.accessibilityDescription, "Own scrolling settings")
+        XCTAssertEqual(page.partControl.image(forSegment: 1)?.isTemplate, true, "on the selected segment, tinted as its title")
+        XCTAssertEqual(page.partControl.image(forSegment: 0)?.isTemplate, false, "elsewhere in the accent colour")
+
+        // A change on the page: the header, the dots and the list follow at once.
+        let part = try XCTUnwrap(page.buttonsPart)
+        part.paneUndoManager = UndoManager()
+        part.removeOwnBinding(id: calculator.ownButtonBindings[0].id)
+        XCTAssertEqual(page.headerRow.explanation, own("scrolling", "1 button", "ring"))
+        page.show(.ring)
+        page.generalRingSwitch.state = .on
+        send(page.generalRingSwitch)
+        XCTAssertEqual(page.headerRow.explanation, "Own scrolling and 1 button")
+        XCTAssertEqual(dotted(), [true, true, false, false])
+        XCTAssertEqual(page.partControl.image(forSegment: 1)?.isTemplate, false, "Buttons is not selected any more")
+        XCTAssertEqual(pane.list.rows.first?.explanation, "Own scrolling and 1 button")
+
+        // "Show in Finder" selects the app's bundle.
+        var revealed: [URL] = []
+        page.revealInFinder = { revealed.append($0) }
+        let reveal = try XCTUnwrap(allSubviews(of: page.headerRow).compactMap { $0 as? NSButton }.first { $0.title == "Show in Finder" })
+        send(reveal)
+        XCTAssertEqual(revealed, [URL(fileURLWithPath: Self.calculator)])
+    }
+
+    /// Empty, the list says in one line how to give an app settings of its own, of every
+    /// kind.
+    func testAnEmptyListSaysInOneLineWhatAnAppCanHave() {
+        let pane = makePane()
+        XCTAssertEqual(pane.list.emptyRow.title, "Click + to give an app its own scrolling, buttons, gestures or Shortcut Ring.")
+        XCTAssertNil(pane.list.emptyRow.explanation)
     }
 
     /// Undo of a removal while the page of the app added again is open: the page shows the

@@ -8,9 +8,11 @@
 //  On top "Limit scrolling to these apps" (the allowlist: it only gates smoothing and
 //  reversing, so it says so; buttons and gestures work everywhere). While it is on and no
 //  app is on the list, a muted line under it says that every app then scrolls the way
-//  macOS does. Then the list of apps, each with its icon, its name, whether it has
-//  scrolling settings of its own, and a small mark per kind of settings it has of its own
-//  (scrolling, buttons, ring; a click on one opens the page on that part). "+" offers the
+//  macOS does. Then the list of apps, each with its icon, its name, what it has of its own
+//  in words ("Own scrolling and 2 buttons", `ApplicationPagePart.summary`; cut off
+//  in a narrow window, whole in the tooltip with where the app is), and a small mark per
+//  kind of settings it has of its own (a click on one opens the page on that part). Empty,
+//  the list says how to give an app settings of its own. "+" offers the
 //  running apps and "Choose in Finder…" and opens the
 //  page of the app it added; "−" and Delete remove (Edit › Undo brings the
 //  app back with its settings; when it was added again meanwhile, its settings go onto
@@ -160,11 +162,7 @@ class PreferencesApplicationViewController: NSViewController {
         )
         allowlistEmptyNote = emptyNote
 
-        let list = PreferencesListBox(
-            width: Self.boxWidth,
-            emptyTitle: text("apps-empty-title"),
-            emptyExplanation: text("apps-empty-hint")
-        )
+        let list = PreferencesListBox(width: Self.boxWidth, emptyTitle: text("apps-empty"))
         list.identifier = Identifier.list
         list.onAdd = { [weak self] button in self?.showAddMenu(from: button) }
         list.onRemove = { [weak self] id in
@@ -300,21 +298,27 @@ class PreferencesApplicationViewController: NSViewController {
         }
     }
 
-    /// What a row of the list says about an app.
+    /// What a row of the list says about an app: what it has of its own.
     static func explanation(for application: Application) -> String {
-        return NSLocalizedString(application.inherit ? "apps-row-inherit" : "apps-row-own", comment: "")
+        return ApplicationPagePart.summary(of: application)
     }
 
     private func makeRow(_ application: Application, id: String) -> PreferencesListRow {
         let name = application.getName()
+        let summary = Self.explanation(for: application)
         let row = ApplicationListRow(
             id: id,
             title: name,
-            explanation: Self.explanation(for: application),
+            explanation: summary,
             icon: .image(application.getIcon()),
             showsChevron: true
         )
-        row.toolTip = ApplicationDetailViewController.toolTip(name: name, path: application.path)
+        // One line, cut off at its end in a narrow window; the tooltip has all of it.
+        row.explanationLabel.usesSingleLineMode = true
+        row.explanationLabel.cell?.wraps = false
+        row.explanationLabel.lineBreakMode = .byTruncatingTail
+        row.explanationLabel.maximumNumberOfLines = 1
+        row.toolTip = ApplicationDetailViewController.toolTip(name: name, summary: summary, path: application.path)
         row.onChevronClick = { [weak self] in self?.openApplication(withID: id) }
         // A mark per kind of settings the app has of its own; a click opens that part.
         row.showMarks(ApplicationPagePart.ownSettings(of: application))
@@ -537,7 +541,11 @@ class PreferencesApplicationViewController: NSViewController {
         let detail = ApplicationDetailViewController(application: application, uiStateDefaults: uiStateDefaults, part: part)
         part?.remember(in: uiStateDefaults)
         detail.onBack = { [weak self] in self?.showList(focusList: true) }
-        detail.onInheritChange = { [weak self] in self?.reloadRows() }
+        // (Also after this page closed: the page open then says it.)
+        detail.onInheritChange = { [weak self] in
+            self?.reloadRows()
+            self?.detailController?.showOwnSettings()
+        }
         // An Undo of a removed button row, or of a part's "Reset to Defaults", shows on the
         // page of its app that is open when it runs (the page that made it may be gone);
         // the page then tells its new height.

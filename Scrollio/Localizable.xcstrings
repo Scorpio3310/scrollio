@@ -2989,54 +2989,6 @@
         }
       }
     },
-    "apps-row-inherit": {
-      "comment": "Apps pane: list row of an app that follows the Scrolling pane",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Uses your scrolling settings."
-          }
-        }
-      }
-    },
-    "apps-row-own": {
-      "comment": "Apps pane: list row of an app with scrolling settings of its own",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Uses its own scrolling settings."
-          }
-        }
-      }
-    },
-    "apps-empty-title": {
-      "comment": "Apps pane: the empty list",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No apps yet"
-          }
-        }
-      }
-    },
-    "apps-empty-hint": {
-      "comment": "Apps pane: under the title of the empty list",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Click + to give an app its own scrolling settings."
-          }
-        }
-      }
-    },
     "apps-choose-in-finder": {
       "comment": "Apps pane: last item of the + menu, opens a panel to choose apps",
       "extractionState": "manual",
@@ -10296,6 +10248,126 @@
           "stringUnit": {
             "state": "translated",
             "value": "Show Buttons"
+          }
+        }
+      }
+    },
+    "apps-summary-own": {
+      "comment": "Apps: an app's row and its page's header, what it has of its own; %@ the list of kinds (“scrolling, 2 buttons and ring”), as System Settings › Notifications says it",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Own %@"
+          }
+        }
+      }
+    },
+    "apps-summary-scrolling": {
+      "comment": "Apps: a kind in “Own %@”: the app's own scrolling settings",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "scrolling"
+          }
+        }
+      }
+    },
+    "apps-summary-buttons-one": {
+      "comment": "Apps: a kind in “Own %@”: one button or key of the app's own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 button"
+          }
+        }
+      }
+    },
+    "apps-summary-buttons-other": {
+      "comment": "Apps: a kind in “Own %@”: several buttons or keys of the app's own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d buttons"
+          }
+        }
+      }
+    },
+    "apps-summary-thumb-wheel": {
+      "comment": "Apps: a kind in “Own %@”: the thumb wheel's own action",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "thumb wheel"
+          }
+        }
+      }
+    },
+    "apps-summary-gestures": {
+      "comment": "Apps: a kind in “Own %@”: the app's own gestures",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "gestures"
+          }
+        }
+      }
+    },
+    "apps-summary-ring": {
+      "comment": "Apps: a kind in “Own %@”: the app's own Shortcut Ring",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ring"
+          }
+        }
+      }
+    },
+    "apps-summary-none": {
+      "comment": "Apps: an app's row and its page's header while it has no settings of its own",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing of its own yet"
+          }
+        }
+      }
+    },
+    "apps-empty": {
+      "comment": "Apps: the list while it has no apps",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click + to give an app its own scrolling, buttons, gestures or Shortcut Ring."
+          }
+        }
+      }
+    },
+    "apps-show-in-finder": {
+      "comment": "An app's page: the button in the app's box; selects the app in Finder",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in Finder"
           }
         }
       }

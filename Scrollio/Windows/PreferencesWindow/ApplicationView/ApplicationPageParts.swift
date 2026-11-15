@@ -120,6 +120,33 @@ struct ApplicationPagePart: Equatable {
     static func ownSettings(of application: Application) -> [ApplicationPagePart] {
         return all.filter { $0.hasOwnSettings(application) }
     }
+
+    /// What the app has of its own, in words, for its row in the list and its page's
+    /// header, as System Settings › Notifications says it of an app: "Own scrolling, 2
+    /// buttons and ring", "Own ring", "Nothing of its own yet". The parts' order.
+    static func summary(of application: Application) -> String {
+        var items: [String] = []
+        if !application.inherit {
+            items.append(NSLocalizedString("apps-summary-scrolling", comment: ""))
+        }
+        let buttons = application.ownButtonBindings.count
+        if buttons == 1 {
+            items.append(NSLocalizedString("apps-summary-buttons-one", comment: ""))
+        } else if buttons > 1 {
+            items.append(String(format: NSLocalizedString("apps-summary-buttons-other", comment: ""), buttons))
+        }
+        if application.ownThumbWheelFunction != nil {
+            items.append(NSLocalizedString("apps-summary-thumb-wheel", comment: ""))
+        }
+        if application.ownGestures != nil {
+            items.append(NSLocalizedString("apps-summary-gestures", comment: ""))
+        }
+        if application.ownRingPlaces != nil {
+            items.append(NSLocalizedString("apps-summary-ring", comment: ""))
+        }
+        guard !items.isEmpty else { return NSLocalizedString("apps-summary-none", comment: "") }
+        return String(format: NSLocalizedString("apps-summary-own", comment: ""), ListFormatter.localizedString(byJoining: items))
+    }
 }
 
 // MARK: - Scrolling

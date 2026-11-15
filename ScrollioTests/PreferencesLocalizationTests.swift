@@ -144,8 +144,7 @@ final class PreferencesLocalizationTests: XCTestCase {
 
     /// Apps pane and an app's page.
     static let appsKeys = [
-        "apps-limit", "apps-limit-hint", "apps-list-header", "apps-row-inherit", "apps-row-own",
-        "apps-empty-title", "apps-empty-hint", "apps-choose-in-finder", "apps-open-panel-prompt",
+        "apps-limit", "apps-limit-hint", "apps-list-header", "apps-choose-in-finder", "apps-open-panel-prompt",
         "apps-undo-remove", "apps-detail-inherit",
         "apps-detail-inherit-on", "apps-detail-inherit-off", "apps-limit-empty",
         "apps-detail-ring-general", "apps-detail-ring-general-on", "apps-detail-ring-general-off",
@@ -169,6 +168,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-trigger-only-in-each", "apps-trigger-app-with", "apps-undo-reset-buttons",
         "apps-trigger-everywhere", "apps-trigger-only-here", "apps-trigger-mixed", "apps-trigger-none",
         "apps-trigger-show-in-buttons", "apps-trigger-show-buttons",
+        "apps-summary-own", "apps-summary-scrolling", "apps-summary-buttons-one", "apps-summary-buttons-other",
+        "apps-summary-thumb-wheel", "apps-summary-gestures", "apps-summary-ring", "apps-summary-none",
+        "apps-empty", "apps-show-in-finder",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -344,6 +346,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-trigger-only-here": "@@",
         "apps-trigger-mixed": "@@@",
         "apps-trigger-none": "@",
+        "apps-summary-own": "@",
+        "apps-summary-buttons-other": "d",
         "apps-trigger-only-in": "@@",
         "apps-trigger-own-ring": "@",
         "apps-trigger-own-rings": "@",

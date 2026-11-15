@@ -4,11 +4,13 @@
 //  The page of one app under Apps, opened from its row in the list (it replaces the old
 //  per-app popover). The way back is the window's: a back button in its title bar, beside
 //  the app's name (PreferencesWindowController), as in System Settings; Esc and ⌘[ go back
-//  too. A box shows the app (icon, name, where it is), with a muted line under it while
+//  too. A box shows the app (icon, name, what it has of its own, "Show in Finder"; where
+//  it is in the tooltip), with a muted line under it while
 //  "Change scrolling only in these apps" is on (being on the list changes the app's
 //  scrolling, whatever it was added for); under it a segmented control
 //  chooses the part of the page that shows (`ApplicationPagePart`: Scrolling, Buttons,
-//  Gestures, Shortcut Ring), one at a time, so the page stays short. The part shown last is shown
+//  Gestures, Shortcut Ring), one at a time, so the page stays short; a small dot on a
+//  segment says that the app has settings of that kind of its own. The part shown last is shown
 //  again, for every app alike (the UI state, beside Advanced of Scrolling); a part that
 //  does not exist falls back to Scrolling, and a mark of the list opens its own part.
 //
@@ -26,6 +28,7 @@ final class ApplicationDetailViewController: NSViewController {
     /// Identifiers for the controls (tests and accessibility tooling).
     enum Identifier {
         static let header = NSUserInterfaceItemIdentifier("apps-detail-header")
+        static let showInFinder = NSUserInterfaceItemIdentifier("apps-detail-show-in-finder")
         static let allowlistNote = NSUserInterfaceItemIdentifier("apps-detail-allowlist-note")
         static let parts = NSUserInterfaceItemIdentifier("apps-detail-parts")
         static let inherit = ApplicationScrollingPartViewController.Identifier.inherit
@@ -72,6 +75,12 @@ final class ApplicationDetailViewController: NSViewController {
     /// The page's height changed: another part, the settings loaded, "Advanced" opened or
     /// closed, a row came or went.
     var onHeightChange: (() -> Void)?
+    /// "Show in Finder" of the app's box: selects the app in Finder. Inert under XCTest;
+    /// tests replace it.
+    var revealInFinder: (URL) -> Void = { url in
+        guard !AppRuntime.isRunningXCTest else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
 
     // MARK: - Views (read access for tests)
 
@@ -141,10 +150,16 @@ final class ApplicationDetailViewController: NSViewController {
         root.translatesAutoresizingMaskIntoConstraints = false
         root.onBack = { [weak self] in self?.goBack() }
 
+        let reveal = PreferencesGroupedForm.makePushButton(
+            title: NSLocalizedString("apps-show-in-finder", comment: ""), target: self, action: #selector(showInFinderClick(_:))
+        )
+        reveal.identifier = Identifier.showInFinder
         headerRow = ApplicationDetailHeaderRow(
             name: application.getName(),
+            summary: ApplicationPagePart.summary(of: application),
             path: application.path,
-            icon: application.getIcon()
+            icon: application.getIcon(),
+            button: reveal
         )
         headerRow.identifier = Identifier.header
         let header = PreferencesGroupSection(
@@ -247,6 +262,7 @@ final class ApplicationDetailViewController: NSViewController {
 
         view = root
         put(shownPart)
+        showOwnSettings()
         root.setFrameSize(root.fittingSize)
     }
 
@@ -317,6 +333,8 @@ final class ApplicationDetailViewController: NSViewController {
         shownPart = part
         part.remember(in: uiStateDefaults)
         put(part)
+        // (The selected segment's dot takes the selection's colour.)
+        showOwnSettings()
         onHeightChange?()
     }
 
@@ -361,12 +379,11 @@ final class ApplicationDetailViewController: NSViewController {
         if title != name {
             title = name
             headerRow.title = name
-            headerRow.toolTip = Self.toolTip(name: name, path: application.path)
-            headerRow.explanationLabel.toolTip = headerRow.toolTip
         }
         for controller in partControllers.values {
             controller.syncViewWithOptions()
         }
+        showOwnSettings()
         let showsNote = Self.showsAllowlistNote
         if allowlistNote.isHidden == showsNote {
             allowlistNote.isHidden = !showsNote
@@ -374,6 +391,39 @@ final class ApplicationDetailViewController: NSViewController {
             NSLayoutConstraint.activate([showsNote ? controlUnderNote : controlUnderHeader])
             onHeightChange?()
         }
+    }
+
+    /// What the app has of its own changed (a part, an Undo, the list's own refresh): the
+    /// box's line and tooltip say it, and a dot marks each part's segment the app has
+    /// settings of its own in.
+    func showOwnSettings() {
+        guard isViewLoaded else { return }
+        let summary = ApplicationPagePart.summary(of: application)
+        headerRow.explanation = summary
+        headerRow.toolTip = Self.toolTip(name: application.getName(), summary: summary, path: application.path)
+        headerRow.explanationLabel.toolTip = headerRow.toolTip
+        for (index, part) in parts.enumerated() {
+            let own = part.hasOwnSettings(application)
+            let selected = index == partControl.selectedSegment
+            partControl.setImage(own ? Self.ownDot(label: part.markLabel, onSelection: selected) : nil, forSegment: index)
+            partControl.setToolTip(own ? part.markLabel : nil, forSegment: index)
+        }
+    }
+
+    /// The dot on a part's segment: a small circle in the accent colour, said as the mark of
+    /// the list ("Own gestures"). On the selected segment, which can be that colour, a
+    /// template the control tints as its title (white on the accent, dark in a window in
+    /// the back).
+    static func ownDot(label: String, onSelection: Bool = false) -> NSImage {
+        let side: CGFloat = 6
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            (onSelection ? NSColor.black : NSColor.controlAccentColor).setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            return true
+        }
+        image.isTemplate = onSelection
+        image.accessibilityDescription = label
+        return image
     }
 
     /// The line under the app's box shows while "Change scrolling only in these apps" is
@@ -434,6 +484,11 @@ final class ApplicationDetailViewController: NSViewController {
 
     // MARK: - Actions
 
+    /// "Show in Finder": the app's bundle (or its program, outside a bundle), selected.
+    @objc func showInFinderClick(_ sender: NSButton) {
+        revealInFinder(URL(fileURLWithPath: Self.bundlePath(for: application.path)))
+    }
+
     /// Esc, when a control of the page passes it on as a command.
     override func cancelOperation(_ sender: Any?) {
         goBack()
@@ -445,27 +500,32 @@ final class ApplicationDetailViewController: NSViewController {
 
     // MARK: - Views
 
-    /// Where the app is, for its header: the app bundle (not the program inside it that
-    /// running apps are stored by), with `~` for the home folder.
-    static func displayPath(for path: String) -> String {
-        var bundlePath = path
+    /// The app bundle of an app stored as `path` (not the program inside it that running
+    /// apps are stored by); `path` itself outside a bundle.
+    static func bundlePath(for path: String) -> String {
         if let range = path.range(of: ".app/Contents/", options: .backwards) {
-            bundlePath = String(path[..<path.index(range.lowerBound, offsetBy: 4)])
+            return String(path[..<path.index(range.lowerBound, offsetBy: 4)])
         }
-        return (bundlePath as NSString).abbreviatingWithTildeInPath
+        return path
     }
 
-    /// The tooltip of an app's row and of its header: the name, which may be cut off, then
-    /// the whole path on a second line.
-    static func toolTip(name: String, path: String) -> String {
-        return "\(name)\n\(path)"
+    /// Where the app is, for its tooltip: the app bundle, with `~` for the home folder.
+    static func displayPath(for path: String) -> String {
+        return (bundlePath(for: path) as NSString).abbreviatingWithTildeInPath
+    }
+
+    /// The tooltip of an app's row and of its header: the name and what it has of its own,
+    /// either of which may be cut off, then where the app is.
+    static func toolTip(name: String, summary: String, path: String) -> String {
+        return "\(name)\n\(summary)\n\(displayPath(for: path))"
     }
 }
 
 // MARK: - Header row
 
-/// The app's row at the top of its page: its 32 pt icon, its name and where it is (one
-/// line, shortened in the middle; the full name and path in the tooltip).
+/// The app's row at the top of its page: its 32 pt icon, its name, what it has of its own
+/// (one line, shortened at its end; the whole of it and where the app is in the tooltip)
+/// and "Show in Finder".
 final class ApplicationDetailHeaderRow: PreferencesGroupRow {
 
     static let iconSize: CGFloat = 32
@@ -475,7 +535,7 @@ final class ApplicationDetailHeaderRow: PreferencesGroupRow {
     let iconView: NSImageView
     let path: String
 
-    init(name: String, path: String, icon: NSImage) {
+    init(name: String, summary: String, path: String, icon: NSImage, button: NSButton? = nil) {
         let view = PreferencesListImageView()
         view.image = icon
         view.imageScaling = .scaleProportionallyUpOrDown
@@ -486,15 +546,16 @@ final class ApplicationDetailHeaderRow: PreferencesGroupRow {
         let inset = PreferencesGroupedForm.rowHorizontalInset
         super.init(
             title: name,
-            explanation: ApplicationDetailViewController.displayPath(for: path),
+            explanation: summary,
+            accessory: button,
             leadingInset: inset + Self.iconSize + Self.iconSpacing
         )
         titleLabel.font = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
         explanationLabel.usesSingleLineMode = true
         explanationLabel.cell?.wraps = false
-        explanationLabel.lineBreakMode = .byTruncatingMiddle
+        explanationLabel.lineBreakMode = .byTruncatingTail
         explanationLabel.maximumNumberOfLines = 1
-        toolTip = ApplicationDetailViewController.toolTip(name: name, path: path)
+        toolTip = ApplicationDetailViewController.toolTip(name: name, summary: summary, path: path)
         explanationLabel.toolTip = toolTip
 
         addSubview(view)
@@ -519,7 +580,7 @@ final class ApplicationDetailHeaderRow: PreferencesGroupRow {
         return .group
     }
 
-    /// The name, then where the app is.
+    /// The name, then what the app has of its own.
     override func accessibilityLabel() -> String? {
         guard let explanation, !explanation.isEmpty else { return title }
         return "\(title), \(explanation)"
