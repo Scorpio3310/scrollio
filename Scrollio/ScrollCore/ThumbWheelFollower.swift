@@ -32,8 +32,10 @@
 //  in this stroke or a new one, until macOS says the Space changed
 //  (`NSWorkspace.activeSpaceDidChangeNotification`, `spaceDidChange`) or the timeout
 //  passed (`followSpaceChangeTimeout`; `followSettleSpaceChangeTimeout` after an end at the
-//  rest, which macOS settles more slowly): a swipe begun while the last one settles can
-//  catch it and take it back. A stroke at the closed gate does not rest: its travel is kept
+//  rest, which macOS settles more slowly, and after an end within
+//  `followAfterNoSwitchWindow` of a swipe that brought no switch, a bounce at the end of the
+//  row or a slide back, which the Dock is still drawing: it tells the change late then): a
+//  swipe begun while the last one settles can catch it and take it back. A stroke at the closed gate does not rest: its travel is kept
 //  (`followGatePendingCap` at most) until the gate opens, by the Space change or the
 //  timeout, and begins the next swipe then, whether the wheel still turns or not. Short of
 //  half a Space it begins nothing, and neither does travel that comes once the gate is open
@@ -206,6 +208,11 @@ final class ThumbWheelFollower {
     }
     private var gate: Gate?
     private var gateCount = 0
+    /// When the last swipe that brought no switch ended, on `clock`: its gate timed out with
+    /// no Space change (it bounced at the end of the row), or it ended short of half a Space
+    /// (it slides back). The Dock draws that for a while, and a swipe that ends meanwhile
+    /// waits longer for its change (`closeGate`). A Space change forgets it.
+    private var endedWithoutSwitchAt = -TimeInterval.infinity
     /// A gate that timed out, for `followLateSpaceChangeWindow` more: a change meanwhile is
     /// its swipe's, late, unless a newer gate is closed (then it is that gate's).
     private var lateRecord: Gate?
@@ -322,6 +329,7 @@ final class ThumbWheelFollower {
     /// Scrollio stopped handling the wheel: the swipe is cancelled at once (the main queue
     /// may not run again before the stop is over), the gate forgotten, nothing scheduled runs.
     func cancel() {
+        endedWithoutSwitchAt = -TimeInterval.infinity
         if var record = lateRecord {
             lateRecord = nil
             record.swipe.stopped = true
@@ -344,8 +352,9 @@ final class ThumbWheelFollower {
     /// it begins its next swipe with the travel it kept, unless another swipe runs.
     func spaceDidChange() {
         // Where the stroke found the first or the last desktop no longer holds: both ways
-        // begin again.
+        // begin again. The Dock switched: it draws no bounce or slide back any more.
         blockedDirection = 0
+        endedWithoutSwitchAt = -TimeInterval.infinity
         let now = clock()
         // A change is the closed gate's, however soon after its end (macOS can tell one
         // within 80 ms), and a late record waits on. Only with no gate closed is it the late
@@ -570,10 +579,13 @@ final class ThumbWheelFollower {
         gateCount &+= 1
         let number = gateCount
         // An end at the rest stood part of the way: macOS settles it without speed, later
-        // than a swipe it was handed at a full Space.
-        let timeout = swipe.ending == .ended
+        // than a swipe it was handed at a full Space. So is the change of a swipe that ends
+        // while the Dock still draws the bounce or the slide back of the one before.
+        let endedAt = clock()
+        let dockIsBusy = endedAt - endedWithoutSwitchAt < ThumbWheelTuning.followAfterNoSwitchWindow
+        let timeout = swipe.ending == .ended || dockIsBusy
             ? ThumbWheelTuning.followSettleSpaceChangeTimeout : ThumbWheelTuning.followSpaceChangeTimeout
-        gate = Gate(number: number, endedAt: clock(), timeout: timeout, direction: direction, tag: tag, swipe: swipe,
+        gate = Gate(number: number, endedAt: endedAt, timeout: timeout, direction: direction, tag: tag, swipe: swipe,
                     stroke: generation)
         schedule(timeout) { [weak self] in
             guard let self, self.gate?.number == number else { return }
@@ -588,6 +600,7 @@ final class ThumbWheelFollower {
     private func gateTimedOut() {
         guard let gate else { return }
         self.gate = nil
+        endedWithoutSwitchAt = gate.endedAt
         keepLate(gate)
         guard state != .idle else { return }
         if gate.stroke == generation { blockedDirection = gate.direction }
@@ -747,6 +760,8 @@ final class ThumbWheelFollower {
                 if expectsSwitch {
                     closeGate(direction: direction, tag: tag, swipe: swipe)
                 } else {
+                    // Short of half a Space: it slides back, and the Dock draws that.
+                    endedWithoutSwitchAt = clock()
                     tell(tag, swipe)
                 }
             case .cancel:

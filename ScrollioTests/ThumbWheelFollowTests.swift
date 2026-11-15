@@ -1276,6 +1276,125 @@ final class ThumbWheelFollowTests: XCTestCase {
 
     /// A follower of its own on the rig's clock and queue, with the fake Dock's swipe, fed
     /// by hand (the engine's own stays idle).
+    // MARK: The gate right after a bounce or a slide back
+
+    /// Rolls toward "next" (2 lines every 50 ms) from `start` until the first swipe ended at a
+    /// full Space, with no Space change afterwards: the last desktop, where the Dock lets
+    /// the swipe bounce back. Returns when it ended.
+    private func rollIntoABounce(from start: Double = 0) throws -> Double {
+        dock.calls = []
+        var time = start
+        while endTimes.isEmpty, time < start + 1 {
+            try turn(at: time)
+            time += 0.05
+        }
+        return try XCTUnwrap(endTimes.first, "\(dock.calls)")
+    }
+
+    /// A hard roll (10 lines every 30 ms; positive lines: back) from `start` until the
+    /// `count`th swipe ended at a full Space, then two more events, which wait at its gate
+    /// (two thirds of a Space). Returns when the swipe ended.
+    private func rollHard(lines: Int64, from start: Double, untilEnd count: Int) throws -> Double {
+        var time = start
+        while endTimes.count < count, time < start + 1 {
+            try turn(at: time, lines: lines)
+            time += 0.03
+        }
+        XCTAssertEqual(endTimes.count, count, "\(dock.calls)")
+        let end = try XCTUnwrap(endTimes.last)
+        try turn(at: max(time, end + 0.01), lines: lines)
+        try turn(at: max(time, end + 0.01) + 0.03, lines: lines)
+        return end
+    }
+
+    /// The Space changes `delay` after `end`: the follower is told, as macOS tells it.
+    private func changeTheSpace(_ delay: Double, after end: Double) {
+        rig.advance(to: 500 + end + delay)
+        dock.record(.spaceChanged)
+        rig.engine.follower.spaceDidChange()
+    }
+
+    /// At the end of the row a chained swipe bounces back (no Space change in 0.2 s). The
+    /// wheel turns back at once, and that swipe ends 0.4 to 0.65 s after the bounce's end:
+    /// the Dock still draws the bounce and tells this change late (+337 ms and +340 ms on
+    /// the owner's Mac). Its gate waits the settle timeout, so the change 340 ms after the
+    /// end opens it as any other: the travel kept at the gate begins the next swipe at the
+    /// change, the way back was never barred, and the line does not say "late".
+    func testASwipeRightAfterABounceWaitsLongerForItsSpaceChange() throws {
+        let bounce = try rollIntoABounce()
+        let end = try rollHard(lines: 10, from: bounce + 0.25, untilEnd: 2)
+        XCTAssertLessThan(end - bounce, ThumbWheelTuning.followAfterNoSwitchWindow, "right after the bounce")
+        XCTAssertEqual(beginCount, 2)
+        XCTAssertLessThan(try firstUpdate(afterBegin: 1), 0, "back")
+        changeTheSpace(0.34, after: end)
+        XCTAssertEqual(beginCount, 3, "the gate was still closed: the travel it kept begins the next swipe at the change")
+        XCTAssertLessThan(try firstUpdate(afterBegin: 2), 0, "back again")
+        rig.advance(to: 510)
+        let swipes = rig.lines.flatMap(\.swipes)
+        XCTAssertEqual(swipes.first.map(ScrollSystemLog.swipeMessage), "1.00 chained no change", "the bounce")
+        let back = try XCTUnwrap(swipes.dropFirst().first)
+        XCTAssertFalse(back.late, ScrollSystemLog.swipeMessage(back))
+        XCTAssertEqual(back.spaceChangedAfter ?? 0, 0.34, accuracy: 1e-6)
+    }
+
+    /// The ordinary case stays at 0.2 s: the same turn back, but its swipe ends more than
+    /// 0.7 s after the bounce's end (the Dock is done with it). A change 340 ms after the
+    /// end is late then: the gate timed out at 0.2 s, the travel kept was dropped (the
+    /// stroke is barred that way), and nothing begins at the change.
+    func testASwipeLongAfterABounceKeepsTheShortGate() throws {
+        let bounce = try rollIntoABounce()
+        let end = try rollHard(lines: 10, from: bounce + 0.75, untilEnd: 2)
+        XCTAssertGreaterThan(end - bounce, ThumbWheelTuning.followAfterNoSwitchWindow)
+        rig.advance(to: 500 + end + ThumbWheelTuning.followSpaceChangeTimeout - 0.001)
+        XCTAssertEqual(rig.engine.follower.state, .gated, "the gate holds for 0.2 s")
+        rig.advance(to: 500 + end + ThumbWheelTuning.followSpaceChangeTimeout)
+        XCTAssertNotEqual(rig.engine.follower.state, .gated, "and no longer")
+        changeTheSpace(0.34, after: end)
+        XCTAssertEqual(beginCount, 2, "timed out at 0.2 s: nothing waits for the change")
+        rig.advance(to: 510)
+        let back = try XCTUnwrap(rig.lines.flatMap(\.swipes).dropFirst().first)
+        XCTAssertTrue(back.late, ScrollSystemLog.swipeMessage(back))
+
+        // So does a first swipe with nothing before it, and the bounce's own gate.
+        let again = try rollIntoABounce(from: 20)
+        rig.advance(to: 500 + again + ThumbWheelTuning.followSpaceChangeTimeout - 0.001)
+        XCTAssertEqual(rig.engine.follower.state, .gated)
+        rig.advance(to: 500 + again + ThumbWheelTuning.followSpaceChangeTimeout)
+        XCTAssertNotEqual(rig.engine.follower.state, .gated)
+    }
+
+    /// A swipe that ended a third of the way slides back. A hard roll right after it ends
+    /// at a full Space 0.3 s later, while the Dock still draws the slide: its change comes
+    /// late (+295 ms on the owner's Mac). Its gate waits the settle timeout: the change
+    /// 300 ms after the end opens it, and the travel kept begins the next swipe then.
+    func testASwipeRightAfterASlideBackWaitsLongerForItsSpaceChange() throws {
+        try turn(at: 0)
+        try turn(at: 0.05)
+        rig.advance(to: 500.05 + ThumbWheelTuning.followRest)
+        XCTAssertEqual(dock.terminals, [.end(0)], "a third of a Space, at the rest: it slides back")
+        let slideBack = try XCTUnwrap(endTimes.first)
+        let end = try rollHard(lines: -10, from: slideBack + 0.1, untilEnd: 2)
+        XCTAssertLessThan(end - slideBack, ThumbWheelTuning.followAfterNoSwitchWindow)
+        rig.advance(to: 500 + end + 0.25)
+        XCTAssertEqual(rig.engine.follower.state, .gated, "past 0.2 s: the gate still waits")
+        changeTheSpace(0.3, after: end)
+        XCTAssertEqual(beginCount, 3, "the travel kept at the gate begins the next swipe at the change")
+        XCTAssertGreaterThan(try firstUpdate(afterBegin: 2), 0, "the same way")
+        rig.advance(to: 510)
+        let swipes = rig.lines.flatMap(\.swipes)
+        XCTAssertEqual(swipes.first.map(ScrollSystemLog.swipeMessage), "0.33 ended")
+        let full = try XCTUnwrap(swipes.dropFirst().first)
+        XCTAssertFalse(full.late, ScrollSystemLog.swipeMessage(full))
+        XCTAssertEqual(full.spaceChangedAfter ?? 0, 0.3, accuracy: 1e-6)
+
+        // The Space changed: the Dock draws no slide any more, and the next end's gate is
+        // the short one again.
+        dock.calls = []
+        let later = try rollIntoABounce(from: 30)
+        rig.advance(to: 500 + later + ThumbWheelTuning.followSpaceChangeTimeout)
+        XCTAssertNotEqual(rig.engine.follower.state, .gated)
+    }
+
     private func bareFollower() -> ThumbWheelFollower {
         let follower = ThumbWheelFollower(spaceChanges: nil)
         follower.synthesizer = synthesizer

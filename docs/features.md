@@ -404,7 +404,9 @@ wheel.
   begins once the wheel has turned half a desktop more, so the tail of a roll does not
   make the next desktop peek in and slide away. At the first or the last desktop (macOS
   did not switch within 0.2 s) the wheel stops trying that way for that turn; turn back,
-  or rest, and it follows again.
+  or rest, and it follows again. A swipe that ends within 0.7 s of such a bounce, or of a
+  swipe that slid back, is given a second for its switch: macOS says it later while it
+  still draws the one before, and the wheel is not held up that way for it.
   While a gesture's swipe runs the wheel waits; a gesture that starts one takes over.
   Where macOS cannot be sent a swipe, the desktops go in steps.
 - For every action but Scroll Sideways, a small tick of the wheel, or a pair of them
