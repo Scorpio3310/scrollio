@@ -649,6 +649,15 @@ class PreferencesGeneralViewController: NSViewController {
 
     // MARK: - Updates
 
+    /// Brings the Updates box into view: "Check for Updates…" of the Scrollio menu shows it
+    /// in a copy that does not update itself, where the box says why
+    /// (`MainMenuManager.revealUpdates(in:)`).
+    func revealUpdates() {
+        guard isViewLoaded else { return }
+        view.layoutSubtreeIfNeeded()
+        updatesSection.scrollToVisible(updatesSection.bounds)
+    }
+
     /// Shows the updater as it is: the switches, the time of the last check or the update
     /// that waits; in a copy that does not update itself, the one line that says why.
     func refreshUpdateState() {

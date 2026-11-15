@@ -101,6 +101,9 @@ final class MainMenuManager: NSObject {
     /// Shows the pane with this identifier at its top, in a Settings window that comes
     /// forward or is opened for it.
     var showPane: (_ paneIdentifier: String) -> Void = MainMenuManager.showPaneInSettingsWindow
+    /// Brings General's Updates box into view in the Settings window, once `showPane` has
+    /// shown General there.
+    var revealUpdates: () -> Void = { MainMenuManager.revealUpdates(in: MainMenuManager.settingsContent) }
     /// One step back or forward through the places the Settings window showed.
     var step: (PreferencesHistory.Direction) -> Void = MainMenuManager.stepInSettingsWindow
     /// The event being handled, to tell a held key by.
@@ -192,7 +195,8 @@ final class MainMenuManager: NSObject {
         let about = item("main-menu-about", #selector(showAbout(_:)), target: self)
         about.identifier = Identifier.about
         menu.addItem(about)
-        // Hidden in a copy that does not update itself (`validateMenuItem`).
+        // In every copy; one that does not update itself shows General › Updates instead
+        // (`checkForUpdatesFromMenu`).
         let updates = item("main-menu-check-for-updates", #selector(checkForUpdatesFromMenu(_:)), target: self)
         updates.identifier = Identifier.checkForUpdates
         menu.addItem(updates)
@@ -339,7 +343,15 @@ final class MainMenuManager: NSObject {
         showWelcomeGuide()
     }
 
+    /// A copy that updates itself checks at once. Any other copy (built from source, run
+    /// from a disk image, an updater that did not start) cannot: Settings opens on General
+    /// with its Updates box in view, where the reason stands.
     @objc func checkForUpdatesFromMenu(_ sender: Any?) {
+        guard updateStatus().isAvailable else {
+            showPane(PANEL_IDENTIFIER.general)
+            revealUpdates()
+            return
+        }
         checkForUpdates()
     }
 
@@ -421,6 +433,17 @@ final class MainMenuManager: NSObject {
         }
     }
 
+    /// General's Updates box in view, while `preferences` shows General and no sheet is on
+    /// its window (a sheet keeps the pane under it: `selectPane`).
+    static func revealUpdates(in preferences: PreferencesSplitViewController?) {
+        guard let preferences, !preferences.hasSheet(),
+              let general = preferences.selectedController as? PreferencesGeneralViewController
+        else { return }
+        // A window made for the item has not been laid out yet.
+        preferences.view.window?.layoutIfNeeded()
+        general.revealUpdates()
+    }
+
     static func stepInSettingsWindow(_ direction: PreferencesHistory.Direction) {
         settingsContent?.step(direction)
     }
@@ -474,8 +497,9 @@ final class MainMenuManager: NSObject {
 // MARK: - Validation
 
 extension MainMenuManager: NSMenuItemValidation {
-    /// "Check for Updates…" is there only in a copy that updates itself, and enabled
-    /// while a check can start. View's items follow the Settings window: Back and Forward
+    /// "Check for Updates…" is there in every copy: in one that updates itself it is enabled
+    /// while a check can start; in any other it is enabled and shows General › Updates.
+    /// View's items follow the Settings window: Back and Forward
     /// work while it is the key window and has a place that way; a pane's item works unless
     /// a sheet, a popover or a modal panel has the keyboard, and the pane on show is ticked.
     /// The other items of this target are always enabled.
@@ -483,8 +507,7 @@ extension MainMenuManager: NSMenuItemValidation {
         switch menuItem.action {
         case #selector(checkForUpdatesFromMenu(_:)):
             let status = updateStatus()
-            menuItem.isHidden = !status.isAvailable
-            return status.isAvailable && status.canCheck
+            return !status.isAvailable || status.canCheck
         case #selector(goBackInSettings(_:)):
             return settingsWindow().canStep(.back)
         case #selector(goForwardInSettings(_:)):

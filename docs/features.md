@@ -684,4 +684,5 @@ get the next version by hand, once.
 - A check asks GitHub for one small file that names the newest version. What that
   request shows is under [Privacy](privacy.md#privacy).
 - A copy built from source does not update itself and asks nobody; neither does a copy
-  that runs from the disk image. General › Updates says so.
+  that runs from the disk image. General › Updates says so, and "Check for Updates…" in
+  the Scrollio menu opens it there.
