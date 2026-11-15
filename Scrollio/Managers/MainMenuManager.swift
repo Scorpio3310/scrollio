@@ -104,6 +104,8 @@ final class MainMenuManager: NSObject {
     /// Brings General's Updates box into view in the Settings window, once `showPane` has
     /// shown General there.
     var revealUpdates: () -> Void = { MainMenuManager.revealUpdates(in: MainMenuManager.settingsContent) }
+    /// Says a line to VoiceOver (nothing happens without it).
+    var announce: (String) -> Void = MainMenuManager.postAnnouncement
     /// One step back or forward through the places the Settings window showed.
     var step: (PreferencesHistory.Direction) -> Void = MainMenuManager.stepInSettingsWindow
     /// The event being handled, to tell a held key by.
@@ -196,10 +198,12 @@ final class MainMenuManager: NSObject {
         about.identifier = Identifier.about
         menu.addItem(about)
         // In every copy; one that does not update itself shows General › Updates instead
-        // (`checkForUpdatesFromMenu`).
+        // (`checkForUpdatesFromMenu`). With About it is one group, set apart from Settings…
+        // as About is in Apple's menus.
         let updates = item("main-menu-check-for-updates", #selector(checkForUpdatesFromMenu(_:)), target: self)
         updates.identifier = Identifier.checkForUpdates
         menu.addItem(updates)
+        menu.addItem(.separator())
         let settings = item("main-menu-settings", #selector(showSettings(_:)), key: ",", target: self)
         settings.identifier = Identifier.settings
         menu.addItem(settings)
@@ -345,14 +349,27 @@ final class MainMenuManager: NSObject {
 
     /// A copy that updates itself checks at once. Any other copy (built from source, run
     /// from a disk image, an updater that did not start) cannot: Settings opens on General
-    /// with its Updates box in view, where the reason stands.
+    /// with its Updates box at the top, where the reason stands, and VoiceOver hears that
+    /// reason (the box's line).
     @objc func checkForUpdatesFromMenu(_ sender: Any?) {
-        guard updateStatus().isAvailable else {
+        let status = updateStatus()
+        guard status.isAvailable else {
             showPane(PANEL_IDENTIFIER.general)
             revealUpdates()
+            announce(text(PreferencesGeneralViewController.unavailableTextKey(for: status.availability)))
             return
         }
         checkForUpdates()
+    }
+
+    /// A high-priority VoiceOver announcement, as the key recorder's (nothing happens
+    /// without VoiceOver).
+    private static func postAnnouncement(_ text: String) {
+        guard let app = NSApp else { return }
+        NSAccessibility.post(element: app, notification: .announcementRequested, userInfo: [
+            .announcement: text,
+            .priority: NSAccessibilityPriorityLevel.high.rawValue,
+        ])
     }
 
     // MARK: - View
@@ -497,17 +514,18 @@ final class MainMenuManager: NSObject {
 // MARK: - Validation
 
 extension MainMenuManager: NSMenuItemValidation {
-    /// "Check for Updates…" is there in every copy: in one that updates itself it is enabled
-    /// while a check can start; in any other it is enabled and shows General › Updates.
-    /// View's items follow the Settings window: Back and Forward
-    /// work while it is the key window and has a place that way; a pane's item works unless
-    /// a sheet, a popover or a modal panel has the keyboard, and the pane on show is ticked.
-    /// The other items of this target are always enabled.
+    /// "Check for Updates…" is there in every copy. In one that updates itself it is enabled
+    /// while a check can start; in any other it shows General › Updates, so it works when a
+    /// pane's item of View does (not under a sheet, a popover or a modal panel of Settings).
+    /// View's items follow the Settings window: Back and Forward work while it is the key
+    /// window and has a place that way; a pane's item works unless a sheet, a popover or a
+    /// modal panel has the keyboard, and the pane on show is ticked. The other items of this
+    /// target are always enabled.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(checkForUpdatesFromMenu(_:)):
             let status = updateStatus()
-            return !status.isAvailable || status.canCheck
+            return status.isAvailable ? status.canCheck : settingsWindow().offersPanes
         case #selector(goBackInSettings(_:)):
             return settingsWindow().canStep(.back)
         case #selector(goForwardInSettings(_:)):

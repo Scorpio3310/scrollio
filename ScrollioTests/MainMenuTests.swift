@@ -57,6 +57,8 @@ final class MainMenuTests: XCTestCase {
     private var shownPanes: [String] = []
     /// For each time the Updates box was brought into view: the pane shown last before it.
     private var revealedUpdates: [String?] = []
+    /// What VoiceOver was told.
+    private var announcements: [String] = []
     private var steps: [PreferencesHistory.Direction] = []
     private var currentEvent: NSEvent?
 
@@ -77,11 +79,13 @@ final class MainMenuTests: XCTestCase {
         settingsState = .closed
         shownPanes = []
         revealedUpdates = []
+        announcements = []
         steps = []
         currentEvent = nil
         manager.settingsWindow = { [unowned self] in self.settingsState }
         manager.showPane = { [unowned self] pane in self.shownPanes.append(pane) }
         manager.revealUpdates = { [unowned self] in self.revealedUpdates.append(self.shownPanes.last) }
+        manager.announce = { [unowned self] text in self.announcements.append(text) }
         manager.step = { [unowned self] direction in self.steps.append(direction) }
         manager.currentEvent = { [unowned self] in self.currentEvent }
         menus = manager.makeMenus()
@@ -137,6 +141,7 @@ final class MainMenuTests: XCTestCase {
         XCTAssertEqual(rows(menu), [
             Row(title: "About Scrollio"),
             Row(title: "Check for Updates…"),
+            .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
             Row(title: "Services"),
@@ -396,6 +401,7 @@ final class MainMenuTests: XCTestCase {
         XCTAssertEqual(updateChecks, 1)
         XCTAssertEqual(shownPanes, [])
         XCTAssertEqual(revealedUpdates, [])
+        XCTAssertEqual(announcements, [], "nothing to say: the check says it")
         XCTAssertEqual(openedPreferences, [])
 
         updateStatus = UpdateStatus(availability: .available, canCheck: false)
@@ -404,22 +410,59 @@ final class MainMenuTests: XCTestCase {
     }
 
     /// Any other copy cannot check: the item is enabled and opens General with its Updates
-    /// box in view, where the reason stands. It never starts a check.
+    /// box in view, where the reason stands, and VoiceOver hears that reason (the box's
+    /// line). It never starts a check.
     func testInACopyThatDoesNotUpdateItselfTheItemShowsGeneralUpdates() throws {
         let check = try checkForUpdatesItem()
         for availability in [UpdateAvailability.builtFromSource, .wrongPlace, .failed] {
             for canCheck in [true, false] {
                 shownPanes = []
                 revealedUpdates = []
+                announcements = []
                 updateStatus = UpdateStatus(availability: availability, canCheck: canCheck)
                 XCTAssertTrue(manager.validateMenuItem(check), "\(availability), canCheck \(canCheck)")
                 XCTAssertTrue(choose(check))
                 XCTAssertEqual(shownPanes, [PANEL_IDENTIFIER.general], "\(availability)")
                 XCTAssertEqual(revealedUpdates, [PANEL_IDENTIFIER.general], "the box, once General is shown")
+                let reason = NSLocalizedString(PreferencesGeneralViewController.unavailableTextKey(for: availability), comment: "")
+                XCTAssertEqual(announcements, [reason], "\(availability)")
             }
         }
+        XCTAssertEqual(updateStatus.availability, .failed)
+        XCTAssertEqual(announcements, ["The updater could not start. New versions are on Scrollio's GitHub page."])
         XCTAssertEqual(updateChecks, 0)
         XCTAssertEqual(openedPreferences, [])
+    }
+
+    /// In a copy that does not update itself the item changes the pane, so it is dimmed as
+    /// View's pane items are while a sheet, a popover or a modal panel of Settings has the
+    /// keyboard (no pane is swapped under a popover). A copy that updates itself shows no
+    /// pane: its item follows the check alone.
+    func testTheItemIsDimmedWhileSettingsIsBusyOnlyWhenItWouldShowAPane() throws {
+        let check = try checkForUpdatesItem()
+        let buttons = PANEL_IDENTIFIER.buttons
+        for availability in [UpdateAvailability.builtFromSource, .wrongPlace, .failed] {
+            updateStatus = UpdateStatus(availability: availability)
+            for busy in [SettingsWindowState.busy(pane: buttons), .busy(pane: nil)] {
+                settingsState = busy
+                XCTAssertFalse(manager.validateMenuItem(check), "\(availability), \(busy)")
+                XCTAssertFalse(check.isHidden, "dimmed, not hidden")
+            }
+            for free in [
+                SettingsWindowState.closed,
+                .behind(pane: buttons),
+                .inFront(pane: buttons, canGoBack: false, canGoForward: false),
+            ] {
+                settingsState = free
+                XCTAssertTrue(manager.validateMenuItem(check), "\(availability), \(free)")
+            }
+        }
+        updateStatus = UpdateStatus(availability: .available, canCheck: true)
+        settingsState = .busy(pane: buttons)
+        XCTAssertTrue(manager.validateMenuItem(check))
+        updateStatus = UpdateStatus(availability: .available, canCheck: false)
+        settingsState = .closed
+        XCTAssertFalse(manager.validateMenuItem(check))
     }
 
     func testTheOtherItemsOfTheManagerAreAlwaysEnabled() throws {
