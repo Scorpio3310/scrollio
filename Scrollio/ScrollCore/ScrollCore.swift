@@ -506,6 +506,34 @@ class ScrollCore: ScrollActionPort {
         return ModifierHold(modifier: mask, code: hotkey.code, since: ScrollPoster.monotonicNow())
     }
 
+    /// Whether a modifier key is down after its own flagsChanged. A key event from a keyboard
+    /// carries a bit for each side of each modifier (IOLLEvent.h, NX_DEVICEL…/R…KEYMASK):
+    /// letting go of the right ⌥ while the left one is down leaves ⌥ set, and only the right
+    /// one's bit says it is up. An event with neither side's bit (a posted one may have none)
+    /// is judged by the modifier alone, as before.
+    static func isModifierKeyDown(_ hotkey: ScrollHotkey, flags: CGEventFlags) -> Bool {
+        let sides = modifierSideBits(hotkey.code)
+        if flags.rawValue & sides.both != 0 {
+            return flags.rawValue & sides.own != 0
+        }
+        return flags.contains(hotkey.modifierMask)
+    }
+
+    /// The side bit of a modifier key, and those of both its sides; none for fn and others.
+    static func modifierSideBits(_ code: UInt16) -> (own: UInt64, both: UInt64) {
+        switch code {
+        case KeyCode.controlL: return (0x0001, 0x2001)
+        case KeyCode.controlR: return (0x2000, 0x2001)
+        case KeyCode.shiftL: return (0x0002, 0x0006)
+        case KeyCode.shiftR: return (0x0004, 0x0006)
+        case KeyCode.commandL: return (0x0008, 0x0018)
+        case KeyCode.commandR: return (0x0010, 0x0018)
+        case KeyCode.optionL: return (0x0020, 0x0060)
+        case KeyCode.optionR: return (0x0040, 0x0060)
+        default: return (0, 0)
+        }
+    }
+
     /// Whether a key is down on the keyboards, as macOS keeps their state (`.hidSystemState`,
     /// per key, so per side). Asked only when a hardware wheel event comes without a held
     /// key's modifier, before that key is let go. Under XCTest nothing is asked and every key
@@ -721,7 +749,7 @@ class ScrollCore: ScrollActionPort {
             if hotkey.isModifierKey {
                 // 修饰键：通过 flagsChanged 事件检测
                 if isFlagsChanged && keyCode == hotkey.code {
-                    return event.flags.contains(hotkey.modifierMask)
+                    return ScrollCore.isModifierKeyDown(hotkey, flags: event.flags)
                 }
             } else if hotkey.matches(event, keyCode: keyCode, mouseButton: mouseButton, isMouseEvent: isMouseEvent) {
                 // 普通按键或鼠标按键

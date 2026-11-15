@@ -729,6 +729,41 @@ final class ScrollModifierHoldKeyLostReleaseTests: XCTestCase {
         XCTAssertEqual(try plainDistance(), plain, "pressed on the keyboard: watched by the wheel again")
     }
 
+    /// Two ⌥ keys, one for each: "Scroll faster" on the left one, "Scroll slower" on the
+    /// right. Letting go of one while the other is down is its release: the event still has
+    /// ⌥ (the other key's) but not the side bit of the key let go. (A bug since before 1.1.0:
+    /// the key stayed held until the other one was let go too.) Events without side bits
+    /// (posted ones may have none) are judged by ⌥ alone, as before.
+    func testLettingGoOfOneSideWhileTheOtherIsDown_isItsRelease() throws {
+        Options.shared.scroll.slow = ScrollHotkey(type: .keyboard, code: KeyCode.optionR)
+        let plain = try plainDistance()
+        let left = CGEventFlags(rawValue: CGEventFlags.maskAlternate.rawValue | 0x20)
+        let right = CGEventFlags(rawValue: CGEventFlags.maskAlternate.rawValue | 0x40)
+        let both = CGEventFlags(rawValue: CGEventFlags.maskAlternate.rawValue | 0x20 | 0x40)
+
+        try flagsChanged(KeyCode.optionL, left)
+        try flagsChanged(KeyCode.optionR, both)
+        XCTAssertTrue(ScrollCore.shared.dashScroll)
+        XCTAssertTrue(ScrollCore.shared.slowScroll)
+        XCTAssertEqual(ScrollCore.shared.dashAmplification, 1.0, "both held: they cancel")
+        try flagsChanged(KeyCode.optionR, left)
+        XCTAssertFalse(ScrollCore.shared.slowScroll, "the right ⌥ is up")
+        XCTAssertTrue(ScrollCore.shared.dashScroll, "the left one is still down")
+        XCTAssertEqual(try XCTUnwrap(try click(left)).y, plain * 5, accuracy: 1e-9)
+
+        try flagsChanged(KeyCode.optionR, both)
+        try flagsChanged(KeyCode.optionL, right)
+        XCTAssertFalse(ScrollCore.shared.dashScroll, "the left ⌥ is up")
+        XCTAssertTrue(ScrollCore.shared.slowScroll, "the right one is still down")
+        try flagsChanged(KeyCode.optionR, [])
+        XCTAssertFalse(ScrollCore.shared.slowScroll)
+
+        try flagsChanged(KeyCode.optionL, .maskAlternate)
+        XCTAssertTrue(ScrollCore.shared.dashScroll, "no side bits: ⌥ alone says pressed")
+        try flagsChanged(KeyCode.optionL, [])
+        XCTAssertFalse(ScrollCore.shared.dashScroll)
+    }
+
     /// Something took ⌥ off the wheel's flags while the key is down (a shortcut Scrollio
     /// posted carries only its own modifiers; a tap ahead of Scrollio's may take it off). The
     /// keyboard is asked, by the key's own code, before the key is let go: still down, it
