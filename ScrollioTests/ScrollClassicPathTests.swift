@@ -3234,8 +3234,10 @@ final class ScrollSystemLogTests: XCTestCase {
         poster.inputClockForTests = { clock }
         let savedVertical = Options.shared.scroll.reverseVertical
         defer {
-            // A frame ends the silence: the shared poster is left as it was found.
+            // A frame ends the silence: the shared poster is left as it was found. What
+            // that frame queued on the main queue runs here, not in a later test.
             poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: clock)
+            drainMainQueue()
             poster.inputClockForTests = nil
             Options.shared.scroll.reverseVertical = savedVertical
             restore()
@@ -3252,8 +3254,74 @@ final class ScrollSystemLogTests: XCTestCase {
         XCTAssertEqual(raw.getIntegerValueField(.scrollWheelEventDeltaAxis1), 2, "unsmoothed, reversed as the user wants it")
         XCTAssertEqual(raw.getDoubleValueField(.scrollWheelEventPointDeltaAxis1), 20)
         XCTAssertEqual(reasons, [.silentDisplayLink])
+        drainMainQueue()
         XCTAssertEqual(display.made.count, 2, "the link was replaced")
         XCTAssertFalse(poster.isGliding)
+    }
+
+    private func drainMainQueue() {
+        let drained = expectation(description: "main queue drained")
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 2)
+    }
+
+    /// "Scroll sideways" on a key other than Shift (here a mouse button or ⌥: the event
+    /// carries no Shift) and an event that goes on raw: only the poster turns the wheel
+    /// sideways, so the raw event stays vertical and must take the vertical rule of "Reverse
+    /// wheel direction". It took the horizontal one, and scrolled against the user's
+    /// setting. With Shift, macOS turns the event sideways itself: the horizontal rule fits.
+    func testARawEventWhileScrollingSidewaysWithoutShift_takesTheVerticalReverseRule() throws {
+        let (_, restore) = scrollTapWithAStandInDisplay()
+        let poster = ScrollPoster.shared
+        var clock = 1_000.0
+        poster.inputClockForTests = { clock }
+        let saved = (Options.shared.scroll.reverseVertical, Options.shared.scroll.reverseHorizontal)
+        defer {
+            poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: clock)
+            drainMainQueue()
+            poster.inputClockForTests = nil
+            ScrollCore.shared.toggleScroll = false
+            Options.shared.scroll.reverseVertical = saved.0
+            Options.shared.scroll.reverseHorizontal = saved.1
+            restore()
+        }
+        Options.shared.scroll.reverse = true
+        Options.shared.scroll.reverseVertical = true
+        Options.shared.scroll.reverseHorizontal = false
+        Options.shared.scroll.smoothHorizontal = true
+        ScrollCore.shared.toggleScroll = true
+
+        XCTAssertNil(tap(try wheelEvent(lines: -1)), "taken: smoothed sideways")
+        clock += 0.15
+        let raw = try wheelEvent(lines: -2)
+        XCTAssertTrue(tap(raw)?.takeUnretainedValue() === raw, "the event goes on (the link is silent)")
+        XCTAssertEqual(raw.getIntegerValueField(.scrollWheelEventDeltaAxis1), 2, "vertical, reversed by the vertical rule")
+        XCTAssertEqual(raw.getDoubleValueField(.scrollWheelEventPointDeltaAxis1), 20)
+        XCTAssertEqual(raw.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1), 2)
+
+        // With Shift held the same raw event is turned sideways by macOS: the horizontal rule.
+        clock += 0.02
+        let shifted = try wheelEvent(lines: -2)
+        shifted.flags = .maskShift
+        XCTAssertTrue(tap(shifted)?.takeUnretainedValue() === shifted)
+        XCTAssertEqual(shifted.getIntegerValueField(.scrollWheelEventDeltaAxis1), -2, "not reversed: the horizontal rule is off")
+    }
+
+    /// The rule alone: the event's own vertical delta takes the vertical rule, except while
+    /// "Scroll sideways" holds with Shift (macOS turns that event sideways).
+    func testReversesRawVertical() {
+        for (vertical, horizontal) in [(false, false), (true, false), (false, true), (true, true)] {
+            XCTAssertEqual(ScrollCore.reversesRawVertical(shiftsToSideways: false, carriesShift: false,
+                                                          reverseVertical: vertical, reverseHorizontal: horizontal), vertical)
+            XCTAssertEqual(ScrollCore.reversesRawVertical(shiftsToSideways: false, carriesShift: true,
+                                                          reverseVertical: vertical, reverseHorizontal: horizontal), vertical)
+            XCTAssertEqual(ScrollCore.reversesRawVertical(shiftsToSideways: true, carriesShift: false,
+                                                          reverseVertical: vertical, reverseHorizontal: horizontal), vertical,
+                           "a button or ⌥: the event stays vertical")
+            XCTAssertEqual(ScrollCore.reversesRawVertical(shiftsToSideways: true, carriesShift: true,
+                                                          reverseVertical: vertical, reverseHorizontal: horizontal), horizontal,
+                           "Shift: macOS turns it sideways")
+        }
     }
 
     /// C6 through the tap: a stored Step that is no finite number. The event goes on

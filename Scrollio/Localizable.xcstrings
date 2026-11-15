@@ -11475,6 +11475,42 @@
           }
         }
       }
+    },
+    "status-menu-title-no-display-frames": {
+      "comment": "Status bar menu: the title while Scrollio runs but the display links it times smooth scrolling with send no frames (three new ones in a row sent none); the wheel scrolls unsmoothed. Also General's title for it",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smooth scrolling is off: no display frames"
+          }
+        }
+      }
+    },
+    "status-item-no-display-frames": {
+      "comment": "Menu bar icon tooltip: the same as status-menu-title-no-display-frames",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smooth scrolling is off: no display frames."
+          }
+        }
+      }
+    },
+    "general-no-display-frames-hint": {
+      "comment": "General pane: under \"Smooth scrolling is off: no display frames\" in the row under the card; what happens and the way out",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The wheel scrolls without smoothing. Quit and reopen Scrollio."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

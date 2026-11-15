@@ -25,8 +25,10 @@
 //  "Open Accessibility Settings…" and the pause items (macOS does not let Scrollio post events,
 //  `ScrollPoster.canPostEvents`: nothing is smoothed, and shortcuts may not reach apps; the
 //  item's tooltip is General's line with the way out, which starts with Pause: removing
-//  Scrollio from that list while its event taps run can stop the mouse and keyboard). The
-//  menu is built when it opens. Each
+//  Scrollio from that list while its event taps run can stop the mouse and keyboard);
+//  "Smooth scrolling is off: no display frames" with the pause items (three display links in
+//  a row sent no frame, `ScrollPoster.displaySendsFrames`; quitting and reopening is the way
+//  out). The menu is built when it opens. Each
 //  item says what it does: Pause pauses and Resume resumes, so "Resume Scrollio" in a menu
 //  left open across the end of a pause does not pause again.
 //
@@ -38,7 +40,7 @@
 //  The icon is dimmed while the event handling does not run: paused, the access is missing,
 //  or the access is there but an event tap could not be created or stays off because its
 //  restarts are throttled (AppRunController, Interceptor), or macOS does not let Scrollio
-//  post events (ScrollPoster). Its tooltip says which, in the
+//  post events or sends it no display frames (ScrollPoster). Its tooltip says which, in the
 //  words and the order of the menu's title (the missing access first, also while paused).
 //
 //  While a Logitech mouse's battery is low and not charging, its percentage stands next to the
@@ -111,6 +113,14 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             ) { [weak self] _ in
                 self?.updateIcon()
             },
+            // Display links sent no frame, or one did again: "no display frames".
+            NotificationCenter.default.addObserver(
+                forName: ScrollPoster.displayFramesDidChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.updateIcon()
+            },
             // What the mice report (also when one connects, disconnects or the Logitech
             // sessions stop): the battery next to the icon, and the answers to the battery
             // read made when the menu opened.
@@ -150,7 +160,8 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             startFailed: controller.isRetryingStart,
             tapRestartsThrottled: Interceptor.hasThrottledTap,
             pauseEnd: controller.pauseEnd,
-            canPostEvents: ScrollPoster.shared.canPostEvents
+            canPostEvents: ScrollPoster.shared.canPostEvents,
+            displaySendsFrames: ScrollPoster.shared.displaySendsFrames
         )
         item.button?.appearsDisabled = look.appearsDisabled
         item.button?.toolTip = look.toolTip
@@ -190,7 +201,8 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
                 coresActive: controller.coresActive,
                 startFailed: controller.isRetryingStart,
                 tapRestartsThrottled: Interceptor.hasThrottledTap,
-                canPostEvents: ScrollPoster.shared.canPostEvents
+                canPostEvents: ScrollPoster.shared.canPostEvents,
+                displaySendsFrames: ScrollPoster.shared.displaySendsFrames
             ),
             pauseEnd: controller.pauseEnd
         )
@@ -319,6 +331,10 @@ enum StatusMenu {
         /// what buttons, gestures and the Shortcut Ring send does not reach apps; the way out
         /// is in System Settings › Privacy & Security › Accessibility, after a pause.
         case cannotPostEvents
+        /// The cores run, but the display links send no frames: three made in a row sent
+        /// none (`ScrollPoster.displaySendsFrames`). The wheel goes on unsmoothed; quitting
+        /// and reopening Scrollio is the way out. The first frame ends it.
+        case noDisplayFrames
     }
 
     /// The run state's start problem, by the icon's rule. A tap kept off comes first: it
@@ -326,11 +342,13 @@ enum StatusMenu {
     /// has a default: every caller says what it read (one that lost `canPostEvents` kept
     /// every test green).
     static func startProblem(
-        coresActive: Bool, startFailed: Bool, tapRestartsThrottled: Bool, canPostEvents: Bool
+        coresActive: Bool, startFailed: Bool, tapRestartsThrottled: Bool, canPostEvents: Bool,
+        displaySendsFrames: Bool
     ) -> StartProblem? {
         if !coresActive && startFailed { return .retrying }
         if coresActive && tapRestartsThrottled { return .tapOff }
         if coresActive && !canPostEvents { return .cannotPostEvents }
+        if coresActive && !displaySendsFrames { return .noDisplayFrames }
         return nil
     }
 
@@ -340,6 +358,7 @@ enum StatusMenu {
         case needsAccess
         case couldNotStart
         case cannotPostEvents
+        case noDisplayFrames
 
         var key: String {
             switch self {
@@ -347,6 +366,7 @@ enum StatusMenu {
             case .needsAccess: return "status-menu-title-needs-access"
             case .couldNotStart: return "status-menu-title-could-not-start"
             case .cannotPostEvents: return "status-menu-title-cannot-post-events"
+            case .noDisplayFrames: return "status-menu-title-no-display-frames"
             }
         }
     }
@@ -361,8 +381,11 @@ enum StatusMenu {
     static func title(hasAccess: Bool, isPaused: Bool, startProblem: StartProblem?) -> Title? {
         if !hasAccess { return .needsAccess }
         if isPaused { return .paused }
-        if let startProblem {
-            return startProblem == .cannotPostEvents ? .cannotPostEvents : .couldNotStart
+        switch startProblem {
+        case .cannotPostEvents?: return .cannotPostEvents
+        case .noDisplayFrames?: return .noDisplayFrames
+        case .retrying?, .tapOff?: return .couldNotStart
+        case nil: break
         }
         return nil
     }
@@ -541,6 +564,9 @@ enum StatusMenu {
             items = [.title(.couldNotStart)] + tryAgain + [.pause, .pauseFor, .separator]
         case .cannotPostEvents?:
             items = [.title(.cannotPostEvents), .openAccessibilitySettings, .pause, .pauseFor, .separator]
+        case .noDisplayFrames?:
+            // The way out is Quit, at the bottom.
+            items = [.title(.noDisplayFrames), .pause, .pauseFor, .separator]
         case .needsAccess?, nil:
             break
         }
@@ -752,13 +778,15 @@ enum StatusMenu {
         ///     while (Interceptor.hasThrottledTap); the cores count as running meanwhile.
         ///   - pauseEnd: when the pause ends by itself; the tooltip then says until when.
         ///   - canPostEvents: macOS lets Scrollio post events (ScrollPoster.canPostEvents).
+        ///   - displaySendsFrames: the display links send frames (ScrollPoster.displaySendsFrames).
         init(
             hasAccess: Bool, coresActive: Bool, isPaused: Bool, startFailed: Bool = false,
-            tapRestartsThrottled: Bool = false, pauseEnd: Date? = nil, canPostEvents: Bool
+            tapRestartsThrottled: Bool = false, pauseEnd: Date? = nil, canPostEvents: Bool,
+            displaySendsFrames: Bool
         ) {
             let problem = StatusMenu.startProblem(
                 coresActive: coresActive, startFailed: startFailed, tapRestartsThrottled: tapRestartsThrottled,
-                canPostEvents: canPostEvents
+                canPostEvents: canPostEvents, displaySendsFrames: displaySendsFrames
             )
             switch StatusMenu.title(hasAccess: hasAccess, isPaused: isPaused, startProblem: problem) {
             case .needsAccess?:
@@ -778,6 +806,9 @@ enum StatusMenu {
                 // The taps run, but no scroll is smoothed: dimmed as well, so that it is seen.
                 appearsDisabled = true
                 toolTip = NSLocalizedString("status-item-cannot-post-events", comment: "")
+            case .noDisplayFrames?:
+                appearsDisabled = true
+                toolTip = NSLocalizedString("status-item-no-display-frames", comment: "")
             case nil:
                 // The access is back and the cores start in a moment (or the Mac sleeps,
                 // another user has it): dimmed, and nothing to say, as the menu has no title.

@@ -210,6 +210,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-paused-until-hint",
         // Under "Scrollio can't send events to apps"
         "general-cannot-post-events-hint",
+        // Under "Smooth scrolling is off: no display frames"
+        "general-no-display-frames-hint",
         "general-permissions-header", "general-accessibility", "general-accessibility-hint",
         "general-accessibility-hint-not-allowed",
         "general-accessibility-allowed", "general-accessibility-not-allowed", "general-accessibility-open-settings",
@@ -272,6 +274,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "status-menu-title-paused", "status-menu-title-needs-access", "status-menu-title-could-not-start",
         "status-menu-try-again",
         "status-menu-title-cannot-post-events", "status-item-cannot-post-events",
+        "status-menu-title-no-display-frames", "status-item-no-display-frames",
         "status-menu-open-accessibility-settings",
         "status-item-accessibility", "status-item-accessibility-battery", "status-item-accessibility-battery-low",
         "scroll-monitor-title", "logitech-diagnostics-title",

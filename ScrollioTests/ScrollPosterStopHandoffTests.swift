@@ -703,14 +703,15 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         // 0.11 s after the first taken event, and still no frame.
         clock += 0.06
         XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()), "not taken: it goes on raw")
-        XCTAssertEqual(display.made.count, 2, "replaced at once, whatever the cooldown")
+        drainMainQueue()
+        XCTAssertEqual(display.made.count, 2, "replaced: the first silence waits for no cooldown")
         let replacement = try XCTUnwrap(display.made.last)
         XCTAssertFalse(silent.isRunning)
         XCTAssertTrue(replacement.isRunning, "running, so that its first frame can tell")
         XCTAssertFalse(poster.isGliding, "the scroll that waited for frames is over: no late jump when they come")
         XCTAssertEqual(poster.motionStateForTests.buffer.y, 0)
         XCTAssertEqual(ended, [.silentLink])
-        XCTAssertEqual(poster.healthLinesForTests, [ScrollPoster.silentLinkLine])
+        XCTAssertEqual(poster.healthLinesForTests, [ScrollPoster.silentLinkLine(after: 0.1)])
         XCTAssertEqual(poster.notTakenReason, .silentDisplayLink)
 
         // The following ones too, while no frame comes; not a new link per event, and the
@@ -719,7 +720,11 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             clock += 0.02
             XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()))
         }
-        poster.healthCheckForTests(now: ScrollPoster.monotonicNow() + 3)
+        drainMainQueue()
+        // On the keeper's clock, 3 s after the last wheel event (taken right after it, so
+        // that a stall of the test cannot make it look idle).
+        let base = ScrollPoster.monotonicNow()
+        poster.healthCheckForTests(now: base + 3)
         XCTAssertEqual(display.made.count, 2)
         XCTAssertTrue(replacement.isRunning)
         XCTAssertEqual(poster.healthLinesForTests.count, 1, "one line for the whole time")
@@ -846,8 +851,9 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertTrue(ScrollPoster.shared.canPostEvents)
     }
 
-    /// The frame that ends a silence finds no scroll: the link, started for that frame only,
-    /// is stopped again (the next wheel event starts it). It ran on with nothing to do.
+    /// The frame that ends a silence finds no scroll and the wheel still: the link, started
+    /// for that frame only, is stopped again (the next wheel event starts it). It ran on
+    /// with nothing to do.
     func testALinkStartedOnlyToSeeAFrameIsStoppedByItsFirstFrame() throws {
         let display = FakeDisplay(for: poster)
         poster.frameRecorderForTests = { _ in }
@@ -856,13 +862,14 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
         clock += 0.2
         XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()))
+        drainMainQueue()
         let replacement = try XCTUnwrap(display.made.last)
         XCTAssertTrue(replacement.isRunning)
 
+        // The wheel was let go: no event since the one that went on raw.
+        clock += 0.3
         poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: clock)
-        let drained = expectation(description: "main queue drained")
-        DispatchQueue.main.async { drained.fulfill() }
-        wait(for: [drained], timeout: 2)
+        drainMainQueue()
 
         XCTAssertFalse(replacement.isRunning, "nothing scrolls: the app idles again")
         clock += 0.5
@@ -898,6 +905,314 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
         XCTAssertEqual(display.made.count, 1)
         XCTAssertEqual(poster.healthLinesForTests, [])
+    }
+
+    // MARK: - A late first frame, a silence that stays (round 2)
+
+    /// The test's own clock for wheel events and frames.
+    private final class SimClock {
+        var now = 1_000.0
+    }
+
+    private func drainMainQueue() {
+        let drained = expectation(description: "main queue drained")
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 2)
+    }
+
+    /// What the main queue holds now runs (a waiter of XCTest costs tens of milliseconds
+    /// under load, too much for a few hundred turns).
+    private func runMainQueue() {
+        var reached = false
+        DispatchQueue.main.async { reached = true }
+        var turns = 0
+        while !reached && turns < 500 {
+            RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+            turns += 1
+        }
+        XCTAssertTrue(reached, "the main queue ran")
+    }
+
+    /// Turns the wheel on `sim`'s clock until `end`: a wheel event at each of `events`, and
+    /// the display's links send their first frame `firstFrame` s after each start (never
+    /// when nil), then one every 60th of a second while they run. The main queue runs
+    /// after each event and each frame, as the run loop would.
+    /// - Returns: whether each event was taken.
+    private func turnTheWheel(_ events: [CFTimeInterval], firstFrame: CFTimeInterval?, until end: CFTimeInterval,
+                              sim: SimClock) throws -> [Bool] {
+        var taken: [Bool] = []
+        var pending = events[...]
+        var seen: (link: ObjectIdentifier, starts: Int)?
+        var nextFrame = CFTimeInterval.infinity
+        let step = 0.005
+        while sim.now < end {
+            sim.now += step
+            if let link = poster.displayLinkForTests as? FakeScrollDisplayLink {
+                let id = ObjectIdentifier(link)
+                if seen?.link != id || seen?.starts != link.starts {
+                    // Made or started since the last step: its first frame is due from now.
+                    seen = (id, link.starts)
+                    nextFrame = sim.now + (firstFrame ?? .infinity)
+                }
+                if link.isRunning, sim.now >= nextFrame {
+                    poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: sim.now)
+                    nextFrame = sim.now + 1.0 / 60.0
+                    runMainQueue()
+                }
+            }
+            if let next = pending.first, sim.now >= next {
+                pending = pending.dropFirst()
+                taken.append(poster.smooth(event: try wheelEvent(), input: input()))
+                runMainQueue()
+            }
+        }
+        return taken
+    }
+
+    /// A link's first frame can come 0.1 s or more after its start (a 24-30 Hz display, a
+    /// loaded Mac). The rule took it for silent, and the frame that ended the silence
+    /// stopped the link while the wheel still turned: the next event started it cold, and
+    /// it was silent again. Every 0.3 s a scroll was cut and events went raw, a new link and
+    /// a line each time, and smoothing never showed. Now one episode at most, then smooth.
+    func testALateFirstFrameGivesOneEpisodeAtMostWhileTheWheelTurns() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        let sim = SimClock()
+        poster.inputClockForTests = { sim.now }
+        let events = stride(from: sim.now + 0.01, to: sim.now + 2, by: 0.03).map { $0 }
+
+        let taken = try turnTheWheel(events, firstFrame: 0.15, until: sim.now + 2.1, sim: sim)
+
+        XCTAssertLessThanOrEqual(display.made.count, 2, "one replacement at most")
+        XCTAssertEqual(poster.healthLinesForTests.count, 1, "one line")
+        XCTAssertEqual(Array(taken.suffix(40)), Array(repeating: true, count: 40), "then every event is smoothed")
+        XCTAssertLessThanOrEqual(taken.filter { !$0 }.count, 7, "raw only until the first frame came")
+    }
+
+    /// The same with single flicks a few seconds apart: each flick's scroll ends and stops
+    /// the link, and the next flick starts it cold, its first frame 0.15 s late again. After
+    /// the first episode a late first frame is waited for (it was seen to come), not taken
+    /// for silence; the flicks after it are smoothed whole.
+    func testALateFirstFrameGivesOneEpisodeAtMostAcrossFlicks() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        let sim = SimClock()
+        poster.inputClockForTests = { sim.now }
+        let start = sim.now
+        let flicks = (0..<4).map { start + 0.01 + Double($0) * 4 }
+        let events = flicks.flatMap { flick in (0..<6).map { flick + Double($0) * 0.03 } }
+
+        let taken = try turnTheWheel(events, firstFrame: 0.15, until: start + 16, sim: sim)
+
+        XCTAssertEqual(taken.count, 24)
+        XCTAssertLessThanOrEqual(display.made.count, 2, "one replacement at most")
+        XCTAssertEqual(poster.healthLinesForTests.count, 1, "one line")
+        XCTAssertEqual(Array(taken.suffix(18)), Array(repeating: true, count: 18), "the later flicks are smoothed whole")
+    }
+
+    /// Making a link asks the window server and starts a thread: not inside the scroll tap's
+    /// callback, which holds every wheel event of the system meanwhile. The event goes on
+    /// raw first; the new link is made from the main queue right after.
+    func testASilentLinkIsReplacedAfterTheEventWentOn() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        var clock = 1_000.0
+        poster.inputClockForTests = { clock }
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        clock += 0.11
+
+        XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()))
+        XCTAssertEqual(display.made.count, 1, "no link made in the callback")
+        XCTAssertFalse(try XCTUnwrap(display.made.first).isRunning, "the silent one is stopped at once")
+
+        drainMainQueue()
+        XCTAssertEqual(display.made.count, 2)
+        XCTAssertTrue(try XCTUnwrap(display.made.last).isRunning)
+    }
+
+    /// A silent link's replacement has a cooldown of its own: the screen change's new link a
+    /// second after a display change (AppDelegate) is not refused by it. It was, for 3 s, and
+    /// the link made during the change stayed.
+    func testASilentReplacementLeavesTheScreenChangesNewLinkAlone() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        var clock = 1_000.0
+        poster.inputClockForTests = { clock }
+        // The link the cores' start made (enable()), which no cooldown counts.
+        XCTAssertTrue(poster.create())
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        clock += 0.11
+        XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()))
+        drainMainQueue()
+        XCTAssertEqual(display.made.count, 2)
+
+        XCTAssertTrue(poster.recreateDisplayLink(), "not refused")
+        XCTAssertEqual(display.made.count, 3)
+    }
+
+    /// A silence that every new link keeps (Mos #1040: "restarting fixes it"): the wheel
+    /// went on raw for hours and nothing but one log line said so. After three new links in
+    /// a row without a frame, smoothing counts as off: the menu bar and General are told
+    /// (`displaySendsFrames`), once. The first frame ends it, and they are told again.
+    func testThreeNewLinksWithoutAFrameSaySmoothScrollingIsOff() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        let sim = SimClock()
+        poster.inputClockForTests = { sim.now }
+        var told = 0
+        let observer = NotificationCenter.default.addObserver(
+            forName: ScrollPoster.displayFramesDidChangeNotification, object: poster, queue: nil
+        ) { _ in told += 1 }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        let start = sim.now
+        let events = stride(from: start + 0.01, to: start + 10, by: 0.05).map { $0 }
+
+        // Links that never send a frame; a replacement every 3 s while the wheel turns.
+        _ = try turnTheWheel(events.filter { $0 < start + 6 }, firstFrame: nil, until: start + 6, sim: sim)
+        XCTAssertEqual(display.made.count, 3, "the first link and two replacements")
+        XCTAssertTrue(poster.displaySendsFrames, "two are not enough")
+        XCTAssertEqual(told, 0)
+        _ = try turnTheWheel(events.filter { $0 >= start + 6 }, firstFrame: nil, until: start + 10, sim: sim)
+        XCTAssertEqual(display.made.count, 5)
+        XCTAssertFalse(poster.displaySendsFrames, "the third replacement without a frame")
+        XCTAssertEqual(told, 1, "told once, not at the fourth")
+        XCTAssertEqual(poster.healthLinesForTests, [ScrollPoster.silentLinkLine(after: 0.1), ScrollPoster.noDisplayFramesLine])
+
+        // A frame: smoothing again, and they are told.
+        poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: sim.now)
+        runMainQueue()
+        XCTAssertTrue(poster.displaySendsFrames)
+        XCTAssertEqual(told, 2)
+        XCTAssertEqual(poster.healthLinesForTests.last, ScrollPoster.displayFramesBackLine)
+        sim.now += 0.01
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+    }
+
+    /// "No display frames", once said, outlives a pause or a sleep (the cores' stop and
+    /// start forget the silence, not what it showed): the first frame after it ends it.
+    func testNoDisplayFramesLastsUntilAFrameComes() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        let sim = SimClock()
+        poster.inputClockForTests = { sim.now }
+        let start = sim.now
+        let events = stride(from: start + 0.01, to: start + 7, by: 0.05).map { $0 }
+        _ = try turnTheWheel(events, firstFrame: nil, until: start + 7, sim: sim)
+        XCTAssertFalse(poster.displaySendsFrames)
+
+        poster.stop()
+        poster.stopKeeper()
+        poster.startKeeper()
+        runMainQueue()
+        XCTAssertFalse(poster.displaySendsFrames, "a resume alone does not show a frame")
+        sim.now += 1
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()), "a fresh start: taken")
+        poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: sim.now)
+        runMainQueue()
+        XCTAssertTrue(poster.displaySendsFrames, "its first frame ends it")
+        XCTAssertGreaterThanOrEqual(display.made.count, 4)
+    }
+
+    /// While a silent link is not replaced (once per 3 s), it follows the display of each
+    /// wheel event, as a link that is started does: moved to a display that works (the
+    /// pointer left a silent Sidecar or DisplayLink display), its frames come and smoothing
+    /// is back at once. It stayed on the silent display for up to 3 s, every event raw.
+    func testASilentLinkFollowsTheDisplayOfEachWheelEvent() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        var clock = 1_000.0
+        poster.inputClockForTests = { clock }
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        clock += 0.11
+        XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()))
+        drainMainQueue()
+        let replacement = try XCTUnwrap(display.made.last)
+        XCTAssertEqual(replacement.followedPoints, [])
+
+        clock += 0.03
+        let elsewhere = try wheelEvent()
+        elsewhere.location = CGPoint(x: 3_000, y: 200)
+        XCTAssertFalse(poster.smooth(event: elsewhere, input: input()), "still silent")
+        XCTAssertEqual(display.made.count, 2, "not replaced again within 3 s")
+        XCTAssertEqual(replacement.followedPoints, [CGPoint(x: 3_000, y: 200)], "it follows the event's display")
+    }
+
+    /// The frame that ends a silence while the wheel still turns leaves the link running:
+    /// the next event is smoothed with it at once. It stopped the link, and the next event
+    /// started it cold, to wait for a first frame once more.
+    func testTheFrameThatEndsASilenceMidSpinLeavesTheLinkRunning() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        var clock = 1_000.0
+        poster.inputClockForTests = { clock }
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        clock += 0.11
+        XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()))
+        drainMainQueue()
+        let replacement = try XCTUnwrap(display.made.last)
+        clock += 0.03
+        XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()))
+
+        poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: clock)
+        drainMainQueue()
+        XCTAssertTrue(replacement.isRunning, "the wheel turned 0 s ago")
+        let starts = replacement.starts
+        clock += 0.03
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        XCTAssertEqual(replacement.starts, starts, "no cold start")
+        XCTAssertEqual(display.made.count, 2)
+    }
+
+    /// A silence that no frame ended (the wheel stopped; the keeper stopped the link; Pause,
+    /// sleep) does not outlive the cores' stop and start: the first event after a resume or
+    /// a wake is smoothed with the link the start made. It went on raw, and that link was
+    /// thrown away for another.
+    func testASilenceDoesNotOutliveTheKeepersStopAndStart() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        var clock = 1_000.0
+        poster.inputClockForTests = { clock }
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        clock += 0.11
+        XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()))
+        drainMainQueue()
+        poster.stop()
+        poster.stopKeeper()
+        poster.startKeeper()
+        poster.clearRecreateCooldownForTests()
+        let made = display.made.count
+        clock += 10
+
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()), "taken")
+        drainMainQueue()
+        XCTAssertEqual(display.made.count, made, "no new link")
+    }
+
+    /// The keeper finds a link stuck (no frame for over 2 s while it runs) with a scroll
+    /// open: a flick of which no frame came, and no later wheel event to tell. The scroll is
+    /// ended first: the new link used to glide its distance out 2 to 5 s after the hand moved.
+    func testTheKeeperEndsTheScrollOfAStuckLinkBeforeItReplacesIt() throws {
+        let display = FakeDisplay(for: poster)
+        var posted = 0
+        poster.frameRecorderForTests = { _ in posted += 1 }
+        var ended: [ScrollSystemLog.EndReason] = []
+        ScrollSystemLog.sessionObserverForTests = { ended.append($1) }
+        defer { ScrollSystemLog.sessionObserverForTests = nil }
+        XCTAssertTrue(poster.create())
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        let base = ScrollPoster.monotonicNow()
+
+        poster.healthCheckForTests(now: base + 3)
+
+        XCTAssertFalse(poster.isGliding)
+        XCTAssertEqual(ended, [.silentLink])
+        XCTAssertEqual(display.made.count, 2, "replaced as before")
+        // The new link's first frame (it waits for the next wheel event: nothing scrolls).
+        posted = 0
+        XCTAssertEqual(display.made.last?.isRunning, false)
+        poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: base + 3)
+        XCTAssertEqual(posted, 0, "nothing arrives late")
+        XCTAssertFalse(poster.isGliding)
     }
 
     /// C5: two stops in a row. The second finds nothing to end and must not move the
@@ -3820,9 +4135,10 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
     /// What ends a one touch by itself is a display frame: the first one 0.2 s after the
     /// touch's last frame. When no frame comes in that rest (a display link that runs but
     /// does not call: suspected for a display that goes to sleep), the touch stays open
-    /// until the keeper's look finds a link with nothing posted and no wheel event for 5 s.
-    /// The keeper then ends the scroll: "ended" and the tap go out, and the scroll's line
-    /// says who ended it.
+    /// until the keeper's look finds the link stuck (no frame for over 2 s). The keeper then
+    /// ends the scroll before it replaces the link (round 2: it waited for the idle stop at
+    /// 5 s, and a new link would have glided on late): "ended" and the tap go out, and the
+    /// scroll's line says why it ended.
     func testTheRealPath_oneTouch_withoutFramesInTheRestTheKeeperEndsItAndTheLogSaysSo() throws {
         try withSettings(switchOn: true) {
             let run = realRun(over: .touchOnly)
@@ -3830,19 +4146,19 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
             run.run(until: 0.45)
             XCTAssertEqual(run.frames.last?.name, "changed", "the last frame has gone out, the touch rests")
             let before = run.frames.count
-            // No display frame from here on. The keeper looks 3 s later: too soon.
-            run.poster.healthCheckForTests(now: 5_000 + 0.45 + 3)
+            // No display frame from here on. The keeper looks 1.5 s later: too soon.
+            run.poster.healthCheckForTests(now: 5_000 + 0.45 + 1.5)
             XCTAssertEqual(run.frames.count, before)
             XCTAssertTrue(run.poster.isGliding, "the touch is still open")
-            run.poster.healthCheckForTests(now: 5_000 + 0.45 + 5.1)
+            run.poster.healthCheckForTests(now: 5_000 + 0.45 + 3)
             XCTAssertFalse(run.poster.isGliding)
             let frames = run.finish()
             XCTAssertEqual(frames.dropFirst(before).map(\.name), ["ended", "mayBegin", "cancelled"])
             XCTAssertNil(brokenGesture(in: frames))
-            XCTAssertEqual(run.sessions.map(\.reason), [.keeper])
-            let line = ScrollSystemLog.message(for: try XCTUnwrap(run.sessions.first?.session), ended: .keeper)
-            XCTAssertTrue(line.hasSuffix("trackpad-style on (one touch: 1 touches), ended: ended by the keeper"), line)
-            XCTAssertTrue(run.poster.healthLinesForTests.contains { $0.contains("the keeper stopped a display link") }, "and the app log says why")
+            XCTAssertEqual(run.sessions.map(\.reason), [.silentLink])
+            let line = ScrollSystemLog.message(for: try XCTUnwrap(run.sessions.first?.session), ended: .silentLink)
+            XCTAssertTrue(line.hasSuffix("trackpad-style on (one touch: 1 touches), ended: the display link sent no frames"), line)
+            XCTAssertTrue(run.poster.healthLinesForTests.contains { $0.contains("the keeper found the display link stuck") }, "and the app log says why")
         }
     }
 
@@ -4537,6 +4853,8 @@ final class FakeScrollDisplayLink: ScrollDisplayLink {
     private(set) var starts = 0
     private(set) var stops = 0
     private(set) var follows = 0
+    /// The places of `followDisplay(at:)`, in order.
+    private(set) var followedPoints: [CGPoint] = []
     var nominalHz = 60.0
     var followedDisplayHz = 60.0
 
@@ -4553,6 +4871,10 @@ final class FakeScrollDisplayLink: ScrollDisplayLink {
 
     func followDisplayUnderPointer() {
         follows += 1
+    }
+
+    func followDisplay(at point: CGPoint) {
+        followedPoints.append(point)
     }
 }
 

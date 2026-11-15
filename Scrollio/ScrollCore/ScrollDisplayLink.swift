@@ -23,6 +23,10 @@ protocol ScrollDisplayLink: AnyObject {
     /// main display reach a window on the other one now early, now late: every so often a
     /// refresh shows no movement and the next one shows twice as much.
     func followDisplayUnderPointer()
+    /// Ties the link to the display at `point` (global display coordinates, as a wheel
+    /// event's location), when it follows another one. Asks nothing of the window server
+    /// and allocates nothing: cheap enough for every wheel event.
+    func followDisplay(at point: CGPoint)
     /// The link's nominal rate (Hz); -1 when it has none.
     var nominalHz: Double { get }
     /// The rate (Hz) of the display the link follows; 0 when it is not known.
@@ -65,9 +69,13 @@ final class ScrollCVDisplayLink: ScrollDisplayLink {
 
     func followDisplayUnderPointer() {
         guard let location = CGEvent(source: nil)?.location else { return }
+        followDisplay(at: location)
+    }
+
+    func followDisplay(at point: CGPoint) {
         var display: CGDirectDisplayID = 0
         var count: UInt32 = 0
-        guard CGGetDisplaysWithPoint(location, 1, &display, &count) == .success, count > 0,
+        guard CGGetDisplaysWithPoint(point, 1, &display, &count) == .success, count > 0,
               display != CVDisplayLinkGetCurrentCGDisplay(link) else { return }
         CVDisplayLinkSetCurrentCGDisplay(link, display)
     }
