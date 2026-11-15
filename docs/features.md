@@ -308,9 +308,11 @@ name) shows that app's Buttons part. The pane also sets what the eight places ho
   takes that back); while your keyboard layout leaves places of them empty, a quiet line
   under the switch says how many. They are ordinary
   places afterwards: change any of them. No suggested place deletes what cannot be
-  brought back or changes something outside the Mac at one flick (a git app fetches
-  rather than pushes, a terminal splits its pane rather than clearing what it showed,
-  and a call app never turns your microphone or camera on), and a place whose key the app does not document stays empty. The keys are those of your keyboard
+  brought back, pushes or sends anything, or turns your microphone or camera on (a git
+  app fetches rather than pushes, a terminal splits its pane rather than clearing what
+  it showed). A few do act outside your Mac at one flick: Raise Hand in Teams and Zoom
+  (everyone in the call sees it), Archive in Mail and Outlook (the message moves on the
+  server) and Save in Postman. A place whose key the app does not document stays empty. The keys are those of your keyboard
   layout (on a German or Slovenian keyboard ⌘Z is still Undo and zoom is the + and
   − keys), and they follow it: after a switch to another layout a suggested place sends
   the same shortcut with that layout's keys, and the ring and its rows show those (a
