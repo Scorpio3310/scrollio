@@ -30,6 +30,19 @@ final class PreferencesDisclosureSection: NSView {
     /// How long the chevron turns and what opens fades in.
     static let animationDuration: TimeInterval = 0.2
 
+    /// Runs a change as one animation of `duration`, easing in and out: the chevron's turn
+    /// and the body's fade. The change is told whether to go through `animator()` (true
+    /// here). Tests replace it and ask for the change at once: an animation moves with the
+    /// display's frames, a window that is on no screen gets none, and a value set through
+    /// `animator()` arrives only with a frame, whatever the duration.
+    static var animate: (TimeInterval, (_ animated: Bool) -> Void) -> Void = { duration, change in
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            change(true)
+        }
+    }
+
     let title: String
     /// What the title folds away.
     let body: NSView
@@ -136,10 +149,8 @@ final class PreferencesDisclosureSection: NSView {
             return
         }
         body.alphaValue = 0
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.animationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            body.animator().alphaValue = 1
+        Self.animate(Self.animationDuration) { animated in
+            (animated ? body.animator() : body).alphaValue = 1
         }
     }
 
@@ -207,10 +218,8 @@ final class PreferencesDisclosureTitle: NSView {
         isExpanded = expanded
         let turn: CGFloat = expanded ? 1 : 0
         if animated {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = PreferencesDisclosureSection.animationDuration
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                chevron.animator().turn = turn
+            PreferencesDisclosureSection.animate(PreferencesDisclosureSection.animationDuration) { animated in
+                (animated ? chevron.animator() : chevron).turn = turn
             }
         } else {
             chevron.turn = turn

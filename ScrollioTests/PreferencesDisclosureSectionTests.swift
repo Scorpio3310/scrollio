@@ -312,8 +312,20 @@ final class PreferencesDisclosureSectionTests: XCTestCase {
         XCTAssertEqual(section.body.alphaValue, 1)
     }
 
-    func testWithoutReduceMotionTheChevronTurnsOverAFifthOfASecond() throws {
+    /// The turn and the fade are asked for as animations of a fifth of a second. What is
+    /// asked for is taken through `PreferencesDisclosureSection.animate` and made at once,
+    /// without `animator()`: an animation moves with the display's frames, and this window
+    /// is on no screen (waited for by the clock, the test passed in a quarter of its runs
+    /// and skipped or failed in the rest).
+    func testWithoutReduceMotionTheChevronTurnsOverAFifthOfASecond() {
         XCTAssertEqual(PreferencesDisclosureSection.animationDuration, 0.2)
+        let animate = PreferencesDisclosureSection.animate
+        defer { PreferencesDisclosureSection.animate = animate }
+        var durations: [TimeInterval] = []
+        PreferencesDisclosureSection.animate = { duration, change in
+            durations.append(duration)
+            change(false)
+        }
         let section = makeSection(collapsible: true, reducedMotion: false)
         install(section)
         click(section.disclosure)
@@ -321,24 +333,23 @@ final class PreferencesDisclosureSectionTests: XCTestCase {
         XCTAssertFalse(section.body.isHidden)
         XCTAssertEqual(section.disclosure.accessibilityValue() as? NSNumber, 1, "the state is at once what it ends as")
         XCTAssertTrue(section.disclosure.isAccessibilityExpanded(), "the state is at once what it ends as")
-
-        // The turn and the fade end where they head for. They move with the display's
-        // frames: with the display asleep (a night run) not one frame comes, and the test
-        // says so instead of failing.
-        let ended = expectation(description: "the turn and the fade end")
-        let poll = Timer(timeInterval: 0.02, repeats: true) { timer in
-            if section.disclosure.chevron.turn >= 1, section.body.alphaValue >= 1 {
-                timer.invalidate()
-                ended.fulfill()
-            }
-        }
-        RunLoop.current.add(poll, forMode: .common)
-        defer { poll.invalidate() }
-        if XCTWaiter().wait(for: [ended], timeout: 3) != .completed, section.disclosure.chevron.turn == 0 {
-            throw XCTSkip("no display frame arrived in 3 seconds (the display sleeps)")
-        }
+        XCTAssertEqual(durations, [0.2, 0.2], "the chevron's turn, then the fade of what opened")
         XCTAssertEqual(section.disclosure.chevron.turn, 1, accuracy: 0.001)
         XCTAssertEqual(section.body.alphaValue, 1, accuracy: 0.001)
+
+        // Folding turns the chevron back the same way; what folds away does not fade.
+        click(section.disclosure)
+        XCTAssertFalse(section.isExpanded)
+        XCTAssertTrue(section.body.isHidden)
+        XCTAssertEqual(durations, [0.2, 0.2, 0.2])
+        XCTAssertEqual(section.disclosure.chevron.turn, 0, accuracy: 0.001)
+
+        // Under Reduce Motion nothing is asked for as an animation.
+        let still = makeSection(collapsible: true, reducedMotion: true)
+        install(still)
+        click(still.disclosure)
+        XCTAssertEqual(still.disclosure.chevron.turn, 1)
+        XCTAssertEqual(durations.count, 3)
     }
 
     // MARK: - Pictures
