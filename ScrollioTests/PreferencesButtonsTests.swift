@@ -3362,6 +3362,30 @@ final class PreferencesButtonsTests: XCTestCase {
         )
     }
 
+    /// VoiceOver's help of a row's pull-down follows the row, which is reused: the sentence
+    /// of "Default (Back)" while it has no line, nothing once it has an action, the
+    /// sentence again at "Default"; the thumb wheel's row: the sentence of "Default (Scroll
+    /// Sideways)", then the line of the function chosen (round 2 fix Y7: already so; the
+    /// row's line resets the help whenever it is set).
+    func testThePullDownsHelpFollowsTheReusedRow() throws {
+        let pane = makePane()
+        let back = try XCTUnwrap(pane.row(for: AnyHashable(ButtonsMousePart.back)))
+        XCTAssertEqual(back.pullDown.accessibilityHelp(), "Goes back in apps that support it.")
+        pane.setAction(ofRow: AnyHashable(ButtonsMousePart.back), to: SystemShortcut.copy)
+        XCTAssertTrue(pane.row(for: AnyHashable(ButtonsMousePart.back)) === back, "the same row")
+        XCTAssertNil(back.explanation)
+        XCTAssertNil(back.pullDown.accessibilityHelp())
+        pane.setAction(ofRow: AnyHashable(ButtonsMousePart.back), to: nil)
+        XCTAssertEqual(back.pullDown.accessibilityHelp(), "Goes back in apps that support it.")
+
+        let wheel = try XCTUnwrap(pane.thumbWheelRow)
+        let sideways = try XCTUnwrap(wheel.pullDown.accessibilityHelp())
+        pane.setThumbWheelFunction(.zoom)
+        XCTAssertTrue(pane.thumbWheelRow === wheel)
+        XCTAssertNotEqual(wheel.pullDown.accessibilityHelp(), sideways)
+        XCTAssertEqual(wheel.pullDown.accessibilityHelp(), wheel.explanation)
+    }
+
     /// A key without an action passes its press through: "Default", "Does what the key does
     /// on its own.", not a call to choose something.
     func testAKeyWithoutAnActionSaysItDoesWhatItDoes() throws {
