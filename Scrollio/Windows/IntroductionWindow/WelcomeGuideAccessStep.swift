@@ -114,6 +114,13 @@ final class WelcomeGuideAccessStep: WelcomeGuideStepView {
                 WelcomeGuideText.localized("intro-access-could-not-start-title"),
                 WelcomeGuideText.localized("intro-access-could-not-start")
             )
+        case .cannotPostEvents:
+            // Not "Allowed" and "running" either: nothing is smoothed. The way out in
+            // General's words, Pause first.
+            return (
+                WelcomeGuideText.localized("intro-access-cannot-post-events-title"),
+                WelcomeGuideText.localized("general-cannot-post-events-hint")
+            )
         }
     }
 }
@@ -209,7 +216,7 @@ final class WelcomeGuideStatusBox: WelcomeGuideFlippedView {
         case .missing, .starting: symbol = ("circle.dashed", .tertiaryLabelColor)
         case .running: symbol = ("checkmark.circle.fill", .systemGreen)
         case .paused: symbol = ("pause.circle.fill", .secondaryLabelColor)
-        case .couldNotStart: symbol = ("exclamationmark.circle.fill", .systemOrange)
+        case .couldNotStart, .cannotPostEvents: symbol = ("exclamationmark.circle.fill", .systemOrange)
         }
         iconView.image = NSImage(systemSymbolName: symbol.name, accessibilityDescription: nil)
         iconView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 17, weight: .regular)

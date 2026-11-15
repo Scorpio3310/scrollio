@@ -667,6 +667,7 @@ final class WelcomeGuideFeelPicture: WelcomeGuideAnimatedView {
     var pillText: String? {
         switch tryArea {
         case .notRunning: return WelcomeGuideText.localized("intro-feel-not-running")
+        case .cannotPostEvents: return WelcomeGuideText.localized("intro-feel-cannot-post-events")
         case .notInAppList: return WelcomeGuideText.localized("intro-feel-not-in-list")
         case .smoothingOff: return WelcomeGuideText.localized("intro-feel-smoothing-off")
         case .smoothed:

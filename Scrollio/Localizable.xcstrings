@@ -11451,6 +11451,30 @@
           }
         }
       }
+    },
+    "intro-access-cannot-post-events-title": {
+      "comment": "Welcome Guide, Accessibility step: the status box's title while access is allowed and Scrollio runs, but macOS does not let it post events (the line under it is general-cannot-post-events-hint)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allowed, but Scrollio can't send events to apps"
+          }
+        }
+      }
+    },
+    "intro-feel-cannot-post-events": {
+      "comment": "Welcome Guide, feel step: the line over the sample page while macOS does not let Scrollio post events, so the page is not smoothed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not smoothed: Scrollio can't send events"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

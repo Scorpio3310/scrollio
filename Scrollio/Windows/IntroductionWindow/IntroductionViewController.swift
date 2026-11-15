@@ -756,7 +756,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
 
     static func liveRunState() -> WelcomeGuideRunState {
         let controller = AppRunController.shared
-        if controller.coresActive { return .running }
+        if controller.coresActive { return ScrollPoster.shared.canPostEvents ? .running : .cannotPostEvents }
         if controller.isPaused { return .paused }
         if controller.isRetryingStart { return .retrying }
         return .stopped
@@ -772,6 +772,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         let list = Options.shared.application
         return WelcomeGuideTryArea.state(
             running: AppRunController.shared.coresActive,
+            canPostEvents: ScrollPoster.shared.canPostEvents,
             rule: AppSmoothing.rule(of: AppSmoothing.entry(for: scrollio, in: list.applications)),
             scrollingSmooth: Options.shared.scroll.smooth,
             limitedToListedApps: list.allowlist

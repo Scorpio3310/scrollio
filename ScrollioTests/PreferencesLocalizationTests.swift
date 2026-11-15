@@ -315,6 +315,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "intro-feel-caption-smooth", "intro-feel-caption-glide", "intro-feel-caption-float",
         "intro-access-could-not-start", "intro-access-could-not-start-title", "intro-access-todo",
         "intro-access-todo-detail", "intro-status-running",
+        "intro-access-cannot-post-events-title", "intro-feel-cannot-post-events",
         "intro-finish-title", "intro-finish-text", "intro-finish-picture", "intro-finish-picture-hidden-icon",
         "intro-finish-hidden-icon-paused", "intro-finish-title-hidden-icon-paused",
         "intro-done-button",
