@@ -25,7 +25,8 @@
 //
 //  The icon is dimmed while the event handling does not run: paused, the access is missing,
 //  or the access is there but an event tap could not be created or stays off because its
-//  restarts are throttled (AppRunController, Interceptor). Its tooltip says which.
+//  restarts are throttled (AppRunController, Interceptor). Its tooltip says which, in the
+//  words and the order of the menu's title (the missing access first, also while paused).
 //
 //  While a Logitech mouse's battery is low and not charging, its percentage stands next to the
 //  icon ("8%", "Low" for a mouse that reports only levels), the lowest of several mice, and
@@ -70,6 +71,17 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             ) { [weak self] _ in
                 self?.updateIcon()
             },
+            // The access taken away or given back while paused changes nothing of the run
+            // state, but the tooltip says it, as the menu's title does.
+            DistributedNotificationCenter.default().addObserver(
+                forName: AppDelegate.accessibilityListChangedNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + AppDelegate.accessibilityCheckDelay) {
+                    self?.updateIcon()
+                }
+            },
             // A tap whose restarts are refused stays off: the icon says so until it runs again.
             NotificationCenter.default.addObserver(
                 forName: Interceptor.restartThrottleDidChangeNotification,
@@ -100,6 +112,7 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
     deinit {
         for observer in observers {
             NotificationCenter.default.removeObserver(observer)
+            DistributedNotificationCenter.default().removeObserver(observer)
         }
     }
 
@@ -108,6 +121,7 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
     func updateIcon() {
         let controller = AppRunController.shared
         let look = StatusMenu.IconLook(
+            hasAccess: Utils.isHadAccessibilityPermissions(),
             coresActive: controller.coresActive,
             isPaused: controller.isPaused,
             startFailed: controller.isRetryingStart,
@@ -281,9 +295,15 @@ enum StatusMenu {
 
     /// The title for `state`; nil while Scrollio works (the menu then has none).
     static func title(for state: State) -> Title? {
-        if !state.hasAccess { return .needsAccess }
-        if state.isPaused { return .paused }
-        if state.startProblem != nil { return .couldNotStart }
+        return title(hasAccess: state.hasAccess, isPaused: state.isPaused, startProblem: state.startProblem)
+    }
+
+    /// The menu's title and the icon's tooltip (`IconLook`) say the same, in this order:
+    /// the missing access first (also while paused), then the pause, then a start problem.
+    static func title(hasAccess: Bool, isPaused: Bool, startProblem: StartProblem?) -> Title? {
+        if !hasAccess { return .needsAccess }
+        if isPaused { return .paused }
+        if startProblem != nil { return .couldNotStart }
         return nil
     }
 
@@ -568,28 +588,36 @@ enum StatusMenu {
         }
     }
 
-    /// How the menu bar icon looks.
+    /// How the menu bar icon looks: dimmed while the event handling does not run, and a
+    /// tooltip that says what the menu's title says (`title(hasAccess:isPaused:startProblem:)`).
     struct IconLook: Equatable {
         let appearsDisabled: Bool
         let toolTip: String?
 
         /// - Parameters:
+        ///   - hasAccess: macOS lets Scrollio use the Accessibility API.
         ///   - startFailed: the access is there but the cores did not all start; a timer
         ///     tries again (AppRunController.isRetryingStart).
         ///   - tapRestartsThrottled: an event tap is off and its restarts are refused for a
         ///     while (Interceptor.hasThrottledTap); the cores count as running meanwhile.
-        init(coresActive: Bool, isPaused: Bool, startFailed: Bool = false, tapRestartsThrottled: Bool = false) {
-            if isPaused {
-                appearsDisabled = !coresActive
-                toolTip = NSLocalizedString("status-item-paused", comment: "")
-            } else if (!coresActive && startFailed) || (coresActive && tapRestartsThrottled) {
-                appearsDisabled = true
-                toolTip = NSLocalizedString("status-item-could-not-start", comment: "")
-            } else if !coresActive {
+        init(hasAccess: Bool, coresActive: Bool, isPaused: Bool, startFailed: Bool = false, tapRestartsThrottled: Bool = false) {
+            let problem = StatusMenu.startProblem(
+                coresActive: coresActive, startFailed: startFailed, tapRestartsThrottled: tapRestartsThrottled
+            )
+            switch StatusMenu.title(hasAccess: hasAccess, isPaused: isPaused, startProblem: problem) {
+            case .needsAccess?:
                 appearsDisabled = true
                 toolTip = NSLocalizedString("status-item-needs-access", comment: "")
-            } else {
-                appearsDisabled = false
+            case .paused?:
+                appearsDisabled = !coresActive
+                toolTip = NSLocalizedString("status-item-paused", comment: "")
+            case .couldNotStart?:
+                appearsDisabled = true
+                toolTip = NSLocalizedString("status-item-could-not-start", comment: "")
+            case nil:
+                // The access is back and the cores start in a moment (or the Mac sleeps,
+                // another user has it): dimmed, and nothing to say, as the menu has no title.
+                appearsDisabled = !coresActive
                 toolTip = nil
             }
         }
