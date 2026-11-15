@@ -434,17 +434,18 @@ final class MouseArtworkMoreMiceTests: XCTestCase {
     }
 
     /// The pane with such a mouse connected: its drawing on the card, a row per button
-    /// under its name, each "Default" until it has an action, and no thumb wheel's row.
+    /// under its name, each "Default" until it has an action (with what it then does where
+    /// that is certain, "Default (Back)", and else a line), and no thumb wheel's row.
     func testThePaneListsTheButtonsOfTheConnectedMouse() throws {
-        let expected: [(name: String, model: MouseArtworkModel, titles: [String], explanations: [String])] = [
+        let expected: [(name: String, model: MouseArtworkModel, titles: [String], shown: [String], explanations: [String?])] = [
             ("MX Anywhere 3S", .mxAnywhere3,
              ["Middle button", "Mode shift button", "Forward button", "Back button"],
-             ["Middle click.", "Switches the wheel between clicking and spinning freely.",
-              "Goes forward in apps that support it.", "Goes back in apps that support it."]),
+             ["Default (Middle Click)", "Default (Switch Wheel Mode)", "Default (Forward)", "Default (Back)"],
+             [nil, nil, nil, nil]),
             ("MX Vertical Advanced Ergonomic Mouse", .mxVertical,
              ["Middle button", "Pointer speed button", "Forward button", "Back button"],
-             ["Middle click.", "Does what the mouse does on its own.",
-              "Goes forward in apps that support it.", "Goes back in apps that support it."]),
+             ["Default (Middle Click)", "Default", "Default (Forward)", "Default (Back)"],
+             [nil, "Does what the mouse does on its own.", nil, nil]),
         ]
         for mouse in expected {
             let pane = PreferencesButtonsViewController()
@@ -462,6 +463,7 @@ final class MouseArtworkMoreMiceTests: XCTestCase {
             XCTAssertEqual(pane.headerView.artwork.model, mouse.model, mouse.name)
             XCTAssertEqual(pane.rows.map(\.title), mouse.titles, mouse.name)
             XCTAssertEqual(pane.rows.map(\.id), ButtonsMousePart.listed(on: mouse.model).map { AnyHashable($0) }, mouse.name)
+            XCTAssertEqual(pane.rows.map { $0.pullDown.menu?.items.first?.title }, mouse.shown, mouse.name)
             XCTAssertEqual(pane.rows.map(\.explanation), mouse.explanations, mouse.name)
             XCTAssertEqual(pane.rows.map(\.picture), ButtonsMousePart.listed(on: mouse.model).map { ButtonTriggerPicture.mouse(part: $0, number: nil) })
             XCTAssertTrue(pane.rows.allSatisfy { $0.isDefault && !$0.isStored && !$0.isRemovable }, mouse.name)

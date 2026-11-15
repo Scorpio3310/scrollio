@@ -30,7 +30,8 @@ struct ButtonsHeaderContent: Equatable {
     /// A row the card is about: its title, its action and its picture.
     struct Focus: Equatable {
         var title: String
-        /// The action's name; nil: none.
+        /// The action's name, or what the row says without one ("Default (Back)"); nil: none
+        /// ("Default").
         var action: String?
         var picture: ButtonTriggerPicture
         var reason: Reason = .row
@@ -105,7 +106,7 @@ struct ButtonsHeaderContent: Equatable {
             }
             return ButtonsHeaderContent(
                 title: title,
-                subtitle: focus.action ?? text("buttons-header-no-action"),
+                subtitle: focus.action ?? text("buttons-default"),
                 part: focus.part,
                 hint: hint,
                 number: focus.picture.number

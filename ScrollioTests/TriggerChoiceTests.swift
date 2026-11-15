@@ -242,14 +242,15 @@ final class TriggerChoiceTests: XCTestCase {
         Options.shared.buttons.binding = [binding(3, SystemShortcut.copy.identifier)]
         let pane = gesturesPane(undo: undoManager())
         let items = try XCTUnwrap(pane.gestureButtonButton.menu?.items)
-        // The Logitech buttons are named as Buttons names them.
+        // The Logitech buttons are named as Buttons names them; without an action what the
+        // row says, "will be replaced" where what it does by itself is certain.
         let byDefault = { (part: ButtonsMousePart) in "\(ButtonTriggerNaming.title(for: self.recordedTrigger(part))) — Default" }
         XCTAssertEqual(items.map(\.title), [
             "Choose",
             "Your Mouse",
-            "Middle button — Default",
-            byDefault(.modeShift),
-            "Forward button — Default",
+            "Middle button — Default (Middle Click), will be replaced",
+            "\(ButtonTriggerNaming.title(for: recordedTrigger(.modeShift))) — Default (Switch Wheel Mode), will be replaced",
+            "Forward button — Default (Forward), will be replaced",
             "Back button — \(SystemShortcut.copy.localizedName), will be replaced",
             byDefault(.gesture),
             "",
@@ -461,6 +462,105 @@ final class TriggerChoiceTests: XCTestCase {
         XCTAssertEqual(undo.undoActionName, "Change Button to Hold")
         undo.undo()
         XCTAssertEqual(Options.shared.buttons.binding, [back], "Copy is back")
+    }
+
+    /// What "Record a Button…" says while its popover shows the caught button: what the
+    /// button loses, in the menu's words ("Replaces: Copy", "Replaces: Default (Back)");
+    /// nothing for the one that does it already, one whose effect is not certain, a key
+    /// that has no action, and a key the gestures refuse.
+    func testTheRecorderSaysWhatTheCaughtButtonLoses() throws {
+        let copy = binding(3, SystemShortcut.copy.identifier)
+        let doing = binding(logi(.gesture), gestures)
+        let key = binding(40, SystemShortcut.paste.identifier, modifiers: UInt(CGEventFlags.maskControl.rawValue), type: .keyboard)
+        let bindings = [copy, doing, key]
+        func replaced(_ trigger: RecordedEvent, _ rule: ApplicationTriggerRule = .gestureNavigation) -> String? {
+            return TriggerChoiceMenu.replaced(
+                by: trigger, rule: rule, bindings: bindings, mouse: .mxMaster3,
+                actionName: { ActionDisplayResolver().actionName(of: $0) }
+            )
+        }
+        XCTAssertEqual(replaced(event(3)), "Copy")
+        XCTAssertEqual(replaced(event(4)), "Default (Forward)", "what Forward does by itself")
+        XCTAssertEqual(replaced(event(2)), "Default (Middle Click)")
+        XCTAssertEqual(replaced(event(logi(.modeShift))), "Default (Switch Wheel Mode)")
+        XCTAssertNil(replaced(event(logi(.gesture))), "it does it already")
+        XCTAssertNil(replaced(event(6)), "a numbered button: nothing certain")
+        XCTAssertNil(replaced(event(4, modifiers: UInt(CGEventFlags.maskAlternate.rawValue))), "⌥ Forward: nothing certain")
+        let controlK = event(40, modifiers: UInt(CGEventFlags.maskControl.rawValue), type: .keyboard)
+        XCTAssertNil(replaced(controlK), "the gestures take no key")
+        XCTAssertEqual(replaced(controlK, .shortcutRing), "Paste")
+        XCTAssertNil(replaced(event(41, modifiers: UInt(CGEventFlags.maskControl.rawValue), type: .keyboard), .shortcutRing))
+
+        // The menu's items say the same, with "will be replaced".
+        let model = menu(.gestureNavigation, titles: ["Gesture button"], bindings: bindings)
+        let forward = try XCTUnwrap(model.items.first { $0.part == .forward })
+        XCTAssertNil(forward.action)
+        XCTAssertEqual(forward.defaultEffect, .forward)
+        XCTAssertEqual(forward.shownAction, "Default (Forward)")
+        XCTAssertTrue(forward.replacesAction)
+        XCTAssertFalse(try XCTUnwrap(model.items.first { $0.part == .gesture }).replacesAction)
+
+        // The chooser's words, and the recorder's hook.
+        Options.shared.buttons.binding = bindings
+        let pane = gesturesPane(undo: undoManager())
+        let chooser = try XCTUnwrap(pane.triggerChooser)
+        XCTAssertEqual(chooser.replacedNote(for: event(3)), "Replaces: Copy")
+        XCTAssertEqual(chooser.replacedNote(for: event(4)), "Replaces: Default (Forward)")
+        XCTAssertNil(chooser.replacedNote(for: event(logi(.gesture))))
+        let press = InputEvent(type: .mouse, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        XCTAssertEqual(chooser.recordedNote(KeyRecorder(), event: press), "Replaces: Copy")
+    }
+
+    /// The recorder shows its delegate's note under the press it recorded, where the line
+    /// is otherwise empty, and holds it as long as a refusal; a delegate without one leaves
+    /// the line empty as before. A recorder that taps nothing and a popover never shown.
+    func testTheRecorderShowsTheNoteUnderTheRecordedPress() throws {
+        final class Tap: KeyRecordingTap {
+            func stop() {}
+        }
+        final class Popover: KeyPopover {
+            override func show(at sourceView: NSView, waitingHint: String) {
+                announce = { _ in }
+                testingPrepareContent(waitingHint: waitingHint)
+            }
+        }
+        final class Noting: KeyRecorderDelegate {
+            var note: String?
+            var stopped = false
+            func onEventRecorded(_ recorder: KeyRecorder, didRecordEvent event: InputEvent, isDuplicate: Bool) {}
+            func onRecordingStopped(_ recorder: KeyRecorder, didRecord: Bool) { stopped = true }
+            func recordedNote(_ recorder: KeyRecorder, event: InputEvent) -> String? { return note }
+        }
+        func record(note: String?) throws -> (Popover, Noting) {
+            let recorder = KeyRecorder()
+            let delegate = Noting()
+            delegate.note = note
+            let popover = Popover()
+            recorder.delegate = delegate
+            recorder.makePopover = { popover }
+            recorder.makeEventTap = { _, _ in Tap() }
+            recorder.startRecording(from: NSView(frame: NSRect(x: 0, y: 0, width: 24, height: 22)), mode: .combination)
+            addTeardownBlock {
+                recorder.stopRecording()
+                RunLoop.main.run(until: Date().addingTimeInterval(KeyRecorder.restartDelay + 0.1))
+            }
+            let press = InputEvent(type: .mouse, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil)
+            NotificationCenter.default.post(name: KeyRecorder.FINISH_NOTI_NAME, object: press)
+            return (popover, delegate)
+        }
+        let (noted, noting) = try record(note: "Replaces: Copy")
+        XCTAssertEqual(noted.testingHintText, "Replaces: Copy")
+        XCTAssertTrue(noted.testingHintIsVisible)
+        // Still there after the usual moment of a recorded press, gone with the popover.
+        RunLoop.main.run(until: Date().addingTimeInterval(KeyRecorder.recordingFeedbackDelay(isDuplicate: false) + 0.05))
+        XCTAssertFalse(noting.stopped, "a note is read as long as a refusal")
+        RunLoop.main.run(until: Date().addingTimeInterval(
+            KeyRecorder.recordingFeedbackDelay(isDuplicate: true) - KeyRecorder.recordingFeedbackDelay(isDuplicate: false) + 0.1
+        ))
+        XCTAssertTrue(noting.stopped)
+
+        let (plain, _) = try record(note: nil)
+        XCTAssertFalse(plain.testingHintIsVisible, "a recorded press leaves the line empty")
     }
 
     /// A recording that is closed without a press (Esc, the pane went away) chooses nothing.

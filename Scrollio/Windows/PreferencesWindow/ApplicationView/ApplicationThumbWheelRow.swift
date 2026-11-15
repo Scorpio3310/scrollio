@@ -8,9 +8,11 @@
 //  wheel (after the mode shift button), while the connected mouse has one (an MX Master 4,
 //  3 or 3S) and the app has no function of its own; the new row starts with the function
 //  the wheel has everywhere, is selected and its menu opens. Its pull-down is the Buttons
-//  pane's ("Default" scrolls sideways) and changes only the app's function; the line under
-//  it names the general one by its name in Scrolling › Thumb wheel ("Scroll Sideways").
-//  "−" (or Delete) gives the wheel back to Buttons, and the window's Undo takes it again,
+//  pane's ("Default (Scroll Sideways)") and changes only the app's function; the line under
+//  it names the general one by its name in Scrolling › Thumb wheel ("In other apps: Scroll
+//  Sideways": one line, where "Default (Scroll Sideways)" would take two).
+//  "−" (or Delete), or "Same as Other Apps (…)" at the top of its menu, gives the wheel back
+//  to Buttons, and the window's Undo takes it again,
 //  with an undo target that outlives the page, as for a button's row; Undo takes back a
 //  function chosen in the pull-down the same way. Buttons and
 //  Scrolling › Thumb wheel are never touched. The menu's "Thumb Wheel Settings…" shows the
@@ -48,6 +50,7 @@ final class ApplicationThumbWheelRow: PreferencesListRow {
             centeredOn: pullDown,
             controls: [pullDown]
         )
+        pullDown.sameAsOtherAppsTitle = Self.sameAsOtherApps(general)
         applyEnabled()
     }
 
@@ -55,11 +58,17 @@ final class ApplicationThumbWheelRow: PreferencesListRow {
         fatalError("ApplicationThumbWheelRow is built in code")
     }
 
-    /// "Everywhere: Zoom", "Everywhere: Scroll Sideways": what the wheel does in every other
-    /// app, as a button's row names what it does there, by the name Scrolling › Thumb wheel
-    /// gives it (the wheel's default does something known; "Default" would not say what).
+    /// "In other apps: Zoom", "In other apps: Scroll Sideways": what the wheel does in every
+    /// other app, as a button's row names what it does there, by the name Scrolling › Thumb
+    /// wheel gives it (the wheel's default does something known).
     static func everywhere(_ general: ThumbWheelFunction) -> String {
         return String(format: NSLocalizedString("apps-buttons-everywhere", comment: ""), general.localizedName)
+    }
+
+    /// "Same as Other Apps (Zoom)", "Same as Other Apps (Scroll Sideways)": the first item of
+    /// the menu, which does what "−" does.
+    static func sameAsOtherApps(_ general: ThumbWheelFunction) -> String {
+        return String(format: NSLocalizedString("apps-buttons-same-as-other-apps", comment: ""), general.localizedName)
     }
 
     /// The picture shows where the wheel is: on the connected mouse, or on an MX Master 4
@@ -83,6 +92,7 @@ final class ApplicationThumbWheelRow: PreferencesListRow {
         if explanation != line {
             explanation = line
         }
+        pullDown.sameAsOtherAppsTitle = Self.sameAsOtherApps(general)
         let pictured = Self.pictured(mouse)
         if self.mouse != pictured {
             self.mouse = pictured
@@ -134,6 +144,10 @@ extension ApplicationButtonsViewController {
         }
         row.pullDown.onSettingsRequested = { [weak self] in
             self?.onThumbWheelSettingsRequested?()
+        }
+        // "Same as Other Apps (…)": what "−" does.
+        row.pullDown.onSameAsOtherApps = { [weak self] in
+            self?.removeOwnThumbWheel(undoName: ButtonRowChange.Kind.action.actionName)
         }
         return row
     }
@@ -243,12 +257,17 @@ extension ApplicationButtonsViewController {
 
     // MARK: Removing, with Undo
 
-    /// Gives the thumb wheel back to Buttons; the window's Undo takes it again.
-    func removeOwnThumbWheel() {
+    /// Gives the thumb wheel back to Buttons; the window's Undo takes it again. `undoName`:
+    /// what Edit › Undo calls it ("Remove Thumb Wheel" when nil; "Change Action" for "Same as
+    /// Other Apps").
+    func removeOwnThumbWheel(undoName: String? = nil) {
         let showing = partShowing ?? { [weak self] entry in
             self?.application === entry ? self : nil
         }
-        Self.removeOwnThumbWheel(of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange)
+        Self.removeOwnThumbWheel(
+            of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange,
+            undoName: undoName ?? NSLocalizedString("apps-buttons-undo-remove-thumb-wheel", comment: "")
+        )
     }
 
     /// As a button's removal (`removeOwnBinding`): the undo target is the settings, not the
@@ -256,7 +275,8 @@ extension ApplicationButtonsViewController {
     /// change on the part `showing` gives for it. Neither holds the page.
     private static func removeOwnThumbWheel(
         of application: Application, undoManager undo: UndoManager?,
-        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?
+        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?,
+        undoName: String
     ) {
         guard let removed = application.ownThumbWheelFunction else { return }
         application.setOwnThumbWheelFunction(nil)
@@ -266,14 +286,15 @@ extension ApplicationButtonsViewController {
         let path = application.path
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
             guard let entry = thumbWheelEntry(storedAs: path) else { return }
-            restoreOwnThumbWheel(removed, of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange)
+            restoreOwnThumbWheel(removed, of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange, undoName: undoName)
         }
-        undo.setActionName(NSLocalizedString("apps-buttons-undo-remove-thumb-wheel", comment: ""))
+        undo.setActionName(undoName)
     }
 
     private static func restoreOwnThumbWheel(
         _ function: ThumbWheelFunction, of application: Application, undoManager undo: UndoManager?,
-        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?
+        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?,
+        undoName: String
     ) {
         guard application.ownThumbWheelFunction == nil else {
             // Added again meanwhile: that one stays.
@@ -287,9 +308,9 @@ extension ApplicationButtonsViewController {
         let path = application.path
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
             guard let entry = thumbWheelEntry(storedAs: path) else { return }
-            removeOwnThumbWheel(of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange)
+            removeOwnThumbWheel(of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange, undoName: undoName)
         }
-        undo.setActionName(NSLocalizedString("apps-buttons-undo-remove-thumb-wheel", comment: ""))
+        undo.setActionName(undoName)
     }
 
     /// The entry the list holds now for the app stored as `path` (an app removed and added

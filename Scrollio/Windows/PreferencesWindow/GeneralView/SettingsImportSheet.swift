@@ -211,16 +211,17 @@ enum SettingsFileText {
 
     /// One line per button and key of the file, in the order of the file: "⌥ F5: Mission
     /// Control", and for a button that is one app's own "⌥ F5 in Notes: Mission Control".
-    /// The trigger and the action are named as the Buttons pane names them; an app's own
-    /// button without an action is "Default", as its page says (it does what it does by
-    /// itself while the app is in front).
+    /// The trigger and the action are named as the Buttons pane names them; a button or key
+    /// without an action is "Default", as Buttons and an app's page say (it does what it does
+    /// by itself, in an app's case while that app is in front). What that is, the sheet does
+    /// not claim: it depends on the mouse.
     static func actionLines(of contents: SettingsFile.Contents, logitech: ButtonTriggerNaming.Logitech = .live) -> [String] {
         return contents.allBindings.map { entry in
             let trigger = ButtonTriggerNaming.title(for: entry.binding.triggerEvent, logitech: logitech)
+            let action = CellActionState(binding: entry.binding).hasBoundAction ? actionName(of: entry.binding) : text("buttons-default")
             guard let application = entry.application else {
-                return String(format: text("general-settings-import-action-line"), trigger, actionName(of: entry.binding))
+                return String(format: text("general-settings-import-action-line"), trigger, action)
             }
-            let action = entry.binding.systemShortcutName.isEmpty ? text("buttons-default") : actionName(of: entry.binding)
             return String(format: text("general-settings-import-action-line-app"), trigger, name(of: application), action)
         }
     }
@@ -237,8 +238,9 @@ enum SettingsFileText {
         }
     }
 
-    /// What a button or key does, in the Buttons pane's words: the action's name, a
-    /// recorded shortcut as its keys, "No Action". An action that opens or runs something
+    /// What an action does, in the Buttons pane's words: the action's name, a recorded
+    /// shortcut as its keys, "No Action" (a button's or key's line says "Default" instead,
+    /// `actionLines`). An action that opens or runs something
     /// is named by its file here ("Open App or File: sync.sh"); its whole path is in the
     /// box above. Nothing on disk is looked at: the paths are a file's, not the user's.
     /// A recorded shortcut the file gives a name is listed by its keys first, the name

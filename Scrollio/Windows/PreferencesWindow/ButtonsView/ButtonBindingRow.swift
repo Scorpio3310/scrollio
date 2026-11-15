@@ -7,8 +7,10 @@
 //  that a numbered button is an extra one), an ⓘ that explains a problem, and the action
 //  pull-down. A numbered button's picture (and the row's context menu) opens "Which Button
 //  Is This?" (ButtonPlaceMenu). A button of the connected mouse has its row whether or not
-//  it has a binding: without an action its pull-down reads "Default" and the line says
-//  what the button then does, and it is never removed with "−".
+//  it has a binding, and it is never removed with "−". Without an action every row's
+//  pull-down reads "Default": where what the button then does is certain the pull-down
+//  says it ("Default (Back)", its sentence in the tooltip) and the row has no line;
+//  elsewhere a button's line says "Does what the mouse does on its own.".
 //
 
 import Cocoa
@@ -28,7 +30,7 @@ struct ButtonRowNote: Equatable {
         case shortcutRing
         /// A scroll action works while the button is held.
         case holdAction
-        /// No action yet.
+        /// A key without an action ("Default"): what to do.
         case noAction
         /// A button the Mac knows only by its number ("Button 5"): where it is, the mouse
         /// tells when "+" records it.
@@ -37,7 +39,8 @@ struct ButtonRowNote: Equatable {
         case alsoScrollKey
         /// What the Logitech mouse says about the button.
         case capture(ButtonCapturePresentationStatus)
-        /// A button of the connected mouse without an action: what it does by itself.
+        /// A button without an action whose effect is not certain: it does what the mouse
+        /// does on its own.
         case defaultAction
         /// A button of an app's own (its page under Apps): what it does in every other app.
         case everywhere
@@ -94,8 +97,8 @@ struct ButtonRowNote: Equatable {
         }
     }
 
-    /// The line for `binding`: a problem first, then what the action needs, then for a
-    /// numbered button that it is an extra one, else nothing.
+    /// The line for `binding`: a problem first, then what the action needs (without one:
+    /// `defaultLine`), then for a numbered button that it is an extra one, else nothing.
     /// - Parameters:
     ///   - captureStatus: what the Logitech mouse says about the trigger (`.normal` for
     ///     any other button).
@@ -103,12 +106,15 @@ struct ButtonRowNote: Equatable {
     ///   - standardButtonName: the standard button a Logitech one can stand in for.
     ///   - standardButtonLosesPulse: that standard button would get no haptic pulse where
     ///     the Logitech one gets them (the ring or the gestures on an MX Master 4).
+    ///   - isCaught: Scrollio catches the button's Logitech control for another binding
+    ///     (`ButtonsListLayout.catchesControl(of:in:)`).
     static func make(
         for binding: ButtonBinding,
         captureStatus: ButtonCapturePresentationStatus,
         scrollHoldKeys: [ScrollHotkey],
         standardButtonName: String? = nil,
-        standardButtonLosesPulse: Bool = false
+        standardButtonLosesPulse: Bool = false,
+        isCaught: Bool = false
     ) -> ButtonRowNote? {
         let trigger = binding.triggerEvent
         if trigger.type == .mouse, scrollHoldKeys.contains(where: { $0.type == .mouse && $0.code == trigger.code }) {
@@ -125,6 +131,9 @@ struct ButtonRowNote: Equatable {
             }
             return ButtonRowNote(kind: .capture(captureStatus), text: line)
         }
+        if !CellActionState(binding: binding).hasBoundAction {
+            return defaultLine(for: trigger, isCaught: isCaught)
+        }
         if let action = actionNote(for: binding) {
             return action
         }
@@ -136,9 +145,7 @@ struct ButtonRowNote: Equatable {
     }
 
     /// The line of a button of the connected mouse without an action ("Default"): that it
-    /// is also a key under Scrolling › While you hold a key, else what it does by itself,
-    /// only where that is certain. Nothing when Scrollio catches its Logitech control for
-    /// another binding (the plain press then reaches only Scrollio).
+    /// is also a key under Scrolling › While you hold a key, else `defaultLine`.
     /// - Parameters:
     ///   - trigger: what the row stores once it gets an action. A numbered button the user
     ///     placed there sends its number, not a standard button: no claim beyond its own.
@@ -155,17 +162,28 @@ struct ButtonRowNote: Equatable {
         if isScrollKey {
             return ButtonRowNote(kind: .alsoScrollKey, text: text("buttons-note-scroll-key"))
         }
-        guard !isCaught else { return nil }
-        let key = ButtonTriggerPicture.number(for: trigger) == nil ? part.defaultExplanationKey : "buttons-default-own"
-        return ButtonRowNote(kind: .defaultAction, text: text(key))
+        return defaultLine(for: trigger, part: part, isCaught: isCaught)
     }
 
-    /// What the action needs: an action at all, the directions of Gesture Navigation (a
-    /// mouse button: on a key it does nothing), the button held for a scroll action.
+    /// The line of a row without an action ("Default"). A key: what to do. A button:
+    /// nothing where what it does by itself is certain (the pull-down says it, "Default
+    /// (Back)", and its tooltip has the sentence) or where Scrollio catches its Logitech
+    /// control for another binding (the plain press then reaches only Scrollio); else "Does
+    /// what the mouse does on its own.".
+    static func defaultLine(for trigger: RecordedEvent, part: ButtonsMousePart? = nil, isCaught: Bool) -> ButtonRowNote? {
+        if trigger.type == .keyboard {
+            return ButtonRowNote(kind: .noAction, text: text("buttons-note-no-action"))
+        }
+        guard !isCaught, ButtonsMousePart.defaultEffect(of: trigger, part: part, isCaught: false) == nil else { return nil }
+        return ButtonRowNote(kind: .defaultAction, text: text("buttons-default-own"))
+    }
+
+    /// What the action needs: the directions of Gesture Navigation (a mouse button: on a
+    /// key it does nothing), the button held for a scroll action.
     private static func actionNote(for binding: ButtonBinding) -> ButtonRowNote? {
         switch CellActionState(binding: binding) {
         case .unbound, .recordingPrompt:
-            return ButtonRowNote(kind: .noAction, text: text("buttons-note-no-action"))
+            return nil
         case .namedShortcut(let shortcut):
             if shortcut.identifier == SystemShortcut.mouseGestureNavigation.identifier {
                 if binding.triggerEvent.type == .keyboard {
@@ -233,6 +251,7 @@ final class ButtonBindingRow: PreferencesListRow {
     ///     nil: a row of `binding` (its id is the binding's).
     ///   - isStored: `binding` is stored; false for a button of the connected mouse that has
     ///     no binding.
+    ///   - defaultEffect: what "Default" does, where that is certain ("Default (Back)").
     init(
         binding: ButtonBinding,
         title: String,
@@ -240,7 +259,8 @@ final class ButtonBindingRow: PreferencesListRow {
         mouse: MouseArtworkModel,
         pullDown: ButtonActionPullDown,
         part: ButtonsMousePart? = nil,
-        isStored: Bool = true
+        isStored: Bool = true,
+        defaultEffect: ButtonsMousePart? = nil
     ) {
         self.binding = binding
         self.isStored = isStored
@@ -248,7 +268,7 @@ final class ButtonBindingRow: PreferencesListRow {
         self.note = note
         self.mouse = mouse
         self.pullDown = pullDown
-        pullDown.offersDefault = part != nil
+        pullDown.defaultEffect = defaultEffect
         let picture = ButtonTriggerPicture.make(for: binding.triggerEvent, mouse: mouse)
         self.picture = picture
 
@@ -310,7 +330,11 @@ final class ButtonBindingRow: PreferencesListRow {
 
     /// Shows `binding` with `title` and `note` on `mouse`; the row and its pull-down stay the
     /// same views.
-    func update(binding: ButtonBinding, title: String, note: ButtonRowNote?, mouse: MouseArtworkModel, isStored: Bool = true) {
+    func update(
+        binding: ButtonBinding, title: String, note: ButtonRowNote?, mouse: MouseArtworkModel, isStored: Bool = true,
+        defaultEffect: ButtonsMousePart? = nil
+    ) {
+        pullDown.defaultEffect = defaultEffect
         self.binding = binding
         self.isStored = isStored
         self.note = note
@@ -331,6 +355,12 @@ final class ButtonBindingRow: PreferencesListRow {
         return part != nil && !CellActionState(binding: binding).hasBoundAction
     }
 
+    /// What the pull-down says while the row has no action ("Default (Back)", "Default");
+    /// nil while it has one.
+    var defaultTitle: String? {
+        return CellActionState(binding: binding).hasBoundAction ? nil : pullDown.defaultTitle
+    }
+
     /// The picture is a button only for a stored button the Mac knows by its number.
     var offersPlace: Bool {
         return isStored && ButtonTriggerPicture.number(for: binding.triggerEvent) != nil
@@ -347,6 +377,11 @@ final class ButtonBindingRow: PreferencesListRow {
     }
 
     private func applyNote() {
+        // Without a line, VoiceOver hears the sentence of "Default (Back)" as the pull-down's
+        // help, as its tooltip says it.
+        if note == nil, let sentence = pullDown.toolTip {
+            pullDown.setAccessibilityHelp(sentence)
+        }
         placeButton.isHidden = !offersPlace
         let details = note?.hasDetails ?? false
         infoButton.isHidden = !details

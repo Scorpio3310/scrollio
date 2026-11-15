@@ -87,6 +87,59 @@ extension ButtonsMousePart {
         case .left, .right, .gesture, .thumbPanel, .pointerSpeed: return "buttons-default-own"
         }
     }
+
+    /// What "Default" does, named in its parentheses ("Default (Back)"), for the parts whose
+    /// `defaultExplanationKey` says it for certain; nil for every other part.
+    var defaultEffectKey: String? {
+        switch self {
+        case .back: return "buttons-default-effect-back"
+        case .forward: return "buttons-default-effect-forward"
+        case .middle: return "buttons-default-effect-middle"
+        // The action of that name does the same thing.
+        case .modeShift: return SystemShortcut.logiSmartShiftToggle.identifier
+        case .left, .right, .gesture, .thumbPanel, .pointerSpeed: return nil
+        }
+    }
+
+    /// The part whose effect a row of `trigger` without an action names ("Default (Back)"),
+    /// nil where it is not certain: a key, a button pressed with modifier keys, a button the
+    /// Mac knows only by its number (one placed on a part still sends its number), a part
+    /// without a known effect, and a part whose Logitech control Scrollio catches for
+    /// another binding (`isCaught`, `ButtonsListLayout.catchesControl`: the plain press then
+    /// reaches only Scrollio). An app's own "Default" still sends the standard middle, back
+    /// or forward button then (`InputProcessor.standardButton(forAppsOwnDefault:)`), never
+    /// the mode shift button's switch (`isAppsOwn`).
+    /// - Parameter part: the row's part; nil: the part `trigger` presses.
+    static func defaultEffect(
+        of trigger: RecordedEvent,
+        part: ButtonsMousePart? = nil,
+        isCaught: Bool,
+        isAppsOwn: Bool = false,
+        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forScrollioCode: $0) }
+    ) -> ButtonsMousePart? {
+        guard trigger.type == .mouse,
+              UInt64(trigger.modifiers) & ButtonBinding.customBindingRelevantModifierMask == 0,
+              ButtonTriggerPicture.number(for: trigger) == nil,
+              let part = part ?? ButtonsListLayout.plainPart(of: trigger, logitechRole: logitechRole),
+              part.defaultEffectKey != nil
+        else { return nil }
+        if isCaught && !(isAppsOwn && part != .modeShift) {
+            return nil
+        }
+        return part
+    }
+
+    /// "Back", "Middle Click", "Switch Wheel Mode": what "Default" does, for its parentheses.
+    var defaultEffectName: String? {
+        return defaultEffectKey.map { NSLocalizedString($0, comment: "") }
+    }
+
+    /// What a row says without an action: "Default (Back)" where `effect` is certain, else
+    /// "Default".
+    static func defaultTitle(effect: ButtonsMousePart?) -> String {
+        guard let name = effect?.defaultEffectName else { return NSLocalizedString("buttons-default", comment: "") }
+        return String(format: NSLocalizedString("buttons-default-with", comment: ""), name)
+    }
 }
 
 /// The rows of the Buttons pane (see the file header). Pure.

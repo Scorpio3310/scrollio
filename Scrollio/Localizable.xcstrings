@@ -3458,18 +3458,6 @@
         }
       }
     },
-    "buttons-header-no-action": {
-      "comment": "Buttons pane card: the button pointed at has no action",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No action"
-          }
-        }
-      }
-    },
     "buttons-header-recording": {
       "comment": "Buttons pane card while + waits for a button",
       "extractionState": "manual",
@@ -8208,7 +8196,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Every button does what Buttons says."
+            "value": "Every button works as set in Buttons."
           }
         }
       }
@@ -8232,7 +8220,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "These buttons do this while %@ is in front; every other button does what Buttons says."
+            "value": "In %@, these buttons do this. Every other button works as set in Buttons."
           }
         }
       }
@@ -8244,7 +8232,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Everywhere: %@"
+            "value": "In other apps: %@"
           }
         }
       }
@@ -8304,7 +8292,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Click + to give a button something else to do while %@ is in front."
+            "value": "Click + to give a button something else to do in %@."
           }
         }
       }
@@ -8496,7 +8484,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "These do this while %@ is in front; everything else does what Buttons says."
+            "value": "In %@, these do this. Everything else works as set in Buttons."
           }
         }
       }
@@ -10773,6 +10761,78 @@
           "stringUnit": {
             "state": "translated",
             "value": "Change Scrolling in %@"
+          }
+        }
+      }
+    },
+    "buttons-default-with": {
+      "comment": "Buttons pane: a button without an action, with what it then does in parentheses (\"Default (Back)\"); %@ is that effect",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default (%@)"
+          }
+        }
+      }
+    },
+    "buttons-default-effect-back": {
+      "comment": "Buttons pane: what the Back button does without an action, in \"Default (…)\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back"
+          }
+        }
+      }
+    },
+    "buttons-default-effect-forward": {
+      "comment": "Buttons pane: what the Forward button does without an action, in \"Default (…)\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward"
+          }
+        }
+      }
+    },
+    "buttons-default-effect-middle": {
+      "comment": "Buttons pane: what the middle button does without an action, in \"Default (…)\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Middle Click"
+          }
+        }
+      }
+    },
+    "apps-buttons-same-as-other-apps": {
+      "comment": "An app's Buttons part: first item of a row's action menu, which gives the button back to Buttons; %@ is what it does in other apps",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Same as Other Apps (%@)"
+          }
+        }
+      }
+    },
+    "buttons-trigger-choice-recorded-replaces": {
+      "comment": "Gestures and Shortcut Ring panes: under the button \"Record a Button…\" caught, when it takes the place of what that button does now; %@ is that action",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replaces: %@"
           }
         }
       }

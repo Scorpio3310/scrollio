@@ -33,6 +33,8 @@ class KeyPopover: NSObject, NSPopoverDelegate {
         case duplicate
         /// Refused for another reason, as the recorder's delegate says it.
         case refused(String)
+        /// Recorded, and what taking it changes, as the recorder's delegate says it.
+        case note(String)
 
         var localizedText: String {
             switch self {
@@ -40,7 +42,7 @@ class KeyPopover: NSObject, NSPopoverDelegate {
                 return NSLocalizedString("Press ESC to cancel recording", comment: "ESC hint in key recording popover")
             case .duplicate:
                 return NSLocalizedString("button-recording-duplicate-hint", comment: "Duplicate key hint in key recording popover")
-            case .refused(let reason):
+            case .refused(let reason), .note(let reason):
                 return reason
             }
         }
@@ -247,6 +249,15 @@ class KeyPopover: NSObject, NSPopoverDelegate {
     /// A refused event: `reason` (already localized), or "Duplicate key" when nil.
     func showRefusalHint(_ reason: String?) {
         showHint(reason.map { .refused($0) } ?? .duplicate)
+    }
+
+    /// A recorded press: `note` (already localized, "Replaces: Copy") on the line under the
+    /// keys, which a recorded press otherwise leaves empty; said to VoiceOver.
+    func showRecordedNote(_ note: String) {
+        guard let label = hintLabel else { return }
+        label.alphaValue = 1
+        label.setAccessibilityElement(true)
+        showHint(.note(note))
     }
 
     /// The key slot shows a recorded press (green): the line under it goes, since

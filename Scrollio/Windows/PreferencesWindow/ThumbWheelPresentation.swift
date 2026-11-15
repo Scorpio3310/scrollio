@@ -65,9 +65,11 @@ enum ThumbWheelPresentation {
     }
 
     /// The Buttons pane shows the default function (scroll) as its other rows show a button
-    /// without an action: "Default". Every other function by its name.
+    /// without an action, with what it does: "Default (Scroll Sideways)". Every other
+    /// function by its name.
     static func buttonsTitle(for function: ThumbWheelFunction) -> String {
-        return function == .scroll ? NSLocalizedString("buttons-default", comment: "") : function.localizedName
+        guard function == .scroll else { return function.localizedName }
+        return String(format: NSLocalizedString("buttons-default-with", comment: ""), function.localizedName)
     }
 
     /// The symbol before the Buttons pane's title: none for "Default", as on the other rows.
@@ -76,7 +78,7 @@ enum ThumbWheelPresentation {
     }
 
     /// A menu item that picks `function`: its symbol and its name (in the Buttons pane the
-    /// default reads "Default", without a symbol), `function.rawValue` as its represented
+    /// default reads "Default (Scroll Sideways)", without a symbol), `function.rawValue` as its represented
     /// object. macOS 27 is asked to keep the symbol (`keepImageVisible`).
     static func menuItem(
         for function: ThumbWheelFunction,

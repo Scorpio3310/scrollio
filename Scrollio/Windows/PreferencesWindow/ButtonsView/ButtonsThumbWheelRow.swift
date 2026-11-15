@@ -4,9 +4,10 @@
 //  The thumb wheel's row of the Buttons pane (an MX Master 4, 3 or 3S, after the mode shift
 //  button: ButtonsListLayout). It is no button and has no binding: its pull-down picks what
 //  the sideways wheel does (ThumbWheelFunction, the same value as Scrolling › Thumb wheel),
-//  with "Default" for scrolling sideways, as the rows of the buttons say "Default" for what
-//  a button does by itself. The small picture lights the thumb wheel; the line under the
-//  title says what a turn does. No recorder, no ⓘ, never removed with "−". Whoever owns the
+//  with "Default (Scroll Sideways)" for scrolling sideways, as the rows of the buttons say
+//  "Default (Back)" for what a button does by itself. The small picture lights the thumb
+//  wheel; the line under the title says what a turn of another function does (on Default the
+//  title says it, and the pull-down's tooltip). No recorder, no ⓘ, never removed with "−". Whoever owns the
 //  row stores the choice (`onFunctionSelected`) and shows the stored value (`update`). The
 //  menu ends with "Thumb Wheel Settings…" (`onSettingsRequested`), which opens Scrolling ›
 //  Thumb wheel, as "Show Gesture Settings" opens the Gestures pane.
@@ -17,7 +18,7 @@ import Cocoa
 // MARK: - The pull-down
 
 /// The six functions of the thumb wheel in a pull-down as wide as the buttons' action
-/// pull-downs, so the column lines up: "Default" (scrolls sideways), then the others with
+/// pull-downs, so the column lines up: "Default (Scroll Sideways)", then the others with
 /// their symbols. The one in use is ticked. Choosing one only reports it. Last,
 /// "Thumb Wheel Settings…", which changes nothing and only asks for the settings.
 final class ThumbWheelPullDown: NSPopUpButton {
@@ -29,6 +30,36 @@ final class ThumbWheelPullDown: NSPopUpButton {
     var onFunctionSelected: ((ThumbWheelFunction) -> Void)?
     /// "Thumb Wheel Settings…" was chosen.
     var onSettingsRequested: (() -> Void)?
+    /// "Same as Other Apps (…)" was chosen (an app's Buttons part).
+    var onSameAsOtherApps: (() -> Void)?
+    /// The title of "Same as Other Apps (Zoom)", the first item of the menu (an app's
+    /// Buttons part), with a separator after it; nil: no such item.
+    var sameAsOtherAppsTitle: String? {
+        didSet {
+            guard sameAsOtherAppsTitle != oldValue, let menu else { return }
+            if let item = sameAsOtherAppsItem {
+                if let title = sameAsOtherAppsTitle {
+                    item.title = title
+                } else {
+                    let index = menu.index(of: item)
+                    menu.removeItem(at: index + 1)  // (its separator)
+                    menu.removeItem(at: index)
+                }
+            } else if let title = sameAsOtherAppsTitle {
+                let item = NSMenuItem(title: title, action: #selector(sameAsOtherAppsChosen(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = ButtonActionPullDown.sameAsOtherAppsMarker
+                // (Item 0 is the title.)
+                menu.insertItem(.separator(), at: 1)
+                menu.insertItem(item, at: 1)
+            }
+        }
+    }
+
+    /// "Same as Other Apps (…)", while there is one.
+    var sameAsOtherAppsItem: NSMenuItem? {
+        return menu?.items.first { ($0.representedObject as? String) == ButtonActionPullDown.sameAsOtherAppsMarker }
+    }
 
     /// What the pull-down shows.
     private(set) var function: ThumbWheelFunction
@@ -81,11 +112,18 @@ final class ThumbWheelPullDown: NSPopUpButton {
         return menu?.items.first { ($0.representedObject as? String) == Self.settingsMarker }
     }
 
-    /// Shows `function` in the title and ticks its item. Sends nothing.
+    /// Shows `function` in the title and ticks its item. Sends nothing. "Default (Scroll
+    /// Sideways)" has its parenthesis in grey, and its sentence in the tooltip, as a button's
+    /// "Default (Back)".
     func show(_ function: ThumbWheelFunction) {
         self.function = function
         guard let titleItem = menu?.items.first else { return }
-        titleItem.title = ThumbWheelPresentation.buttonsTitle(for: function)
+        let title = ThumbWheelPresentation.buttonsTitle(for: function)
+        titleItem.title = title
+        titleItem.attributedTitle = function == .scroll
+            ? ButtonActionPullDown.defaultAttributedTitle(title, font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize))
+            : nil
+        toolTip = function == .scroll ? function.localizedHint : nil
         titleItem.image = ThumbWheelPresentation.buttonsImage(for: function)
         for item in functionItems {
             item.state = ThumbWheelPresentation.function(of: item) == function ? .on : .off
@@ -103,6 +141,12 @@ final class ThumbWheelPullDown: NSPopUpButton {
     @objc func settingsChosen(_ sender: NSMenuItem) {
         show(function)
         onSettingsRequested?()
+    }
+
+    /// The title stays the function's until the row goes.
+    @objc func sameAsOtherAppsChosen(_ sender: NSMenuItem) {
+        show(function)
+        onSameAsOtherApps?()
     }
 }
 
@@ -126,14 +170,16 @@ final class ButtonsThumbWheelRow: PreferencesListRow {
         super.init(
             id: ButtonsListLayout.thumbWheelRowID,
             title: ThumbWheelPresentation.title,
-            explanation: function.localizedHint,
+            explanation: Self.explanation(for: function),
             icon: .image(ButtonsMouseMiniature.image(lighting: .thumbWheel, mouse: mouse, highlighted: false)),
             accessory: pullDown,
             centeredOn: pullDown,
             controls: [pullDown]
         )
-        // Every function's line has room, so choosing one never changes the height.
-        reservedExplanations = ThumbWheelFunction.allCases.map(\.localizedHint)
+        // Every function's line has room, so choosing one never changes the height of a
+        // line that shows.
+        reservedExplanations = ThumbWheelFunction.allCases.compactMap(Self.explanation(for:))
+        applyHelp()
         // The thumb wheel is part of the mouse: it is never removed.
         isRemovable = false
         applyEnabled()
@@ -148,18 +194,33 @@ final class ButtonsThumbWheelRow: PreferencesListRow {
         return pullDown.function
     }
 
+    /// The line under the title: what a turn does; none on "Default (Scroll Sideways)",
+    /// which says it.
+    static func explanation(for function: ThumbWheelFunction) -> String? {
+        return function == .scroll ? nil : function.localizedHint
+    }
+
     /// Shows `function` on `mouse`; the row and its pull-down stay the same views. Sends
     /// nothing and stores nothing.
     func update(function: ThumbWheelFunction, mouse: MouseArtworkModel) {
         if pullDown.function != function {
             pullDown.show(function)
         }
-        if explanation != function.localizedHint {
-            explanation = function.localizedHint
+        if explanation != Self.explanation(for: function) {
+            explanation = Self.explanation(for: function)
         }
+        applyHelp()
         if self.mouse != mouse {
             self.mouse = mouse
             applyEnabled()
+        }
+    }
+
+    /// Without a line, VoiceOver hears what "Default (Scroll Sideways)" does as the
+    /// pull-down's help, as its tooltip says it.
+    private func applyHelp() {
+        if explanation == nil, let sentence = pullDown.toolTip {
+            pullDown.setAccessibilityHelp(sentence)
         }
     }
 

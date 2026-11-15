@@ -73,6 +73,11 @@ protocol KeyRecorderDelegate: AnyObject {
     /// a recorded key combination); the recorder lets go of it and is free for the next
     /// recording at once. False (the default): the recorder closes it, as ever.
     func takesPopover(_ recorder: KeyRecorder, _ popover: KeyPopover) -> Bool
+
+    /// A line the popover shows under a press it recorded (not one it refused), for as long
+    /// as it still shows it: what taking the press changes ("Replaces: Copy"). Nil (the
+    /// default): none, and the line under the keys goes as ever.
+    func recordedNote(_ recorder: KeyRecorder, event: InputEvent) -> String?
 }
 
 /// 默认实现 (替代 @objc optional 语义)
@@ -95,6 +100,10 @@ extension KeyRecorderDelegate {
 
     func takesPopover(_ recorder: KeyRecorder, _ popover: KeyPopover) -> Bool {
         return false
+    }
+
+    func recordedNote(_ recorder: KeyRecorder, event: InputEvent) -> String? {
+        return nil
     }
 }
 
@@ -684,9 +693,14 @@ class KeyRecorder: NSObject {
         if isDuplicate {
             keyPopover?.showRefusalHint(self.delegate?.refusalHint(self, event: inputEvent))
         }
+        // A note is read as long as a refusal is.
+        let note = isNew ? self.delegate?.recordedNote(self, event: inputEvent) : nil
+        if let note {
+            keyPopover?.showRecordedNote(note)
+        }
         self.delegate?.onEventRecorded(self, didRecordEvent: inputEvent, isDuplicate: isDuplicate)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.recordingFeedbackDelay(isDuplicate: isDuplicate)) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.recordingFeedbackDelay(isDuplicate: isDuplicate || note != nil)) { [weak self] in
             self?.stopRecording()
         }
     }

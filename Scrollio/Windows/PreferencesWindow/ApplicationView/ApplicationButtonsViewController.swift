@@ -3,10 +3,11 @@
 //  Scrollio
 //
 //  The Buttons part of an app's page: only the buttons and keys that do something else
-//  while the app is in front (`ApplicationButtons`); every other button does what the
-//  Buttons pane says. Each row is a row of the Buttons pane (where the button is, its name,
-//  the action pull-down with "Default" for "does what it does by itself here"), with a
-//  second line that says what it does everywhere else. "+" offers the buttons of the
+//  in the app (`ApplicationButtons`); every other button works as set in Buttons. Each row
+//  is a row of the Buttons pane (where the button is, its name, the action pull-down with
+//  "Default (Back)" for "does what it does by itself here"), with a second line that says
+//  what it does in other apps ("In other apps: Mission Control"). Its menu starts with
+//  "Same as Other Apps (Mission Control)", which does what "−" does. "+" offers the buttons of the
 //  connected mouse, "Record a Button or Key…" (the Buttons pane's recorder) and the
 //  buttons the Buttons pane has an action for; a new row starts with the action it has
 //  everywhere, and its menu opens. "−" (or Delete) gives the button back to Buttons, and
@@ -147,9 +148,6 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         list.onRemove = { [weak self] id in
             if id == ButtonsListLayout.thumbWheelRowID { self?.removeOwnThumbWheel(); return }  // (ApplicationThumbWheelRow.swift)
             guard let self, let id = id as? UUID else { return }
-            // A name still typed in the row's popover goes into the binding first, so that
-            // Undo brings it back with the row.
-            self.withoutUndoRegistration { self.row(for: id)?.pullDown.cancelShortcutRecording() }
             self.removeOwnBinding(id: id)
         }
         list.onOpen = { [weak self] id in
@@ -198,9 +196,9 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         reloadRows()
     }
 
-    /// The line under the list: with rows, that every other button does what Buttons
-    /// says (with the thumb wheel's row among them, said of "these" and "everything else":
-    /// the wheel is no button); without (the list says that already), how to add one.
+    /// The line under the list: with rows, that every other button works as set in Buttons
+    /// (with the thumb wheel's row among them, said of "these" and "everything else": the
+    /// wheel is no button); without (the list says that already), how to add one.
     static func note(for name: String, isEmpty: Bool = false, listsThumbWheel: Bool = false) -> String {
         let key = isEmpty ? "apps-buttons-note-empty" : listsThumbWheel ? "apps-buttons-note-thumb-wheel" : "apps-buttons-note"
         return String(format: NSLocalizedString(key, comment: ""), name)
@@ -273,16 +271,21 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         let titles = ButtonTriggerNaming.titles(for: own.map(\.triggerEvent))
         let old = rows
         var shown: [ButtonBindingRow] = []
+        // What the app's bindings with an action catch while it is in front.
+        let catching = ApplicationButtons.merged(general: general, own: own).filter { CellActionState(binding: $0).hasBoundAction }
         for (index, binding) in own.enumerated() {
             let title = titles[index]
-            let note = everywhereNote(for: binding, general: general)
+            let elsewhere = otherApps(for: binding.triggerEvent, general: general)
+            let note = ButtonRowNote(kind: .everywhere, text: String(format: text("apps-buttons-everywhere"), elsewhere.title))
+            let effect = Self.ownDefaultEffect(of: binding.triggerEvent, catching: catching)
             let row: ButtonBindingRow
             if let existing = old.first(where: { $0.id == AnyHashable(binding.id) }) {
-                existing.update(binding: binding, title: title, note: note, mouse: mouse, isStored: false)
+                existing.update(binding: binding, title: title, note: note, mouse: mouse, isStored: false, defaultEffect: effect)
                 row = existing
             } else {
-                row = makeRow(for: binding, title: title, note: note)
+                row = makeRow(for: binding, title: title, note: note, defaultEffect: effect)
             }
+            row.pullDown.sameAsOtherAppsTitle = String(format: text("apps-buttons-same-as-other-apps"), elsewhere.bracket)
             shown.append(row)
         }
         rows = shown
@@ -300,15 +303,44 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         }
     }
 
-    /// "Everywhere: Mission Control": what the button does in every other app, named as
-    /// the Buttons pane names it ("Shortcut Ring" and "Gesture Navigation" too).
-    func everywhereNote(for binding: ButtonBinding, general: [ButtonBinding]) -> ButtonRowNote {
-        let generalBinding = ApplicationButtons.generalBinding(for: binding.triggerEvent, in: general)
-        let action = generalBinding.flatMap { $0.isEnabled ? resolver.actionName(of: $0) : nil } ?? text("buttons-default")
-        return ButtonRowNote(kind: .everywhere, text: String(format: text("apps-buttons-everywhere"), action))
+    /// What a press of `trigger` does in other apps, named as the Buttons pane names it
+    /// ("Shortcut Ring" and "Gesture Navigation" too): the action of the binding of Buttons
+    /// it goes by, else "Default", with what that does where it is certain.
+    struct OtherApps: Equatable {
+        /// The action's name; nil: "Default".
+        let action: String?
+        /// What "Default" does there, where that is certain.
+        let effect: ButtonsMousePart?
+
+        /// "Mission Control", "Default (Back)", "Default": the row's line. "Default (Switch
+        /// Wheel Mode)" is kept on one line (no-break spaces), as one name.
+        var title: String {
+            return action ?? ButtonsMousePart.defaultTitle(effect: effect).replacingOccurrences(of: " ", with: "\u{A0}")
+        }
+
+        /// "Mission Control", "Back", "Default": the parenthesis of "Same as Other Apps (…)".
+        var bracket: String {
+            return action ?? effect?.defaultEffectName ?? NSLocalizedString("buttons-default", comment: "")
+        }
     }
 
-    private func makeRow(for binding: ButtonBinding, title: String, note: ButtonRowNote) -> ButtonBindingRow {
+    func otherApps(for trigger: RecordedEvent, general: [ButtonBinding]) -> OtherApps {
+        let generalBinding = ApplicationButtons.generalBinding(for: trigger, in: general)
+        if let action = generalBinding.flatMap({ $0.isEnabled ? resolver.actionName(of: $0) : nil }) {
+            return OtherApps(action: action, effect: nil)
+        }
+        let caught = ButtonsListLayout.plainPart(of: trigger).map { ButtonsListLayout.catchesControl(of: $0, in: general) } ?? false
+        return OtherApps(action: nil, effect: ButtonsMousePart.defaultEffect(of: trigger, isCaught: caught))
+    }
+
+    /// What the app's own "Default" on `trigger` does in the app, where that is certain:
+    /// `catching` are the bindings with an action while the app is in front.
+    static func ownDefaultEffect(of trigger: RecordedEvent, catching: [ButtonBinding]) -> ButtonsMousePart? {
+        let caught = ButtonsListLayout.plainPart(of: trigger).map { ButtonsListLayout.catchesControl(of: $0, in: catching) } ?? false
+        return ButtonsMousePart.defaultEffect(of: trigger, isCaught: caught, isAppsOwn: true)
+    }
+
+    private func makeRow(for binding: ButtonBinding, title: String, note: ButtonRowNote, defaultEffect: ButtonsMousePart?) -> ButtonBindingRow {
         let id = binding.id
         let pullDown = ButtonActionPullDown(binding: binding)
         pullDown.onShortcutSelected = { [weak self] shortcut in
@@ -324,11 +356,15 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         pullDown.onGestureSettingsRequested = { [weak self] in
             self?.onGestureSettingsRequested?()
         }
-        // (No place menu here: where a numbered button is, the Buttons pane says.)
-        let row = ButtonBindingRow(binding: binding, title: title, note: note, mouse: mouse, pullDown: pullDown, isStored: false)
-        // Without an action the button does what it does by itself here: "Default".
-        pullDown.offersDefault = true
-        return row
+        // "Same as Other Apps (…)": what "−" does.
+        pullDown.onSameAsOtherApps = { [weak self] in
+            self?.removeOwnBinding(id: id, undoName: NSLocalizedString("buttons-undo-change-action", comment: ""))
+        }
+        // (No place menu here: where a numbered button is, the Buttons pane says.) Without
+        // an action the button does what it does by itself here: "Default".
+        return ButtonBindingRow(
+            binding: binding, title: title, note: note, mouse: mouse, pullDown: pullDown, isStored: false, defaultEffect: defaultEffect
+        )
     }
 
     // MARK: - Changing
@@ -552,7 +588,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     }
 
     /// A new binding of the app's own for `trigger`, with the action a press of it has
-    /// everywhere, the one its "Everywhere" line names (`everywhereNote`): the general
+    /// everywhere, the one its "In other apps" line names (`otherApps`): the general
     /// binding of that trigger, else the one such a press matches (a button bound without
     /// modifier keys runs with them too), the Shortcut Ring and Gesture Navigation too;
     /// "Default" when there is none.
@@ -573,13 +609,19 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         return paneUndoManager ?? view.window?.undoManager ?? pageUndoManager?()
     }
 
-    /// Gives the button back to Buttons; the window's Undo takes it again.
-    func removeOwnBinding(id: UUID) {
+    /// Gives the button back to Buttons; the window's Undo takes it again. `undoName`:
+    /// what Edit › Undo calls it ("Remove Button" when nil; "Change Action" for "Same as
+    /// Other Apps").
+    func removeOwnBinding(id: UUID, undoName: String? = nil) {
         let showing = partShowing ?? { [weak self] entry in
             self?.application === entry ? self : nil
         }
+        // A name still typed in the row's popover goes into the binding first, so that Undo
+        // brings it back with the row.
+        withoutUndoRegistration { row(for: id)?.pullDown.cancelShortcutRecording() }
         Self.removeOwnBinding(
-            id: id, of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange
+            id: id, of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange,
+            undoName: undoName ?? NSLocalizedString("buttons-undo-remove", comment: "")
         )
     }
 
@@ -590,7 +632,8 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// `listDidChange` tells the list of apps (its marks). Neither holds the page.
     private static func removeOwnBinding(
         id: UUID, of application: Application, undoManager undo: UndoManager?,
-        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?
+        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?,
+        undoName: String
     ) {
         var own = application.ownButtonBindings
         guard let index = own.firstIndex(where: { $0.id == id }) else { return }
@@ -602,14 +645,17 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         let path = application.path
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
             guard let entry = Self.entry(storedAs: path) else { return }
-            Self.restoreOwnBinding(removed, at: index, of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange)
+            Self.restoreOwnBinding(
+                removed, at: index, of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange, undoName: undoName
+            )
         }
-        undo.setActionName(NSLocalizedString("buttons-undo-remove", comment: ""))
+        undo.setActionName(undoName)
     }
 
     private static func restoreOwnBinding(
         _ binding: ButtonBinding, at index: Int, of application: Application, undoManager undo: UndoManager?,
-        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?
+        showing: @escaping (Application) -> ApplicationButtonsViewController?, listDidChange: (() -> Void)?,
+        undoName: String
     ) {
         var own = application.ownButtonBindings
         if let existing = own.first(where: { $0.identity == binding.identity }) {
@@ -625,9 +671,11 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         let path = application.path
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
             guard let entry = Self.entry(storedAs: path) else { return }
-            Self.removeOwnBinding(id: binding.id, of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange)
+            Self.removeOwnBinding(
+                id: binding.id, of: entry, undoManager: undo, showing: showing, listDidChange: listDidChange, undoName: undoName
+            )
         }
-        undo.setActionName(NSLocalizedString("buttons-undo-remove", comment: ""))
+        undo.setActionName(undoName)
     }
 
     // MARK: - Reset to Defaults, with Undo

@@ -1031,10 +1031,13 @@ final class PreferencesKeyboardAccessibilityTests: XCTestCase {
                 steps += 1
             }
             XCTAssertEqual(chain.count, wanted.count, "\(identifier): Tab reaches every control")
-            // By their top edges: a list comes before the controls in its rows.
+            // By their top edges: a list comes before the controls in its rows. Two controls
+            // side by side are on one line: their tops nearly level, or one beside the other
+            // (a row's picture is centred on a row of two lines, its pull-down on the title).
             let frames = chain.map { $0.convert($0.bounds, to: nil) }
             for (above, below) in zip(frames, frames.dropFirst()) {
-                let sameLine = abs(above.maxY - below.maxY) < 8
+                let beside = above.maxX <= below.minX && above.minY < below.maxY && below.minY < above.maxY
+                let sameLine = abs(above.maxY - below.maxY) < 8 || beside
                 XCTAssertTrue(sameLine ? above.minX < below.minX : above.maxY > below.maxY,
                               "\(identifier): \(above) before \(below)")
             }

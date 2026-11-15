@@ -5,8 +5,15 @@
 //  action as the pull-downs of the Gestures pane do (a symbol and a name), and opens the
 //  menu of ShortcutManager. "Open App or File…", "Keyboard Shortcut…" and "Show Gesture
 //  Settings" are handed to the pane (or recorded here); every other item binds directly.
-//  On a button of the connected mouse (`offersDefault`) "No Action" is "Default": the
-//  button keeps doing what it does by itself, and the pane removes its binding.
+//  On every row of Buttons (`offersDefault`) "No Action" is "Default": the button or key
+//  keeps doing what it does by itself (a press without an action is passed on), and the
+//  pane removes the binding of a button of the connected mouse. Where what it then does is
+//  certain the title and the item say it in parentheses, "Default (Back)" (`defaultEffect`,
+//  the parenthesis in grey in the title), and the pull-down's tooltip has its sentence
+//  ("Goes back in apps that support it.").
+//
+//  On an app's Buttons part the menu starts with "Same as Other Apps (Mission Control)"
+//  (`sameAsOtherAppsTitle`, `onSameAsOtherApps`): the button follows Buttons there again.
 //
 //  "Keyboard Shortcut…" and a name: a recorded key combination can be called something
 //  and given an icon (`ShortcutLabel`). After a recording that caught one, the recorder's
@@ -60,17 +67,35 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     var onOpenTargetSelectionRequested: (() -> Void)?
     /// "Show Gesture Settings" was chosen.
     var onGestureSettingsRequested: (() -> Void)?
+    /// "Same as Other Apps (…)" was chosen (an app's Buttons part).
+    var onSameAsOtherApps: (() -> Void)?
 
     // MARK: State
 
     private(set) var binding: ButtonBinding
     /// The pull-down reads "Default" without an action, and its menu offers "Default"
-    /// where it offers "No Action" (nil, as "No Action"): a button of the connected mouse.
-    var offersDefault = false {
+    /// where it offers "No Action" (nil, as "No Action"): every row of Buttons, and of an
+    /// app's Buttons part. The Shortcut Ring's places and the Gestures pane's directions say
+    /// "No Action".
+    var offersDefault: Bool {
+        return use == .binding
+    }
+    /// What "Default" does where that is certain, named in its parentheses ("Default
+    /// (Back)"); nil: "Default". The owner of the row works it out
+    /// (`ButtonsMousePart.defaultEffect`).
+    var defaultEffect: ButtonsMousePart? {
         didSet {
-            guard offersDefault != oldValue else { return }
+            guard defaultEffect != oldValue else { return }
             applyNoActionTitle()
             refreshActionDisplay()
+        }
+    }
+    /// The title of "Same as Other Apps (Mission Control)", the first item of the menu (an
+    /// app's Buttons part); nil: no such item.
+    var sameAsOtherAppsTitle: String? {
+        didSet {
+            guard sameAsOtherAppsTitle != oldValue else { return }
+            applySameAsOtherApps()
         }
     }
     private var isCustomRecordingActive = false
@@ -186,6 +211,7 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         disableKeyEquivalents(in: menu)
         self.menu = menu
         applyNoActionTitle()
+        applySameAsOtherApps()
     }
 
     /// The item that clears the action ("No Action", or "Default").
@@ -195,8 +221,61 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         }
     }
 
+    /// What the pull-down and its item say without an action: "Default (Back)" or
+    /// "Default" (`defaultEffect`).
+    var defaultTitle: String {
+        return ButtonsMousePart.defaultTitle(effect: defaultEffect)
+    }
+
     private func applyNoActionTitle() {
-        noActionItem?.title = NSLocalizedString(offersDefault ? "buttons-default" : "unbound", comment: "")
+        noActionItem?.title = offersDefault ? defaultTitle : NSLocalizedString("unbound", comment: "")
+    }
+
+    /// What the "Same as Other Apps (…)" item carries.
+    static let sameAsOtherAppsMarker = "same-as-other-apps"
+
+    /// "Same as Other Apps (…)", while there is one.
+    var sameAsOtherAppsItem: NSMenuItem? {
+        return menu?.items.first { $0.representedObject as? String == Self.sameAsOtherAppsMarker }
+    }
+
+    /// Puts "Same as Other Apps (…)" and a separator before "Default", or takes them away.
+    private func applySameAsOtherApps() {
+        guard let menu else { return }
+        if let item = sameAsOtherAppsItem {
+            let index = menu.index(of: item)
+            if let title = sameAsOtherAppsTitle {
+                item.title = title
+                return
+            }
+            menu.removeItem(at: index + 1)  // (its separator)
+            menu.removeItem(at: index)
+            return
+        }
+        guard let title = sameAsOtherAppsTitle, let noAction = noActionItem else { return }
+        let item = NSMenuItem(title: title, action: #selector(sameAsOtherAppsChosen(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = Self.sameAsOtherAppsMarker
+        let index = menu.index(of: noAction)
+        menu.insertItem(.separator(), at: index)
+        menu.insertItem(item, at: index)
+    }
+
+    @objc func sameAsOtherAppsChosen(_ sender: NSMenuItem) {
+        // (The row goes; until then it shows what it had.)
+        refreshActionDisplay()
+        onSameAsOtherApps?()
+    }
+
+    /// "Default (Back)" with the parenthesis in grey, in `font`; nil for a title without
+    /// one. The plain text is the same, for VoiceOver.
+    static func defaultAttributedTitle(_ title: String, font: NSFont) -> NSAttributedString? {
+        let base = NSLocalizedString("buttons-default", comment: "")
+        guard title.count > base.count, title.hasPrefix(base) else { return nil }
+        let text = NSMutableAttributedString(string: title, attributes: [.font: font])
+        let rest = NSRange(title.index(title.startIndex, offsetBy: base.count)..<title.endIndex, in: title)
+        text.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: rest)
+        return text
     }
 
     /// The "Gesture Navigation" item of the menu.
@@ -224,13 +303,20 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     func refreshActionDisplay() {
         guard let titleItem = menu?.items.first else { return }
         var presentation = resolver.resolve(state: actionState)
-        if offersDefault, presentation.kind == .unbound {
-            presentation = ActionPresentation(kind: .unbound, title: NSLocalizedString("buttons-default", comment: ""))
+        let font = self.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let showsDefault = offersDefault && presentation.kind == .unbound
+        if showsDefault {
+            presentation = ActionPresentation(kind: .unbound, title: defaultTitle)
         }
-        // (A named keyboard shortcut: its name, then its keys in grey. The plain title
-        // holds both, for VoiceOver.)
+        // (A named keyboard shortcut: its name, then its keys in grey; "Default (Back)": the
+        // parenthesis in grey. The plain title holds it all, for VoiceOver.)
         titleItem.title = presentation.plainTitle
-        titleItem.attributedTitle = presentation.attributedTitle(font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize))
+        titleItem.attributedTitle = showsDefault
+            ? Self.defaultAttributedTitle(presentation.title, font: font)
+            : presentation.attributedTitle(font: font)
+        // What "Default" does, in a sentence, where that is certain: the line under the row
+        // said it before.
+        toolTip = showsDefault ? defaultEffect.map { NSLocalizedString($0.defaultExplanationKey, comment: "") } : nil
         if let image = presentation.image {
             let sized = image.copy() as? NSImage ?? image
             sized.size = NSSize(width: Self.imageSize, height: Self.imageSize)
