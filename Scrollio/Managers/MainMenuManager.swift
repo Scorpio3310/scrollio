@@ -456,8 +456,6 @@ final class MainMenuManager: NSObject {
         guard let preferences, !preferences.hasSheet(),
               let general = preferences.selectedController as? PreferencesGeneralViewController
         else { return }
-        // A window made for the item has not been laid out yet.
-        preferences.view.window?.layoutIfNeeded()
         general.revealUpdates()
     }
 

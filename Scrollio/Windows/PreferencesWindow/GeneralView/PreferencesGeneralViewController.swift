@@ -681,6 +681,8 @@ class PreferencesGeneralViewController: NSViewController {
     /// update itself, where the box says why (`MainMenuManager.revealUpdates(in:)`).
     func revealUpdates() {
         guard isViewLoaded else { return }
+        // Solves the whole window: one just made for the item, or resized since its last
+        // layout, scrolls by its real height.
         view.layoutSubtreeIfNeeded()
         guard let scrollView = updatesSection.enclosingScrollView,
               let document = scrollView.documentView, document.isFlipped else {

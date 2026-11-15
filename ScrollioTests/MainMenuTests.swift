@@ -870,21 +870,27 @@ final class PreferencesPaneSelectionTests: XCTestCase {
         XCTAssertTrue(try updatesBox(in: preferences).inView)
     }
 
-    /// A Settings window made for the item: the pane and the box are asked for before the
-    /// window was ever laid out, at the height it opens with.
-    func testAWindowJustMadeShowsTheBoxWithoutALayoutFirst() throws {
-        let preferences = try makePreferences()
-        let window = try XCTUnwrap(preferences.view.window)
-        let width = window.contentRect(forFrameRect: window.frame).width
-        window.setContentSize(NSSize(width: width, height: PreferencesWindowLayout.minimumContentHeight))
-        // What the item does in a window just made: the pane, then the box.
-        XCTAssertTrue(preferences.showPaneFromMenu(PANEL_IDENTIFIER.general))
-        MainMenuManager.revealUpdates(in: preferences)
-        window.contentView?.layoutSubtreeIfNeeded()
-        let shown = try updatesBox(in: preferences)
-        XCTAssertTrue(shown.inView)
-        XCTAssertTrue(abs(shown.fromTop - PreferencesGroupedForm.margin) < 1 || shown.atEnd, "\(shown)")
-        XCTAssertGreaterThan(try XCTUnwrap(preferences.host.scrollView).contentView.bounds.minY, 0, "it moved")
+    /// The pane and the box are asked for in a window not laid out at its new height: one
+    /// just made for the item (on another pane), and one already on General (the pane is
+    /// not shown anew, only scrolled to its top).
+    func testTheBoxIsShownInAWindowNotLaidOutAtItsHeight() throws {
+        for generalFirst in [false, true] {
+            let preferences = try makePreferences()
+            let window = try XCTUnwrap(preferences.view.window)
+            if generalFirst {
+                XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+            }
+            let width = window.contentRect(forFrameRect: window.frame).width
+            window.setContentSize(NSSize(width: width, height: PreferencesWindowLayout.minimumContentHeight))
+            // What the item does: the pane, then the box.
+            XCTAssertTrue(preferences.showPaneFromMenu(PANEL_IDENTIFIER.general))
+            MainMenuManager.revealUpdates(in: preferences)
+            window.contentView?.layoutSubtreeIfNeeded()
+            let shown = try updatesBox(in: preferences)
+            XCTAssertTrue(shown.inView, "General first: \(generalFirst)")
+            XCTAssertTrue(abs(shown.fromTop - PreferencesGroupedForm.margin) < 1 || shown.atEnd, "\(generalFirst): \(shown)")
+            XCTAssertGreaterThan(try XCTUnwrap(preferences.host.scrollView).contentView.bounds.minY, 0, "it moved")
+        }
     }
 }
 
