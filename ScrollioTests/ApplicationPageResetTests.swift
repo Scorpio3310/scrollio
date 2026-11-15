@@ -555,7 +555,7 @@ final class ApplicationPageResetTests: XCTestCase {
         XCTAssertNil(calculator.buttons, "nothing is stored")
         XCTAssertTrue(part.rows.isEmpty)
         XCTAssertNil(part.thumbWheelRow)
-        XCTAssertEqual(part.noteLabel.stringValue, "Click + to give a button something else to do while Calculator is in front.")
+        XCTAssertEqual(part.noteLabel.stringValue, Self.catalog("apps-buttons-note-empty", "Calculator"))
         XCTAssertEqual(Options.shared.buttons.binding, general, "Buttons is untouched")
         XCTAssertEqual(marks(in: pane), [], "the list's mark goes")
         XCTAssertEqual(part.resetToDefaultsButton.title, "Undo")

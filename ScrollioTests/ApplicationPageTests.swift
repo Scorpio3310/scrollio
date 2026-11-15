@@ -1104,7 +1104,7 @@ final class ApplicationPageTests: XCTestCase {
         let (_, part) = try buttonsPart()
 
         XCTAssertEqual(part.rows.count, 2, "the app's own rows only")
-        XCTAssertEqual(part.rows.map(\.explanation), ["Everywhere: Mission Control", "Everywhere: Default"])
+        XCTAssertEqual(part.rows.map(\.explanation), [Self.catalog("apps-buttons-everywhere", "Mission Control"), Self.catalog("apps-buttons-everywhere", "Default")])
         XCTAssertEqual(part.rows[0].pullDown.menu?.items.first?.title, SystemShortcut.appExpose.localizedName)
         XCTAssertEqual(part.rows[1].pullDown.menu?.items.first?.title, "Default")
         XCTAssertEqual(part.rows[1].pullDown.noActionItem?.title, "Default")
@@ -1112,7 +1112,7 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertTrue(part.rows.allSatisfy { $0.placeButton.isHidden }, "where a button is, Buttons says")
         XCTAssertEqual(part.list.rowsView.accessibilityLabel(), "Own buttons")
         XCTAssertEqual(part.noteLabel.stringValue,
-                       "These buttons do this while Calculator is in front; every other button does what Buttons says.")
+                       Self.catalog("apps-buttons-note", "Calculator"))
     }
 
     /// An app without buttons of its own: the list says in one line that every button does
@@ -1122,12 +1122,12 @@ final class ApplicationPageTests: XCTestCase {
         addApp(Self.calculator)
         let (_, part) = try buttonsPart()
         XCTAssertTrue(part.rows.isEmpty)
-        XCTAssertEqual(part.list.emptyRow.title, "Every button does what Buttons says.")
+        XCTAssertEqual(part.list.emptyRow.title, Self.catalog("apps-buttons-empty"))
         XCTAssertNil(part.list.emptyRow.explanation, "one line")
-        XCTAssertEqual(part.noteLabel.stringValue, "Click + to give a button something else to do while Calculator is in front.")
+        XCTAssertEqual(part.noteLabel.stringValue, Self.catalog("apps-buttons-note-empty", "Calculator"))
         part.addOwnBinding(for: RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil))
         XCTAssertEqual(part.noteLabel.stringValue,
-                       "These buttons do this while Calculator is in front; every other button does what Buttons says.")
+                       Self.catalog("apps-buttons-note", "Calculator"))
     }
 
     /// "+": the buttons of the connected mouse the app has no binding of its own for,
@@ -1207,12 +1207,12 @@ final class ApplicationPageTests: XCTestCase {
         for (row, general) in zip(part.rows, generals) {
             // The Buttons pane's pull-down for the general binding names its action.
             let buttonsTitle = try XCTUnwrap(ButtonActionPullDown(binding: general).menu?.items.first?.title)
-            XCTAssertEqual(row.explanation, "Everywhere: " + buttonsTitle)
+            XCTAssertEqual(row.explanation, Self.catalog("apps-buttons-everywhere", buttonsTitle))
             XCTAssertEqual(row.pullDown.menu?.items.first?.title, buttonsTitle)
             XCTAssertTrue(row.isEnabled)
         }
-        XCTAssertEqual(part.rows.first?.explanation, "Everywhere: " + SystemShortcut.mouseGestureNavigation.localizedName)
-        XCTAssertEqual(part.rows.last?.explanation, "Everywhere: " + SystemShortcut.shortcutRing.localizedName)
+        XCTAssertEqual(part.rows.first?.explanation, Self.catalog("apps-buttons-everywhere", SystemShortcut.mouseGestureNavigation.localizedName))
+        XCTAssertEqual(part.rows.last?.explanation, Self.catalog("apps-buttons-everywhere", SystemShortcut.shortcutRing.localizedName))
     }
 
     /// Choosing a button adds its row with the action it has everywhere (nothing changes
@@ -1261,7 +1261,7 @@ final class ApplicationPageTests: XCTestCase {
         part.addOwnBinding(for: commandBack)
         XCTAssertEqual(calculator.ownButtonBindings.map(\.triggerEvent), [commandBack])
         XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), ["copy"])
-        XCTAssertEqual(part.rows.first?.explanation, "Everywhere: " + SystemShortcut.copy.localizedName)
+        XCTAssertEqual(part.rows.first?.explanation, Self.catalog("apps-buttons-everywhere", SystemShortcut.copy.localizedName))
     }
 
     /// A row's pull-down changes the app's binding only; "Default" stores no action (the
@@ -1280,7 +1280,7 @@ final class ApplicationPageTests: XCTestCase {
         row.pullDown.onShortcutSelected?(nil)
         XCTAssertEqual(calculator.ownButtonBindings.first?.systemShortcutName, "")
         XCTAssertEqual(calculator.ownButtonBindings.first?.isEnabled, true)
-        XCTAssertEqual(part.rows.first?.pullDown.menu?.items.first?.title, "Default")
+        XCTAssertEqual(part.rows.first?.pullDown.menu?.items.first?.title, Self.catalog("buttons-default-with", Self.catalog("buttons-default-effect-back")))
         row.pullDown.onCustomShortcutRecorded?("custom::40:1048576", ShortcutLabel(name: "Find", icon: nil))
         XCTAssertEqual(calculator.ownButtonBindings.first?.label?.name, "Find")
         part.setAction(of: row.binding.id, named: SystemShortcut.shortcutRing.identifier)
@@ -1312,11 +1312,14 @@ final class ApplicationPageTests: XCTestCase {
         func marker(_ marker: String, of pullDown: ButtonActionPullDown) -> NSMenuItem? {
             return pullDown.menu?.items.first { $0.representedObject as? String == marker }
         }
-        for row in part.rows {
+        for (index, row) in part.rows.enumerated() {
             let pullDown = row.pullDown
             let shown = (pullDown.menu?.items ?? []).dropFirst().filter { !$0.isHidden && !$0.isSeparatorItem }
-            XCTAssertTrue(shown.first === pullDown.noActionItem, "Default first")
-            XCTAssertEqual(pullDown.noActionItem?.title, "Default")
+            XCTAssertTrue(shown.first === pullDown.sameAsOtherAppsItem && shown.first != nil, "Same as Other Apps first")
+            XCTAssertTrue(shown.dropFirst().first === pullDown.noActionItem, "then Default")
+            // The mouse's Back button pressed alone says what it then does; the thumb panel and a key do not.
+            let defaultTitle = index == 0 ? Self.catalog("buttons-default-with", Self.catalog("buttons-default-effect-back")) : Self.catalog("buttons-default")
+            XCTAssertEqual(pullDown.noActionItem?.title, defaultTitle)
             XCTAssertEqual(item(SystemShortcut.shortcutRing, of: pullDown)?.isHidden, false, "the ring, on every row")
             XCTAssertEqual(marker(ShortcutManager.MenuMarker.openTarget, of: pullDown)?.isHidden, false)
             XCTAssertEqual(marker(ShortcutManager.MenuMarker.keyboardShortcut, of: pullDown)?.isHidden, false)
@@ -1648,7 +1651,7 @@ final class ApplicationPageTests: XCTestCase {
         let (_, part) = try buttonsPart()
         XCTAssertEqual(part.rows.map(\.isEnabled), [true, true])
         XCTAssertEqual(part.rows.map(\.explanation), [
-            "Everywhere: " + SystemShortcut.mouseGestureNavigation.localizedName, "Everywhere: " + SystemShortcut.shortcutRing.localizedName,
+            Self.catalog("apps-buttons-everywhere", SystemShortcut.mouseGestureNavigation.localizedName), Self.catalog("apps-buttons-everywhere", SystemShortcut.shortcutRing.localizedName),
         ])
     }
 
