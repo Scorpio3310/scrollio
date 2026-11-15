@@ -307,6 +307,9 @@ final class PreferencesListBox: NSView {
     /// Puts the selection and its emphasis into the rows, the − button and the drawing.
     fileprivate func applySelection() {
         removeButton.isEnabled = selectedRow?.isRemovable ?? false
+        let removeTitle = selectedRow?.removeTitle
+        removeButton.toolTip = removeTitle
+        removeButton.setAccessibilityLabel(removeTitle ?? NSLocalizedString("list-remove", comment: ""))
         for row in rows {
             row.setSelection(selected: row.id == selectedID && !isFlashedOff, emphasized: isSelectionEmphasized)
         }
@@ -693,6 +696,14 @@ class PreferencesListRow: PreferencesGroupRow {
     var isRemovable = true {
         didSet {
             guard isRemovable != oldValue else { return }
+            list?.applySelection()
+        }
+    }
+    /// What − does to the row when that is not a removal ("Clear Action"): its tooltip and
+    /// its name for VoiceOver while the row is selected. nil: "Remove", no tooltip.
+    var removeTitle: String? {
+        didSet {
+            guard removeTitle != oldValue else { return }
             list?.applySelection()
         }
     }
