@@ -2586,6 +2586,19 @@ final class SettingsFileTextTests: XCTestCase {
             "Gestures in Mail: the default actions",
         ], "a set kept for later with the default actions changes nothing")
 
+        // The name the file stores for an app is not imported: after the import the app is
+        // called what the sheet called it. Regression: the name came in as it was, nothing
+        // in Scrollio could change it again, and Apps listed Safari as "Notes".
+        let renamed = try XCTUnwrap(contents.applications?.first)
+        XCTAssertEqual(renamed.path, "/Applications/Safari.app")
+        XCTAssertEqual(renamed.displayName, "")
+        XCTAssertEqual(renamed.getName(), Utils.getApplicationName(fromPath: "/Applications/Safari.app"))
+        XCTAssertEqual(renamed.buttons?.binding.count, 1, "the rest of the entry is as the file has it")
+        // What an import puts into the store for the list.
+        let values = try XCTUnwrap(SettingsFile.storeValues(of: contents, managedByScrollio: false))
+        let stored = try XCTUnwrap(values[OptionItem.Application.Applications] as? Data)
+        XCTAssertFalse(try XCTUnwrap(String(data: stored, encoding: .utf8)).contains("Notes"))
+
         let swapped = try Fixture.contents(#""applications":[{"path":"/Applications/Safari.app","gestures":{"inherit":true,"invertHorizontal":true}}]"#)
         XCTAssertEqual(SettingsFileText.gestureLines(of: swapped), ["Gestures in Safari: Invert left and right is on"])
         XCTAssertTrue(swapped.bringsActions, "Return does not import a swap")

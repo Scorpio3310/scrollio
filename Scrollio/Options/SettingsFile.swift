@@ -592,6 +592,10 @@ enum SettingsFile {
 
     /// An app's entry as it goes to the decoder, changed in the JSON itself (changing the
     /// decoded object would tell the app's observers of a change):
+    /// - a name the file gives the app ("displayName") is left out: the app keeps the
+    ///   name of its file, the one the sheet showed for it. Nothing in Scrollio writes a
+    ///   name there and no pane can change one, so an imported one would rename the app
+    ///   for good (Safari listed as "Notes", with Safari's icon);
     /// - the numbers of its own scroll settings are brought into range;
     /// - of its own buttons, those that cannot be read or whose action this version does
     ///   not run are left out, one by one (as a whole they would take the app with them);
@@ -601,6 +605,7 @@ enum SettingsFile {
     /// Anything else is left for the decoder to judge. `counts` says what was changed.
     private static func applicationEntry(_ entry: Any, counts: inout EntryCounts) -> Any {
         guard var object = entry as? [String: Any] else { return entry }
+        object["displayName"] = nil
         if var scroll = object["scroll"] as? [String: Any] {
             for key in exportedKeys where key.kind == .number {
                 guard let number = number(scroll[key.name]) else { continue }
