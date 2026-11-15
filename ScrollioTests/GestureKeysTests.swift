@@ -541,6 +541,31 @@ final class GestureKeysPaneTests: XCTestCase {
         XCTAssertEqual(Options.shared.gesture.actions.up, GestureAction(action: shiftCommandR, label: label("Reload")))
     }
 
+    /// The same in a window, whose Undo also takes a change of a direction: the name the
+    /// reset's click stores takes no step of its own, so Undo Reset brings it back.
+    func testANameTypedBeforeResetToDefaultsComesBackWithUndoInTheWindow() throws {
+        Options.shared.gesture.actions.up = GestureAction(action: shiftCommandR)
+        let controller = makeController()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 900), styleMask: [.titled], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        addTeardownBlock { window.close() }
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        let details = try typeName("Reload", into: controller.controls.actionPopUp(for: .up))
+
+        undo.beginUndoGrouping()
+        controller.resetToDefaultsButton.performClick(nil)
+        undo.endUndoGrouping()
+        details.hide()
+        XCTAssertEqual(Options.shared.gesture, .default)
+        undo.undo()
+        XCTAssertEqual(Options.shared.gesture.actions.up, GestureAction(action: shiftCommandR, label: label("Reload")))
+        XCTAssertFalse(undo.canUndo, "the name took no step of its own")
+    }
+
     /// On an app's page the same for "Use the general gestures": the name typed into a row
     /// of the app's own set is in that set when it comes back.
     func testANameTypedBeforeUseTheGeneralGesturesIsKeptInTheAppsSet() throws {

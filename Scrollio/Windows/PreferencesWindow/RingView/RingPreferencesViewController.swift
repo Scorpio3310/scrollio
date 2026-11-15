@@ -485,10 +485,17 @@ final class RingPreferencesViewController: NSViewController {
     /// Ends a recording that still waits for a key and closes "Open App or File": the
     /// rows are about to go (the pane is left, or an app's page takes its ring away).
     func endEditing() {
+        isEndingEditing = true
+        defer { isEndingEditing = false }
         placePopUps.forEach { $0.cancelShortcutRecording() }
         openTargetPopover?.hide()
         openTargetPopover = nil
     }
+
+    /// While `endEditing` runs: what it stores (a name typed and not confirmed) takes no
+    /// Undo of its own. What ended the editing ("Reset to Defaults") takes it back with the
+    /// rest, the name included.
+    private var isEndingEditing = false
 
     // MARK: - Refresh
 
@@ -709,7 +716,7 @@ final class RingPreferencesViewController: NSViewController {
     /// not this pane: an Undo after an app's page closed still works.
     private func registerUndo(back old: ShortcutRingPlace, from new: ShortcutRingPlace, at place: Int) {
         // (A manager that groups only by hand, as a test's, takes a step only inside a group.)
-        guard let undo = undoTarget, undo.groupsByEvent || undo.groupingLevel > 0 else { return }
+        guard !isEndingEditing, let undo = undoTarget, undo.groupsByEvent || undo.groupingLevel > 0 else { return }
         let owner = application.map { PlaceOwner.application(path: $0.path) } ?? .general
         let split = PreferencesButtonsViewController.splitViewController(of: self)
         Self.registerUndo(

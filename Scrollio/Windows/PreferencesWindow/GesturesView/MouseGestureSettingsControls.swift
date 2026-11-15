@@ -295,8 +295,15 @@ final class MouseGestureSettingsControls: NSObject {
     /// Ends a recording that still waits for a key and closes the popover of a name: the
     /// rows are about to go (the pane is left).
     func endEditing() {
+        isEndingEditing = true
+        defer { isEndingEditing = false }
         actionPopUps.forEach { $0.cancelShortcutRecording() }
     }
+
+    /// While `endEditing` runs: what it stores (a name typed and not confirmed) takes no
+    /// Undo of its own. What ended the editing ("Reset to Defaults") takes it back with the
+    /// rest, the name included.
+    private var isEndingEditing = false
 
     // MARK: - Sync
 
@@ -462,7 +469,7 @@ final class MouseGestureSettingsControls: NSObject {
     /// after an app's page closed still works.
     private func registerUndo(back old: GestureAction, from new: GestureAction, in slot: Slot) {
         // (A manager that groups only by hand, as a test's, takes a step only inside a group.)
-        guard let window = actionPopUp(for: slot).window, let undo = window.undoManager,
+        guard !isEndingEditing, let window = actionPopUp(for: slot).window, let undo = window.undoManager,
               undo.groupsByEvent || undo.groupingLevel > 0 else { return }
         let owner: DirectionOwner
         switch edited {
