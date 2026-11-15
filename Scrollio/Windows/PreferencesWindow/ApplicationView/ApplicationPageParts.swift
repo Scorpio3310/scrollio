@@ -641,8 +641,8 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 ///
 /// The button under the own ring is named by what it does: "Use Suggested Shortcuts" for
 /// an app with a suggestion, else "Copy from Shortcut Ring". It ends the own ring, there
-/// with it: the ring goes back to where it started (the suggestion, else a copy of the
-/// general ring as it is now; the freeze switch the general ring's as it is now), greyed
+/// with it: the ring goes back to where it started (the suggestion, the freeze switch left
+/// as it is; else a copy of the general ring as it is now, with its freeze switch), greyed
 /// while it is there; the switch stays; the window's Undo takes it back, also after the
 /// page closed. A quiet line under the switch's box says how many places of the
 /// suggestion the keyboard layout leaves empty, only while it leaves some.
@@ -923,16 +923,23 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         return suggestedPlaces() ?? Options.shared.ring.places
     }
 
-    /// The app's own ring is in use and differs from where it started (its places, or its
-    /// freeze switch from the general ring's as it is now).
+    /// The app's own ring is in use and differs from where its button takes it: for an app
+    /// with suggested shortcuts ("Use Suggested Shortcuts") its places from them, and the
+    /// freeze switch does not count (the button puts shortcuts in, and a switch flipped by
+    /// hand is not its business); else ("Copy from Shortcut Ring") its places or its freeze
+    /// switch from the general ring's as it is now.
     var hasSettingsToReset: Bool {
         guard let own = application.ownRingPlaces else { return false }
+        if own != startPlaces() { return true }
+        guard suggestion == nil else { return false }
         let general = Options.shared.ring
-        return own != startPlaces() || application.ringThatOpens(general: general).freezePointer != general.freezePointer
+        return application.ringThatOpens(general: general).freezePointer != general.freezePointer
     }
 
-    /// "Reset to Defaults": the own ring as it started, its eight places and the general
-    /// ring's freeze switch; the switch stays off. Edit › Undo brings back what was there.
+    /// The button under the own ring: its eight places as the ring started; "Copy from
+    /// Shortcut Ring" takes the general ring's freeze switch too, "Use Suggested Shortcuts"
+    /// leaves the app's as it is. "Use settings from Shortcut Ring" stays off. Edit › Undo
+    /// brings back what was there.
     private func resetRing(undoManager undo: UndoManager?) {
         guard hasSettingsToReset else { return }
         let showing = partShowing ?? { [weak self] entry in
@@ -941,7 +948,8 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         let suggested = suggestedPlaces()
         Self.fillRing(
             of: application, with: suggested ?? Options.shared.ring.places,
-            freezePointer: Options.shared.ring.freezePointer, fromSuggestion: suggested != nil,
+            freezePointer: suggested != nil ? application.ring?.freezePointer : Options.shared.ring.freezePointer,
+            fromSuggestion: suggested != nil,
             actionName: Self.resetActionName(for: application, suggested: suggestion != nil),
             undoManager: undo, showing: showing, place: PreferencesUndoPlace(of: self)
         )

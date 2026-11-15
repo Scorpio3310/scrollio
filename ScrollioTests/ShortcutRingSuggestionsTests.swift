@@ -939,6 +939,40 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertEqual(figma.ring?.places, figmaSuggestion)
     }
 
+    /// "Use Suggested Shortcuts" puts shortcuts in: the app's own "Freeze pointer" is not
+    /// its business. With the suggestion in every place and only that switch flipped the
+    /// button stays greyed; and a click after a place changed fills the places and leaves
+    /// the switch as the user set it (Undo brings the place back, the switch untouched).
+    /// Regression: the switch alone lit the button, and a click only flipped it back,
+    /// under "Undo Use Suggested Shortcuts in Figma".
+    func testUseSuggestedShortcutsLeavesTheAppsFreezeSwitchAlone() throws {
+        let figma = add(SuggestionFixtures.figmaPath, name: "Figma")
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        let part = part(for: figma, undo: undo)
+        turn(part, general: false)
+        XCTAssertFalse(Options.shared.ring.freezePointer)
+        XCTAssertFalse(part.resetToDefaultsButton.isEnabled)
+
+        figma.setOwnRingFreezePointer(true)
+        part.syncViewWithOptions()
+        XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
+        XCTAssertFalse(part.hasSettingsToReset, "only the freeze switch differs")
+        XCTAssertFalse(part.resetToDefaultsButton.isEnabled)
+
+        figma.ring?[0] = ShortcutRingPlace(SystemShortcut.find)
+        part.syncViewWithOptions()
+        XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
+        undo.beginUndoGrouping()
+        XCTAssertTrue(part.resetToDefaultsButton.sendAction(part.resetToDefaultsButton.action, to: part.resetToDefaultsButton.target))
+        undo.endUndoGrouping()
+        XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
+        XCTAssertEqual(figma.ring?.freezePointer, true, "the switch stays as the user set it")
+        undo.undo()
+        XCTAssertEqual(figma.ownRingPlaces?[0], ShortcutRingPlace(SystemShortcut.find))
+        XCTAssertEqual(figma.ring?.freezePointer, true)
+    }
+
     /// The Apps pane as the window makes it, with nothing shown on screen.
     private func makePane() -> PreferencesApplicationViewController {
         let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
