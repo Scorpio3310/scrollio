@@ -3813,3 +3813,230 @@ extension PreferencesWindowRenderTests {
         popover.hide()
     }
 }
+
+// MARK: - Round 3 C1
+
+/// Round 3 C1 (`round3-c1-*-<appearance>.png`): the action menus tick what the row shows
+/// (a listed action inside its category, which gets the dash and is drawn open beside the
+/// menu; "Default"; Gesture Navigation and the Shortcut Ring with their "Show in" item; a
+/// place of the ring; a gesture direction; Buttons' thumb wheel row with "Show in
+/// Scrolling"), an app's Buttons part ("Show in Safari › Shortcut Ring", "Show in Safari ›
+/// Scrolling"), and the Gestures pane's haptics line with "Show in Mouse".
+extension PreferencesWindowRenderTests {
+
+    func testRenderRound3C1Menus() throws {
+        let trigger = RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil)
+        func pullDown(_ action: String, use: ButtonActionPullDown.Use = .binding) -> ButtonActionPullDown {
+            return ButtonActionPullDown(
+                binding: ButtonBinding(triggerEvent: trigger, systemShortcutName: action, isEnabled: !action.isEmpty), use: use
+            )
+        }
+        try round3C1Menu(pullDown(SystemShortcut.copy.identifier), name: "round3-c1-menu-copy")
+        let back = pullDown("")
+        back.defaultEffect = .back
+        try round3C1Menu(back, name: "round3-c1-menu-default-back")
+        try round3C1Menu(pullDown(SystemShortcut.mouseGestureNavigation.identifier), name: "round3-c1-menu-gesture-navigation")
+        try round3C1Menu(pullDown(SystemShortcut.shortcutRing.identifier), name: "round3-c1-menu-shortcut-ring")
+        try round3C1Menu(pullDown("custom::40:1048576"), name: "round3-c1-menu-recorded-keys")
+        try round3C1Menu(pullDown(SystemShortcut.copy.identifier, use: .ringPlace), name: "round3-c1-menu-ring-place")
+        try round3C1Menu(pullDown("", use: .ringPlace), name: "round3-c1-menu-ring-place-none")
+        try round3C1Menu(
+            pullDown(SystemShortcut.moveSpaceLeft.identifier, use: .gesture(showsLogiActions: false)),
+            name: "round3-c1-menu-gesture-direction"
+        )
+        let wheel = ThumbWheelPullDown(function: .zoom)
+        try round3C1Sheet(Array(try XCTUnwrap(wheel.menu).items.dropFirst()), opened: nil, name: "round3-c1-menu-thumb-wheel")
+        XCTAssertEqual(wheel.settingsItem?.title, "Show in Scrolling")
+    }
+
+    /// Safari's Buttons part on an MX Master 4: Back opens Safari's Shortcut Ring, Forward
+    /// runs Copy, the thumb wheel zooms; the page, the ring row's menu and the thumb wheel
+    /// row's menu.
+    func testRenderRound3C1AppButtons() throws {
+        let stored = Options.shared.application.applications
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            ButtonUtils.shared.invalidateCache()
+        }
+        Options.shared.buttons.binding = []
+        let safari = Application(path: "/Applications/Safari.app")
+        safari.setOwnButtonBindings([
+            ButtonBinding(
+                triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil),
+                systemShortcutName: SystemShortcut.shortcutRing.identifier
+            ),
+            ButtonBinding(
+                triggerEvent: RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil),
+                systemShortcutName: SystemShortcut.copy.identifier
+            ),
+        ])
+        safari.setOwnThumbWheelFunction(.zoom)
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [safari], matchKey: "path")
+        let defaults = uiDefaults(advanced: false)
+        var part: ApplicationButtonsViewController?
+        try renderPane(PANEL_IDENTIFIER.application, name: "round3-c1-app-buttons", prepare: { preferences in
+            (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                .uiStateDefaults = defaults
+        }, afterLoad: { controller in
+            let apps = controller as? PreferencesApplicationViewController
+            apps?.openApplication(withID: safari.path, part: .buttons)
+            part = apps?.detailController?.buttonsPart
+            part?.deviceSource = ButtonsDeviceSource(
+                captureStatus: { _ in .normal }, deviceName: { "MX Master 4" }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+            )
+            part?.holdKeysThatCatch = { [] }
+            part?.reloadRows()
+        })
+        let shown = try XCTUnwrap(part)
+        let ring = try XCTUnwrap(shown.rows.first { $0.pullDown.isShortcutRingBound }).pullDown
+        XCTAssertEqual(ring.ringSettingsItem?.title, "Show in Safari › Shortcut Ring")
+        try round3C1Menu(ring, name: "round3-c1-menu-app-ring")
+        let wheel = try XCTUnwrap(shown.thumbWheelRow).pullDown
+        XCTAssertEqual(wheel.settingsItem?.title, "Show in Safari › Scrolling")
+        try round3C1Sheet(Array(try XCTUnwrap(wheel.menu).items.dropFirst()), opened: nil, name: "round3-c1-menu-app-thumb-wheel")
+    }
+
+    /// The Gestures pane on an MX Master 4 whose haptics are off under Mouse: the line
+    /// under the Logitech box with "Show in Mouse".
+    func testRenderRound3C1GesturesHapticsOff() throws {
+        let support = MouseGestureDeviceSupport(deviceTracking: true, haptics: true, hapticsOffOnMouse: true)
+        var gesture = MouseGestureSettings.default
+        gesture.mode = .discrete
+        gesture.deviceTracking = true
+        Options.shared.gesture = gesture
+        Options.shared.logiMouse = LogiMouseSettings(hapticsOn: false)
+        var pane: GesturesPreferencesViewController?
+        try renderPane(GesturesPreferencesViewController.tabIdentifier, name: "round3-c1-gestures-haptics-off", replacement: {
+            let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+            gestures.deviceSource = MouseGestureDeviceSource(support: { support }, refresh: {})
+            gestures.bindingSummary = {
+                MouseGestureBindingSummary(
+                    hasGestureButton: true, hasLogitechGestureButton: true, buttonTitles: ["Gesture button"],
+                    picture: self.gesturePicture(logitech: true)
+                )
+            }
+            return gestures
+        }, afterLoad: { controller in
+            guard let gestures = controller as? GesturesPreferencesViewController else { return }
+            pane = gestures
+            gestures.previewView.prefersReducedMotion = { true }
+            gestures.previewView.reduceMotionDidChange()
+            gestures.previewView.mouseSource = { .mxMaster4 }
+            gestures.previewView.reloadMouse()
+        })
+        XCTAssertEqual(try XCTUnwrap(pane).openMouseButton.title, "Show in Mouse")
+    }
+
+    /// Opens `pullDown`'s menu as AppKit does (its delegate is told, so the tick is set)
+    /// and draws what it shows, with the category that has the dash drawn open beside it.
+    private func round3C1Menu(_ pullDown: ButtonActionPullDown, name: String) throws {
+        let menu = try XCTUnwrap(pullDown.menu)
+        pullDown.menuWillOpen(menu)
+        defer { pullDown.menuDidClose(menu) }
+        let items = Array(menu.items.dropFirst().filter { !$0.isHidden })
+        let opened = items.first { $0.state == .mixed && $0.submenu != nil }
+        try round3C1Sheet(items, opened: opened, name: name)
+    }
+
+    private func round3C1Sheet(_ items: [NSMenuItem], opened: NSMenuItem?, name: String) throws {
+        for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            let sheet = Round3C1MenuSheet(items: items, opened: opened)
+            sheet.appearance = appearance
+            try write(sheet, appearance: appearance, to: directory.appendingPathComponent("\(name)-\(suffix).png"))
+        }
+    }
+}
+
+/// A menu drawn in-process as a stand-in (a menu is a window of its own, which the tests
+/// never open): each item's mark (✓ ticked, – the dash), its symbol, its title and a
+/// submenu's chevron; and `opened`'s submenu as a second card beside it, level with it.
+private final class Round3C1MenuSheet: NSView {
+
+    private static let rowHeight: CGFloat = 22
+    private static let separatorHeight: CGFloat = 11
+    private static let inset: CGFloat = 5
+    private static let gap: CGFloat = 4
+
+    private let columns: [(items: [NSMenuItem], frame: NSRect)]
+
+    init(items: [NSMenuItem], opened: NSMenuItem?) {
+        let first = NSRect(origin: .zero, size: Self.size(of: items))
+        var columns = [(items: items, frame: first)]
+        if let opened, let submenu = opened.submenu {
+            let sub = Array(submenu.items.filter { !$0.isHidden })
+            let top = Self.top(of: opened, in: items) - Self.inset
+            columns.append((sub, NSRect(origin: NSPoint(x: first.maxX + Self.gap, y: top), size: Self.size(of: sub))))
+        }
+        self.columns = columns
+        let bounds = columns.reduce(NSRect.zero) { $0.union($1.frame) }
+        super.init(frame: NSRect(x: 0, y: 0, width: bounds.maxX, height: bounds.maxY))
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("built in code")
+    }
+
+    override var isFlipped: Bool {
+        return true
+    }
+
+    private static func size(of items: [NSMenuItem]) -> NSSize {
+        let font = NSFont.menuFont(ofSize: 0)
+        let height = items.reduce(2 * inset) { $0 + ($1.isSeparatorItem ? separatorHeight : rowHeight) }
+        let width = items.map { ($0.title as NSString).size(withAttributes: [.font: font]).width }.max() ?? 100
+        return NSSize(width: ceil(width) + 72, height: height)
+    }
+
+    private static func top(of item: NSMenuItem, in items: [NSMenuItem]) -> CGFloat {
+        var y = inset
+        for other in items {
+            if other === item { return y }
+            y += other.isSeparatorItem ? separatorHeight : rowHeight
+        }
+        return y
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let font = NSFont.menuFont(ofSize: 0)
+        for column in columns {
+            let card = NSBezierPath(roundedRect: column.frame.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+            NSColor.controlBackgroundColor.setFill()
+            card.fill()
+            NSColor.separatorColor.setStroke()
+            card.stroke()
+            var y = column.frame.minY + Self.inset
+            for item in column.items {
+                if item.isSeparatorItem {
+                    NSColor.separatorColor.setFill()
+                    NSRect(x: column.frame.minX + 12, y: y + 5, width: column.frame.width - 24, height: 1).fill()
+                    y += Self.separatorHeight
+                    continue
+                }
+                let color: NSColor = item.isEnabled ? .labelColor : .tertiaryLabelColor
+                let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+                let mark = item.state == .on ? "✓" : item.state == .mixed ? "–" : ""
+                (mark as NSString).draw(at: NSPoint(x: column.frame.minX + 9, y: y + 3), withAttributes: attributes)
+                var x = column.frame.minX + 24
+                if let image = item.image {
+                    let side: CGFloat = 16
+                    let place = NSRect(x: x, y: y + (Self.rowHeight - side) / 2, width: side, height: side)
+                    let tinted = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+                        image.draw(in: rect)
+                        color.setFill()
+                        rect.fill(using: .sourceAtop)
+                        return true
+                    }
+                    tinted.draw(in: place, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                    x += side + 6
+                }
+                (item.title as NSString).draw(at: NSPoint(x: x, y: y + 3), withAttributes: attributes)
+                if item.submenu != nil {
+                    let chevron = NSAttributedString(string: "›", attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
+                    chevron.draw(at: NSPoint(x: column.frame.maxX - 14 - chevron.size().width, y: y + 3))
+                }
+                y += Self.rowHeight
+            }
+        }
+    }
+}
