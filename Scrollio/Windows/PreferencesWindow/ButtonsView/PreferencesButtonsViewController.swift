@@ -738,10 +738,11 @@ class PreferencesButtonsViewController: NSViewController {
     }
 
     /// Replaces a binding (its trigger may change: "Use Standard Button"); a binding of the
-    /// same trigger merges into it. Undo ("Undo Which Button": the row's button changed)
-    /// puts back the replaced binding and the merged ones, so that an older Undo of the row,
-    /// which puts back its whole binding, never takes the new trigger back unseen.
-    func replaceBinding(_ binding: ButtonBinding) {
+    /// same trigger merges into it. Undo (`undoName`; "Undo Which Button" when nil: the
+    /// row's button changed) puts back the replaced binding and the merged ones, so that an
+    /// older Undo of the row, which puts back its whole binding, never takes the new
+    /// trigger back unseen.
+    func replaceBinding(_ binding: ButtonBinding, undoName: String? = nil) {
         guard buttonBindings.contains(where: { $0.id == binding.id }) else { return }
         let before = buttonBindings
         buttonBindings = ButtonBindingReplacement.replacing(binding, in: buttonBindings)
@@ -754,10 +755,12 @@ class PreferencesButtonsViewController: NSViewController {
         }
         // The replaced row first: Undo shows that one.
         let states = touched.filter { $0.id == binding.id } + touched.filter { $0.id != binding.id }
-        registerUndo(of: ButtonRowChange(kind: .whichButton, states: states))
+        registerUndo(of: ButtonRowChange(kind: .whichButton, states: states), name: undoName)
     }
 
-    /// "Use Standard Button": the Logitech button becomes the standard button it stands for.
+    /// "Use Standard Button": the Logitech button becomes the standard button it stands
+    /// for. Edit › Undo names it as the button that was clicked ("Undo Use Standard
+    /// Button"), not as "Which Button Is This?".
     func useStandardButton(for id: UUID) {
         guard let updated = binding(for: id)?.standardMouseAliasBindingIfAvailable() else { return }
         LogiCenter.shared.logButtonCaptureDiagnostic(
@@ -765,7 +768,7 @@ class PreferencesButtonsViewController: NSViewController {
         )
         problemPopover?.close()
         problemPopover = nil
-        replaceBinding(updated)
+        replaceBinding(updated, undoName: text("button_use_native_mouse"))
     }
 
     // MARK: - Which button is this?

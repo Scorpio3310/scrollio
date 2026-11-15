@@ -1642,7 +1642,8 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertNil(row.explanation)
     }
 
-    /// "Use Standard Button" has its own Undo ("Undo Which Button"): ⌘Z takes the
+    /// "Use Standard Button" has its own Undo, named after the button that was clicked
+    /// ("Undo Use Standard Button"; it read "Undo Which Button", QA B10): ⌘Z takes the
     /// conversion back first, the merged row with it, and the row's older change of action
     /// afterwards. Regression: it had none, and the older Undo, which puts back the row's
     /// whole binding, took the standard button back to the Logitech one unseen.
@@ -1666,7 +1667,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(converted.triggerEvent.code, 3, "the standard Back button")
         XCTAssertEqual(converted.systemShortcutName, missionControl)
         XCTAssertNil(pane.binding(for: nativeBack.id), "the Back button's own binding merged into it")
-        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Which Button")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Use Standard Button")
 
         undo.undo()
         XCTAssertEqual(Options.shared.buttons.binding.map(\.id), [nativeBack.id, logiBack.id, other.id], "the merged row is back")
@@ -1674,11 +1675,13 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(back.triggerEvent.code, 1006, "the conversion is taken back first")
         XCTAssertEqual(back.systemShortcutName, missionControl, "the newer action stays")
         XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Use Standard Button")
         undo.undo()
         XCTAssertEqual(Options.shared.buttons.binding, [nativeBack, logiBack, other])
 
         undo.redo()
         undo.redo()
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Use Standard Button", "the name outlives Undo and Redo")
         XCTAssertEqual(Options.shared.buttons.binding.map(\.id), [logiBack.id, other.id])
         XCTAssertEqual(pane.binding(for: logiBack.id)?.triggerEvent.code, 3)
         XCTAssertEqual(pane.binding(for: logiBack.id)?.systemShortcutName, missionControl)
