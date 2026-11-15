@@ -470,6 +470,128 @@ final class ApplicationButtonsPressTests: XCTestCase {
         XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up)), .consumed)
         XCTAssertEqual(sent, ["down 2", "up 2"], "in TextEdit Back is Buttons' middle click")
     }
+
+    /// A Logitech button that Scrollio keeps for a binding with modifier keys: on a receiver
+    /// every press of it then comes over HID++ and reaches no app by itself, so the plain
+    /// press, which no binding takes, was dead. Safari's own ⌘ + Back runs Copy and Buttons
+    /// has nothing on Back: in Safari plain Back is the standard back button again (down at
+    /// the press, up at the release; "Every other button works as set in Buttons"), with ⌥
+    /// held too, and ⌘ + Back is still Copy. The same for a binding with modifier keys in
+    /// Buttons, in any app, and for an app's own "Default" stored under the standard number,
+    /// which the caught press never reached. Mode shift has no standard button: its plain
+    /// press still sends nothing. A press that is a key of Scrolling › While you hold a key
+    /// is that key alone, as it always was.
+    func testACaughtLogitechPressNoBindingTakesGoesOnAsTheStandardButton() {
+        let logitechBack = LogiCenter.shared.scrollioCode(for: .back)
+        let logitechForward = LogiCenter.shared.scrollioCode(for: .forward)
+        let modeShift: UInt16 = 1001
+        let command = UInt(CGEventFlags.maskCommand.rawValue)
+        let bridge = LogiIntegrationBridge.shared
+        var sent: [String] = []
+        var copies = 0
+        ShortcutExecutor.shared.setTestingMouseEventObserver { event in
+            let phase = event.type == .otherMouseDown ? "down" : event.type == .otherMouseUp ? "up" : "type \(event.type.rawValue)"
+            sent.append("\(phase) \(event.getIntegerValueField(.mouseEventButtonNumber))")
+        }
+        ShortcutExecutor.shared.setTestingKeyboardShortcutObserver { _, _, _ in copies += 1 }
+        func press(_ phase: InputPhase, _ code: UInt16 = logitechBack, _ flags: CGEventFlags = []) -> InputEvent {
+            return InputEvent(type: .mouse, code: code, modifiers: flags, phase: phase, source: .hidPP, device: nil)
+        }
+        func setSafari(general: [ButtonBinding], own: [ButtonBinding]) {
+            let entry = Application(path: safari.bundlePath!)
+            entry.setOwnButtonBindings(own)
+            Options.shared.buttons.binding = general
+            Options.shared.application.applications = EnhanceArray<Application>(withArray: [entry], matchKey: "path")
+            ButtonUtils.shared.invalidateCache()
+        }
+
+        // Safari's own ⌘ + Back and ⌘ + mode shift keep both buttons with Scrollio there.
+        let own = [binding(logitechBack, "copy", modifiers: command), binding(modeShift, "copy", modifiers: command)]
+        setSafari(general: [], own: own)
+        XCTAssertEqual(
+            LogiUsageBootstrap.buttonBindingCodes(general: [], frontAppOwn: own, isLogiCode: { LogiCenter.shared.isLogiCode($0) }),
+            [logitechBack, modeShift]
+        )
+        front = safari
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down)), .consumed)
+        XCTAssertEqual(sent, ["down 3"], "plain Back is the standard back button")
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up)), .consumed)
+        XCTAssertEqual(sent, ["down 3", "up 3"])
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, logitechBack, .maskAlternate)), .consumed)
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up, logitechBack, .maskAlternate)), .consumed)
+        XCTAssertEqual(sent, ["down 3", "up 3", "down 3", "up 3"], "⌥ + Back too: no binding takes it")
+        XCTAssertEqual(copies, 0)
+
+        sent = []
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, logitechBack, .maskCommand)), .consumed)
+        _ = bridge.dispatchLogiButtonEvent(press(.up, logitechBack, .maskCommand))
+        XCTAssertGreaterThan(copies, 0, "⌘ + Back is Safari's Copy")
+        XCTAssertEqual(sent, [])
+
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, modeShift)), .unhandled)
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up, modeShift)), .unhandled)
+        XCTAssertEqual(sent, [], "mode shift has no standard button to send")
+
+        // A press that began as the standard button ends as it, whatever app is in front
+        // at its release.
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down)), .consumed)
+        front = textEdit
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up)), .consumed)
+        XCTAssertEqual(sent, ["down 3", "up 3"])
+
+        // Buttons' own ⌘ + Forward keeps Forward everywhere: the plain press goes on in
+        // every app.
+        sent = []
+        setSafari(general: [binding(logitechForward, "copy", modifiers: command)], own: [])
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down, logitechForward)), .consumed)
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up, logitechForward)), .consumed)
+        XCTAssertEqual(sent, ["down 4", "up 4"])
+
+        // Safari's own "Default" stored under the standard number (recorded over Bluetooth):
+        // the caught press arrives as the Logitech control and never reached it.
+        sent = []
+        setSafari(general: [binding(logitechBack, "copy", modifiers: command)], own: [binding(3, "")])
+        front = safari
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down)), .consumed)
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up)), .consumed)
+        XCTAssertEqual(sent, ["down 3", "up 3"])
+
+        // Back has an action stored under its standard number (recorded over Bluetooth),
+        // which a caught press does not reach: the button is not sent on as if it had none.
+        // The press does nothing, as before, and the settings say so.
+        sent = []
+        let standardBack = binding(3, "mouseMiddleClick")
+        let commandBack = binding(logitechBack, "copy", modifiers: command)
+        setSafari(general: [commandBack, standardBack], own: [])
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down)), .unhandled)
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up)), .unhandled)
+        XCTAssertEqual(sent, [])
+        let plainBack = RecordedEvent(type: .mouse, code: logitechBack, modifiers: 0, deviceFilter: nil)
+        XCTAssertEqual(ButtonDefaultOutcome.of(plainBack, bindings: [commandBack, standardBack]), .caught)
+        XCTAssertEqual(ButtonDefaultOutcome.of(plainBack, bindings: [commandBack]), .passes(.back))
+
+        // Back as a key of While you hold a key: the session hands the press to the scroll
+        // keys first, and it stays that key alone.
+        setSafari(general: [commandBack], own: [])
+        let savedDash = Options.shared.scroll.dash
+        Options.shared.scroll.dash = ScrollHotkey(type: .mouse, code: logitechBack)
+        defer {
+            bridge.handleLogiScrollHotkey(code: logitechBack, phase: .up)
+            Options.shared.scroll.dash = savedDash
+        }
+        bridge.handleLogiScrollHotkey(code: logitechBack, phase: .down)
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down)), .unhandled)
+        bridge.handleLogiScrollHotkey(code: logitechBack, phase: .up)
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up)), .unhandled)
+        XCTAssertEqual(sent, [], "held for Scrolling: no back button")
+        // Once it is up, the next press is a plain one again.
+        Options.shared.scroll.dash = savedDash
+        bridge.handleLogiScrollHotkey(code: logitechBack, phase: .down)
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.down)), .consumed)
+        bridge.handleLogiScrollHotkey(code: logitechBack, phase: .up)
+        XCTAssertEqual(bridge.dispatchLogiButtonEvent(press(.up)), .consumed)
+        XCTAssertEqual(sent, ["down 3", "up 3"])
+    }
 }
 
 // MARK: - The ring's faces

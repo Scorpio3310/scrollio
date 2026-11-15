@@ -154,8 +154,11 @@ enum ButtonDefaultOutcome: Equatable {
     /// "A press runs Mission Control.").
     case runs(ButtonBinding)
     /// Scrollio catches the button's Logitech control for another binding (or for a key of
-    /// Scrolling › While you hold a key) and no binding runs: the press does nothing ("No
-    /// Action").
+    /// Scrolling › While you hold a key), no binding runs and the press is not passed on:
+    /// it does nothing ("No Action"). A control without a standard button (the gesture
+    /// button, the mode shift button, the thumb panel), and any button While you hold a key
+    /// takes; a caught middle, back or forward button that no binding takes goes on as the
+    /// standard button and `passes`.
     case caught
 
     /// What the row's pull-down says: "Default (Back)", "Default", or "No Action" where a
@@ -202,14 +205,17 @@ enum ButtonDefaultOutcome: Equatable {
         // knows only by its number are none).
         let part = trigger.type == .mouse && ButtonTriggerPicture.number(for: trigger) == nil
             ? ButtonsMousePart.part(for: trigger, logitechRole: logitechRole) : nil
-        let caught = part.map { part in
-            ButtonsListLayout.catchesControl(
-                of: part, in: catching ?? bindings, isLogitechCode: isLogitechCode, logitechRole: logitechRole
-            ) || holdKeys.contains { key in
+        let isHoldKey = part.map { part in
+            holdKeys.contains { key in
                 key.type == .mouse && isLogitechCode(key.code) && ButtonsMousePart.part(
                     for: RecordedEvent(type: .mouse, code: key.code, modifiers: 0, deviceFilter: nil), logitechRole: logitechRole
                 ) == part
             }
+        } ?? false
+        let caught = isHoldKey || part.map { part in
+            ButtonsListLayout.catchesControl(
+                of: part, in: catching ?? bindings, isLogitechCode: isLogitechCode, logitechRole: logitechRole
+            )
         } ?? false
         // The press as it reaches Scrollio: a caught control as itself (over HID++); one the
         // mouse keeps as the standard middle, back or forward button it sends, or not at
@@ -234,9 +240,25 @@ enum ButtonDefaultOutcome: Equatable {
             return .runs(match)
         }
         guard caught else { return .passes(effect) }
-        if isAppsOwn, let match, match.systemShortcutName.isEmpty,
-           let native = LogiStandardMouseButtonAlias.nativeButtonCode(forScrollioCode: code), (2...4).contains(native) {
-            return .passes(effect)
+        // A caught middle, back or forward button goes on as the standard button it is
+        // when no binding takes its press (`InputProcessor.standardButton(
+        // forCaughtPressWithoutBinding:)`), unless While you hold a key takes it or a
+        // binding stored under the standard number has an action for it (the caught press
+        // does not reach that one); and when the app's own "Default" takes it
+        // (`standardButton(forAppsOwnDefault:)`).
+        if let native = LogiStandardMouseButtonAlias.nativeButtonCode(forScrollioCode: code), (2...4).contains(native) {
+            if match == nil, !isHoldKey {
+                let asStandard = InputEvent(
+                    type: .mouse, code: native, modifiers: press.modifiers, phase: .down, source: .hidPP, device: nil
+                )
+                let other = ButtonUtils.bestMatch(among: bindings, for: asStandard, where: { ButtonUtils.isRunnable($0.triggerEvent) })
+                if other?.systemShortcutName.isEmpty ?? true {
+                    return .passes(effect)
+                }
+            }
+            if isAppsOwn, let match, match.systemShortcutName.isEmpty {
+                return .passes(effect)
+            }
         }
         return .caught
     }
@@ -376,8 +398,9 @@ struct ButtonsListLayout: Equatable {
     }
 
     /// Scrollio catches `part`'s Logitech control for another binding (one with modifiers
-    /// that has an action): the mouse then sends it only to Scrollio, so without an action
-    /// of its own the plain press does not do what the button does by itself.
+    /// that has an action): the mouse then sends it only to Scrollio. Without an action of
+    /// its own the plain press of the middle, back or forward button is passed on as the
+    /// standard button; any other control then does not do what it does by itself.
     static func catchesControl(
         of part: ButtonsMousePart,
         in bindings: [ButtonBinding],

@@ -676,8 +676,10 @@ final class ApplicationButtonsTests: XCTestCase {
     }
 
     /// "In other apps: …" says "No Action" where a press there does nothing: Scrollio
-    /// catches the button for another binding (round 2 fix Y1), or for a Logitech key of
-    /// While you hold a key (Y2; a standard key only listens).
+    /// catches a button without a standard one for another binding (round 2 fix Y1), or
+    /// the button is a Logitech key of While you hold a key (Y2; a standard key only
+    /// listens). A back button caught for another binding goes on as the standard Back
+    /// button there: "Default (Back)".
     func testInOtherAppsACaughtButtonDoesNothing() throws {
         let option = UInt(CGEventFlags.maskAlternate.rawValue)
         let control = UInt(CGEventFlags.maskControl.rawValue)
@@ -696,13 +698,24 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertEqual(rows[1].explanation, "In other apps: No\u{A0}Action")
         rows = buttonsPart(safari, holdKeys: [ScrollHotkey(type: .mouse, code: 3)]).rows
         XCTAssertEqual(rows[1].explanation, "In other apps: Default\u{A0}(Back)")
+
+        // ⌃ + Back in Buttons keeps the back button with Scrollio; its plain press, which
+        // no binding takes in other apps, is the standard Back button there.
+        let caughtBack = set(general: [binding(back, "paste", modifiers: control)], safari: [binding(back, "copy")])
+        rows = buttonsPart(caughtBack).rows
+        XCTAssertEqual(rows.first?.explanation, "In other apps: Default\u{A0}(Back)")
+        XCTAssertEqual(rows.first?.pullDown.sameAsOtherAppsItem?.title, "Same as Other Apps (Back)")
+        rows = buttonsPart(caughtBack, holdKeys: [ScrollHotkey(type: .mouse, code: back)]).rows
+        XCTAssertEqual(rows.first?.explanation, "In other apps: No\u{A0}Action", "held for Scrolling: not passed on")
     }
 
     /// The app's own "Default" of a button Scrollio catches for another binding names Back
-    /// only where the press reaches it (round 2 fix Y4): stored under the Logitech code it
-    /// goes on as the standard Back button; stored as the standard button it is never
-    /// reached (the caught press arrives as the Logitech control) and does nothing.
-    func testAnAppsOwnDefaultOfACaughtButtonNamesBackOnlyWhereThePressReachesIt() throws {
+    /// (round 2 fix Y4), because the press goes on as the standard Back button either way:
+    /// stored under the Logitech code the caught press reaches it; stored as the standard
+    /// button it is never reached (the caught press arrives as the Logitech control), and
+    /// a caught press no binding takes goes on as the standard button too (it used to do
+    /// nothing, and the row said "No Action").
+    func testAnAppsOwnDefaultOfACaughtButtonNamesBack() throws {
         let option = UInt(CGEventFlags.maskAlternate.rawValue)
         let back = LogiCenter.shared.scrollioCode(for: .back)
         let general = [binding(back, "copy", modifiers: option)]
@@ -710,9 +723,10 @@ final class ApplicationButtonsTests: XCTestCase {
         var safari = set(general: general, safari: [binding(3, "")])
         front = Self.safari
         XCTAssertNil(ButtonUtils.shared.getBestMatchingBinding(for: press(back)), "the caught press never reaches it")
+        XCTAssertNotNil(InputProcessor.standardButton(forCaughtPressWithoutBinding: press(back)), "and goes on as Back")
         var row = try XCTUnwrap(buttonsPart(safari).rows.first)
-        XCTAssertEqual(row.pullDown.menu?.items.first?.title, "No Action")
-        XCTAssertNil(row.pullDown.toolTip)
+        XCTAssertEqual(row.pullDown.menu?.items.first?.title, "Default (Back)")
+        XCTAssertEqual(row.pullDown.toolTip, "Goes back in apps that support it.")
 
         safari = set(general: general, safari: [binding(back, "")])
         let reached = try XCTUnwrap(ButtonUtils.shared.getBestMatchingBinding(for: press(back)))

@@ -413,6 +413,12 @@ class ScrollCore: ScrollActionPort {
     private var hidToggleHeldCode: UInt16?
     private var hidBlockHeldCode: UInt16?
 
+    /// A Logitech button whose press `handleScrollHotkey` took as a key of While you hold a
+    /// key, and that is still down. Main thread.
+    func holdsScrollKey(code: UInt16) -> Bool {
+        return hidDashHeldCode == code || hidSlowHeldCode == code || hidToggleHeldCode == code || hidBlockHeldCode == code
+    }
+
     func handleScrollAction(role: ScrollRole, isDown: Bool) {
         assertMainThread()
         switch role {

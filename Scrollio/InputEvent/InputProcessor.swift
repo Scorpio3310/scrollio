@@ -528,7 +528,15 @@ class InputProcessor: ModifierFlagsProviding {
             keyPressScopes[key] = pressScope
         }
         guard let binding = ButtonUtils.shared.getBestMatchingBinding(for: event, scope: pressScope) else {
-            return .passthrough
+            // A Logitech button Scrollio keeps for another binding: the press no binding
+            // takes goes on as the button it is.
+            guard let action = Self.standardButton(forCaughtPressWithoutBinding: event) else {
+                return .passthrough
+            }
+            if let ring = ShortcutRingController.existing, ring.isOpen {
+                ring.cancel()
+            }
+            return hold(action, for: key, event: event)
         }
         if binding.systemShortcutName == SystemShortcut.shortcutRing.identifier {
             // A key's repeat never opens or closes the ring: checked first.
@@ -564,7 +572,13 @@ class InputProcessor: ModifierFlagsProviding {
             }
             return .consumed
         }
+        return hold(action, for: key, event: event)
+    }
 
+    /// The press of an action that is held until its button or key is up: down now, up at
+    /// the release (`releaseActiveBinding`). An action the same button or key still holds
+    /// is let go first.
+    private func hold(_ action: ResolvedAction, for key: TriggerKey, event: InputEvent) -> InputResult {
         if let existing = activeBindings.removeValue(forKey: key) {
             ShortcutExecutor.shared.execute(
                 action: existing.action,
@@ -612,6 +626,34 @@ class InputProcessor: ModifierFlagsProviding {
               (2...4).contains(native), let kind = MouseButtonActionKind(buttonNumber: native),
               let application = Options.shared.application.applications.get(by: path),
               application.ownButtonBindings.contains(where: { $0.identity == binding.identity }) else { return nil }
+        return .mouseButton(kind: kind)
+    }
+
+    /// What a Logitech press does when no binding takes it. It came over HID++ because
+    /// Scrollio keeps the button for another binding (one with modifier keys, in Buttons or
+    /// the app's own; on a receiver every press of that button then comes this way), and
+    /// passed on it reached nobody: the button was dead where the settings say it does what
+    /// it does by itself. It goes on as the standard middle, back or forward button it is,
+    /// down at the press and up at the release, as an app's own "Default" does
+    /// (`standardButton(forAppsOwnDefault:)`); `ButtonDefaultOutcome` says the same in the
+    /// settings. Nil for any other press, for a control without a standard button (the mode
+    /// shift button, the gesture button: still nothing), and for a press that
+    /// Scrolling › While you hold a key took (the session hands every press there first):
+    /// that one is the key alone, as it always was. Nil too while a binding stored under
+    /// the button's standard number has an action for the press (recorded over Bluetooth;
+    /// a caught press does not reach it, `ButtonUtils.getBestMatchingBinding`): the button
+    /// has an action in the settings, so it is not sent on as if it had none.
+    static func standardButton(forCaughtPressWithoutBinding event: InputEvent) -> ResolvedAction? {
+        guard event.type == .mouse, case .hidPP = event.source,
+              let native = LogiStandardMouseButtonAlias.nativeButtonCode(forScrollioCode: event.code),
+              (2...4).contains(native), let kind = MouseButtonActionKind(buttonNumber: native),
+              !ScrollCore.shared.holdsScrollKey(code: event.code) else { return nil }
+        let asStandard = InputEvent(
+            type: .mouse, code: native, modifiers: event.modifiers, phase: .down, source: event.source, device: event.device
+        )
+        if let other = ButtonUtils.shared.getBestMatchingBinding(for: asStandard), !other.systemShortcutName.isEmpty {
+            return nil
+        }
         return .mouseButton(kind: kind)
     }
 
