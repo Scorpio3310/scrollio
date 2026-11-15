@@ -145,18 +145,39 @@ extension Application {
 
 extension Application {
     /// Before "Use settings from Scrolling" is switched off: scroll options of the app's
-    /// own that were never edited (exactly those of a new entry,
-    /// `OPTIONS_SCROLL_DEFAULT.installationDefaults()`: on a Mac with Natural scrolling off
-    /// the wheel's direction is classic there, so an app whose own "Reverse wheel direction"
-    /// was turned on keeps it) become a copy of `global`, so the app scrolls on as it did
-    /// until the user changes something. Options that were edited are kept. Returns whether
-    /// they were copied. The app keeps its own container: only its values change, stored
-    /// as before.
+    /// own that were never edited (`scrollOptionsWereNeverEdited`) become a copy of
+    /// `global`, so the app scrolls on as it did until the user changes something. Options
+    /// that were edited are kept. Returns whether they were copied. The app keeps its own
+    /// container: only its values change, stored as before.
     @discardableResult
     func adoptScrollOptionsIfUnedited(from global: OPTIONS_SCROLL_DEFAULT) -> Bool {
-        guard scroll == OPTIONS_SCROLL_DEFAULT.installationDefaults(), scroll != global else { return false }
+        guard scrollOptionsWereNeverEdited, scroll != global else { return false }
         Self.copyScrollValues(from: global, to: scroll)
         return true
+    }
+
+    /// The Speed of a new entry in each release: 6.5, and 6.3 in 1.0.0 and 1.0.1. Every
+    /// other value of a new entry was the same in all of them but the direction (below).
+    static let newEntrySpeeds = [6.5, 6.3]
+
+    /// The app's own scroll options are those of a new entry: nobody set them.
+    /// - Exactly a new entry's on this Mac (`OPTIONS_SCROLL_DEFAULT.installationDefaults()`:
+    ///   on a Mac with Natural scrolling off the wheel's direction is classic there).
+    /// - Or a new entry's as any release, on any Mac, stored it, while the entry has no
+    ///   thumb wheel values of its own. Up to 1.0.5 a new entry reversed the wheel on every
+    ///   Mac; since then it follows the Mac's Natural scrolling, which the user can change
+    ///   afterwards; a settings file brings entries from another Mac. An entry gets its
+    ///   thumb wheel values the first time this version switches "Use settings from
+    ///   Scrolling" off for it (`adoptThumbWheelScrollingIfNone`, right after this is
+    ///   asked), so one without them never had its own settings here; and an app whose own
+    ///   "Reverse wheel direction" was turned on here, on a Mac with Natural scrolling
+    ///   off, has them and keeps its direction.
+    var scrollOptionsWereNeverEdited: Bool {
+        if scroll == OPTIONS_SCROLL_DEFAULT.installationDefaults() { return true }
+        guard scroll.thumbWheel == nil else { return false }
+        return Self.newEntrySpeeds.contains { speed in
+            scroll == OPTIONS_SCROLL_DEFAULT(reverse: scroll.reverse, speed: speed)
+        }
     }
 
     /// "Copy from Scrolling" of the app's Scrolling part: a new container with every scroll

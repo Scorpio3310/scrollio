@@ -160,9 +160,14 @@ class OPTIONS_SCROLL_DEFAULT: Codable {
     init() {}
 
     /// Options with the main direction flag `reverse` from the start (no change is
-    /// reported): those of a new installation (`installationDefaults`).
-    init(reverse: Bool) {
+    /// reported): those of a new installation (`installationDefaults`). With `speed`: the
+    /// values of a new entry as an older release stored them
+    /// (`Application.newEntrySpeeds`).
+    init(reverse: Bool, speed: Double? = nil) {
         self.reverse = reverse
+        if let speed {
+            self.speed = speed
+        }
     }
 
     /// The scroll options a new installation starts with on this Mac: the defaults, the
