@@ -53,6 +53,10 @@ final class MainMenuTests: XCTestCase {
     private var shownAboutPanels: [[NSApplication.AboutPanelOptionKey: Any]] = []
     private var updateStatus = UpdateStatus()
     private var updateChecks = 0
+    private var settingsState = SettingsWindowState.closed
+    private var shownPanes: [String] = []
+    private var steps: [PreferencesHistory.Direction] = []
+    private var currentEvent: NSEvent?
 
     override func setUp() {
         super.setUp()
@@ -68,6 +72,14 @@ final class MainMenuTests: XCTestCase {
         updateChecks = 0
         manager.updateStatus = { [unowned self] in self.updateStatus }
         manager.checkForUpdates = { [unowned self] in self.updateChecks += 1 }
+        settingsState = .closed
+        shownPanes = []
+        steps = []
+        currentEvent = nil
+        manager.settingsWindow = { [unowned self] in self.settingsState }
+        manager.showPane = { [unowned self] pane in self.shownPanes.append(pane) }
+        manager.step = { [unowned self] direction in self.steps.append(direction) }
+        manager.currentEvent = { [unowned self] in self.currentEvent }
         menus = manager.makeMenus()
     }
 
@@ -101,14 +113,15 @@ final class MainMenuTests: XCTestCase {
 
     // MARK: - Structure
 
-    func testMenuBarHasTheFourMenus() {
-        XCTAssertEqual(menus.main.items.map(\.title), ["Scrollio", "Edit", "Window", "Help"])
-        XCTAssertEqual(menus.main.items.compactMap(\.submenu).map(\.title), ["Scrollio", "Edit", "Window", "Help"])
+    func testMenuBarHasTheFiveMenus() {
+        XCTAssertEqual(menus.main.items.map(\.title), ["Scrollio", "Edit", "View", "Window", "Help"])
+        XCTAssertEqual(menus.main.items.compactMap(\.submenu).map(\.title), ["Scrollio", "Edit", "View", "Window", "Help"])
         XCTAssertEqual(
             menus.main.items.map { $0.submenu?.identifier },
             [
                 MainMenuManager.Identifier.applicationMenu,
                 MainMenuManager.Identifier.editMenu,
+                MainMenuManager.Identifier.viewMenu,
                 MainMenuManager.Identifier.windowMenu,
                 MainMenuManager.Identifier.helpMenu,
             ]
@@ -154,6 +167,65 @@ final class MainMenuTests: XCTestCase {
         ])
     }
 
+    /// The places of the Settings window: Back and Forward, then the panes in the sidebar's
+    /// order with its gaps as separators, each with ⌘ and its position.
+    func testViewMenu() throws {
+        let menu = try submenu(MainMenuManager.Identifier.viewMenu)
+        XCTAssertEqual(rows(menu), [
+            Row(title: "Back", shortcut: "⌘["),
+            Row(title: "Forward", shortcut: "⌘]"),
+            .separator,
+            Row(title: "Scrolling", shortcut: "⌘1"),
+            Row(title: "Buttons", shortcut: "⌘2"),
+            Row(title: "Gestures", shortcut: "⌘3"),
+            Row(title: "Shortcut Ring", shortcut: "⌘4"),
+            Row(title: "Mouse", shortcut: "⌘5"),
+            .separator,
+            Row(title: "Apps", shortcut: "⌘6"),
+            .separator,
+            Row(title: "General", shortcut: "⌘7"),
+        ])
+        XCTAssertTrue(menus.main.items[2].submenu === menu, "between Edit and Window")
+
+        let items = menu.items.filter { !$0.isSeparatorItem }
+        XCTAssertEqual(
+            items.map(\.identifier),
+            [MainMenuManager.Identifier.back, MainMenuManager.Identifier.forward]
+                + PreferencesPane.all.map { MainMenuManager.Identifier.pane($0.identifier) }
+        )
+        XCTAssertEqual(MainMenuManager.Identifier.pane("general").rawValue, "mainMenu.pane.general")
+        // A pane's item carries the pane's identifier.
+        XCTAssertEqual(menu.items.compactMap { $0.representedObject as? String }, PreferencesPane.all.map(\.identifier))
+        for item in items {
+            XCTAssertEqual(item.state, .off, "\(item.title): a tick comes only from the Settings window")
+            // A keyboard without [ and ]: the system shows and takes its own keys for them.
+            XCTAssertTrue(item.allowsAutomaticKeyEquivalentLocalization, item.title)
+        }
+    }
+
+    /// The menu exists before any pane's controller, so it reads the names from the catalog
+    /// by the pane's identifier: they are the sidebar's, which are the window's titles.
+    func testViewNamesThePanesAsTheSidebarDoes() throws {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let preferences = PreferencesSplitViewController(storyboard: storyboard, uiStateDefaults: nil)
+        var sidebarNames: [String: String] = [:]
+        for row in preferences.sidebar.rows {
+            if case let .pane(pane, title) = row {
+                sidebarNames[pane.identifier] = title
+            }
+        }
+        let menu = try submenu(MainMenuManager.Identifier.viewMenu)
+        XCTAssertEqual(sidebarNames.count, PreferencesPane.all.count)
+        for pane in PreferencesPane.all {
+            let name = try XCTUnwrap(sidebarNames[pane.identifier], pane.identifier)
+            XCTAssertFalse(name.isEmpty, pane.identifier)
+            XCTAssertEqual(pane.title, name, pane.identifier)
+            XCTAssertEqual(preferences.controller(for: pane.identifier)?.title, name, "the window's title on \(pane.identifier)")
+            let item = try XCTUnwrap(menu.items.first { $0.identifier == MainMenuManager.Identifier.pane(pane.identifier) })
+            XCTAssertEqual(item.title, name, pane.identifier)
+        }
+    }
+
     func testWindowMenu() throws {
         let menu = try submenu(MainMenuManager.Identifier.windowMenu)
         XCTAssertEqual(rows(menu), [
@@ -179,7 +251,12 @@ final class MainMenuTests: XCTestCase {
         // has to be checked against the key recorders of the Buttons and Scrolling tabs.
         XCTAssertEqual(
             Set(shortcuts),
-            ["⌘,", "⌘H", "⌥⌘H", "⌘Q", "⌘Z", "⇧⌘Z", "⌘X", "⌘C", "⌘V", "⌘A", "⌘M", "⌘W"]
+            [
+                "⌘,", "⌘H", "⌥⌘H", "⌘Q", "⌘Z", "⇧⌘Z", "⌘X", "⌘C", "⌘V", "⌘A", "⌘M", "⌘W",
+                // View. The recorders take a key through their event tap while they record,
+                // so these can still be recorded; a held one acts once (testAHeldKeyStepsOnce).
+                "⌘[", "⌘]", "⌘1", "⌘2", "⌘3", "⌘4", "⌘5", "⌘6", "⌘7",
+            ]
         )
     }
 
@@ -269,7 +346,11 @@ final class MainMenuTests: XCTestCase {
         // AppKit enables an item when its target implements the action.
         // (An item with a submenu has AppKit's own target and action: opening the submenu.)
         let targeted = allItems(of: menus.main).filter { $0.target != nil && !$0.hasSubmenu }
-        XCTAssertEqual(targeted.map(\.title), ["About Scrollio", "Check for Updates…", "Settings…", "Welcome Guide"])
+        XCTAssertEqual(targeted.map(\.title), [
+            "About Scrollio", "Check for Updates…", "Settings…",
+            "Back", "Forward", "Scrolling", "Buttons", "Gestures", "Shortcut Ring", "Mouse", "Apps", "General",
+            "Welcome Guide",
+        ])
         for item in targeted {
             XCTAssertTrue(item.target === manager, item.title)
             XCTAssertTrue(item.action.map { manager.responds(to: $0) } ?? false, item.title)
@@ -307,10 +388,170 @@ final class MainMenuTests: XCTestCase {
 
     func testTheOtherItemsOfTheManagerAreAlwaysEnabled() throws {
         updateStatus = UpdateStatus()
-        for item in allItems(of: menus.main) where item.target === manager && item.identifier != MainMenuManager.Identifier.checkForUpdates {
+        // Whatever the Settings window does: View's items follow it, these do not.
+        settingsState = .busy(pane: nil)
+        let others = allItems(of: menus.main).filter { item in
+            item.target === manager
+                && item.identifier != MainMenuManager.Identifier.checkForUpdates
+                && item.menu?.identifier != MainMenuManager.Identifier.viewMenu
+        }
+        XCTAssertEqual(others.map(\.title), ["About Scrollio", "Settings…", "Welcome Guide"])
+        for item in others {
             XCTAssertTrue(manager.validateMenuItem(item), item.title)
             XCTAssertFalse(item.isHidden, item.title)
         }
+    }
+
+    // MARK: - View
+
+    /// What the View menu offers in a state of the Settings window, as AppKit asks when the
+    /// menu opens or a key of it is pressed.
+    private func viewOffers(_ state: SettingsWindowState) throws -> (back: Bool, forward: Bool, panes: [Bool], ticked: [String]) {
+        settingsState = state
+        let menu = try submenu(MainMenuManager.Identifier.viewMenu)
+        let back = try XCTUnwrap(menu.items.first { $0.identifier == MainMenuManager.Identifier.back })
+        let forward = try XCTUnwrap(menu.items.first { $0.identifier == MainMenuManager.Identifier.forward })
+        let panes = menu.items.filter { $0.representedObject != nil }
+        let offered = (
+            back: manager.validateMenuItem(back),
+            forward: manager.validateMenuItem(forward),
+            panes: panes.map { manager.validateMenuItem($0) }
+        )
+        XCTAssertFalse(menu.items.contains(where: \.isHidden), "dimmed, never hidden")
+        XCTAssertEqual([back.state, forward.state], [.off, .off])
+        return (offered.back, offered.forward, offered.panes, menu.items.filter { $0.state == .on }.map(\.title))
+    }
+
+    func testViewFollowsTheSettingsWindow() throws {
+        let all = Array(repeating: true, count: PreferencesPane.all.count)
+        let none = Array(repeating: false, count: PreferencesPane.all.count)
+
+        // No Settings window (only the guide or About is open): a pane's item opens it there.
+        var offers = try viewOffers(.closed)
+        XCTAssertEqual([offers.back, offers.forward], [false, false])
+        XCTAssertEqual(offers.panes, all)
+        XCTAssertEqual(offers.ticked, [])
+
+        // It is the key window: the pane on show is ticked, Back and Forward by its history.
+        offers = try viewOffers(.inFront(pane: "buttons", canGoBack: true, canGoForward: false))
+        XCTAssertEqual([offers.back, offers.forward], [true, false])
+        XCTAssertEqual(offers.panes, all)
+        XCTAssertEqual(offers.ticked, ["Buttons"])
+        offers = try viewOffers(.inFront(pane: "application", canGoBack: false, canGoForward: true))
+        XCTAssertEqual([offers.back, offers.forward], [false, true])
+        XCTAssertEqual(offers.ticked, ["Apps"], "the tick moves")
+        offers = try viewOffers(.inFront(pane: "ring", canGoBack: true, canGoForward: true))
+        XCTAssertEqual([offers.back, offers.forward], [true, true])
+        XCTAssertEqual(offers.ticked, ["Shortcut Ring"])
+
+        // A sheet or a popover of it has the keyboard, or a modal panel runs: nothing works.
+        offers = try viewOffers(.busy(pane: "general"))
+        XCTAssertEqual([offers.back, offers.forward], [false, false])
+        XCTAssertEqual(offers.panes, none)
+        XCTAssertEqual(offers.ticked, ["General"])
+        offers = try viewOffers(.busy(pane: nil))
+        XCTAssertEqual(offers.panes, none)
+        XCTAssertEqual(offers.ticked, [])
+
+        // Another window of Scrollio is key: a pane's item brings Settings forward there.
+        offers = try viewOffers(.behind(pane: "mouse"))
+        XCTAssertEqual([offers.back, offers.forward], [false, false])
+        XCTAssertEqual(offers.panes, all)
+        XCTAssertEqual(offers.ticked, ["Mouse"])
+
+        // Closed again: no tick stays.
+        offers = try viewOffers(.closed)
+        XCTAssertEqual(offers.ticked, [])
+    }
+
+    func testAPaneItemAsksForItsPane() throws {
+        let menu = try submenu(MainMenuManager.Identifier.viewMenu)
+        for pane in PreferencesPane.all {
+            let item = try XCTUnwrap(menu.items.first { $0.identifier == MainMenuManager.Identifier.pane(pane.identifier) })
+            XCTAssertTrue(item.target === manager)
+            XCTAssertTrue(choose(item))
+        }
+        XCTAssertEqual(shownPanes, ["scrolling", "buttons", "gestures", "ring", "mouse", "application", "general"])
+        XCTAssertEqual(steps, [])
+        XCTAssertEqual(openedPreferences, [], "not the way of \"Settings…\": the pane's own")
+    }
+
+    func testBackAndForwardAskForAStep() throws {
+        let menu = try submenu(MainMenuManager.Identifier.viewMenu)
+        let back = try item("Back", in: menu)
+        let forward = try item("Forward", in: menu)
+        XCTAssertTrue(back.target === manager)
+        XCTAssertTrue(forward.target === manager)
+        XCTAssertTrue(choose(back))
+        XCTAssertEqual(steps, [.back])
+        XCTAssertTrue(choose(forward))
+        XCTAssertTrue(choose(back))
+        XCTAssertEqual(steps, [.back, .forward, .back])
+        XCTAssertEqual(shownPanes, [])
+        XCTAssertEqual(openedPreferences, [])
+    }
+
+    /// A held ⌘[ goes one place back, not through the whole history; and whoever records ⌘1
+    /// for a button and keeps the keys down past the recorder's event tap does not switch
+    /// panes with the repeats (as the Scrollio and Window menus' shortcuts, see below).
+    func testAHeldKeyStepsOnce() throws {
+        let menu = try submenu(MainMenuManager.Identifier.viewMenu)
+        let back = try item("Back", in: menu)
+        let forward = try item("Forward", in: menu)
+        let general = try item("General", in: menu)
+
+        // The repeats of a held key: nothing. Told by the event, whatever its character (a
+        // keyboard without [ sends another one for Back).
+        for key in ["[", "]", "7", "ö"] {
+            currentEvent = try keyDown(key, [.command], isRepeat: true)
+            XCTAssertTrue(choose(back))
+            XCTAssertTrue(choose(forward))
+            XCTAssertTrue(choose(general))
+        }
+        XCTAssertEqual(steps, [])
+        XCTAssertEqual(shownPanes, [])
+
+        // The first key-down acts.
+        currentEvent = try keyDown("[", [.command], isRepeat: false)
+        XCTAssertTrue(choose(back))
+        currentEvent = try keyDown("]", [.command], isRepeat: false)
+        XCTAssertTrue(choose(forward))
+        currentEvent = try keyDown("7", [.command], isRepeat: false)
+        XCTAssertTrue(choose(general))
+        XCTAssertEqual(steps, [.back, .forward])
+        XCTAssertEqual(shownPanes, ["general"])
+
+        // So does a click in the menu, and a choice with no event at all (VoiceOver).
+        currentEvent = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+            context: nil, eventNumber: 0, clickCount: 1, pressure: 0
+        ))
+        XCTAssertTrue(choose(back))
+        currentEvent = nil
+        XCTAssertTrue(choose(general))
+        XCTAssertEqual(steps, [.back, .forward, .back])
+        XCTAssertEqual(shownPanes, ["general", "general"])
+
+        // The repeats are not dropped before the menu (that list is the Scrollio and Window
+        // menus', unchanged): the actions themselves let them pass.
+        let held = try keyDown("[", [.command], isRepeat: true)
+        XCTAssertTrue(manager.filterKeyDown(held) === held)
+        let heldDigit = try keyDown("1", [.command], isRepeat: true)
+        XCTAssertTrue(manager.filterKeyDown(heldDigit) === heldDigit)
+    }
+
+    /// Under XCTest no Settings window is open through the app's window manager (the tests
+    /// make their own and never show them): the live state is "closed".
+    func testTheLiveStateWithoutASettingsWindow() throws {
+        XCTAssertNil(WindowManager.shared.refs[WINDOW_IDENTIFIER.preferencesWindowController])
+        XCTAssertEqual(MainMenuManager.liveSettingsWindowState(), .closed)
+        // A window belongs to itself, and not to one it does not hang on.
+        let one = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.titled], backing: .buffered, defer: true)
+        let other = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.titled], backing: .buffered, defer: true)
+        one.isReleasedWhenClosed = false
+        other.isReleasedWhenClosed = false
+        XCTAssertTrue(MainMenuManager.belongs(one, to: one))
+        XCTAssertFalse(MainMenuManager.belongs(one, to: other))
     }
 
     // MARK: - Held shortcuts
@@ -384,6 +625,7 @@ final class MainMenuTests: XCTestCase {
             [
                 MainMenuManager.Identifier.applicationMenu,
                 MainMenuManager.Identifier.editMenu,
+                MainMenuManager.Identifier.viewMenu,
                 MainMenuManager.Identifier.windowMenu,
                 MainMenuManager.Identifier.helpMenu,
             ]
@@ -399,6 +641,28 @@ final class MainMenuTests: XCTestCase {
             XCTAssertTrue(item.target === MainMenuManager.shared)
         }
         XCTAssertFalse(NSWindow.allowsAutomaticWindowTabbing)
+    }
+
+    /// macOS adds items of its own to some menus of an app ("Enter Full Screen" to a menu
+    /// called View, tab items). The View menu the app really has holds only Scrollio's.
+    func testTheInstalledViewMenuHoldsOnlyScrolliosItems() throws {
+        let installed = try XCTUnwrap(NSApp.mainMenu)
+        let view = try XCTUnwrap(installed.items.compactMap(\.submenu).first { $0.identifier == MainMenuManager.Identifier.viewMenu })
+        XCTAssertEqual(view.title, "View")
+        // (Titles and identifiers, not the keys: in the menu bar macOS shows and takes the
+        // keys of the keyboard in use, another one for [ and ] where it has none.)
+        let built = try submenu(MainMenuManager.Identifier.viewMenu)
+        XCTAssertEqual(view.items.map(\.title), built.items.map(\.title))
+        XCTAssertEqual(view.items.map(\.identifier), built.items.map(\.identifier))
+        for item in view.items where !item.isSeparatorItem {
+            XCTAssertTrue(item.target === MainMenuManager.shared, item.title)
+            XCTAssertFalse(item.keyEquivalent.isEmpty, item.title)
+            XCTAssertEqual(item.keyEquivalentModifierMask, [.command], item.title)
+        }
+        // (macOS did go over these menus when this was written: the installed Edit menu has
+        // its "Start Dictation…" and "Emoji & Symbols", the Window menu its "Close All".)
+        let fullScreen = allItems(of: installed).filter { $0.action == #selector(NSWindow.toggleFullScreen(_:)) }
+        XCTAssertEqual(fullScreen.map(\.title), [], "no window of Scrollio goes full screen")
     }
 
     func testInstallSetsTheMenusOfTheApplication() {

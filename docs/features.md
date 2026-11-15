@@ -503,6 +503,22 @@ only when you move those controls.
 - Scrollio's notices stay on screen as long as their text takes to read (3 to 10
   seconds) and wait while the pointer is over them.
 
+## Settings window
+
+- While a window of Scrollio is open, the menu bar has a View menu. ⌘1 to ⌘7 show
+  Scrolling, Buttons, Gestures, Shortcut Ring, Mouse, Apps and General, each at its top
+  (Apps on its list); the one on show is ticked. With no Settings window open they open
+  it there.
+- Back (⌘[) and Forward (⌘]) go through the places the window showed: the panes, and
+  the apps' pages in Apps. Back on an app's page is always the list of apps, as the title
+  bar's button, Esc and the page's own ⌘[, and Forward opens the page again; after a jump
+  to an app's page from another pane, the second Back is that pane. A page whose app
+  left the list is passed over. A held key goes one place.
+- The places are kept in memory for as long as the window is open: nothing of them is
+  stored or goes into a settings file, and a new window starts where it opens.
+- Back and Forward work while the Settings window has the keyboard. While one of its
+  sheets or popovers has it, or an alert is open, the whole menu is dimmed.
+
 ## Settings file
 
 General › Settings file saves all your settings to one file and loads them from one: to

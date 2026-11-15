@@ -10993,6 +10993,42 @@
           }
         }
       }
+    },
+    "main-menu-view": {
+      "comment": "Menu bar: the menu that lists the places of the Settings window",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View"
+          }
+        }
+      }
+    },
+    "main-menu-back": {
+      "comment": "View menu: back to the place the Settings window showed before",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back"
+          }
+        }
+      }
+    },
+    "main-menu-forward": {
+      "comment": "View menu: forward again after Back",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

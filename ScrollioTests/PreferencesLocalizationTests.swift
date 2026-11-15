@@ -270,6 +270,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "main-menu-welcome-guide", "main-menu-check-for-updates", "status-menu-update-waiting",
         // Round 3 C4
         "status-menu-app-settings",
+        // Round 4 D3
+        "main-menu-view", "main-menu-back", "main-menu-forward", "scrolling-tab-title", "buttons-tab-title", "apps-tab-title", "general-tab-title",
     ]
 
     /// The Welcome Guide (Introduction window): its bar, the four steps and their pictures.
