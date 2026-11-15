@@ -3002,7 +3002,7 @@
       }
     },
     "apps-open-panel-prompt": {
-      "comment": "Apps pane: the button of the panel that chooses apps in Finder",
+      "comment": "Apps pane: the button of the panel that chooses apps in Finder; also the button of the line that offers to add an app (“Microsoft Visual St… isn't on the list.”) when the app's name is too long to be read in both",
       "extractionState": "manual",
       "localizations": {
         "en": {

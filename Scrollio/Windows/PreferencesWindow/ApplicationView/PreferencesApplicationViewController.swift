@@ -371,11 +371,12 @@ class PreferencesApplicationViewController: NSViewController {
     }
 
     /// "Safari isn't on the list." with "Add Safari": the app's icon, the line, the button.
-    /// A long name is cut short in both, so that both say what they are about; whole in the
-    /// tooltips and for VoiceOver. Nothing to remove or open.
+    /// A name too long for both says "Add" on the button and has the line's room, cut short
+    /// there only when even that is too little: read once. Whole in the tooltips and for
+    /// VoiceOver. Nothing to remove or open.
     private func makeOfferRow(for app: AppSmoothing.App) -> PreferencesListRow {
-        let name = Self.offerName(app.name)
-        let add = Self.makeOfferButton(name: name)
+        let (name, title) = Self.offerTitles(app.name)
+        let add = Self.makeOfferButton(title: title)
         add.target = self
         add.action = #selector(addOfferedApplication(_:))
         add.identifier = Identifier.offerAdd
@@ -390,34 +391,42 @@ class PreferencesApplicationViewController: NSViewController {
         )
         row.isRemovable = false
         row.toolTip = String(format: text("apps-not-on-list"), app.name)
-        if name != app.name {
-            let whole = String(format: text("apps-add-named"), app.name)
+        let whole = String(format: text("apps-add-named"), app.name)
+        if title != whole {
             add.toolTip = whole
             add.setAccessibilityLabel(whole)
         }
         return row
     }
 
-    private static func makeOfferButton(name: String) -> NSButton {
-        return PreferencesGroupedForm.makePushButton(
-            title: String(format: NSLocalizedString("apps-add-named", comment: ""), name), target: nil, action: nil
-        )
+    private static func makeOfferButton(title: String) -> NSButton {
+        return PreferencesGroupedForm.makePushButton(title: title, target: nil, action: nil)
     }
 
-    /// `name` whole, or cut short at its end with "…", so that the line and its button fit
-    /// side by side on one line of the list, the button in half the box at most.
+    /// The name the line shows for `name`; see `offerTitles`.
     static func offerName(_ name: String) -> String {
+        return offerTitles(name).name
+    }
+
+    /// What the line and its button say, side by side on one line of the list: the name
+    /// whole in both ("Add Safari", the button in half the box at most) while it fits;
+    /// else the button says "Add" and the line has the room it frees, with the name whole,
+    /// or cut short at its end with "…" when even that is too little.
+    static func offerTitles(_ name: String) -> (name: String, button: String) {
         let inset = PreferencesGroupedForm.rowHorizontalInset
         let room = boxWidth - 2 * inset - PreferencesListRow.imageIconSize - PreferencesListRow.iconSpacing
         let font = PreferencesGroupedForm.titleFont
-        func fits(_ candidate: String) -> Bool {
-            let button = makeOfferButton(name: candidate).fittingSize.width
+        func fits(_ candidate: String, beside title: String) -> Bool {
+            let button = makeOfferButton(title: title).fittingSize.width
             let line = String(format: NSLocalizedString("apps-not-on-list", comment: ""), candidate)
             // A label keeps 2 pt free at each side of its line.
             let lineWidth = ceil((line as NSString).size(withAttributes: [.font: font]).width) + 4
             return button <= boxWidth / 2 && lineWidth + PreferencesGroupedForm.controlSpacing + button <= room
         }
-        guard !fits(name) else { return name }
+        let named = String(format: NSLocalizedString("apps-add-named", comment: ""), name)
+        guard !fits(name, beside: named) else { return (name, named) }
+        let add = NSLocalizedString("apps-open-panel-prompt", comment: "")
+        guard !fits(name, beside: add) else { return (name, add) }
         // The longest beginning of the name that fits, by halves.
         let characters = Array(name)
         var shortest = 1, longest = characters.count - 1
@@ -425,14 +434,14 @@ class PreferencesApplicationViewController: NSViewController {
         while shortest <= longest {
             let length = (shortest + longest) / 2
             let candidate = String(characters.prefix(length)).trimmingCharacters(in: .whitespaces) + "…"
-            if fits(candidate) {
+            if fits(candidate, beside: add) {
                 fitting = candidate
                 shortest = length + 1
             } else {
                 longest = length - 1
             }
         }
-        return fitting
+        return (fitting, add)
     }
 
     // MARK: - Allowlist
