@@ -279,6 +279,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         // Round 4 D5: "Pause For" with its lengths, and a pause that says until when
         "status-menu-pause-for", "status-menu-pause-15-minutes", "status-menu-pause-1-hour",
         "status-menu-title-paused-until", "status-item-paused-until",
+        // Round 4 D3
+        "main-menu-view", "main-menu-back", "main-menu-forward", "scrolling-tab-title", "buttons-tab-title", "apps-tab-title", "general-tab-title",
     ]
 
     /// The Welcome Guide (Introduction window): its bar, the four steps and their pictures.

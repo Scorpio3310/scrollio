@@ -1,15 +1,55 @@
 //
 //  MainMenuManager.swift
 //  Mos
-//  The app's menu bar: Scrollio, Edit, Window, Help.
+//  The app's menu bar: Scrollio, Edit, View, Window, Help.
 //
 //  Scrollio is a menu-bar utility (LSUIElement), but while one of its windows is open it
 //  is a regular app (Utils.showDockIcon) and owns the menu bar like any other. The main
 //  menu of Main.storyboard is empty, which left only the Apple logo there, so the menu is
 //  built here and installed at launch. The status-bar menu is separate (StatusItemManager).
 //
+//  View lists the places of the Settings window: Back (⌘[) and Forward (⌘]) through the
+//  places that window showed (`PreferencesHistory`), then the panes in the sidebar's order
+//  with ⌘1 … ⌘7, the one on show ticked. What it offers follows the Settings window
+//  (`SettingsWindowState`): with none open a pane's item opens Settings there.
+//
 
 import Cocoa
+
+/// The Settings window as the View menu sees it.
+enum SettingsWindowState: Equatable {
+    /// No Settings window (only the Welcome Guide or About is open): a pane's item opens
+    /// Settings there; no way back or forward.
+    case closed
+    /// It is the key window: everything works; Back and Forward by its history.
+    case inFront(pane: String?, canGoBack: Bool, canGoForward: Bool)
+    /// A sheet or a popover of it has the keyboard, or a modal panel runs: nothing of View
+    /// works, the pane on show stays ticked.
+    case busy(pane: String?)
+    /// Another window of Scrollio is key (the guide, About, an update): a pane's item
+    /// brings Settings forward there; no way back or forward.
+    case behind(pane: String?)
+
+    /// The pane the window shows, which View ticks.
+    var pane: String? {
+        switch self {
+        case .closed: return nil
+        case let .inFront(pane, _, _), let .busy(pane), let .behind(pane): return pane
+        }
+    }
+
+    /// Whether the panes' items can be chosen.
+    var offersPanes: Bool {
+        if case .busy = self { return false }
+        return true
+    }
+
+    /// Whether Back or Forward can be chosen.
+    func canStep(_ direction: PreferencesHistory.Direction) -> Bool {
+        guard case let .inFront(_, back, forward) = self else { return false }
+        return direction == .back ? back : forward
+    }
+}
 
 final class MainMenuManager: NSObject {
 
@@ -20,6 +60,7 @@ final class MainMenuManager: NSObject {
     enum Identifier {
         static let applicationMenu = NSUserInterfaceItemIdentifier("mainMenu.application")
         static let editMenu = NSUserInterfaceItemIdentifier("mainMenu.edit")
+        static let viewMenu = NSUserInterfaceItemIdentifier("mainMenu.view")
         static let windowMenu = NSUserInterfaceItemIdentifier("mainMenu.window")
         static let helpMenu = NSUserInterfaceItemIdentifier("mainMenu.help")
         static let servicesMenu = NSUserInterfaceItemIdentifier("mainMenu.services")
@@ -27,6 +68,13 @@ final class MainMenuManager: NSObject {
         static let checkForUpdates = NSUserInterfaceItemIdentifier("mainMenu.checkForUpdates")
         static let settings = NSUserInterfaceItemIdentifier("mainMenu.settings")
         static let welcomeGuide = NSUserInterfaceItemIdentifier("mainMenu.welcomeGuide")
+        static let back = NSUserInterfaceItemIdentifier("mainMenu.back")
+        static let forward = NSUserInterfaceItemIdentifier("mainMenu.forward")
+        /// The item of the pane `identifier` (`PreferencesPane.identifier`), which is also
+        /// the item's `representedObject`.
+        static func pane(_ identifier: String) -> NSUserInterfaceItemIdentifier {
+            return NSUserInterfaceItemIdentifier("mainMenu.pane.\(identifier)")
+        }
     }
 
     /// The main menu with the submenus AppKit wants to know about.
@@ -48,6 +96,15 @@ final class MainMenuManager: NSObject {
     /// The updater: whether this copy updates itself and can check now, and the check.
     var updateStatus: () -> UpdateStatus = { UpdateCenter.shared.status }
     var checkForUpdates: () -> Void = { UpdateCenter.shared.checkForUpdates() }
+    /// The Settings window as it stands, asked whenever View validates an item.
+    var settingsWindow: () -> SettingsWindowState = MainMenuManager.liveSettingsWindowState
+    /// Shows the pane with this identifier at its top, in a Settings window that comes
+    /// forward or is opened for it.
+    var showPane: (_ paneIdentifier: String) -> Void = MainMenuManager.showPaneInSettingsWindow
+    /// One step back or forward through the places the Settings window showed.
+    var step: (PreferencesHistory.Direction) -> Void = MainMenuManager.stepInSettingsWindow
+    /// The event being handled, to tell a held key by.
+    var currentEvent: () -> NSEvent? = { NSApp.currentEvent }
 
     // MARK: - Install
 
@@ -119,6 +176,7 @@ final class MainMenuManager: NSObject {
         let help = makeHelpMenu()
         add(application, to: main)
         add(makeEditMenu(), to: main)
+        add(makeViewMenu(), to: main)
         add(window, to: main)
         add(help, to: main)
         singleFireMenus = [application, window]
@@ -175,6 +233,38 @@ final class MainMenuManager: NSObject {
         menu.addItem(item("main-menu-copy", #selector(NSText.copy(_:)), key: "c"))
         menu.addItem(item("main-menu-paste", #selector(NSText.paste(_:)), key: "v"))
         menu.addItem(item("main-menu-select-all", #selector(NSText.selectAll(_:)), key: "a"))
+        return menu
+    }
+
+    /// The places of the Settings window: Back and Forward through the ones it showed,
+    /// then the panes as the sidebar lists them (its order, its names, a separator where it
+    /// has a gap), each with ⌘ and its position. The items keep the system's defaults for
+    /// keyboards without a [ or ] key (`allowsAutomaticKeyEquivalentLocalization`).
+    private func makeViewMenu() -> NSMenu {
+        let menu = NSMenu(title: text("main-menu-view"))
+        menu.identifier = Identifier.viewMenu
+        let back = item("main-menu-back", #selector(goBackInSettings(_:)), key: "[", target: self)
+        back.identifier = Identifier.back
+        menu.addItem(back)
+        let forward = item("main-menu-forward", #selector(goForwardInSettings(_:)), key: "]", target: self)
+        forward.identifier = Identifier.forward
+        menu.addItem(forward)
+        menu.addItem(.separator())
+        for (index, pane) in PreferencesPane.all.enumerated() {
+            if pane.startsGroup {
+                menu.addItem(.separator())
+            }
+            let paneItem = NSMenuItem(
+                title: pane.title,
+                action: #selector(showPaneFromMenu(_:)),
+                keyEquivalent: index < 9 ? String(index + 1) : ""
+            )
+            paneItem.keyEquivalentModifierMask = [.command]
+            paneItem.target = self
+            paneItem.identifier = Identifier.pane(pane.identifier)
+            paneItem.representedObject = pane.identifier
+            menu.addItem(paneItem)
+        }
         return menu
     }
 
@@ -253,15 +343,102 @@ final class MainMenuManager: NSObject {
         checkForUpdates()
     }
 
+    // MARK: - View
+
+    /// A key that is held sends its key-down again and again. Back, Forward and a pane's
+    /// item act on the first one only: a held ⌘[ goes one place back, and the repeats of a
+    /// shortcut that a key recorder has just let go of (see `filterKeyDown`) do nothing.
+    /// Told by the event, not by its character: macOS can take another key for [ and ] on
+    /// a keyboard without them.
+    private var isHeldKey: Bool {
+        guard let event = currentEvent(), event.type == .keyDown else { return false }
+        return event.isARepeat
+    }
+
+    @objc func goBackInSettings(_ sender: Any?) {
+        guard !isHeldKey else { return }
+        step(.back)
+    }
+
+    @objc func goForwardInSettings(_ sender: Any?) {
+        guard !isHeldKey else { return }
+        step(.forward)
+    }
+
+    @objc func showPaneFromMenu(_ sender: Any?) {
+        guard !isHeldKey, let identifier = (sender as? NSMenuItem)?.representedObject as? String else { return }
+        showPane(identifier)
+    }
+
+    /// The Settings window, while there is one.
+    private static var settingsWindowController: NSWindowController? {
+        return WindowManager.shared.refs[WINDOW_IDENTIFIER.preferencesWindowController]
+    }
+
+    private static var settingsContent: PreferencesSplitViewController? {
+        return settingsWindowController?.contentViewController as? PreferencesSplitViewController
+    }
+
+    /// The Settings window as it stands. A modal panel (an alert of the updater, the ask to
+    /// move the app) stops View whether or not Settings is open.
+    static func liveSettingsWindowState() -> SettingsWindowState {
+        guard let window = settingsWindowController?.window, let preferences = settingsContent else {
+            return NSApp.modalWindow == nil ? .closed : .busy(pane: nil)
+        }
+        let pane = preferences.selectedPaneIdentifier
+        if NSApp.modalWindow != nil || window.attachedSheet != nil {
+            return .busy(pane: pane)
+        }
+        if let key = NSApp.keyWindow, key !== window, belongs(key, to: window) {
+            return .busy(pane: pane)
+        }
+        guard window.isKeyWindow else { return .behind(pane: pane) }
+        return .inFront(pane: pane, canGoBack: preferences.canStepBack, canGoForward: preferences.canStepForward)
+    }
+
+    /// Whether `window` hangs on `owner`: a popover of it (a child window) or a sheet, or
+    /// one of those of such a window.
+    static func belongs(_ window: NSWindow, to owner: NSWindow) -> Bool {
+        var current: NSWindow? = window
+        // (No window hangs this deep; the count only ends a chain that would go round.)
+        for _ in 0..<16 {
+            guard let candidate = current else { return false }
+            if candidate === owner { return true }
+            current = candidate.parent ?? candidate.sheetParent
+        }
+        return false
+    }
+
+    /// A pane's item of View: the Settings window in front, made when there is none, on
+    /// that pane at its top (Apps on its list). A window made for it starts its history there.
+    static func showPaneInSettingsWindow(_ paneIdentifier: String) {
+        let isNew = settingsWindowController == nil
+        WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController)
+        guard let preferences = settingsContent else { return }
+        preferences.showPaneFromMenu(paneIdentifier)
+        if isNew {
+            preferences.startHistoryHere()
+        }
+    }
+
+    static func stepInSettingsWindow(_ direction: PreferencesHistory.Direction) {
+        settingsContent?.step(direction)
+    }
+
     /// Opens the Preferences window, on the pane `paneIdentifier` when one is given. Also
-    /// used by the status-bar menu and the Welcome Guide.
+    /// used by the status-bar menu and the Welcome Guide. A window made here for a pane
+    /// that was asked for starts its history there, not at the pane it remembered.
     static func showPreferencesWindow(paneIdentifier: String?) {
         let identifier = WINDOW_IDENTIFIER.preferencesWindowController
+        let isNew = WindowManager.shared.refs[identifier] == nil
         WindowManager.shared.showWindow(withIdentifier: identifier)
         guard let paneIdentifier,
               let preferences = WindowManager.shared.refs[identifier]?.contentViewController as? PreferencesSplitViewController
         else { return }
         preferences.selectPane(withIdentifier: paneIdentifier)
+        if isNew {
+            preferences.startHistoryHere()
+        }
     }
 
     // MARK: - Helpers
@@ -298,11 +475,27 @@ final class MainMenuManager: NSObject {
 
 extension MainMenuManager: NSMenuItemValidation {
     /// "Check for Updates…" is there only in a copy that updates itself, and enabled
-    /// while a check can start. The other items of this target are always enabled.
+    /// while a check can start. View's items follow the Settings window: Back and Forward
+    /// work while it is the key window and has a place that way; a pane's item works unless
+    /// a sheet, a popover or a modal panel has the keyboard, and the pane on show is ticked.
+    /// The other items of this target are always enabled.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        guard menuItem.identifier == Identifier.checkForUpdates else { return true }
-        let status = updateStatus()
-        menuItem.isHidden = !status.isAvailable
-        return status.isAvailable && status.canCheck
+        switch menuItem.action {
+        case #selector(checkForUpdatesFromMenu(_:)):
+            let status = updateStatus()
+            menuItem.isHidden = !status.isAvailable
+            return status.isAvailable && status.canCheck
+        case #selector(goBackInSettings(_:)):
+            return settingsWindow().canStep(.back)
+        case #selector(goForwardInSettings(_:)):
+            return settingsWindow().canStep(.forward)
+        case #selector(showPaneFromMenu(_:)):
+            let state = settingsWindow()
+            let pane = menuItem.representedObject as? String
+            menuItem.state = pane != nil && pane == state.pane ? .on : .off
+            return state.offersPanes
+        default:
+            return true
+        }
     }
 }
