@@ -554,6 +554,28 @@ final class ApplicationButtonsTests: XCTestCase {
         return part
     }
 
+    /// In other apps a binding without an action is skipped, as the input side skips it
+    /// (round 2 fix Y3): ⌥ Back without an action while Back runs Mission Control runs
+    /// Mission Control there. An app's ⌥ Back says so in its line and in "Same as Other
+    /// Apps (…)", and a new ⌥ Back of the app starts with it.
+    func testInOtherAppsABindingWithoutAnActionIsSkipped() throws {
+        let option = UInt(CGEventFlags.maskAlternate.rawValue)
+        let missionControl = SystemShortcut.missionControl.identifier
+        let none = ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: option, deviceFilter: nil),
+            systemShortcutName: "", isEnabled: false
+        )
+        let general = [binding(3, missionControl), none]
+        let safari = set(general: general, safari: [binding(3, "copy", modifiers: option)])
+        XCTAssertEqual(action(3, modifiers: .maskAlternate, in: Self.textEdit), missionControl, "what really runs")
+
+        XCTAssertEqual(ApplicationButtons.generalBinding(for: none.triggerEvent, in: general)?.systemShortcutName, missionControl)
+        XCTAssertEqual(ApplicationButtonsViewController.newBinding(for: none.triggerEvent, general: general).systemShortcutName, missionControl)
+        let row = try XCTUnwrap(buttonsPart(safari).rows.first)
+        XCTAssertEqual(row.explanation, "In other apps: Mission Control")
+        XCTAssertEqual(row.pullDown.sameAsOtherAppsItem?.title, "Same as Other Apps (Mission Control)")
+    }
+
     /// "In other apps: …" says "No Action" where a press there does nothing: Scrollio
     /// catches the button for another binding (round 2 fix Y1), or for a Logitech key of
     /// While you hold a key (Y2; a standard key only listens).
