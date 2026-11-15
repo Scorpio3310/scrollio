@@ -3,10 +3,11 @@
 
 - Five feels (Direct, Quick, Smooth, Glide and Float) set how long the page glides on;
   Speed sets how far one click moves it. A moving preview in the Scrolling pane shows the
-  feel.
+  feel, and the way the page moves on this Mac.
 - Reverse wheel direction (the wheel only, not the trackpad). A new installation starts
   with the wheel in the classic direction for that Mac: the switch is on when macOS's
-  Natural scrolling is on and off when it is off. Settings that exist keep theirs.
+  Natural scrolling is on and off when it is off. Settings that exist keep theirs. Reset to
+  Defaults brings that direction back.
 - Under Advanced: an exact glide time, the smallest step, and
   "Trackpad-style scrolling (Experimental)": apps treat the wheel like a trackpad and bounce at
   the ends of a page. Sideways scrolling stays as it is. What it does in which app, and

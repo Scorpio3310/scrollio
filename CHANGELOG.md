@@ -41,8 +41,10 @@ it for the people who use the app, and give the version its part before you tag 
 ### Changed
 
 - **The wheel starts the right way round.** A new installation follows macOS's Natural
-  scrolling, so the wheel starts in the classic direction on every Mac; your settings
-  keep theirs.
+  scrolling, so the wheel starts in the classic direction on every Mac, and Reset to
+  Defaults in Scrolling brings that direction back; your settings keep theirs.
+- **The Scrolling preview moves the page the way your wheel does**, with Natural
+  scrolling on or off.
 - **The menu bar menu says when Scrollio is not working.** Paused, waiting for
   Accessibility or unable to start, its first line says so, with the way out under it; a
   click on a mouse's battery opens Settings › Mouse.
