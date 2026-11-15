@@ -59,6 +59,8 @@ final class PreferencesGeneralTests: XCTestCase {
         var menuBarIconHidden = false
         var accessibilitySettingsOpened = 0
         var paused = false
+        /// When the pause ends by itself; nil for one until Resume.
+        var pauseEnd: Date?
         var pauses = 0
         var resumes = 0
         var startProblem: StatusMenu.StartProblem?
@@ -108,9 +110,11 @@ final class PreferencesGeneralTests: XCTestCase {
             world.pauses += 1
             world.paused = true
         }
+        pane.pauseEnd = { world.pauseEnd }
         pane.resume = {
             world.resumes += 1
             world.paused = false
+            world.pauseEnd = nil
         }
         pane.startProblem = { world.startProblem }
         pane.tryAgain = { world.tryAgains += 1 }
@@ -415,6 +419,85 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.statusRow.title, NSLocalizedString(StatusMenu.Title.paused.key, comment: ""))
     }
 
+    /// A pause that ends by itself ("Pause For" of the status-bar menu): the row says until
+    /// when, in the menu's words, with a line that says "until then" and Resume. Without the
+    /// access it says only that. The row's own Pause stays a plain button: until Resume.
+    func testTheRowSaysUntilWhen() throws {
+        typealias Status = PreferencesGeneralViewController.RunStatus
+        let end = Date(timeIntervalSince1970: 1_794_490_200)
+        let until = String(format: NSLocalizedString("status-menu-title-paused-until", comment: ""), StatusMenu.pauseEndText(end))
+
+        let timed = Status(hasAccess: true, isPaused: true, startProblem: nil, pauseEnd: end)
+        XCTAssertEqual(timed.titleText, until)
+        XCTAssertEqual(timed.explanationKey, "general-paused-until-hint")
+        XCTAssertEqual(timed.action, .resume)
+        let plain = Status(hasAccess: true, isPaused: true, startProblem: nil)
+        XCTAssertEqual(plain.titleText, "Scrollio is paused")
+        XCTAssertEqual(plain.explanationKey, "general-paused-hint")
+        // No time without the access, and none left over once the pause is over.
+        let noAccess = Status(hasAccess: false, isPaused: true, startProblem: nil, pauseEnd: end)
+        XCTAssertEqual(noAccess.titleText, "Scrollio needs Accessibility access")
+        XCTAssertNil(noAccess.explanationKey)
+        XCTAssertNil(noAccess.pauseEnd)
+        XCTAssertEqual(Status(hasAccess: true, isPaused: false, startProblem: nil, pauseEnd: end).titleText, "Scrollio is on")
+
+        install(.notRegistered)
+        let world = World()
+        let pane = try makePane(world)
+        let runningHeight = pane.view.frame.height
+        XCTAssertEqual(pane.statusButton.title, "Pause")
+        XCTAssertEqual(pane.statusButton.bezelStyle, .push, "one click, no menu")
+
+        // Paused for a time from the menu bar: the run controller says so.
+        world.paused = true
+        world.pauseEnd = end
+        NotificationCenter.default.post(name: AppRunController.didChangeNotification, object: nil)
+        XCTAssertEqual(pane.statusRow.title, until)
+        XCTAssertEqual(pane.statusRow.explanation, "Scrolling, buttons, gestures and the Shortcut Ring are off until then.")
+        XCTAssertEqual(pane.statusButton.title, "Resume")
+        XCTAssertTrue(pane.statusButton.accessibilityTitleUIElement() as? NSTextField === pane.statusRow.titleLabel)
+        XCTAssertEqual(pane.statusButton.accessibilityHelp(), pane.statusRow.explanation)
+        XCTAssertGreaterThan(pane.view.frame.height, runningHeight, "the pane makes room for the line")
+        XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+        pane.view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(pane.view.hasAmbiguousLayout)
+        // The menu bar's title for the same state.
+        let menu = NSMenu()
+        StatusMenu.build(
+            into: menu,
+            state: StatusMenu.State(hasAccess: true, isPaused: true, showsDiagnostics: false, batteries: [], pauseEnd: end),
+            actions: StatusMenuActions()
+        )
+        XCTAssertEqual(pane.statusRow.title, menu.items.first?.title)
+
+        // Chosen again with another length, or the time zone changed: the row follows.
+        let later = end.addingTimeInterval(45 * 60)
+        world.pauseEnd = later
+        NotificationCenter.default.post(name: AppRunController.didChangeNotification, object: nil)
+        XCTAssertEqual(
+            pane.statusRow.title,
+            String(format: NSLocalizedString("status-menu-title-paused-until", comment: ""), StatusMenu.pauseEndText(later))
+        )
+        XCTAssertNotEqual(pane.statusRow.title, until)
+
+        // "Pause Scrollio" while paused for a time: until Resume.
+        world.pauseEnd = nil
+        NotificationCenter.default.post(name: AppRunController.didChangeNotification, object: nil)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is paused")
+        XCTAssertEqual(pane.statusRow.explanation, "Scrolling, buttons, gestures and the Shortcut Ring are off until you resume.")
+
+        // Resume ends a pause of either kind; the end by itself reads the same.
+        world.pauseEnd = end
+        NotificationCenter.default.post(name: AppRunController.didChangeNotification, object: nil)
+        click(pane.statusButton)
+        XCTAssertEqual(world.resumes, 1)
+        XCTAssertEqual(world.pauses, 0)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is on")
+        XCTAssertNil(pane.statusRow.explanation)
+        XCTAssertEqual(pane.statusButton.title, "Pause")
+        XCTAssertEqual(pane.view.frame.height, runningHeight, accuracy: 0.5)
+    }
+
     /// A start that failed: the menu's title, and "Try Again Now", the menu's item in the
     /// menu's words, tries at once. A tap kept off comes back by itself: Pause, as in the menu.
     func testAStartThatFailedOffersTryAgain() throws {
@@ -520,6 +603,8 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertFalse(AppRunController.shared.isRetryingStart)
         XCTAssertNil(pane.startProblem())
         XCTAssertEqual(pane.isPaused(), AppRunController.shared.isPaused)
+        XCTAssertEqual(pane.pauseEnd(), AppRunController.shared.pauseEnd)
+        XCTAssertNil(pane.pauseEnd(), "nothing is paused under tests")
     }
 
     // MARK: - Open at login
