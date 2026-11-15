@@ -4496,3 +4496,114 @@ extension PreferencesWindowRenderTests {
         })
     }
 }
+
+// MARK: - Round 4 D4
+
+extension PreferencesWindowRenderTests {
+
+    /// "Different in Safari and Figma", the last line of four panes
+    /// (`r4-d4-<case>-<appearance>.png`, each the end of its pane): Scrolling with no app
+    /// that differs (as before) and with one; Buttons with two; Gestures with three, in one
+    /// row and with long names in two; the Shortcut Ring with five (icons, "and 3 more")
+    /// and with three long names (icons, two rows). `r4-d4-ring-five-pane` and
+    /// `r4-d4-buttons-two-pane` are the whole panes.
+    func testRenderRound4D4DifferentInApps() throws {
+        let stored = Options.shared.application.applications
+        let savedRing = Options.shared.ring
+        defer {
+            Options.shared.application.applications = stored
+            Options.shared.ring = savedRing
+            ButtonUtils.shared.invalidateCache()
+        }
+        Options.shared.ring = .default
+        Options.shared.gesture = .default
+        Options.shared.application.allowlist = false
+        Options.shared.buttons.binding = [
+            binding(3, SystemShortcut.missionControl.identifier),
+            binding(4, SystemShortcut.copy.identifier, modifiers: UInt(CGEventFlags.maskAlternate.rawValue)),
+        ]
+        ButtonUtils.shared.invalidateCache()
+        let long = "Microsoft Visual Studio Code Insiders Edition With A Very Long Name"
+
+        /// The list holds apps named `names` (a path names itself), each with settings of
+        /// `part`'s kind of its own.
+        func list(_ names: [String], own part: ApplicationPagePart?) {
+            let applications = names.map { name -> Application in
+                let isPath = name.hasPrefix("/")
+                let application = Application(path: isPath ? name : "/Applications/Round 4 D4/\(name).app")
+                if !isPath {
+                    application.displayName = name
+                }
+                switch part?.id {
+                case ApplicationPagePart.scrolling.id: application.inherit = false
+                case ApplicationPagePart.buttons.id: application.setOwnButtonBindings([self.binding(5, SystemShortcut.paste.identifier)])
+                case ApplicationPagePart.gestures.id: application.setUsesGeneralGestures(false, general: Options.shared.gesture)
+                case ApplicationPagePart.ring.id: application.setUsesGeneralRing(false, general: Options.shared.ring)
+                default: break
+                }
+                return application
+            }
+            Options.shared.application.applications = EnhanceArray<Application>(withArray: applications, matchKey: "path")
+        }
+        let defaults = uiDefaults(advanced: false)
+        let prepare: (PreferencesSplitViewController) -> Void = { preferences in
+            (preferences.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)?.uiStateDefaults = defaults
+            (preferences.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController)?.deviceSource = ButtonsDeviceSource(
+                captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+            )
+            (preferences.controller(for: GesturesPreferencesViewController.tabIdentifier) as? GesturesPreferencesViewController)?
+                .deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+            (preferences.controller(for: RingPreferencesViewController.tabIdentifier) as? RingPreferencesViewController)?
+                .bindingSummary = { ShortcutRingBindingSummary(triggerTitles: []) }
+        }
+        let system = "/System/Applications/"
+        let five = ["/Applications/Safari.app", system + "Calculator.app", system + "TextEdit.app", system + "Notes.app", system + "Maps.app"]
+
+        list([system + "Calculator.app"], own: nil)
+        try round4D4End(PANEL_IDENTIFIER.scrolling, name: "r4-d4-scrolling-none", prepare: prepare)
+        list([system + "Calculator.app"], own: .scrolling)
+        try round4D4End(PANEL_IDENTIFIER.scrolling, name: "r4-d4-scrolling-one", prepare: prepare)
+
+        list([system + "Calculator.app", system + "TextEdit.app"], own: .buttons)
+        try round4D4End(PANEL_IDENTIFIER.buttons, name: "r4-d4-buttons-two", prepare: prepare)
+        try renderPane(PANEL_IDENTIFIER.buttons, name: "r4-d4-buttons-two-pane", prepare: prepare)
+
+        list(["Safari", "Figma", "Xcode"], own: .gestures)
+        try round4D4End(GesturesPreferencesViewController.tabIdentifier, name: "r4-d4-gestures-three", prepare: prepare)
+        list([long, "Adobe Illustrator 2026 (Beta) With Its Long Name", "Final Cut Pro Trial"], own: .gestures)
+        try round4D4End(GesturesPreferencesViewController.tabIdentifier, name: "r4-d4-gestures-three-long", prepare: prepare)
+
+        list(five, own: .ring)
+        try round4D4End(RingPreferencesViewController.tabIdentifier, name: "r4-d4-ring-five", prepare: prepare)
+        try renderPane(RingPreferencesViewController.tabIdentifier, name: "r4-d4-ring-five-pane", prepare: prepare)
+        list(Array(five.prefix(2)), own: .ring)
+        try round4D4End(RingPreferencesViewController.tabIdentifier, name: "r4-d4-ring-two", prepare: prepare)
+        list([long, "Adobe Illustrator 2026 (Beta) With Its Long Name", "Another App With A Name That Is Cut Short"], own: .ring)
+        try round4D4End(RingPreferencesViewController.tabIdentifier, name: "r4-d4-ring-three-long", prepare: prepare)
+    }
+
+    /// Writes `<name>-light.png` and `<name>-dark.png`: the last `tail` points of the pane
+    /// `identifier`, cut from the whole window as `renderPane` cuts the column.
+    private func round4D4End(
+        _ identifier: String, name: String, tail: CGFloat = 130,
+        prepare: @escaping (PreferencesSplitViewController) -> Void
+    ) throws {
+        for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            let (window, preferences) = try makeWindow(appearance: appearanceName, prepare: prepare)
+            XCTAssertTrue(preferences.selectPane(withIdentifier: identifier), identifier)
+            let controller = try XCTUnwrap(preferences.host.currentController)
+            let content = try XCTUnwrap(window.contentView)
+            content.layoutSubtreeIfNeeded()
+            let top = preferences.host.view.safeAreaInsets.top
+            let paneHeight = max(controller.view.frame.height, controller.view.fittingSize.height)
+            let height = max(PreferencesWindowLayout.defaultContentHeight, ceil(paneHeight + top))
+            window.setContentSize(NSSize(width: content.frame.width, height: height))
+            content.layoutSubtreeIfNeeded()
+            let pane = controller.view.convert(controller.view.bounds, to: content)
+            let cut = min(tail, pane.height)
+            let rect = NSRect(x: pane.minX, y: content.isFlipped ? pane.maxY - cut : pane.minY, width: pane.width, height: cut)
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            try write(content, rect: rect, appearance: appearance, to: directory.appendingPathComponent("\(name)-\(suffix).png"))
+        }
+    }
+}
