@@ -148,6 +148,106 @@ final class ScrollSettingsTests: XCTestCase {
         XCTAssertEqual(ScrollSliderSetting.smallestStep.text(0.01), "0.01", "never shown as 0")
     }
 
+    // MARK: - Factors
+
+    private static let english = Locale(identifier: "en_US")
+    private static let slovenian = Locale(identifier: "sl_SI")
+    private static let german = Locale(identifier: "de_DE")
+
+    /// Every value a slider can stop on: counted in whole steps and snapped as the slider
+    /// snaps, so each is the number the slider would store.
+    private static func gridValues(_ range: ClosedRange<Double>, step: Double, snapped: (Double) -> Double) -> [Double] {
+        let count = Int(((range.upperBound - range.lowerBound) / step).rounded())
+        return (0...count).map { snapped(range.lowerBound + Double($0) * step) }
+    }
+
+    /// The three sliders that write a factor, with the values each can stop on.
+    private static let factorSliders: [(name: String, values: [Double], text: (Double, Locale) -> String)] = [
+        ("Speed",
+         gridValues(ScrollSliderSetting.speed.range, step: ScrollSliderSetting.speed.step, snapped: ScrollSliderSetting.speed.snapped),
+         { ScrollingSlider.speed.shownText(for: $0, locale: $1) }),
+        ("Thumb wheel speed",
+         gridValues(ThumbWheelPresentation.speedSetting.range, step: ThumbWheelPresentation.speedSetting.step,
+                    snapped: ThumbWheelPresentation.speedSetting.snapped),
+         { ThumbWheelPresentation.speedText($0, locale: $1) }),
+        ("Swipe speed",
+         gridValues(MouseGestureSettings.trackingSpeedRange, step: MouseGestureTrackingSpeed.step, snapped: MouseGestureTrackingSpeed.snapped),
+         { MouseGestureTrackingSpeed.text($0, locale: $1) }),
+    ]
+
+    /// The rule: one decimal, and a second only when it is not zero.
+    func testAFactorHasOneDecimalAndASecondOnlyWhenNotZero() {
+        let expected: [(Double, String)] = [
+            (1, "1.0×"), (6.5, "6.5×"), (10, "10.0×"), (1.25, "1.25×"),
+            (0.25, "0.25×"), (1.05, "1.05×"), (1.1, "1.1×"), (3, "3.0×"),
+        ]
+        for (value, text) in expected {
+            XCTAssertEqual(FactorText.string(value, locale: Self.english), text)
+        }
+    }
+
+    func testAFactorFollowsTheRegion() {
+        XCTAssertEqual(FactorText.string(1, locale: Self.slovenian), "1,0×")
+        XCTAssertEqual(FactorText.string(1.25, locale: Self.slovenian), "1,25×")
+        XCTAssertEqual(FactorText.string(10, locale: Self.slovenian), "10,0×")
+        XCTAssertEqual(FactorText.string(6.5, locale: Self.german), "6,5×")
+        XCTAssertEqual(FactorText.string(0.25, locale: Self.german), "0,25×")
+    }
+
+    /// A stored value no slider stops on (an older build, a settings file) is not shown as
+    /// another: it keeps a second decimal, and is rounded only at the third.
+    func testAValueOffTheGridKeepsTwoDecimalsAndNoMore() {
+        XCTAssertEqual(FactorText.string(6.3, locale: Self.english), "6.3×")
+        XCTAssertEqual(FactorText.string(6.31, locale: Self.english), "6.31×")
+        XCTAssertEqual(FactorText.string(1.333, locale: Self.english), "1.33×")
+        XCTAssertEqual(FactorText.string(1.999, locale: Self.english), "2.0×")
+    }
+
+    /// Scrolling's Speed, the thumb wheel's Speed and the Swipe speed of Gestures write a
+    /// factor the same way: "1.0×" in one pane is never "1.00×" in another.
+    func testTheThreeSlidersWriteOneText() {
+        for locale in [Self.english, Self.slovenian] {
+            for value in [1, 1.25, 2.5, 3] {
+                let text = FactorText.string(value, locale: locale)
+                for slider in Self.factorSliders {
+                    XCTAssertEqual(slider.text(value, locale), text, "\(slider.name) at \(value), \(locale.identifier)")
+                }
+            }
+        }
+        XCTAssertEqual(ThumbWheelPresentation.speedText(1, locale: Self.english), "1.0×", "not \"1.00×\"")
+    }
+
+    /// The value next to a slider does not push it: every stop of every slider is four or
+    /// five characters and fits the kit's value column, so the slider and the "×" stay put.
+    func testEveryValueOfEverySliderFitsTheValueColumn() {
+        XCTAssertEqual(Self.factorSliders.map(\.values.count), [19, 56, 11], "every stop of the three")
+        let label = NSTextField(labelWithString: "")
+        label.font = PreferencesGroupedForm.sliderValueFont
+        for locale in [Self.english, Self.slovenian, Self.german] {
+            for slider in Self.factorSliders {
+                for value in slider.values {
+                    let text = slider.text(value, locale)
+                    XCTAssertTrue((4...5).contains(text.count), "\(slider.name): \(text)")
+                    label.stringValue = text
+                    XCTAssertLessThanOrEqual(
+                        label.fittingSize.width, PreferencesGroupedForm.sliderValueWidth,
+                        "\(slider.name): \(text) in \(locale.identifier)"
+                    )
+                }
+            }
+        }
+    }
+
+    /// The value is right-aligned in digits of one width: a changing digit moves nothing.
+    func testTheValueFontKeepsEveryDigitOneWidth() {
+        let attributes: [NSAttributedString.Key: Any] = [.font: PreferencesGroupedForm.sliderValueFont]
+        let widths = (0...9).map { ("\($0)" as NSString).size(withAttributes: attributes).width }
+        XCTAssertGreaterThan(widths[0], 0)
+        for width in widths {
+            XCTAssertEqual(width, widths[0], accuracy: 0.001)
+        }
+    }
+
     // MARK: - Direction
 
     func testReversesWheel_onTurnsOnTheMainFlagAndBothAxes() {

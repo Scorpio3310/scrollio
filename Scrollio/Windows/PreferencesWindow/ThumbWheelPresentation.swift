@@ -110,16 +110,11 @@ enum ThumbWheelPresentation {
         decimals: 2
     )
 
-    /// "1.25×", always two decimals ("1.00×"), in the user's locale ("1,25×"); also what
-    /// VoiceOver reads as the slider's value. Display only: the stored value is not changed.
+    /// "1.25×", "1.0×": written as every factor (`FactorText`), in the user's locale
+    /// ("1,25×"); also what VoiceOver reads as the slider's value. Display only: the stored
+    /// value is not changed.
     static func speedText(_ value: Double, locale: Locale = .current) -> String {
-        let formatter = NumberFormatter()
-        formatter.locale = locale
-        formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = speedSetting.decimals
-        formatter.maximumFractionDigits = speedSetting.maxDecimals
-        let number = formatter.string(from: NSNumber(value: value)) ?? ""
-        return String(format: NSLocalizedString("scrolling-speed-value", comment: ""), number)
+        return FactorText.string(value, locale: locale)
     }
 
     /// What the speed means for `function`: how far a sideways scroll goes, how little of

@@ -100,10 +100,11 @@ enum ScrollHoldKey: Int, CaseIterable {
 }
 
 /// The tab's three sliders and how each shows its value. Speed writes its factor next to
-/// the slider ("6.3×"). Glide time (a scale of 1 to 5 that reads like seconds but is not)
-/// and Smallest step write no number: the words under their ends say which way is which,
-/// and VoiceOver reads where the knob is between them ("67%"). Numbers follow the user's
-/// locale ("6,3×" with a decimal comma). Display only: the stored values do not change.
+/// the slider ("6.5×", as every factor: `FactorText`). Glide time (a scale of 1 to 5 that
+/// reads like seconds but is not) and Smallest step write no number: the words under their
+/// ends say which way is which, and VoiceOver reads where the knob is between them ("67%").
+/// Numbers follow the user's locale ("6,5×" with a decimal comma). Display only: the
+/// stored values do not change.
 enum ScrollingSlider: CaseIterable {
     case speed, glideTime, smallestStep
 
@@ -116,18 +117,12 @@ enum ScrollingSlider: CaseIterable {
         }
     }
 
-    /// What is written next to the slider; empty for none. A value off the grid keeps the
-    /// decimals it needs (`ScrollSliderSetting.maxDecimals`), so it is not shown as another.
+    /// What is written next to the slider; empty for none. A value off the grid keeps a
+    /// second decimal (6.31 -> "6.31×"), so it is not shown as another.
     func shownText(for value: Double, locale: Locale = .current) -> String {
         switch self {
         case .speed:
-            let formatter = NumberFormatter()
-            formatter.locale = locale
-            formatter.numberStyle = .decimal
-            formatter.minimumFractionDigits = setting.decimals
-            formatter.maximumFractionDigits = setting.maxDecimals
-            let number = formatter.string(from: NSNumber(value: value)) ?? ""
-            return String(format: NSLocalizedString("scrolling-speed-value", comment: ""), number)
+            return FactorText.string(value, locale: locale)
         case .glideTime, .smallestStep:
             return ""
         }
