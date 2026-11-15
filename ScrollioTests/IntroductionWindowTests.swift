@@ -263,21 +263,29 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(WelcomeGuideAccessState(granted: true, run: .stopped), .starting)
         XCTAssertEqual(WelcomeGuideAccessState(granted: true, run: .cannotPostEvents), .cannotPostEvents)
         XCTAssertEqual(WelcomeGuideAccessState(granted: false, run: .cannotPostEvents), .missing)
-        XCTAssertEqual(WelcomeGuideAccessState.allReady, [.running, .paused, .cannotPostEvents])
+        XCTAssertEqual(WelcomeGuideAccessState(granted: true, run: .noDisplayFrames), .noDisplayFrames)
+        XCTAssertEqual(WelcomeGuideAccessState(granted: false, run: .noDisplayFrames), .missing)
+        XCTAssertEqual(WelcomeGuideAccessState.allReady, [.running, .paused, .cannotPostEvents, .noDisplayFrames])
     }
 
     func testTheTryAreaIsSmoothedAsTheEngineDecidesForScrollio() {
         func state(_ running: Bool, _ rule: AppSmoothing.Rule, smooth: Bool = true, limited: Bool = false) -> WelcomeGuideTryArea {
-            return WelcomeGuideTryArea.state(running: running, canPostEvents: true, rule: rule, scrollingSmooth: smooth,
-                                             limitedToListedApps: limited)
+            return WelcomeGuideTryArea.state(running: running, canPostEvents: true, displaySendsFrames: true, rule: rule,
+                                             scrollingSmooth: smooth, limitedToListedApps: limited)
         }
         XCTAssertEqual(state(true, .notListed), .smoothed)
         XCTAssertEqual(state(false, .notListed), .notRunning)
         // Without the right to post events the engine takes nothing: not smoothed, whatever the list says.
-        XCTAssertEqual(WelcomeGuideTryArea.state(running: true, canPostEvents: false, rule: .notListed, scrollingSmooth: true,
-                                                 limitedToListedApps: false), .cannotPostEvents)
-        XCTAssertEqual(WelcomeGuideTryArea.state(running: false, canPostEvents: false, rule: .notListed, scrollingSmooth: true,
-                                                 limitedToListedApps: false), .notRunning)
+        func problem(running: Bool = true, canPostEvents: Bool = true, displaySendsFrames: Bool = true) -> WelcomeGuideTryArea {
+            return WelcomeGuideTryArea.state(running: running, canPostEvents: canPostEvents, displaySendsFrames: displaySendsFrames,
+                                             rule: .notListed, scrollingSmooth: true, limitedToListedApps: false)
+        }
+        XCTAssertEqual(problem(canPostEvents: false), .cannotPostEvents)
+        XCTAssertEqual(problem(running: false, canPostEvents: false), .notRunning)
+        // Display links that send no frames: nothing is smoothed either; the menu's order.
+        XCTAssertEqual(problem(displaySendsFrames: false), .noDisplayFrames)
+        XCTAssertEqual(problem(canPostEvents: false, displaySendsFrames: false), .cannotPostEvents)
+        XCTAssertEqual(problem(running: false, displaySendsFrames: false), .notRunning)
         XCTAssertEqual(state(true, .notListed, limited: true), .notInAppList)
         XCTAssertEqual(state(true, .usesScrollingSettings, limited: true), .smoothed)
         XCTAssertEqual(state(true, .notListed, smooth: false), .smoothingOff)
@@ -517,6 +525,28 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(controller.accessState, .running)
         XCTAssertEqual(controller.accessStep.statusBox.titleLabel.stringValue, "Allowed")
         XCTAssertEqual(controller.accessStep.statusBox.iconView.contentTintColor, .systemGreen)
+    }
+
+    /// Allowed and running, but the display links send no frames (three replacements in a
+    /// row stayed silent): not "Allowed" and "Scrollio is running." with a green check
+    /// either, but General's line with the way out, beside the orange sign.
+    func testTheStepSaysWhenTheDisplaySendsNoFrames() {
+        world.runAfterGrant = .noDisplayFrames
+        let controller = makeAccessController()
+        world.accessGranted = true
+        controller.accessibilityPermissionsChecker(nil)
+        XCTAssertEqual(controller.accessState, .noDisplayFrames)
+        XCTAssertEqual(controller.accessStep.statusBox.titleLabel.stringValue, "Allowed, but smooth scrolling is off: no display frames")
+        XCTAssertEqual(controller.accessStep.statusBox.detailLabel.stringValue,
+                       "The wheel scrolls without smoothing. Quit and reopen Scrollio.")
+        XCTAssertEqual(controller.accessStep.statusBox.iconView.contentTintColor, .systemOrange)
+        XCTAssertTrue(controller.primaryButton.isEnabled)
+
+        // The first frame clears it.
+        world.run = .running
+        controller.runStateDidChange(nil)
+        XCTAssertEqual(controller.accessState, .running)
+        XCTAssertEqual(controller.accessStep.statusBox.titleLabel.stringValue, "Allowed")
     }
 
     /// The Accessibility step alone says where Scrollio lives (in the whole guide the last step does).
@@ -786,6 +816,7 @@ final class IntroductionWindowTests: XCTestCase {
             (.notInAppList, "Not smoothed: Scrollio isn't on the app list"),
             (.smoothingOff, "Not smoothed: Smooth scrolling is off"),
             (.cannotPostEvents, "Not smoothed: Scrollio can't send events"),
+            (.noDisplayFrames, "Not smoothed: no display frames"),
         ]
         for (state, line) in cases {
             world.tryArea = state
@@ -2420,7 +2451,7 @@ final class IntroductionWindowTests: XCTestCase {
         result.append(("welcome", welcome.makeController()))
         for (name, granted, run) in [("waiting", false, WelcomeGuideRunState.stopped), ("allowed", true, .running),
                                      ("could not start", true, .retrying), ("starting", true, .stopped), ("paused", true, .paused),
-                                     ("cannot post events", true, .cannotPostEvents)] {
+                                     ("cannot post events", true, .cannotPostEvents), ("no display frames", true, .noDisplayFrames)] {
             let access = GuideWorld()
             access.accessGranted = granted
             access.run = run
@@ -2599,7 +2630,8 @@ private final class GuideEventWindow: NSWindow {
 
 private extension WelcomeGuideAccessState {
     static var allReady: [WelcomeGuideAccessState] {
-        return [WelcomeGuideAccessState.missing, .starting, .running, .paused, .couldNotStart, .cannotPostEvents].filter(\.isReady)
+        return [WelcomeGuideAccessState.missing, .starting, .running, .paused, .couldNotStart, .cannotPostEvents, .noDisplayFrames]
+            .filter(\.isReady)
     }
 }
 
@@ -2716,6 +2748,11 @@ final class WelcomeGuideRenderTests: XCTestCase {
             world.accessGranted = true
             controller.accessibilityPermissionsChecker(nil)
         }
+        try render("guide-2-access-no-display-frames", configure: { $0.runAfterGrant = .noDisplayFrames }) { controller, world in
+            self.toStep(.access, in: controller)
+            world.accessGranted = true
+            controller.accessibilityPermissionsChecker(nil)
+        }
         try render("guide-2-access-reduce-motion", configure: { $0.reduceMotion = true }) { controller, _ in
             self.toStep(.access, in: controller)
             controller.accessStep.artwork.updateClock()
@@ -2778,6 +2815,14 @@ final class WelcomeGuideRenderTests: XCTestCase {
             $0.accessGranted = true
             $0.run = .running
             $0.tryArea = .notInAppList
+        }) { controller, _ in
+            self.toStep(.feel, in: controller)
+            controller.feelStep.artwork.show(time: 0.75)
+        }
+        try render("guide-3-feel-no-display-frames", configure: {
+            $0.accessGranted = true
+            $0.run = .noDisplayFrames
+            $0.tryArea = .noDisplayFrames
         }) { controller, _ in
             self.toStep(.feel, in: controller)
             controller.feelStep.artwork.show(time: 0.75)

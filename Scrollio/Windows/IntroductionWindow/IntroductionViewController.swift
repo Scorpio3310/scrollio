@@ -756,7 +756,12 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
 
     static func liveRunState() -> WelcomeGuideRunState {
         let controller = AppRunController.shared
-        if controller.coresActive { return ScrollPoster.shared.canPostEvents ? .running : .cannotPostEvents }
+        if controller.coresActive {
+            // Running, but not smoothing: the menu's start problems, in its order.
+            if !ScrollPoster.shared.canPostEvents { return .cannotPostEvents }
+            if !ScrollPoster.shared.displaySendsFrames { return .noDisplayFrames }
+            return .running
+        }
         if controller.isPaused { return .paused }
         if controller.isRetryingStart { return .retrying }
         return .stopped
@@ -773,6 +778,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         return WelcomeGuideTryArea.state(
             running: AppRunController.shared.coresActive,
             canPostEvents: ScrollPoster.shared.canPostEvents,
+            displaySendsFrames: ScrollPoster.shared.displaySendsFrames,
             rule: AppSmoothing.rule(of: AppSmoothing.entry(for: scrollio, in: list.applications)),
             scrollingSmooth: Options.shared.scroll.smooth,
             limitedToListedApps: list.allowlist

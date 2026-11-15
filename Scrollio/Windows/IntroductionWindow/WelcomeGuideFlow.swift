@@ -63,6 +63,9 @@ enum WelcomeGuideRunState: Equatable {
     /// The event taps run, but macOS does not let Scrollio post events
     /// (`ScrollPoster.canPostEvents`): nothing is smoothed.
     case cannotPostEvents
+    /// The event taps run, but the display links send no frames
+    /// (`ScrollPoster.displaySendsFrames`): nothing is smoothed.
+    case noDisplayFrames
     /// Not started (yet): the access is missing, or the start has not happened.
     case stopped
 }
@@ -81,6 +84,8 @@ enum WelcomeGuideAccessState: Equatable {
     case couldNotStart
     /// Allowed and Scrollio runs, but macOS does not let it post events: not "all is well".
     case cannotPostEvents
+    /// Allowed and Scrollio runs, but its display links send no frames: not "all is well".
+    case noDisplayFrames
 
     init(granted: Bool, run: WelcomeGuideRunState) {
         guard granted else {
@@ -92,6 +97,7 @@ enum WelcomeGuideAccessState: Equatable {
         case .paused: self = .paused
         case .retrying: self = .couldNotStart
         case .cannotPostEvents: self = .cannotPostEvents
+        case .noDisplayFrames: self = .noDisplayFrames
         case .stopped: self = .starting
         }
     }
@@ -101,10 +107,10 @@ enum WelcomeGuideAccessState: Equatable {
     }
 
     /// The guide may go on: the access is there and Scrollio runs (or was paused on purpose).
-    /// Also without the right to post events: Scrollio runs, and the way out is in System
-    /// Settings, not in waiting here.
+    /// Also without the right to post events or without display frames: Scrollio runs, and
+    /// the way out (System Settings; quitting and reopening) is not in waiting here.
     var isReady: Bool {
-        return self == .running || self == .paused || self == .cannotPostEvents
+        return self == .running || self == .paused || self == .cannotPostEvents || self == .noDisplayFrames
     }
 }
 
@@ -115,6 +121,8 @@ enum WelcomeGuideTryArea: Equatable {
     case notRunning
     /// They run, but macOS does not let Scrollio post events (`ScrollPoster.canPostEvents`).
     case cannotPostEvents
+    /// They run, but the display links send no frames (`ScrollPoster.displaySendsFrames`).
+    case noDisplayFrames
     /// "Limit scrolling to these apps" is on and Scrollio is not on the list.
     case notInAppList
     /// "Smooth scrolling" is off for Scrollio's window (globally, or in its own rule).
@@ -123,12 +131,16 @@ enum WelcomeGuideTryArea: Equatable {
     /// - Parameters:
     ///   - running: the event taps run.
     ///   - canPostEvents: macOS lets Scrollio post events (`ScrollPoster.canPostEvents`).
+    ///   - displaySendsFrames: the display links send frames (`ScrollPoster.displaySendsFrames`).
     ///   - rule: what the per-app list holds for Scrollio.
+    /// The reasons in the order of the menu's start problems.
     static func state(
-        running: Bool, canPostEvents: Bool, rule: AppSmoothing.Rule, scrollingSmooth: Bool, limitedToListedApps: Bool
+        running: Bool, canPostEvents: Bool, displaySendsFrames: Bool, rule: AppSmoothing.Rule, scrollingSmooth: Bool,
+        limitedToListedApps: Bool
     ) -> WelcomeGuideTryArea {
         guard running else { return .notRunning }
         guard canPostEvents else { return .cannotPostEvents }
+        guard displaySendsFrames else { return .noDisplayFrames }
         let decision = AppSmoothing.decide(rule: rule, scrollingSmooth: scrollingSmooth, limitedToListedApps: limitedToListedApps)
         if decision.isSmoothed { return .smoothed }
         return rule == .notListed && limitedToListedApps ? .notInAppList : .smoothingOff

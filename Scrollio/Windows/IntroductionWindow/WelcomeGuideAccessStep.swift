@@ -121,6 +121,12 @@ final class WelcomeGuideAccessStep: WelcomeGuideStepView {
                 WelcomeGuideText.localized("intro-access-cannot-post-events-title"),
                 WelcomeGuideText.localized("general-cannot-post-events-hint")
             )
+        case .noDisplayFrames:
+            // The same for display links that send no frames: General's line, the way out.
+            return (
+                WelcomeGuideText.localized("intro-access-no-display-frames-title"),
+                WelcomeGuideText.localized("general-no-display-frames-hint")
+            )
         }
     }
 }
@@ -216,7 +222,7 @@ final class WelcomeGuideStatusBox: WelcomeGuideFlippedView {
         case .missing, .starting: symbol = ("circle.dashed", .tertiaryLabelColor)
         case .running: symbol = ("checkmark.circle.fill", .systemGreen)
         case .paused: symbol = ("pause.circle.fill", .secondaryLabelColor)
-        case .couldNotStart, .cannotPostEvents: symbol = ("exclamationmark.circle.fill", .systemOrange)
+        case .couldNotStart, .cannotPostEvents, .noDisplayFrames: symbol = ("exclamationmark.circle.fill", .systemOrange)
         }
         iconView.image = NSImage(systemSymbolName: symbol.name, accessibilityDescription: nil)
         iconView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 17, weight: .regular)
