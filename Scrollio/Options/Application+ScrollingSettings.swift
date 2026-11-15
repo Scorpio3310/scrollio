@@ -85,8 +85,11 @@ extension Application {
     /// the move needs; nothing for the choice that shows.
     /// - Same as Scrolling: "Use settings from Scrolling" on; the app's own values stay.
     /// - Own Settings, from Same as Scrolling: that switch off, nothing else (as the switch
-    ///   did). From Left to macOS: smoothing on, with the setter the menu bar's "Smooth
-    ///   Scrolling in …" uses (`scroll.smooth`); the direction is not touched.
+    ///   did). From Left to macOS: the two things Left to macOS turned off come back,
+    ///   smoothing on, with the setter the menu bar's "Smooth Scrolling in …" uses
+    ///   (`scroll.smooth`), and the wheel's direction as `scrolling` has it (the app's
+    ///   own from before is not kept anywhere; left off, the app would scroll against
+    ///   every other app after Own Settings → Left to macOS → Own Settings).
     /// - Left to macOS: that switch off, then smoothing off (the same setter) and the
     ///   wheel not reversed. Speeds, feel and keys stay stored; so does the thumb wheel.
     func choose(
@@ -99,8 +102,13 @@ extension Application {
             setUsesScrollingSettings(true, scrolling: scrolling, thumbWheel: thumbWheel)
         case .ownSettings:
             setUsesScrollingSettings(false, scrolling: scrolling, thumbWheel: thumbWheel)
-            if shown == .leftToMacOS, !scroll.smooth {
-                scroll.smooth = true
+            if shown == .leftToMacOS {
+                if !scroll.smooth {
+                    scroll.smooth = true
+                }
+                if scroll.reversesWheel != scrolling.reversesWheel {
+                    scroll.reversesWheel = scrolling.reversesWheel
+                }
             }
         case .leftToMacOS:
             setUsesScrollingSettings(false, scrolling: scrolling, thumbWheel: thumbWheel)

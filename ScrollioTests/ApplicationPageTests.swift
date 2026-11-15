@@ -514,17 +514,25 @@ final class ApplicationPageTests: XCTestCase {
 
     /// The nine picks (three faces to three) write only what their move needs: Same as
     /// Scrolling only the switch; Own Settings from Same as Scrolling only the switch, from
-    /// Left to macOS only smoothing; Left to macOS the switch, smoothing and the direction.
+    /// Left to macOS the two things Left to macOS turned off (smoothing on, the direction
+    /// as Scrolling has it); Left to macOS the switch, smoothing and the direction.
     /// Speeds, feel, keys and the thumb wheel's values stay; a pick of the face shown writes
     /// nothing.
     func testEachOfTheNinePicksWritesOnlyWhatItsMoveNeeds() {
+        for scrollingReverses in [true, false] {
+            eachOfTheNinePicks(scrollingReverses: scrollingReverses)
+        }
+    }
+
+    private func eachOfTheNinePicks(scrollingReverses: Bool) {
         let scrolling = OPTIONS_SCROLL_DEFAULT()
         scrolling.speed = 8
+        scrolling.reversesWheel = scrollingReverses
         let thumbWheel = ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: false)
         let keptThumbWheel = ApplicationThumbWheelScrolling(ThumbWheelSettings(speed: 0.75, swapsDirection: true))
         for from in ApplicationScrollingChoice.allCases {
             for to in ApplicationScrollingChoice.allCases {
-                let move = "\(from) → \(to)"
+                let move = "\(from) → \(to), Scrolling reverses: \(scrollingReverses)"
                 let application = Application(path: Self.calculator)
                 make(application, from)
                 let before = ApplicationScrollingSnapshot(of: application)
@@ -543,8 +551,10 @@ final class ApplicationPageTests: XCTestCase {
                     XCTAssertEqual(application.scroll.smooth, smooth, move)
                     XCTAssertEqual(application.scroll.reversesWheel, reverses, move)
                 case (.leftToMacOS, .ownSettings):
+                    // Regression: the direction stayed off, so after Own Settings → Left
+                    // to macOS → Own Settings the app's wheel turned against every other app's.
                     XCTAssertTrue(application.scroll.smooth, "\(move): smoothing on")
-                    XCTAssertFalse(application.scroll.reversesWheel, "\(move): the direction is not touched")
+                    XCTAssertEqual(application.scroll.reversesWheel, scrollingReverses, "\(move): the direction as in Scrolling")
                 case (_, .leftToMacOS):
                     XCTAssertFalse(application.scroll.smooth, move)
                     XCTAssertFalse(application.scroll.reversesWheel, move)
