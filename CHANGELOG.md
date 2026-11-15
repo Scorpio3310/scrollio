@@ -115,8 +115,11 @@ it for the people who use the app, and give the version its part before you tag 
 - **Speeds read one way.** Scrolling, the thumb wheel and Gestures write a speed as "1.0×"
   or "1.25×".
 - **The thumb wheel reaches the next desktop.** Switch Desktops moves a desktop every few
-  notches of one roll (at most one each quarter second), Follow the wheel chains swipes so
-  one long roll moves several desktops, and a single stray tick of the wheel does nothing.
+  notches of one roll (at most one each quarter second) and goes on where you left off when
+  you take the wheel again; with Follow the wheel one long roll moves several desktops,
+  each sliding in before the next, and the end of the row no longer leaves the wheel dead.
+  A stray tick or two of the wheel does nothing, and Back and Forward takes a hard flick as
+  one page.
 
 ## 1.0.5
 

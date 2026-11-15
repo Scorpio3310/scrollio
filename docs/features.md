@@ -399,9 +399,12 @@ wheel.
   moves several desktops, as quick trackpad swipes do. A swipe at a full desktop also
   ends when the wheel stops for a moment (0.15 s); one that went part of the way settles
   when the wheel rests (about half a second): half a desktop or more goes on to the next
-  one, less goes back. No swipe begins while the last one settles. At the first or the
-  last desktop (macOS did not switch) the wheel stops trying that way until it rests or
-  the desktop changes after all.
+  one, less goes back. No swipe begins while the last one settles. Each desktop is shown
+  for a moment (0.15 s) before the next one comes, and after a switch the next swipe
+  begins once the wheel has turned half a desktop more, so the tail of a roll does not
+  make the next desktop peek in and slide away. At the first or the last desktop (macOS
+  did not switch within 0.2 s) the wheel stops trying that way for that turn; turn back,
+  or rest, and it follows again.
   While a gesture's swipe runs the wheel waits; a gesture that starts one takes over.
   Where macOS cannot be sent a swipe, the desktops go in steps.
 - For every action but Scroll Sideways, a small tick of the wheel, or a pair of them

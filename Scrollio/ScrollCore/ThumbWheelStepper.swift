@@ -162,9 +162,6 @@ enum ThumbWheelTuning {
     /// A gate that timed out keeps its swipe this long (s) more: a change meanwhile is logged
     /// as late ("late +N ms"), none as "no change".
     static let followLateSpaceChangeWindow: TimeInterval = 1.5
-    /// A change this soon (s) after an end is too soon to be that end's own: while an older
-    /// swipe waits as late, it is the older one's.
-    static let followSpaceChangeTooSoon: TimeInterval = 0.12
     /// Travel kept meanwhile for the next swipe, at most this many units either way (a Space).
     static let followGatePendingCap = 6.0
 }
