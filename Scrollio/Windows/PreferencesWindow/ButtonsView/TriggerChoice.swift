@@ -351,6 +351,9 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
     var showInButtons: () -> Void = {}
     /// A choice, or its Undo or Redo, changed the bindings: the pane shows them.
     var didChange: () -> Void = {}
+    /// An Undo or Redo of a choice ran, maybe while another pane shows: the pane comes
+    /// forward, so that it shows where it acts. Not called for the choice itself.
+    var comeForward: () -> Void = {}
     /// Starts recording at the pull-down. nil: the real recorder, which taps the system's
     /// events; tests never use it.
     var startRecording: ((NSView) -> Void)?
@@ -541,6 +544,7 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
                 patch,
                 name: text(rule == .shortcutRing ? "ring-undo-choose-trigger" : "gestures-undo-choose-button"),
                 apply: { write($0.applied(to: read())) },
+                comeForward: { [weak self] in self?.comeForward() },
                 didChange: { [weak self] in self?.didChange() },
                 on: undo
             )
@@ -550,19 +554,23 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
 
     /// Undo applies `patch`'s inverse to the bindings as they are then, and registers Redo,
     /// which registers Undo again. Nothing of it needs the pane: it works after the pane
-    /// went away (the settings are the target).
+    /// went away (the settings are the target). While the pane is there it comes forward
+    /// (`comeForward`), with the row that names the trigger: the bindings change, and
+    /// nothing else on screen would say so.
     private static func register(
         _ patch: ButtonBindingsPatch,
         name: String,
         apply: @escaping (ButtonBindingsPatch) -> Void,
+        comeForward: @escaping () -> Void,
         didChange: @escaping () -> Void,
         on undo: UndoManager
     ) {
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
             apply(patch.inverse)
+            comeForward()
             didChange()
             guard let undo else { return }
-            register(patch.inverse, name: name, apply: apply, didChange: didChange, on: undo)
+            register(patch.inverse, name: name, apply: apply, comeForward: comeForward, didChange: didChange, on: undo)
         }
         undo.setActionName(name)
     }

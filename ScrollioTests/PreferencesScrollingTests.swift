@@ -1591,6 +1591,44 @@ final class PreferencesScrollingTests: XCTestCase {
         window.close()
     }
 
+    /// "Undo Reset Scrolling" from another pane (⌘Z after a switch elsewhere, which
+    /// registers nothing): Scrolling comes forward and shows the values that are back;
+    /// Redo too. The reset itself, clicked on the pane, moves nothing.
+    func testUndoOfTheResetFromAnotherPaneShowsScrolling() throws {
+        Options.shared.scroll.speed = 2.0
+        let preferences = PreferencesSplitViewController(storyboard: storyboard, uiStateDefaults: nil)
+        let scrolling = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)
+        scrolling.uiStateDefaults = uiDefaults
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = preferences
+        addTeardownBlock { window.close() }
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.scrolling))
+
+        undo.beginUndoGrouping()
+        send(scrolling.resetToDefaultsButton)
+        undo.endUndoGrouping()
+        XCTAssertEqual(Options.shared.scroll, OPTIONS_SCROLL_DEFAULT())
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Reset Scrolling")
+        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.scrolling)
+
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        undo.undo()
+        XCTAssertEqual(Options.shared.scroll.speed, 2.0)
+        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.scrolling, "the pane comes forward")
+        XCTAssertEqual(scrolling.scrollSpeedSlider.doubleValue, 2.0, accuracy: 1e-9, "and shows the values")
+
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        undo.redo()
+        XCTAssertEqual(Options.shared.scroll, OPTIONS_SCROLL_DEFAULT())
+        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.scrolling, "Redo too")
+    }
+
     /// On an app's page the reset and its Undo touch that app's own options only, and the
     /// Undo still works once the page (and its controller) is gone.
     func testResetOnAnAppsPageCanBeUndoneAfterThePageIsGone() {

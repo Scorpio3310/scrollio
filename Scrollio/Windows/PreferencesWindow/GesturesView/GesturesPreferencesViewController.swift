@@ -473,11 +473,19 @@ final class GesturesPreferencesViewController: NSViewController {
                 undoActionNameKey: "gestures-undo-reset"
             ),
             undoManager: { [weak self] in self?.undoTarget },
+            comeForward: { [weak self] in self?.comeForward() },
             didChange: { [weak self] in self?.reload() }
         )
         reset.willReset = { [weak self] in self?.controls.endEditing() }
         reset.button.identifier = Identifier.reset
         return reset
+    }
+
+    /// An Undo or Redo of a step of the whole pane (its reset, the choice of the button to
+    /// hold) shows where it acts, as one of a direction does: the pane comes forward while
+    /// another one shows.
+    private func comeForward() {
+        PreferencesUndoPlace(of: self).bringForward(pane: Self.tabIdentifier)
     }
 
     // MARK: - Rows
@@ -494,6 +502,7 @@ final class GesturesPreferencesViewController: NSViewController {
         chooser.undoManager = { [weak self] in self?.undoTarget }
         chooser.showInButtons = { [weak self] in self?.showInButtons() }
         chooser.didChange = { [weak self] in self?.reload() }
+        chooser.comeForward = { [weak self] in self?.comeForward() }
         chooser.pullDown.identifier = Identifier.gestureButton
         triggerChooser = chooser
         let row = PreferencesGroupRow(

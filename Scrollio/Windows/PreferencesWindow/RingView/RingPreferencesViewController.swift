@@ -1027,11 +1027,19 @@ final class RingPreferencesViewController: NSViewController {
                 undoActionNameKey: "ring-undo-reset"
             ),
             undoManager: { [weak self] in self?.undoTarget },
+            comeForward: { [weak self] in self?.comeForward() },
             didChange: { [weak self] in self?.reload() }
         )
         reset.willReset = { [weak self] in self?.endEditing() }
         reset.button.identifier = Identifier.reset
         return reset
+    }
+
+    /// An Undo or Redo of a step of the whole pane (its reset, the choice of what opens the
+    /// ring) shows where it acts, as one of a place does: the pane comes forward while
+    /// another one shows.
+    private func comeForward() {
+        PreferencesUndoPlace(of: self).bringForward(pane: Self.tabIdentifier)
     }
 
     // MARK: - Rows
@@ -1048,6 +1056,7 @@ final class RingPreferencesViewController: NSViewController {
         chooser.undoManager = { [weak self] in self?.undoTarget }
         chooser.showInButtons = { [weak self] in self?.showInButtons() }
         chooser.didChange = { [weak self] in self?.reload() }
+        chooser.comeForward = { [weak self] in self?.comeForward() }
         chooser.pullDown.identifier = Identifier.triggerButton
         triggerChooser = chooser
         let row = PreferencesGroupRow(
@@ -1196,5 +1205,33 @@ extension PreferencesSplitViewController {
               let id = apps.rowID(for: application) else { return nil }
         apps.openApplication(withID: id, part: part)
         return apps.detailController
+    }
+}
+
+/// Where a step of a whole pane or of a whole part of an app's page shows itself when it
+/// is undone or redone: a reset, a copy, the choice of the button to hold or of what opens
+/// the ring, a pick of "Scrolling in Safari". The pane, or the app's page on that part,
+/// comes forward, as for a row's Undo; the step itself, made where it is in sight, moves
+/// nothing. Made when the step is registered, from the controller that makes it. The
+/// window's panes are not held, and without them (a pane in a window of its own) nothing
+/// comes forward.
+struct PreferencesUndoPlace {
+
+    private weak var split: PreferencesSplitViewController?
+
+    init(of controller: NSViewController?) {
+        split = controller.flatMap { PreferencesButtonsViewController.splitViewController(of: $0) }
+    }
+
+    /// The pane `identifier` comes forward, unless it is on show.
+    func bringForward(pane identifier: String) {
+        split?.bringForward(pane: identifier)
+    }
+
+    /// Apps comes forward with the page of `application` on `part`. Not for an entry the
+    /// list no longer holds: there is no page to show.
+    func bringForward(pageOf application: Application, part: ApplicationPagePart) {
+        guard let split, Options.shared.application.applications.get(by: application.path) === application else { return }
+        _ = split.bringForward(pageOf: application, part: part)
     }
 }

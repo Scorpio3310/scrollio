@@ -63,18 +63,22 @@ final class PreferencesPaneReset: NSObject {
     ///   - store: the pane's settings.
     ///   - undoManager: where a reset registers its Undo (nil: nowhere, and the button
     ///     offers none).
+    ///   - comeForward: an Undo or Redo of the reset is about to run, maybe while another
+    ///     pane shows: the pane comes forward, so that it shows where it acts (as a row's
+    ///     Undo does). Not called for the reset itself, which is clicked on the pane.
     ///   - didChange: the settings were replaced (by the reset, its Undo or its Redo): the
     ///     pane shows them, and tells this object with `settingsDidChange()`.
     convenience init<Settings: Equatable>(
         store: Store<Settings>,
         undoManager: @escaping () -> UndoManager?,
+        comeForward: @escaping () -> Void = {},
         didChange: @escaping () -> Void
     ) {
         self.init(
             undoActionNameKey: store.undoActionNameKey,
             hasSettingsToReset: { store.read() != store.defaults },
             undoManager: undoManager,
-            reset: { Self.reset(store, undoManager: $0, didChange: didChange) }
+            reset: { Self.reset(store, undoManager: $0, comeForward: comeForward, didChange: didChange) }
         )
     }
 
@@ -206,10 +210,11 @@ final class PreferencesPaneReset: NSObject {
 
     /// Puts the defaults in place of the stored settings; Undo gives back the ones that were
     /// there. The undo target is the settings, not a pane: Undo and Redo work whichever
-    /// pane shows.
+    /// pane shows, and bring the reset's pane forward first (`comeForward`).
     private static func reset<Settings>(
         _ store: Store<Settings>,
         undoManager undo: UndoManager?,
+        comeForward: @escaping () -> Void,
         didChange: @escaping () -> Void
     ) {
         let previous = store.read()
@@ -217,7 +222,8 @@ final class PreferencesPaneReset: NSObject {
         didChange()
         guard let undo else { return }
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
-            Self.restore(previous, to: store, undoManager: undo, didChange: didChange)
+            comeForward()
+            Self.restore(previous, to: store, undoManager: undo, comeForward: comeForward, didChange: didChange)
         }
         undo.setActionName(store.undoActionName)
     }
@@ -227,13 +233,15 @@ final class PreferencesPaneReset: NSObject {
         _ settings: Settings,
         to store: Store<Settings>,
         undoManager undo: UndoManager?,
+        comeForward: @escaping () -> Void,
         didChange: @escaping () -> Void
     ) {
         store.write(settings)
         didChange()
         guard let undo else { return }
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
-            Self.reset(store, undoManager: undo, didChange: didChange)
+            comeForward()
+            Self.reset(store, undoManager: undo, comeForward: comeForward, didChange: didChange)
         }
         undo.setActionName(store.undoActionName)
     }

@@ -574,7 +574,7 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
         if ApplicationScrollingSnapshot(of: application) != before {
             Self.registerUndo(
                 restoring: before, of: application, undoManager: undoTarget,
-                showing: partShowingNow, list: onInheritChange
+                showing: partShowingNow, place: PreferencesUndoPlace(of: self), list: onInheritChange
             )
         }
         // (The settings came, went or folded: the page measures again, once.)
@@ -591,22 +591,25 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
     /// Registers the step back to `snapshot` for the app's entry. The target is the
     /// settings, not this part: an Undo after the page closed still works. Undo and Redo
     /// find the entry by its path when they run (an app removed and added again is a new
-    /// entry), show what they did on the part open then (`showing`) and tell the list.
+    /// entry), bring the app's page forward on this part (`place`: the pick is undone where
+    /// it shows), show what they did on the part open then (`showing`) and tell the list.
     private static func registerUndo(
         restoring snapshot: ApplicationScrollingSnapshot, of application: Application, undoManager undo: UndoManager?,
-        showing: @escaping (Application) -> ApplicationScrollingPartViewController?, list: (() -> Void)?
+        showing: @escaping (Application) -> ApplicationScrollingPartViewController?, place: PreferencesUndoPlace,
+        list: (() -> Void)?
     ) {
         guard let undo else { return }
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
             let entry = currentEntry(of: application)
             let now = ApplicationScrollingSnapshot(of: entry)
             snapshot.apply(to: entry)
+            place.bringForward(pageOf: entry, part: .scrolling)
             if let part = showing(entry) {
                 part.showStoredChoice()
                 part.onHeightChange?()
             }
             list?()
-            registerUndo(restoring: now, of: entry, undoManager: undo, showing: showing, list: list)
+            registerUndo(restoring: now, of: entry, undoManager: undo, showing: showing, place: place, list: list)
         }
         undo.setActionName(undoActionName(of: application))
     }
@@ -940,20 +943,23 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             of: application, with: suggested ?? Options.shared.ring.places,
             freezePointer: Options.shared.ring.freezePointer, fromSuggestion: suggested != nil,
             actionName: Self.resetActionName(for: application, suggested: suggestion != nil),
-            undoManager: undo, showing: showing
+            undoManager: undo, showing: showing, place: PreferencesUndoPlace(of: self)
         )
     }
 
     /// As the removal of a thumb wheel (`ApplicationButtonsViewController`): the undo
     /// target is the settings, not the page; Undo and Redo find the app's entry by its path
-    /// when they run, and show the change on the part `showing` gives for it. (A ring kept
-    /// for later takes them too: the switch is never touched.)
+    /// when they run, bring the app's page forward on this part (`place`; as an Undo of a
+    /// place does) and show the change on the part `showing` gives for it. (A ring kept
+    /// for later takes them too: the switch is never touched. Nothing comes forward then:
+    /// the part would show the switch alone.)
     /// (`fromSuggestion`: the places are the app's suggested shortcuts; Undo gives the ring
     /// back what it knew of them before.)
     private static func fillRing(
         of application: Application, with places: [ShortcutRingPlace], freezePointer: Bool?, fromSuggestion: Bool,
         actionName: String,
-        undoManager undo: UndoManager?, showing: @escaping (Application) -> ApplicationRingPartViewController?
+        undoManager undo: UndoManager?, showing: @escaping (Application) -> ApplicationRingPartViewController?,
+        place: PreferencesUndoPlace
     ) {
         guard let before = application.ring else { return }
         application.replaceOwnRing(places: places, freezePointer: freezePointer, startedFromSuggestion: fromSuggestion)
@@ -966,9 +972,13 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             guard let entry = PreferencesApplicationViewController.existingApplication(
                 forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: path)
             ) else { return }
+            if entry.ownRingPlaces != nil {
+                place.bringForward(pageOf: entry, part: .ring)
+            }
             fillRing(
                 of: entry, with: before.places, freezePointer: before.freezePointer,
-                fromSuggestion: before.startedFromSuggestion, actionName: actionName, undoManager: undo, showing: showing
+                fromSuggestion: before.startedFromSuggestion, actionName: actionName, undoManager: undo, showing: showing,
+                place: place
             )
         }
         undo.setActionName(actionName)
