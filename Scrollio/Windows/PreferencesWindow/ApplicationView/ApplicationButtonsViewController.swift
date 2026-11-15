@@ -597,6 +597,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// Undo, named as the panes' choice of the button ("Undo Change Button to Hold").
     @discardableResult
     func addOwnBinding(for trigger: RecordedEvent, action: SystemShortcut.Shortcut? = nil) -> UUID? {
+        defer { focusList() }
         let undoName = action.map(Self.setUpUndoName(for:))
         if let existing = ownBinding(for: trigger) {
             if let action, Self.takesAction(existing) {
@@ -633,6 +634,13 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
             self.openActionMenu(row.pullDown)
         }
         return added.id
+    }
+
+    /// The list takes the keyboard (after "+", an Undo or a Redo), while the part is in the
+    /// window: Delete and Return then act on the row that was selected.
+    func focusList() {
+        guard isViewLoaded, let window = view.window, list.window === window else { return }
+        window.makeFirstResponder(list)
     }
 
     /// A new binding of the app's own for `trigger`, with the action a press of it has
@@ -809,14 +817,17 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     }
 
     /// A removal, its Undo or its Redo changed the app's list: the rows again, with `id`
-    /// selected; and the part of the page shown now, if another one: the Gestures and
-    /// Shortcut Ring parts say what this app's buttons make of the gestures and the ring.
+    /// selected and the keyboard in the list (while the part is in the window); and the
+    /// part of the page shown now, if another one ("Set Up…" of the Gestures or Shortcut
+    /// Ring part, whose Undo stays there): those parts say what this app's buttons make of
+    /// the gestures and the ring.
     private func showUndoableChange(selecting id: UUID?) {
         guard isViewLoaded else { return }
         reloadRows()
         if let id {
             list.select(AnyHashable(id))
         }
+        focusList()
         if let shown = (parent as? ApplicationDetailViewController)?.shownController, shown !== self {
             shown.syncViewWithOptions()
         }

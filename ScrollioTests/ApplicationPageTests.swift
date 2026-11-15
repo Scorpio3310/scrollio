@@ -1316,6 +1316,7 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(part.list.selectedID, AnyHashable(calculator.ownButtonBindings[0].id))
         drainMainQueue()
         XCTAssertTrue(opened.first === part.rows.first?.pullDown)
+        XCTAssertTrue(window.firstResponder === part.list, "the list has the keyboard: Delete and Return act on the new row (QA B11)")
 
         // A Logitech button without a binding of Buttons: "Default" until one is chosen.
         let gesture = try XCTUnwrap(part.makeAddMenu().items.first {
