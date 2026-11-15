@@ -543,10 +543,15 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
         return paneUndoManager ?? view.window?.undoManager
     }
 
-    /// A pick in "Scrolling in Safari": writes what the move needs, as one Undo step.
+    /// A pick in "Scrolling in Safari": writes what the move needs, as one Undo step. The
+    /// move starts from what the stored values say now (with Own Settings held over them),
+    /// not from what the pop-up showed: on a page that did not hear of a change made
+    /// elsewhere (the menu bar) a pick of the item shown would otherwise write nothing,
+    /// and the pop-up would jump to what is stored. So a pick always leaves the stored
+    /// values saying the item picked.
     @objc func choiceChanged(_ sender: NSPopUpButton) {
         guard let choice = ApplicationScrollingChoice(rawValue: sender.selectedTag()) else { return }
-        let shown = shownChoice
+        let shown = choiceToShow()
         heldOwnSettings = nil
         let before = ApplicationScrollingSnapshot(of: application)
         application.choose(choice, from: shown, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)

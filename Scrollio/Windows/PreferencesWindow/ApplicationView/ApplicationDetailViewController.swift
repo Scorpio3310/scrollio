@@ -287,6 +287,22 @@ final class ApplicationDetailViewController: NSViewController {
         for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
             NotificationCenter.default.addObserver(self, selector: #selector(undoManagerDidChange(_:)), name: name, object: nil)
         }
+        // "Smooth Scrolling in …" of the menu bar changes an app's scrolling while its page
+        // is open: the page shows it when its window becomes key again.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowDidBecomeKey(_:)), name: NSWindow.didBecomeKeyNotification, object: nil
+        )
+    }
+
+    /// The page's window became key (back from the menu bar or another app): the Scrolling
+    /// part, the app's box and the line under it show what is stored now (as General shows
+    /// the login item and the access). The other parts hold nothing that changes from
+    /// outside the window.
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        guard isViewLoaded, let window = notification.object as? NSWindow, window === view.window else { return }
+        scrollingPart?.syncViewWithOptions()
+        showOwnSettings()
+        syncAllowlistNote()
     }
 
     /// An Undo or Redo ran: while the page is in a window and the bindings of Buttons are

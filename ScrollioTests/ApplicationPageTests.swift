@@ -720,19 +720,28 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// "Smooth Scrolling in Calculator" of the menu bar changes the app's own smoothing:
-    /// the open page shows what it gives as soon as it refreshes, also over Own Settings
-    /// held for what was done here by hand.
+    /// the open page shows what it gives as soon as its window becomes key again (back from
+    /// the menu bar), also over Own Settings held for what was done here by hand. Another
+    /// window becoming key changes nothing on it.
     func testAMenuBarChangeShowsOnTheOpenPage() throws {
         let calculator = addApp(Self.calculator)
         make(calculator, .ownSettings)
         calculator.scroll.reversesWheel = false
         let pane = makePane()
+        let window = makeWindow(for: pane)
         pane.openApplication(withID: Self.calculator, part: .scrolling)
         let page = try XCTUnwrap(pane.detailController)
         let menu = AppSmoothing.App(name: "Calculator", bundlePath: Self.calculator, executablePath: nil)
+        let other = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
+        other.isReleasedWhenClosed = false
+        addTeardownBlock { other.close() }
+        XCTAssertEqual(AppSmoothing.toggle(menu, list: Options.shared.application, scrolling: Options.shared.scroll), .setOwnSmoothing(false))
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: other)
+        XCTAssertEqual(shown(page), .ownSettings, "another window: nothing yet")
+        XCTAssertEqual(AppSmoothing.toggle(menu, list: Options.shared.application, scrolling: Options.shared.scroll), .setOwnSmoothing(true))
         func toggle(_ expected: AppSmoothing.Change, line: UInt = #line) {
             XCTAssertEqual(AppSmoothing.toggle(menu, list: Options.shared.application, scrolling: Options.shared.scroll), expected, line: line)
-            pane.syncViewWithOptions()
+            NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
         }
 
         toggle(.setOwnSmoothing(false))
@@ -751,6 +760,54 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(shown(page), .ownSettings)
         toggle(.setOwnSmoothing(false))
         XCTAssertEqual(shown(page), .leftToMacOS)
+    }
+
+    /// A page that has not heard of a change from the menu bar yet: a pick of the item it
+    /// shows writes what makes the stored values say that item (from what they say now), as
+    /// one Undo step, and the pop-up stays on it; the settings stay where they were.
+    func testAPickOnAStalePageMakesTheStoredValuesSayIt() throws {
+        let menu = AppSmoothing.App(name: "Calculator", bundlePath: Self.calculator, executablePath: nil)
+        func toggle(_ expected: AppSmoothing.Change, line: UInt = #line) {
+            XCTAssertEqual(AppSmoothing.toggle(menu, list: Options.shared.application, scrolling: Options.shared.scroll), expected, line: line)
+        }
+        // Own Settings shows; the menu bar turns smoothing off: the stored values say Left to macOS.
+        let calculator = addApp(Self.calculator)
+        make(calculator, .ownSettings)
+        calculator.scroll.reversesWheel = false
+        let pane = makePane()
+        pane.openApplication(withID: Self.calculator, part: .scrolling)
+        let page = try XCTUnwrap(pane.detailController)
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        page.scrollingPart.paneUndoManager = undo
+        let height = pane.view.frame.height
+        toggle(.setOwnSmoothing(false))
+        XCTAssertEqual(calculator.scrollingChoice, .leftToMacOS)
+        XCTAssertEqual(shown(page), .ownSettings, "stale")
+        undo.beginUndoGrouping()
+        pick(.ownSettings, on: page)
+        undo.endUndoGrouping()
+        XCTAssertTrue(calculator.scroll.smooth, "smoothing on again: what Own Settings from Left to macOS writes")
+        XCTAssertEqual(calculator.scrollingChoice, .ownSettings)
+        XCTAssertEqual(shown(page), .ownSettings)
+        XCTAssertFalse(page.scrollingController.smoothSwitch.isHiddenOrHasHiddenAncestor)
+        XCTAssertEqual(pane.view.frame.height, height, accuracy: 0.5, "nothing folded")
+        XCTAssertEqual(undo.undoActionName, "Change Scrolling in Calculator")
+        undo.undo()
+        XCTAssertFalse(calculator.scroll.smooth)
+        XCTAssertEqual(shown(page), .leftToMacOS, "Undo shows what is stored")
+
+        // Left to macOS shows; the menu bar turns smoothing on: the stored values say Own Settings.
+        toggle(.setOwnSmoothing(true))
+        XCTAssertEqual(calculator.scrollingChoice, .ownSettings)
+        XCTAssertEqual(shown(page), .leftToMacOS, "stale")
+        undo.beginUndoGrouping()
+        pick(.leftToMacOS, on: page)
+        undo.endUndoGrouping()
+        XCTAssertFalse(calculator.scroll.smooth)
+        XCTAssertEqual(calculator.scrollingChoice, .leftToMacOS)
+        XCTAssertEqual(shown(page), .leftToMacOS)
+        XCTAssertTrue(page.scrollingController.smoothSwitch.isHiddenOrHasHiddenAncestor)
     }
 
     /// "Scrolling in …" and its three lines for an app with a long name: the title is cut
