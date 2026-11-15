@@ -323,6 +323,47 @@ final class StoredSettingsSaveTests: XCTestCase {
         XCTAssertEqual(read.logiMouse, options.logiMouse)
     }
 
+    /// Thumb wheel settings as version 1.0.5 stored them (one "speed" for every action;
+    /// `git show v1.0.5:Scrollio/Options/ThumbWheelSettings.swift`): read, every action has
+    /// that speed, and a save writes them back as they were. Once one action's slider
+    /// moved, the store holds every action's speed by name and still the old "speed", now
+    /// the speed of the action in use: all that 1.0.5 reads after a downgrade.
+    func testAThumbWheelStoredByVersion105GivesEveryActionItsSpeedAndTheOldFieldStays() throws {
+        let (options, defaults) = makeOptions()
+        let from105 = #"{"function":"desktops","speed":0.75,"swapsDirection":false}"#
+        defaults.set("optionsExist", forKey: "optionsExist")
+        defaults.set(Data(from105.utf8), forKey: "thumbWheelSettings")
+        func stored() throws -> NSDictionary {
+            let data = try XCTUnwrap(defaults.data(forKey: "thumbWheelSettings"))
+            return try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? NSDictionary)
+        }
+
+        options.readOptions()
+        XCTAssertEqual(options.thumbWheel.function, .desktops)
+        for function in ThumbWheelFunction.allCases {
+            XCTAssertEqual(options.thumbWheel.speeds[function], 0.75, "\(function)")
+        }
+        options.saveOptions()
+        XCTAssertEqual(try stored(), ["function": "desktops", "speed": 0.75, "swapsDirection": false], "as 1.0.5 wrote it")
+
+        options.thumbWheel.function = .scroll
+        options.thumbWheel.speed = 1.5
+        options.saveOptions()
+        XCTAssertEqual(try stored(), [
+            "function": "scroll", "speed": 1.5, "swapsDirection": false,
+            "speeds": ["scroll": 1.5, "zoom": 0.75, "tabs": 0.75, "desktops": 0.75, "backForward": 0.75, "volume": 0.75],
+        ])
+        options.thumbWheel.function = .desktops
+        options.saveOptions()
+        XCTAssertEqual(try stored()["speed"] as? Double, 0.75, "the old field follows the action in use")
+
+        let read = Options()
+        read.defaults = defaults
+        read.readOptions()
+        XCTAssertEqual(read.thumbWheel, options.thumbWheel)
+        XCTAssertEqual(read.thumbWheel.speeds[.scroll], 1.5)
+    }
+
     /// Bindings and per-app entries that a newer version stored and this one cannot read
     /// are written back at a save (dropping them went unnoticed by every test): a user who
     /// goes back to an older version and forward again keeps them.

@@ -291,7 +291,7 @@ final class ThumbWheelEngine {
     /// The settings a sideways wheel event goes by, in the scroll tap's callback, before
     /// `handle`: `general` with what the event's turn has of an app's own. The turn's first
     /// event (the first ever, or one after the wheel rested) decides whose they are: the app
-    /// in front's own function, speed, reverses and follow switch, else the general ones (`ThumbWheelChoice`:
+    /// in front's own function, speeds, reverses and follow switch, else the general ones (`ThumbWheelChoice`:
     /// the list looked at, the app in front read only while some app has something of its
     /// own; nothing on disk, no Launch Services). Every later event of the turn keeps them:
     /// one comparison of times.

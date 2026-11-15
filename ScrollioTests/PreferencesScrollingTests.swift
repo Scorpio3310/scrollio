@@ -1107,6 +1107,150 @@ final class PreferencesScrollingTests: XCTestCase {
         }
     }
 
+    /// The Speed slider is the chosen action's own, as "Reverse direction" is: moved for
+    /// Switch Desktops it sets that action's speed only; another action shows its own, with
+    /// its own line under it, and moved there it leaves Switch Desktops' as it was. Written
+    /// once, nothing else.
+    func testTheSpeedSliderIsTheChosenActionsOwn() {
+        let controller = makeController()
+        let slider = controller.thumbWheelSpeedSlider!
+        let row = controller.thumbWheelSpeedRow!
+        choose(.desktops, in: controller)
+        let changes = countThumbWheelChanges()
+        drag(slider, to: 0.75)
+        var expected = ThumbWheelSpeeds.default
+        expected[.desktops] = 0.75
+        XCTAssertEqual(Options.shared.thumbWheel.speeds, expected, "Switch Desktops only")
+        drag(slider, to: 0.75)
+        XCTAssertEqual(changes(), 1, "a value it has is not written again")
+        XCTAssertEqual(row.explanation, "Faster means less of a turn for each step.")
+
+        choose(.scroll, in: controller)
+        XCTAssertEqual(slider.doubleValue, 1.0, accuracy: 1e-9, "Scroll Sideways' own")
+        XCTAssertEqual(row.valueText, ThumbWheelPresentation.speedText(1.0))
+        XCTAssertEqual(slider.accessibilityValueDescription(), ThumbWheelPresentation.speedText(1.0))
+        XCTAssertEqual(row.explanation, text("scrolling-thumb-wheel-speed-hint-scroll"), "the line stays the action's own")
+        drag(slider, to: 2)
+        expected[.scroll] = 2
+        XCTAssertEqual(Options.shared.thumbWheel.speeds, expected, "Switch Desktops keeps its own")
+        choose(.desktops, in: controller)
+        XCTAssertEqual(slider.doubleValue, 0.75, accuracy: 1e-9)
+        XCTAssertEqual(row.valueText, ThumbWheelPresentation.speedText(0.75))
+        // One speed for its steps and for Follow the wheel.
+        set(controller.thumbWheelFollowSwitch, true)
+        XCTAssertEqual(slider.doubleValue, 0.75, accuracy: 1e-9)
+        XCTAssertEqual(row.explanation, "How far a turn slides the desktop.")
+        for function in ThumbWheelFunction.allCases where function != .desktops && function != .scroll {
+            choose(function, in: controller)
+            XCTAssertEqual(slider.doubleValue, 1.0, accuracy: 1e-9, "\(function): never set")
+        }
+        XCTAssertEqual(Options.shared.thumbWheel.speeds, expected)
+        XCTAssertEqual(Options.shared.scroll, OPTIONS_SCROLL_DEFAULT(), "nothing else")
+
+        // A change from elsewhere (the Buttons pane's row) shows that action's speed.
+        Options.shared.thumbWheel.function = .scroll
+        XCTAssertEqual(slider.doubleValue, 2, accuracy: 1e-9)
+    }
+
+    /// "Reset to Defaults" gives every action its speed of 1× again, also when the action
+    /// shown is at 1× and only another one was changed; Undo brings each back, Redo resets.
+    func testResetGivesEveryActionItsDefaultSpeedAndUndoBringsThemBack() {
+        let controller = makeController()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        controller.paneUndoManager = undo
+        XCTAssertFalse(controller.hasSettingsToReset)
+        var changed = ThumbWheelSettings.default
+        changed.speeds[.desktops] = 0.75
+        changed.speeds[.volume] = 2
+        Options.shared.thumbWheel = changed
+        XCTAssertEqual(controller.thumbWheelSpeedSlider.doubleValue, 1, accuracy: 1e-9, "Scroll Sideways shows, at 1×")
+        XCTAssertTrue(controller.hasSettingsToReset, "another action's speed counts")
+        XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
+
+        undo.beginUndoGrouping()
+        send(controller.resetToDefaultsButton)
+        undo.endUndoGrouping()
+        XCTAssertEqual(Options.shared.thumbWheel, .default)
+        XCTAssertEqual(Options.shared.thumbWheel.speeds, ThumbWheelSpeeds(all: 1))
+        undo.undo()
+        XCTAssertEqual(Options.shared.thumbWheel, changed)
+        choose(.desktops, in: controller)
+        XCTAssertEqual(controller.thumbWheelSpeedSlider.doubleValue, 0.75, accuracy: 1e-9)
+        choose(.scroll, in: controller)
+        undo.redo()
+        XCTAssertEqual(Options.shared.thumbWheel, .default)
+    }
+
+    /// On an app's page the slider shows and sets the speed of the action the app runs, in
+    /// the app's own values, never the general ones; "Copy from Scrolling" gives the app
+    /// every action's speed of Scrolling › Thumb wheel, and its Undo the app's own again.
+    func testAnAppsPageSetsTheSpeedOfTheAppsActionOnly() {
+        var general = ThumbWheelSettings(function: .desktops)
+        general.speeds[.desktops] = 0.75
+        general.speeds[.zoom] = 2.25
+        Options.shared.thumbWheel = general
+        let application = makeApplication(inherit: false)
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        let controller = makeController(target: application)
+        controller.paneUndoManager = undo
+        let slider = controller.thumbWheelSpeedSlider!
+        XCTAssertEqual(slider.doubleValue, 0.75, accuracy: 1e-9, "Scrolling's speed of Switch Desktops runs there")
+        XCTAssertFalse(controller.hasSettingsToReset, "a copy already")
+
+        drag(slider, to: 1.5)
+        var own = general.speeds
+        own[.desktops] = 1.5
+        XCTAssertEqual(application.scroll.thumbWheel?.speeds, own, "the app's action; the others as they ran")
+        XCTAssertEqual(Options.shared.thumbWheel, general, "not the general ones")
+        XCTAssertTrue(controller.hasSettingsToReset)
+
+        // The app's own action: its own speed shows, and is the one that is set.
+        choose(.zoom, in: controller)
+        XCTAssertEqual(application.ownThumbWheelFunction, .zoom)
+        XCTAssertEqual(slider.doubleValue, 2.25, accuracy: 1e-9, "Zoom's, as copied from Scrolling when the app got its own")
+        drag(slider, to: 0.5)
+        own[.zoom] = 0.5
+        XCTAssertEqual(application.scroll.thumbWheel?.speeds, own)
+        XCTAssertEqual(application.thumbWheelThatRuns(general: general).speed, 0.5)
+        choose(.desktops, in: controller)
+        XCTAssertEqual(slider.doubleValue, 1.5, accuracy: 1e-9)
+        XCTAssertEqual(Options.shared.thumbWheel, general)
+
+        undo.beginUndoGrouping()
+        send(controller.resetToDefaultsButton)
+        undo.endUndoGrouping()
+        XCTAssertEqual(application.scroll.thumbWheel, ApplicationThumbWheelScrolling(general), "every action's speed of Scrolling")
+        XCTAssertNil(application.thumbWheel)
+        XCTAssertEqual(slider.doubleValue, 0.75, accuracy: 1e-9)
+        XCTAssertFalse(controller.hasSettingsToReset)
+        undo.undo()
+        XCTAssertEqual(application.scroll.thumbWheel?.speeds, own)
+        XCTAssertEqual(application.ownThumbWheelFunction, .desktops)
+        XCTAssertEqual(slider.doubleValue, 1.5, accuracy: 1e-9)
+        XCTAssertEqual(Options.shared.thumbWheel, general)
+    }
+
+    /// Same as Scrolling: the app follows Scrolling's speed of the action IT runs (its own
+    /// action, another than the wheel's in other apps), and a change of that speed in
+    /// Scrolling reaches it.
+    func testAnAppThatUsesTheScrollingSettingsFollowsTheSpeedOfItsAction() {
+        var general = ThumbWheelSettings(function: .scroll)
+        general.speeds[.scroll] = 0.5
+        general.speeds[.zoom] = 2.25
+        Options.shared.thumbWheel = general
+        let application = makeApplication(inherit: true)
+        application.setOwnThumbWheelFunction(.zoom)
+        let controller = makeController(target: application)
+        XCTAssertEqual(controller.thumbWheelSpeedSlider.doubleValue, 2.25, accuracy: 1e-9, "Scrolling's speed of Zoom")
+        XCTAssertFalse(controller.thumbWheelSpeedRow.isEnabled, "Scrolling's, not the app's")
+        XCTAssertEqual(application.thumbWheelThatRuns(general: general).speed, 2.25)
+        Options.shared.thumbWheel.speeds[.zoom] = 1.25
+        XCTAssertEqual(controller.thumbWheelSpeedSlider.doubleValue, 1.25, accuracy: 1e-9)
+        XCTAssertNil(application.scroll.thumbWheel, "nothing stored for the app")
+    }
+
     /// "Follow the wheel" shows for Switch Desktops only, off by default; it writes Switch
     /// Desktops' follow switch, and the speed's line says what the speed then does.
     func testFollowTheWheelShowsForSwitchDesktopsOnly() {
@@ -1147,7 +1291,7 @@ final class PreferencesScrollingTests: XCTestCase {
         set(controller.thumbWheelReverseSwitch, true)
         var reversed = ThumbWheelReversal.none
         reversed[.desktops] = true
-        XCTAssertEqual(application.scroll.thumbWheel, ApplicationThumbWheelScrolling(speed: 1, reverses: reversed, followsWheel: true))
+        XCTAssertEqual(application.scroll.thumbWheel, ApplicationThumbWheelScrolling(speeds: ThumbWheelSpeeds(all: 1), reverses: reversed, followsWheel: true))
         XCTAssertEqual(Options.shared.thumbWheel, ThumbWheelSettings(function: .desktops), "not the general ones")
         XCTAssertTrue(controller.hasSettingsToReset)
     }
@@ -1256,7 +1400,7 @@ final class PreferencesScrollingTests: XCTestCase {
         XCTAssertEqual(Options.shared.thumbWheel, changed)
         undo.redo()
         XCTAssertNil(application.thumbWheel)
-        XCTAssertEqual(application.scroll.thumbWheel?.speed, 0.5)
+        XCTAssertEqual(application.scroll.thumbWheel?.speeds, ThumbWheelSpeeds(all: 0.5))
 
         // A change from elsewhere shows on the page at once (the app has no action of its
         // own: the general one runs there); the section stays.

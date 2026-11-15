@@ -414,10 +414,17 @@ wheel.
   line that come more than about a quarter of a second apart do nothing: a turn that
   slow has to be a little quicker to count. A deliberate turn back acts a tick or two
   later. Small ticks that count this way are one step at most, at any speed.
-- Speed: how far a sideways scroll goes, how little of a turn each step needs, or how far
-  a turn slides the desktop. It is written as every speed in Settings: "1.0×", "1.25×".
-  There is one Speed for the wheel, whatever its action
-  (Reverse direction is each action's own): changing the action keeps it.
+- Speed, one for each action, as Reverse direction: how far a sideways scroll goes, how
+  little of a turn each step needs, or how far a turn slides the desktop (Switch Desktops
+  has one speed, for its steps and for Follow the wheel). The box shows the chosen
+  action's, and each action keeps its own: Switch Desktops can be slowed down without
+  shortening a sideways scroll. A new installation has 1.0× for each. It is written as
+  every speed in Settings: "1.0×", "1.25×". The one Speed of 1.0.5 and before gives every
+  action its value, so the wheel turns as it did until you move a slider; so does a
+  settings file from before. 1.0.5 reads the chosen action's speed, and after you go back
+  to it that one speed is the wheel's again, whatever its action; the other actions'
+  speeds stay stored until 1.0.5 saves the thumb wheel (a change of it there, or an
+  import), which drops them: every action then has that one speed here too.
 - With Shift held a turn of the thumb wheel is not the thumb wheel's: macOS sends the
   main wheel's turns sideways then, the two cannot be told apart, and the turn scrolls
   sideways as the main wheel does with Shift, whatever the action.
@@ -433,10 +440,10 @@ wheel.
   Forward go to it); a turn keeps them until the wheel rests, whatever comes to the
   front meanwhile. While Scrollio's own Settings are in front, the wheel does what the
   panes say.
-- Speed, Reverse direction and Follow the wheel are scroll settings of the app: they are
-  its own while "Scrolling in Figma" on its page is Own Settings or Left to macOS (they
-  start as what the wheel did in the app at that moment, and stay for later with Same as
-  Scrolling). The Scrolling part shows its settings, the Thumb wheel box among them, only
+- Each action's Speed and Reverse direction, and Follow the wheel, are scroll settings of
+  the app: they are its own while "Scrolling in Figma" on its page is Own Settings or
+  Left to macOS (they start as what the wheel did in the app at that moment, every
+  action's, and stay for later with Same as Scrolling). The Scrolling part shows its settings, the Thumb wheel box among them, only
   then: with Same as Scrolling it is the pop-up alone, as the Gestures and Shortcut Ring
   parts are with their switches. With Left to macOS the box is all that shows, without
   its Speed while the action is Scroll Sideways (that speed applies to a smoothed wheel
@@ -448,14 +455,16 @@ wheel.
   part's box (with Own Settings or Left to macOS), or, either way, with "+" of the
   Buttons part, which offers "Thumb wheel" while the connected mouse has one (an MX
   Master 4, 3 or 3S). The new row starts with what the wheel does in other apps. Without
-  a speed of its own, an app's action runs at the default speed when it is of the other
-  kind than what the wheel does in other apps (scrolling against steps). "−", or "Same as
+  speeds of its own (with Same as Scrolling, or own settings that date from before), an
+  app's action runs at the speed and direction Scrolling › Thumb wheel has for that
+  action, whatever the wheel does in other apps. "−", or "Same as
   Other Apps (…)" at the top of the row's menu, gives the action back to Buttons; Edit ›
   Undo takes it again.
 - "Copy from Scrolling" of the app's Scrolling part (there with Own Settings) gives the
-  wheel the speed, reversing and desktops of Scrolling › Thumb wheel there, and the
-  action of every app again; "Remove All Buttons" of its Buttons part takes the action
-  away too.
+  wheel every action's speed and reversing, and the desktops, of Scrolling › Thumb wheel
+  there, and the action of every app again; "Remove All Buttons" of its Buttons part
+  takes the action away too. "Reset to Defaults" in Scrolling puts every action's speed
+  back to 1.0×, not only the one shown; Undo brings each back.
 
 ## Logitech MX mice
 

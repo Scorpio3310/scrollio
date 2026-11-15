@@ -9,6 +9,7 @@
 //
 //  The defaults are what Scrollio did before these settings existed: the wheel scrolls
 //  sideways, as fast as the main wheel, in the direction "Reverse wheel direction" gives.
+//  Each function has a Speed and a "Reverse direction" of its own.
 //
 //  CONTRACT (shared by the scroll engine, the Scrolling tab and the Buttons tab): do not
 //  rename or remove these types, cases, fields or keys without updating every consumer.
@@ -99,30 +100,108 @@ struct ThumbWheelReversal: Equatable {
     }
 }
 
+/// The Speed of each function: one value per function, so that, say, Switch Desktops can be
+/// slowed down without shortening a sideways scroll. Each inside
+/// `ThumbWheelSettings.speedRange`. Six numbers: one copy in the scroll tap allocates
+/// nothing.
+struct ThumbWheelSpeeds: Equatable {
+    private var scroll: Double
+    private var zoom: Double
+    private var tabs: Double
+    private var desktops: Double
+    private var backForward: Double
+    private var volume: Double
+
+    /// Every function at the default speed (1×).
+    static let `default` = ThumbWheelSpeeds(all: ThumbWheelSettings.defaultSpeed)
+
+    /// Every function at `speed`: what the one Speed for all of them was (an entry or a
+    /// settings file from before reads that way).
+    init(all speed: Double) {
+        let speed = ThumbWheelSettings.clampedSpeed(speed)
+        scroll = speed
+        zoom = speed
+        tabs = speed
+        desktops = speed
+        backForward = speed
+        volume = speed
+    }
+
+    /// The speed of `function`; a new one is brought into `ThumbWheelSettings.speedRange`.
+    subscript(function: ThumbWheelFunction) -> Double {
+        get {
+            switch function {
+            case .scroll: return scroll
+            case .zoom: return zoom
+            case .tabs: return tabs
+            case .desktops: return desktops
+            case .backForward: return backForward
+            case .volume: return volume
+            }
+        }
+        set {
+            let speed = ThumbWheelSettings.clampedSpeed(newValue)
+            switch function {
+            case .scroll: scroll = speed
+            case .zoom: zoom = speed
+            case .tabs: tabs = speed
+            case .desktops: desktops = speed
+            case .backForward: backForward = speed
+            case .volume: volume = speed
+            }
+        }
+    }
+
+    /// Every function has the same speed: the old single "speed" says it all.
+    var isUniform: Bool {
+        return ThumbWheelFunction.allCases.allSatisfy { self[$0] == scroll }
+    }
+
+    /// From the stored values: a function's own entry in `byName` (`[rawValue: Double]`),
+    /// else `seed` (the old single "speed"), else the default speed.
+    init(byName: [String: Double]?, seed: Double?) {
+        self.init(all: seed ?? ThumbWheelSettings.defaultSpeed)
+        guard let byName else { return }
+        for function in ThumbWheelFunction.allCases {
+            if let speed = byName[function.rawValue] {
+                self[function] = speed
+            }
+        }
+    }
+
+    /// Writes every function's speed under its name.
+    func encode(into container: inout KeyedEncodingContainer<ThumbWheelReversal.FunctionNameKey>) throws {
+        for function in ThumbWheelFunction.allCases {
+            try container.encode(self[function], forKey: ThumbWheelReversal.FunctionNameKey(function))
+        }
+    }
+}
+
 /// Stored format: `{"function": String, "speed": Double, "swapsDirection": Bool}`, and only
-/// when they say more than that: `"reverseDirection": {"<function>": Bool, …}` (every
+/// when they say more than that: `"speeds": {"<function>": Double, …}` (every function,
+/// while their speeds differ), `"reverseDirection": {"<function>": Bool, …}` (every
 /// function, while they differ) and `"followsWheel": true`. A missing, unreadable or
 /// unknown value falls back to its default one by one (the others are kept); unknown keys
 /// are ignored.
 ///
-/// "swapsDirection" was one switch for every function (1.0.5). It stays, under its name: it
-/// is written as the chosen function's "Reverse direction" (so 1.0.5, which ignores the new
-/// keys, turns the chosen function the way this version does), and read as the value of
-/// every function without an entry of its own in "reverseDirection" (so an entry or a
-/// settings file from before gives every function the switch it had). Settings that never
-/// set a function apart are written exactly as before.
+/// "speed" was one Speed for every function (1.0.5 and the builds up to each function's
+/// own). It stays, under its name: it is written as the chosen function's Speed (so a
+/// version from before, which ignores "speeds", turns the chosen function as fast as this
+/// version does), and read as the speed of every function without an entry of its own in
+/// "speeds" (so an entry or a settings file from before gives every function the speed it
+/// had: nothing changes until a slider moves). "swapsDirection" was one switch for every
+/// function (1.0.5) and is kept the same way: written as the chosen function's "Reverse
+/// direction", read as the value of every function without an entry of its own in
+/// "reverseDirection". Settings that never set a function apart are written exactly as
+/// before.
 struct ThumbWheelSettings: Codable, Equatable {
     /// What a turn of the wheel does.
     var function: ThumbWheelFunction
-    /// How far one turn goes, as a multiple of what it would be otherwise: sideways distance
-    /// while the wheel scrolls, how soon the next step comes for the other functions, how
-    /// far the desktop slides while it follows the wheel. Always inside `speedRange`.
-    var speed: Double {
-        didSet {
-            let clamped = Self.clampedSpeed(speed)
-            if clamped != speed { speed = clamped }
-        }
-    }
+    /// The Speed of each function: how far one turn goes, as a multiple of what it would be
+    /// otherwise (sideways distance while the wheel scrolls, how soon the next step comes
+    /// for the other functions, how far the desktop slides while it follows the wheel).
+    /// Each inside `speedRange`.
+    var speeds: ThumbWheelSpeeds
     /// "Reverse direction" of each function. While the wheel scrolls it turns the wheel
     /// around on top of what "Reverse wheel direction" (or an app's own rule) gives.
     var reverses: ThumbWheelReversal
@@ -130,6 +209,13 @@ struct ThumbWheelSettings: Codable, Equatable {
     /// trackpad swipe and settle when it rests, instead of one step per stroke. Off by
     /// default; only Switch Desktops reads it.
     var followsWheel: Bool
+
+    /// The chosen function's Speed (the one a turn of the wheel uses, and the one the
+    /// slider shows). Always inside `speedRange`.
+    var speed: Double {
+        get { return speeds[function] }
+        set { speeds[function] = newValue }
+    }
 
     /// The chosen function's "Reverse direction" (the one a turn of the wheel uses).
     var swapsDirection: Bool {
@@ -145,40 +231,47 @@ struct ThumbWheelSettings: Codable, Equatable {
     static let speedRange: ClosedRange<Double> = 0.25...3.0
     static let defaultSpeed = 1.0
 
-    /// Scrolls sideways at the main wheel's speed, no function reversed, desktops in steps.
+    /// Scrolls sideways at the main wheel's speed, every function at 1×, no function
+    /// reversed, desktops in steps.
     static let `default` = ThumbWheelSettings()
 
-    /// - Parameter swapsDirection: every function's "Reverse direction" (as one switch).
+    /// - Parameters:
+    ///   - speed: every function's Speed (as the one Speed).
+    ///   - swapsDirection: every function's "Reverse direction" (as one switch).
     init(
         function: ThumbWheelFunction = .scroll,
         speed: Double = ThumbWheelSettings.defaultSpeed,
         swapsDirection: Bool = false,
         followsWheel: Bool = false
     ) {
-        self.init(function: function, speed: speed, reverses: ThumbWheelReversal(all: swapsDirection), followsWheel: followsWheel)
+        self.init(
+            function: function, speeds: ThumbWheelSpeeds(all: speed),
+            reverses: ThumbWheelReversal(all: swapsDirection), followsWheel: followsWheel
+        )
     }
 
-    init(function: ThumbWheelFunction, speed: Double, reverses: ThumbWheelReversal, followsWheel: Bool) {
+    init(function: ThumbWheelFunction, speeds: ThumbWheelSpeeds, reverses: ThumbWheelReversal, followsWheel: Bool) {
         self.function = function
-        self.speed = Self.clampedSpeed(speed)
+        self.speeds = speeds
         self.reverses = reverses
         self.followsWheel = followsWheel
     }
 
     private enum CodingKeys: String, CodingKey {
-        case function, speed, swapsDirection, reverseDirection, followsWheel
+        case function, speed, speeds, swapsDirection, reverseDirection, followsWheel
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let name = (try? c.decodeIfPresent(String.self, forKey: .function)) ?? nil
         let speed = (try? c.decodeIfPresent(Double.self, forKey: .speed)) ?? nil
+        let speedByName = (try? c.decodeIfPresent([String: Double].self, forKey: .speeds)) ?? nil
         let swaps = (try? c.decodeIfPresent(Bool.self, forKey: .swapsDirection)) ?? nil
         let byName = (try? c.decodeIfPresent([String: Bool].self, forKey: .reverseDirection)) ?? nil
         let follows = (try? c.decodeIfPresent(Bool.self, forKey: .followsWheel)) ?? nil
         self.init(
             function: name.flatMap(ThumbWheelFunction.init(rawValue:)) ?? .scroll,
-            speed: speed ?? Self.defaultSpeed,
+            speeds: ThumbWheelSpeeds(byName: speedByName, seed: speed),
             reverses: ThumbWheelReversal(byName: byName, seed: swaps),
             followsWheel: follows ?? false
         )
@@ -188,6 +281,10 @@ struct ThumbWheelSettings: Codable, Equatable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(function, forKey: .function)
         try c.encode(speed, forKey: .speed)
+        if !speeds.isUniform {
+            var byName = c.nestedContainer(keyedBy: ThumbWheelReversal.FunctionNameKey.self, forKey: .speeds)
+            try speeds.encode(into: &byName)
+        }
         try c.encode(swapsDirection, forKey: .swapsDirection)
         if !reverses.isUniform {
             var byName = c.nestedContainer(keyedBy: ThumbWheelReversal.FunctionNameKey.self, forKey: .reverseDirection)
