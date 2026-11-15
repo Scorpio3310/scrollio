@@ -90,7 +90,11 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
 - `logi`: what a Logitech mouse reported (battery, pointer speed, haptics, press force,
   wheel settings), each decision to write a value or not and why, the read-back after a
   write, requests the mouse refused or did not answer, gesture haptic cues, and slow
-  writes. A gesture button that the mouse tracks itself writes one line per press
+  writes. A button the mouse did not take for Scrollio three checks in a row gets one
+  line (`Button 0x00C3 Gesture: the mouse did not take its divert 3 times in a row …`);
+  it is asked for again at each check (Settings opens, the mouse connects) and does what
+  it does without Scrollio until the mouse takes it. A gesture button that the mouse
+  tracks itself writes one line per press
   (`raw XY: CID 0x01A0 released after 14 samples`). A mouse is named by its model, as the
   mouse reports it; never by a name you gave it in the Bluetooth settings. For a
   receiver: whether its connection reports were on or had to be switched on, what each
