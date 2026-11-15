@@ -218,6 +218,9 @@ struct ApplicationTriggerRow: Equatable {
     /// The row's line.
     let text: String
     let destination: Destination
+    /// With `.buttonsPane`: the binding of Buttons the line names first, whose row "Show in
+    /// Buttons" selects (an app may have replaced an earlier one that does it too).
+    var buttonsBindingID: UUID? = nil
 
     /// The button's title, which says where it goes, in the words of the Gestures and
     /// Shortcut Ring panes' pull-down: "Show in Buttons" (the Buttons pane), "Show in
@@ -267,7 +270,9 @@ struct ApplicationTriggerRow: Equatable {
         }
         guard let first = onlyHere.first else {
             let text = String(format: NSLocalizedString("apps-trigger-everywhere", comment: ""), joined(shared))
-            return ApplicationTriggerRow(text: text, destination: .buttonsPane)
+            // (A binding the app has of its own with the same action is Buttons' one there.)
+            let named = shared.first.flatMap { binding in everywhere.first { $0.identity == binding.identity } }
+            return ApplicationTriggerRow(text: text, destination: .buttonsPane, buttonsBindingID: named?.id)
         }
         let text = shared.isEmpty
             ? String(format: NSLocalizedString("apps-trigger-only-here", comment: ""), joined(onlyHere), name)

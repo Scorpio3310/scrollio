@@ -838,6 +838,8 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             guard let split = PreferencesButtonsViewController.splitViewController(of: self),
                   split.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons),
                   let buttons = split.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController else { return }
+            // The row the line names.
+            if let id = trigger.buttonsBindingID, buttons.selectBinding(id: id) { return }
             buttons.selectRingTrigger()
         }
     }

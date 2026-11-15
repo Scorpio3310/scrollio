@@ -3263,4 +3263,38 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(title(logi(.modeShift), caught: true, own: true), "Default", "never the mode shift's switch")
         XCTAssertEqual(ButtonsMousePart.pointerSpeed.defaultEffectKey, nil, "known from Logitech's description only")
     }
+
+    // MARK: - "Show in Buttons" lands on the row its line names (Q13)
+
+    /// `selectBinding(id:)` selects the row of a stored binding (a button of the mouse: its
+    /// part's row), lights it on the card and gives the list the keyboard. An app's
+    /// Gestures part whose line names the second of two buttons that run the gestures (the
+    /// app gave the first something else) leads there, not to the first.
+    func testShowInButtonsSelectsTheRowTheAppsLineNames() throws {
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        let first = binding(3, gestures)
+        let second = binding(1000, gestures)
+        let pane = makePane([first, second])
+        let (window, _) = makeWindow(for: pane)
+        XCTAssertTrue(pane.selectBinding(id: second.id))
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.gesture))
+        XCTAssertEqual(pane.headerView.content.title, "Gesture button")
+        XCTAssertTrue(window.firstResponder === pane.list)
+        XCTAssertFalse(pane.selectBinding(id: UUID()), "Buttons has no such binding")
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.gesture))
+        pane.selectGestureButton()
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(ButtonsMousePart.back), "the first, as before")
+
+        let calculator = Application(path: "/System/Applications/Calculator.app")
+        calculator.setOwnButtonBindings([binding(3, "copy")])
+        let row = ApplicationTriggerRow.make(.gestureNavigation, application: calculator, general: [first, second])
+        XCTAssertEqual(row.destination, .buttonsPane)
+        XCTAssertEqual(row.buttonsBindingID, second.id, "the one the line names")
+        // The app's own binding of the same trigger and action: Buttons' binding is its row.
+        calculator.setOwnButtonBindings([binding(3, gestures)])
+        XCTAssertEqual(ApplicationTriggerRow.make(.gestureNavigation, application: calculator, general: [first, second]).buttonsBindingID, first.id)
+        calculator.setOwnButtonBindings([])
+        XCTAssertEqual(ApplicationTriggerRow.make(.shortcutRing, application: calculator, general: [binding(4, SystemShortcut.shortcutRing.identifier)]).destination,
+                       .buttonsPane)
+    }
 }

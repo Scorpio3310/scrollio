@@ -1042,7 +1042,26 @@ class PreferencesButtonsViewController: NSViewController {
         // The binding may have been made a moment ago, while this pane was away.
         reload()
         guard let binding = gestureButtonBinding else { return false }
-        list.select(rowID(forBinding: binding.id))
+        return selectRow(ofBinding: binding.id)
+    }
+
+    /// Selects the row of the stored binding `id` (a button of the mouse: that button's
+    /// row), as `selectGestureButton` does: "Show in Buttons" of an app's Gestures or
+    /// Shortcut Ring part lands on the row its line names, which need not be the first that
+    /// does it. False when Buttons has no such binding.
+    @discardableResult
+    func selectBinding(id: UUID) -> Bool {
+        _ = view
+        // The binding may have been made a moment ago, while this pane was away.
+        reload()
+        return selectRow(ofBinding: id)
+    }
+
+    /// The row of the stored binding `id` selected, the list scrolled to it, its button lit
+    /// on the card and the keyboard in the list.
+    private func selectRow(ofBinding id: UUID) -> Bool {
+        guard binding(for: id) != nil else { return false }
+        list.select(rowID(forBinding: id))
         focusList()
         updateHeader()
         return true
@@ -1063,10 +1082,7 @@ class PreferencesButtonsViewController: NSViewController {
         _ = view
         reload()
         guard let binding = ringTriggerBinding else { return false }
-        list.select(rowID(forBinding: binding.id))
-        focusList()
-        updateHeader()
-        return true
+        return selectRow(ofBinding: binding.id)
     }
 
     /// "Show Gesture Settings": the Gestures pane.
