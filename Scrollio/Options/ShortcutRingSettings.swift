@@ -33,6 +33,16 @@
 //  (`ShortcutLabel`: {"name": …, "symbol": …} or {"character": …}); a place without one
 //  is written as before, and no other kind of action keeps one.
 //
+//  A key combination that was filled in from an app's suggested shortcuts also carries the
+//  shortcut as the suggestion has it, free of any keyboard layout, under "suggested"
+//  (`ShortcutRingSuggestion.LayoutFreeKeys`: {"character": "y", "modifiers": ["command"]},
+//  with an "alternative" where the suggestion has one). Such a place runs and shows the
+//  keys that send the shortcut on the keyboard layout in use (`inUse`), found again each
+//  time: "action" then only says which keys it was filled with. A place without it is
+//  written as before and keeps its keys whatever the layout; no other kind of action
+//  keeps one; a version from before it ignores it, runs the keys under "action" and drops
+//  it when it next writes the place.
+//
 //  Read value by value: a missing or unreadable place is an empty one, a list that is too
 //  short is filled up with empty places and one that is too long is cut. Only data without
 //  a list of places at all gives the default places. A missing or unreadable
@@ -52,22 +62,32 @@ struct ShortcutRingPlace: Codable, Equatable {
     /// The name and icon the user gave this place's recorded key combination; nil for
     /// every other kind of action (`ShortcutLabel.takes`).
     let label: ShortcutLabel?
+    /// The suggested shortcut this place's key combination was filled from, free of any
+    /// keyboard layout; nil for every other place. With it the place runs and shows what
+    /// `inUse` gives, and `action` is only the keys it was filled with.
+    let suggested: ShortcutRingSuggestion.LayoutFreeKeys?
 
     static let empty = ShortcutRingPlace(action: "")
 
     /// A place whose two fields contradict each other (a name with a target, the "open"
     /// name without one) holds nothing: a binding like that is not read either
     /// (`ButtonBinding.init(from:)`), and it could show one thing and run another.
-    init(action: String, openTarget: OpenTargetPayload? = nil, label: ShortcutLabel? = nil) {
+    init(
+        action: String, openTarget: OpenTargetPayload? = nil, label: ShortcutLabel? = nil,
+        suggested: ShortcutRingSuggestion.LayoutFreeKeys? = nil
+    ) {
         guard (action == ButtonBinding.openTargetSentinel) == (openTarget != nil) else {
             self.action = ""
             self.openTarget = nil
             self.label = nil
+            self.suggested = nil
             return
         }
         self.action = action
         self.openTarget = openTarget
         self.label = ShortcutLabel.kept(label, for: action)
+        // (As a label: only a recorded key combination keeps one.)
+        self.suggested = suggested.flatMap { ShortcutLabel.takes(action: action) ? $0 : nil }
     }
 
     init(_ shortcut: SystemShortcut.Shortcut) {
@@ -83,7 +103,7 @@ struct ShortcutRingPlace: Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case action, openTarget, label
+        case action, openTarget, label, suggested
     }
 
     init(from decoder: Decoder) throws {
@@ -92,7 +112,31 @@ struct ShortcutRingPlace: Codable, Equatable {
         let target = (try? c.decodeIfPresent(OpenTargetPayload.self, forKey: .openTarget)) ?? nil
         // (A label that cannot be read is no label: the place keeps its keys.)
         let label = (try? c.decodeIfPresent(ShortcutLabel.self, forKey: .label)) ?? nil
-        self.init(action: action, openTarget: target, label: label)
+        // (Nor is a layout-free form that cannot be read one: the place keeps its keys.)
+        let suggested = (try? c.decodeIfPresent(ShortcutRingSuggestion.LayoutFreeKeys.self, forKey: .suggested)) ?? nil
+        self.init(action: action, openTarget: target, label: label, suggested: suggested)
+    }
+
+    // MARK: On the keyboard layout in use
+
+    /// The place as it runs and is shown now. A place filled from a suggested shortcut
+    /// (`suggested`) is the place that shortcut gives on the keyboard layout in use
+    /// (`ShortcutRingSuggestions.layout`), found again at each call, as a fill finds it:
+    /// its key combination there under this place's name and icon, else the suggestion's
+    /// alternative, else an empty place (the layout types the character only with Option,
+    /// or not at all). Every other place is itself. Never holds a layout-free form.
+    var inUse: ShortcutRingPlace {
+        guard let suggested else { return self }
+        return suggested.place(labelled: label, on: ShortcutRingSuggestions.layout())
+    }
+
+    /// What a row's recorder or name editor gives for this place: `action` under `label`,
+    /// a place of the user's own. While the keys are still those this place has on the
+    /// layout in use (only its name or icon changed) it stays the suggested shortcut and
+    /// goes on following the layout.
+    func taking(action: String, label: ShortcutLabel?) -> ShortcutRingPlace {
+        guard let suggested, inUse.action == action else { return ShortcutRingPlace(action: action, label: label) }
+        return ShortcutRingPlace(action: self.action, label: label, suggested: suggested)
     }
 
     // MARK: What a place runs
@@ -138,11 +182,25 @@ struct ShortcutRingPlace: Codable, Equatable {
         return (recorded.code, recorded.modifiers)
     }
 
+    /// What the place holds now: for a suggested shortcut what it is on the keyboard
+    /// layout in use (`inUse`), nothing where that layout cannot type it.
     var content: Content {
+        return suggested == nil ? storedContent : inUse.storedContent
+    }
+
+    /// What the stored action is, whatever the layout in use.
+    private var storedContent: Content {
         if let openTarget { return .open(openTarget) }
         if let shortcut = Self.shortcut(named: action) { return .shortcut(shortcut) }
         if let key = Self.keyCombination(named: action) { return .keyCombination(code: key.code, modifiers: key.modifiers) }
         return .nothing
+    }
+
+    /// Whether this version runs what the place stores, on some keyboard layout: a
+    /// suggested shortcut that the layout in use cannot type is still one (a settings file
+    /// keeps it; `runs` says whether it does something now).
+    var isKnown: Bool {
+        return storedContent != .nothing
     }
 
     /// The listed action this place runs; nil for an empty place and for every other
@@ -165,16 +223,19 @@ struct ShortcutRingPlace: Codable, Equatable {
     private static let standInTrigger = RecordedEvent(type: .mouse, code: 0, modifiers: 0, deviceFilter: nil)
 
     /// This place's action as a binding, for the code that shows, names, records and
-    /// resolves a button's action (its cache of a recorded key is prepared). A place
-    /// that runs nothing gives a binding without an action.
+    /// resolves a button's action (its cache of a recorded key is prepared): of a
+    /// suggested shortcut, the keys on the keyboard layout in use (`inUse`). A place that
+    /// runs nothing gives a binding without an action.
     func asBinding(id: UUID = UUID()) -> ButtonBinding {
+        let place = inUse
+        let runs = place.runs
         var binding: ButtonBinding
-        if runs, let openTarget {
+        if runs, let openTarget = place.openTarget {
             binding = ButtonBinding(id: id, triggerEvent: Self.standInTrigger, openTarget: openTarget, isEnabled: true)
         } else {
             binding = ButtonBinding(
-                id: id, triggerEvent: Self.standInTrigger, systemShortcutName: runs ? action : "", isEnabled: runs,
-                label: runs ? label : nil
+                id: id, triggerEvent: Self.standInTrigger, systemShortcutName: runs ? place.action : "", isEnabled: runs,
+                label: runs ? place.label : nil
             )
         }
         binding.prepareCustomCache()
@@ -278,11 +339,12 @@ struct ShortcutRingSettings: Codable, Equatable {
 
     /// The ring with every place emptied whose action this version does not run. Returns
     /// how many were emptied. For a settings file: a name a later version gives a meaning
-    /// must not come in unseen.
+    /// must not come in unseen. (A suggested shortcut that the keyboard layout in use
+    /// cannot type is kept: `isKnown`.)
     func keepingOnlyWhatRuns() -> (ring: ShortcutRingSettings, emptied: Int) {
         var emptied = 0
         let kept: [ShortcutRingPlace] = places.map { place in
-            guard !place.isEmpty, !place.runs else { return place }
+            guard !place.isEmpty, !place.isKnown else { return place }
             emptied += 1
             return .empty
         }

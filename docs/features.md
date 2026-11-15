@@ -305,11 +305,16 @@ name) shows that app's Buttons part. The pane also sets what the eight places ho
   places afterwards: change any of them. No suggested place deletes what cannot be
   brought back or changes something outside the Mac at one flick (a git app fetches
   rather than pushes, a terminal splits its pane rather than clearing what it showed,
-  and a call app never turns your microphone or camera on), and a place whose key the app does not document stays empty. The keys are those of your keyboard layout at
-  that moment (on a German or Slovenian keyboard ⌘Z is still Undo and zoom is the + and
-  − keys); a shortcut whose key your layout types only with Option ("[" on those
-  layouts) takes Scrollio's own Back or Forward in a browser, or other keys the app has
-  for it, and else its place stays empty (the page says how many). So does a shortcut
+  and a call app never turns your microphone or camera on), and a place whose key the app does not document stays empty. The keys are those of your keyboard
+  layout (on a German or Slovenian keyboard ⌘Z is still Undo and zoom is the + and
+  − keys), and they follow it: after a switch to another layout a suggested place sends
+  the same shortcut with that layout's keys, and the ring and its rows show those (a
+  key combination you recorded yourself keeps its keys; a suggested place you only gave
+  another name still follows). A shortcut whose key your layout types only with Option
+  ("[" on those layouts) takes Scrollio's own Back or Forward in a browser, or other keys
+  the app has for it, and else its place is empty (the page says how many): filled on
+  such a layout it stays empty, filled on another one it is empty, and sends nothing,
+  only while such a layout is in use. So is a shortcut
   that would be ⌘ or ⇧⌘ with the key beside the left Shift, which switches windows
   there (⌘<): zoom in Notes, Pages, Keynote, Numbers and TextEdit, and Excel's font
   size. Mail's arrow and

@@ -83,8 +83,24 @@ final class ShortcutRingController {
     /// settings for the rings that can open and open something, and after a ring closed
     /// that had to be shown without it. Only rings that open something keep one (`prepare`).
     /// The newest first, one per ring: a face belongs to the eight places it was made for
-    /// and is never shown for others, so the ring of one app never shows another's.
+    /// and is never shown for others, so the ring of one app never shows another's. It
+    /// also belongs to the keyboard layout it was made on (the keys it names, and what a
+    /// suggested shortcut is there): the faces of another layout are dropped
+    /// (`dropFacesOfAnotherLayout`).
     private(set) static var preparedFaces: [(ring: ShortcutRingSettings, face: ShortcutRingFace)] = []
+
+    /// The keyboard layout the kept faces were made on (`ShortcutRingSuggestions.layoutID`).
+    private static var preparedFacesLayout: String?
+
+    /// Drops the kept faces when the keyboard layout in use is not the one they were made
+    /// on. Asked wherever a face is looked for or kept: on the main queue, never inside an
+    /// event callback.
+    private static func dropFacesOfAnotherLayout() {
+        let layout = ShortcutRingSuggestions.layoutID()
+        guard layout != preparedFacesLayout else { return }
+        preparedFacesLayout = layout
+        preparedFaces = []
+    }
 
     /// How many faces are kept (the general ring's and those of apps' own rings). A ring
     /// beyond them is shown once without its icons and then takes the oldest one's place.
@@ -98,6 +114,7 @@ final class ShortcutRingController {
     /// The face made for a ring with the places of `ring`; nil when there is none. (A
     /// face shows the places and nothing else: the freeze switch plays no part.)
     static func preparedFace(for ring: ShortcutRingSettings) -> ShortcutRingFace? {
+        dropFacesOfAnotherLayout()
         return preparedFaces.first { $0.ring.places == ring.places }?.face
     }
 
@@ -106,6 +123,7 @@ final class ShortcutRingController {
     /// so that the app pages a user browses never push out a face with an app's icon.
     static func prepare(_ face: ShortcutRingFace, for ring: ShortcutRingSettings) {
         guard ring.opensSomething else { return }
+        dropFacesOfAnotherLayout()
         preparedFaces.removeAll { $0.ring.places == ring.places }
         preparedFaces.insert((ring, face), at: 0)
         if preparedFaces.count > preparedFaceLimit {
@@ -399,6 +417,7 @@ final class ShortcutRingController {
     /// is under way or waiting for its turn).
     static func forgetPreparedFaces() {
         preparedFaces = []
+        preparedFacesLayout = nil
         preparedAppMarks = []
         missingFacesAreDue = false
         quietPasses = 0
@@ -539,7 +558,12 @@ final class ShortcutRingController {
     private(set) var session = ShortcutRingSession()
     /// The ring as it was when it opened: what is shown and what a place runs.
     private var ring = ShortcutRingSettings.default
-    /// Which of its places run something, worked out when the ring changes, not per press.
+    /// The keyboard layout in use when `filled` and `face` were worked out
+    /// (`ShortcutRingSuggestions.layoutID`): on another layout a suggested shortcut is
+    /// other keys, or none, and every key has another name.
+    private var ringLayout: String?
+    /// Which of its places run something, worked out when the ring or the keyboard layout
+    /// changes, not per press.
     private var filled = ShortcutRingSettings.default.filled
     private var face: ShortcutRingFace?
     /// `face` knows everything (an app's name and icon); false while it was made without
@@ -641,10 +665,16 @@ final class ShortcutRingController {
             // The app's icon only if it was made at a quiet moment: nothing is loaded now.
             owner = Self.owner(of: choice)
             ownerPath = choice.appPath
-            if stored != ring {
+            // (The layout's id is read, nothing is translated unless the layout changed
+            // and the ring holds a suggested shortcut.)
+            let layout = ShortcutRingSuggestions.layoutID()
+            if stored != ring || layout != ringLayout {
                 // Another ring than last time (changed in Settings, or another app in
-                // front): the face of the last one is not this one's.
+                // front): the face of the last one is not this one's. Nor is it after a
+                // change of the keyboard layout: the keys have other names there, and a
+                // suggested shortcut is other keys, or none.
                 ring = stored
+                ringLayout = layout
                 filled = stored.filled
                 face = nil
                 faceIsComplete = false

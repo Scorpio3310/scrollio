@@ -575,6 +575,96 @@ final class ShortcutRingControllerTests: XCTestCase {
         XCTAssertEqual(ShortcutRingFace.plainName(of: OpenTargetPayload(path: "/Users/someone/bin/sync.sh", bundleID: nil, arguments: "", kind: .script)), "sync.sh")
     }
 
+    // MARK: The keyboard layout changes
+
+    /// A ring's face names its keys as the keyboard layout names them, and a place filled
+    /// from a suggested shortcut is other keys on another layout, or none. So after a
+    /// change of the layout the same ring is worked out again at its next press: its face,
+    /// and which of its places run. (It kept the face and the keys of the layout it was
+    /// first shown on until its places changed or Scrollio was started again.)
+    func testAfterAChangeOfTheKeyboardLayoutTheSameRingIsWorkedOutAgain() {
+        let savedLayout = ShortcutRingSuggestions.layout
+        let savedLayoutID = ShortcutRingSuggestions.layoutID
+        defer {
+            ShortcutRingSuggestions.layout = savedLayout
+            ShortcutRingSuggestions.layoutID = savedLayoutID
+        }
+        // Back, ⌘[, as a suggestion fills it on a US keyboard, on top.
+        let command = CGEventFlags.maskCommand
+        var ring = ShortcutRingSettings.default
+        ring[0] = ShortcutRingPlace(
+            action: ButtonBinding.normalizedCustomBindingName(code: 33, modifiers: command.rawValue),
+            label: ShortcutLabel(name: "Back", icon: nil),
+            suggested: .init(keys: .init(character: "[", modifiers: command))
+        )
+        harness.ring = ring
+        ShortcutRingSuggestions.layout = { .us }
+        ShortcutRingSuggestions.layoutID = { "US" }
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertEqual(harness.presenter.shown.last?.face.places[0].title, "Back")
+        XCTAssertEqual(harness.presenter.shown.last?.face.places[0].keys, "⌘[")
+        XCTAssertEqual(harness.presenter.shown.last?.face.filled[0], true)
+        harness.moveHand(by: CGPoint(x: 0, y: -80))
+        XCTAssertEqual(harness.presenter.lit.last, .some(0), "it lights")
+        controller.cancel()
+        harness.runScheduled()
+
+        // The layout types "[" only with Option now (and "]" too): the place is none there.
+        var other = KeyboardLayoutLayers.us
+        for code in [CGKeyCode(33), CGKeyCode(30)] {
+            other.plain[code] = "š"
+            other.shift[code] = "Š"
+            other.command[code] = "š"
+            other.commandShift[code] = "Š"
+        }
+        ShortcutRingSuggestions.layout = { other }
+        ShortcutRingSuggestions.layoutID = { "another" }
+        harness.clearLog()
+        let litBefore = harness.presenter.lit.count
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertEqual(harness.presenter.shown.count, 2)
+        XCTAssertEqual(harness.presenter.shown.last?.face.places[0].isEmpty, true, "an empty place: no name, no keys")
+        XCTAssertEqual(harness.presenter.shown.last?.face.places[0].keys, "")
+        XCTAssertEqual(harness.presenter.shown.last?.face.filled[0], false)
+        XCTAssertEqual(harness.presenter.shown.last?.face.filled[1], true, "the others as they were")
+        harness.moveHand(by: CGPoint(x: 0, y: -80))
+        XCTAssertFalse(harness.presenter.lit.dropFirst(litBefore).contains(.some(0)), "and it never lights")
+        controller.triggerReleased(isMadeUp: false)
+        harness.runScheduled()
+        XCTAssertFalse(harness.log.contains { $0.hasPrefix("run") }, "nothing is sent")
+        controller.cancel()
+        harness.runScheduled()
+
+        // Back on the first layout it is itself again.
+        ShortcutRingSuggestions.layout = { .us }
+        ShortcutRingSuggestions.layoutID = { "US" }
+        controller.triggerPressed(by: RingHarness.button(.down))
+        harness.runScheduled()
+        XCTAssertEqual(harness.presenter.shown.last?.face.places[0].keys, "⌘[")
+        XCTAssertEqual(harness.presenter.shown.last?.face.filled[0], true)
+    }
+
+    /// A face made at a quiet moment belongs to the layout it was made on: on another one
+    /// it is not used (the ring is shown once without its icons and its face made again).
+    func testAFaceMadeOnAnotherKeyboardLayoutIsNotUsed() {
+        let savedLayoutID = ShortcutRingSuggestions.layoutID
+        defer { ShortcutRingSuggestions.layoutID = savedLayoutID }
+        var ring = ShortcutRingSettings.default
+        ring[4] = ShortcutRingPlace(openTarget: OpenTargetPayload(
+            path: "/System/Applications/Calculator.app", bundleID: "com.apple.calculator", arguments: "", kind: .application
+        ))
+        ShortcutRingSuggestions.layoutID = { "US" }
+        ShortcutRingController.prepare(ShortcutRingFace(ring, looksOnDisk: false), for: ring)
+        XCTAssertNotNil(ShortcutRingController.preparedFace(for: ring))
+        ShortcutRingSuggestions.layoutID = { "another" }
+        XCTAssertNil(ShortcutRingController.preparedFace(for: ring))
+        XCTAssertTrue(ShortcutRingController.preparedFaces.isEmpty)
+        ShortcutRingController.prepare(ShortcutRingFace(ring, looksOnDisk: false), for: ring)
+        XCTAssertNotNil(ShortcutRingController.preparedFace(for: ring), "made again there, it is kept")
+    }
+
     // MARK: The taps follow the ring
 
     /// The pointer-movement tap is asked for exactly while the trigger is held, and the

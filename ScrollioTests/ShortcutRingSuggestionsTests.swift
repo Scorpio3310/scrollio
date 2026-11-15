@@ -44,12 +44,41 @@ enum SuggestionFixtures {
     static func install(for test: XCTestCase) {
         let savedIdentifier = ShortcutRingSuggestions.bundleIdentifierOfApplication
         let savedLayout = ShortcutRingSuggestions.layout
+        let savedLayoutID = ShortcutRingSuggestions.layoutID
         ShortcutRingSuggestions.bundleIdentifierOfApplication = { identifiers[$0] }
         ShortcutRingSuggestions.layout = { .us }
         test.addTeardownBlock {
             ShortcutRingSuggestions.bundleIdentifierOfApplication = savedIdentifier
             ShortcutRingSuggestions.layout = savedLayout
+            ShortcutRingSuggestions.layoutID = savedLayoutID
         }
+    }
+
+    /// Makes `layers` the keyboard layout in use, known by `id`, until the test ends: what
+    /// a fill resolves on, and what a place filled from a suggestion runs and shows on.
+    static func use(_ layers: KeyboardLayoutLayers, id: String, for test: XCTestCase) {
+        let savedLayout = ShortcutRingSuggestions.layout
+        let savedLayoutID = ShortcutRingSuggestions.layoutID
+        ShortcutRingSuggestions.layout = { layers }
+        ShortcutRingSuggestions.layoutID = { id }
+        // (The first call's block runs last and puts back what the test found.)
+        test.addTeardownBlock {
+            ShortcutRingSuggestions.layout = savedLayout
+            ShortcutRingSuggestions.layoutID = savedLayoutID
+        }
+    }
+
+    /// A layout made up for the tests: the US one whose "[" and "]" keys type "š" and "đ",
+    /// so the brackets are typed only with Option there (as on Slovenian or German).
+    static var withoutBrackets: KeyboardLayoutLayers {
+        var layout = KeyboardLayoutLayers.us
+        for (code, small, capital) in [(CGKeyCode(33), "š", "Š"), (CGKeyCode(30), "đ", "Đ")] {
+            layout.plain[code] = small
+            layout.shift[code] = capital
+            layout.command[code] = small
+            layout.commandShift[code] = capital
+        }
+        return layout
     }
 
     /// A keyboard layout of this Mac's system by its input source id; the test is skipped
@@ -731,6 +760,265 @@ final class ShortcutRingSuggestionKeysTests: XCTestCase {
         XCTAssertEqual(bbedit.placesLeftEmpty(in: bbedit.places(on: german)), 4)
         XCTAssertEqual(bbedit.placesLeftEmpty(in: bbedit.places(on: .us)), 0)
     }
+
+    // MARK: A filled place when the keyboard layout changes
+
+    private let command = UInt64(CGEventFlags.maskCommand.rawValue)
+
+    /// What was wrong: a ring filled on a US keyboard kept the US keys. Word's Redo (⌘Y)
+    /// was stored as the Y key, which types "z" on German: after a switch to German both
+    /// Undo and Redo undid. A place filled from a suggestion keeps the shortcut itself and
+    /// finds its key on the layout in use each time: what it holds, what a row of Settings
+    /// and the executor get, what the ring's middle names, and what is sent.
+    func testAPlaceFilledOnUSSendsItsShortcutOnGermanToo() throws {
+        let german = try SuggestionFixtures.layout("com.apple.keylayout.German")
+        let germanSource = try XCTUnwrap(SuggestionFixtures.inputSource("com.apple.keylayout.German"))
+        let redo = try SuggestionFixtures.app("Microsoft Word").places(on: .us)[2]
+        XCTAssertEqual(redo.action, custom(16, .maskCommand), "filled with the US key")
+        XCTAssertEqual(redo.suggested, ShortcutRingSuggestion.LayoutFreeKeys(keys: .init(character: "y", modifiers: .maskCommand)))
+
+        SuggestionFixtures.use(.us, id: "US", for: self)
+        XCTAssertEqual(redo.content, .keyCombination(code: 16, modifiers: command))
+
+        SuggestionFixtures.use(german, id: "German", for: self)
+        XCTAssertEqual(german.command[16], "z", "the key it was filled with is Undo's there")
+        XCTAssertEqual(german.command[6], "y")
+        XCTAssertEqual(redo.content, .keyCombination(code: 6, modifiers: command))
+        XCTAssertTrue(redo.runs)
+        let binding = redo.asBinding()
+        XCTAssertEqual(binding.systemShortcutName, custom(6, .maskCommand))
+        XCTAssertEqual(binding.label?.name, "Redo")
+        guard case .customKey(let code, let modifiers)? = redo.resolvedAction else {
+            return XCTFail("a key combination")
+        }
+        XCTAssertEqual(code, 6)
+        XCTAssertEqual(modifiers, command)
+
+        // The ring's middle: the name, and under it the keys as this layout names them.
+        KeyboardLayoutKeys.shared.setTestingLayout(FixedLayoutSource(source: germanSource))
+        addTeardownBlock { KeyboardLayoutKeys.shared.setTestingLayout(nil) }
+        let shown = ShortcutRingFace.place(redo)
+        XCTAssertEqual(shown.title, "Redo")
+        XCTAssertEqual(shown.keys, "⌘Y")
+        XCTAssertFalse(shown.isEmpty)
+
+        // What goes out when the place runs.
+        let savedPost = ShortcutExecutor.shared.post
+        defer { ShortcutExecutor.shared.post = savedPost }
+        var posted: [CGEvent] = []
+        ShortcutExecutor.shared.post = { posted.append($0) }
+        ShortcutRingController.run(redo)
+        XCTAssertEqual(posted.map { $0.getIntegerValueField(.keyboardEventKeycode) }, [6, 6])
+        SuggestionFixtures.use(.us, id: "US", for: self)
+        posted = []
+        ShortcutRingController.run(redo)
+        XCTAssertEqual(posted.map { $0.getIntegerValueField(.keyboardEventKeycode) }, [16, 16], "and back on US, the US key")
+    }
+
+    /// The whole file, over the layouts this Mac's system has: a place that keeps its
+    /// suggested shortcut is, on whichever layout is in use, exactly the place a fill on
+    /// that layout gives (the key combination, the alternative or nothing), wherever it was
+    /// filled. No place sends another character than its shortcut's any more.
+    func testAFilledPlaceIsOnEveryLayoutWhatAFillThereGives() throws {
+        var layouts: [(id: String, layers: KeyboardLayoutLayers)] = [("US", .us), ("made up", SuggestionFixtures.withoutBrackets)]
+        for name in ["German", "French", "Slovenian", "SwissGerman", "Turkish"] {
+            guard let layers = try? SuggestionFixtures.layout("com.apple.keylayout.\(name)") else { continue }
+            layouts.append((name, layers))
+        }
+        // Every app's ring as a fill on each layout gives it.
+        let fills = layouts.map { layout in catalog.apps.map { $0.places(on: layout.layers) } }
+        var kept = 0
+        for (inUse, there) in zip(layouts, fills) {
+            SuggestionFixtures.use(inUse.layers, id: inUse.id, for: self)
+            for (filledOn, filled) in zip(layouts, fills) {
+                for (app, (filled, there)) in zip(catalog.apps, zip(filled, there)) {
+                    for index in filled.indices where filled[index].suggested != nil {
+                        kept += 1
+                        let now = filled[index].inUse
+                        guard now.suggested != nil || now.action != there[index].action || now.label != there[index].label
+                                || filled[index].content != there[index].content || filled[index].runs == there[index].isEmpty else { continue }
+                        XCTFail("\(app.appName) place \(index), filled on \(filledOn.id), used on \(inUse.id): "
+                            + "\(now.action) and not \(there[index].action)")
+                    }
+                }
+            }
+        }
+        XCTAssertGreaterThan(kept, 1000)
+    }
+
+    /// Only a key combination keeps the suggested shortcut: a place that is a listed action
+    /// (Undo, Copy; Back where "[" needs Option) or empty is stored as before and is the
+    /// same on every layout.
+    func testOnlyAKeyCombinationKeepsItsSuggestedShortcut() throws {
+        for layout in [KeyboardLayoutLayers.us, SuggestionFixtures.withoutBrackets] {
+            for app in catalog.apps {
+                for place in app.places(on: layout) {
+                    XCTAssertEqual(place.suggested != nil, ShortcutRingPlace.keyCombination(named: place.action) != nil,
+                                   "\(app.appName): \(place.action)")
+                }
+            }
+        }
+        let safari = try SuggestionFixtures.app("Safari")
+        XCTAssertEqual(safari.places(on: SuggestionFixtures.withoutBrackets)[6], ShortcutRingPlace(SystemShortcut.navigateBack))
+        XCTAssertNotNil(safari.places(on: .us)[6].suggested, "⌘[ where the layout types it")
+        XCTAssertNil(try SuggestionFixtures.app("Figma").places(on: .us)[6].suggested, "Undo: a listed action")
+    }
+
+    /// Where the layout in use cannot type a place's shortcut and the suggestion names no
+    /// other way (Finder's Back, ⌘[, where "[" needs Option), the place sends nothing and
+    /// shows as an empty place: no keys, no name, never lit. It is still stored, and is
+    /// itself again when a layout that types it is in use.
+    func testAPlaceTheLayoutCannotTypeSendsNothingAndShowsEmpty() throws {
+        let finder = try SuggestionFixtures.app("Finder")
+        let back = finder.places(on: .us)[6]
+        XCTAssertEqual(back.action, custom(33, .maskCommand))
+        XCTAssertEqual(finder.places(on: SuggestionFixtures.withoutBrackets)[6], .empty, "what a fill there gives")
+
+        SuggestionFixtures.use(SuggestionFixtures.withoutBrackets, id: "made up", for: self)
+        XCTAssertEqual(back.content, .nothing)
+        XCTAssertFalse(back.runs)
+        XCTAssertNil(back.resolvedAction)
+        let binding = back.asBinding()
+        XCTAssertEqual(binding.systemShortcutName, "")
+        XCTAssertFalse(binding.isEnabled)
+        XCTAssertNil(binding.label)
+        XCTAssertTrue(ShortcutRingFace.place(back).isEmpty)
+        XCTAssertEqual(ShortcutRingFace.place(back).keys, "")
+        let ring = ShortcutRingSettings(places: finder.places(on: .us))
+        XCTAssertFalse(ring.filled[6])
+        XCTAssertFalse(ShortcutRingFace(ring, looksOnDisk: false).filled[6])
+        let savedPost = ShortcutExecutor.shared.post
+        defer { ShortcutExecutor.shared.post = savedPost }
+        var posted: [CGEvent] = []
+        ShortcutExecutor.shared.post = { posted.append($0) }
+        ShortcutRingController.run(back)
+        XCTAssertTrue(posted.isEmpty)
+        // Still a place this version knows: nothing empties it for good.
+        XCTAssertFalse(back.isEmpty)
+        XCTAssertTrue(back.isKnown)
+        XCTAssertEqual(ring.keepingOnlyWhatRuns().emptied, 0)
+        XCTAssertEqual(ring.keepingOnlyWhatRuns().ring, ring)
+        // The page counts it with the places the layout leaves empty.
+        let there = finder.places(on: SuggestionFixtures.withoutBrackets)
+        XCTAssertEqual(finder.placesStillEmpty(in: there, own: ring.places), finder.placesLeftEmpty(in: there))
+        XCTAssertGreaterThan(finder.placesLeftEmpty(in: there), 0)
+
+        SuggestionFixtures.use(.us, id: "US", for: self)
+        XCTAssertEqual(back.content, .keyCombination(code: 33, modifiers: command))
+        XCTAssertTrue(ring.filled[6])
+    }
+
+    /// A place without the layout-free form (recorded by hand, or filled before places
+    /// kept it) is as it always was: its keys, whatever the layout in use.
+    func testAPlaceWithoutASuggestedShortcutKeepsItsKeysOnEveryLayout() throws {
+        let stored = Data(#"{"action": "custom::16:1048576", "label": {"name": "Redo", "symbol": "arrow.uturn.forward"}}"#.utf8)
+        let place = try JSONDecoder().decode(ShortcutRingPlace.self, from: stored)
+        XCTAssertNil(place.suggested)
+        XCTAssertEqual(place.inUse, place)
+        for layout in [KeyboardLayoutLayers.us, SuggestionFixtures.withoutBrackets] + [try? SuggestionFixtures.layout("com.apple.keylayout.German")].compactMap({ $0 }) {
+            SuggestionFixtures.use(layout, id: "some", for: self)
+            XCTAssertEqual(place.content, .keyCombination(code: 16, modifiers: command))
+            XCTAssertEqual(place.asBinding().systemShortcutName, custom(16, .maskCommand))
+        }
+        // Written as before: no new key.
+        let written = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(place)) as? [String: Any])
+        XCTAssertEqual(Set(written.keys), ["action", "label"])
+        let plain = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(ShortcutRingPlace(SystemShortcut.copy))) as? [String: Any])
+        XCTAssertEqual(Set(plain.keys), ["action"])
+    }
+
+    /// The stored form: "suggested" beside the keys, in the words of the suggestions file;
+    /// it comes back the same. Read strictly: one that cannot be read, or that stands with
+    /// anything but a recorded key combination, is none, and the place keeps its keys (as
+    /// a version from before the key reads it: "action" and "label").
+    func testTheSuggestedShortcutIsStoredBesideTheKeysAndReadBack() throws {
+        func written(_ place: ShortcutRingPlace) throws -> [String: Any] {
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(place)) as? [String: Any])
+        }
+        func read(_ json: String) throws -> ShortcutRingPlace {
+            return try JSONDecoder().decode(ShortcutRingPlace.self, from: Data(json.utf8))
+        }
+        let redo = try SuggestionFixtures.app("Microsoft Word").places(on: .us)[2]
+        let stored = try written(redo)
+        XCTAssertEqual(stored["action"] as? String, custom(16, .maskCommand))
+        XCTAssertEqual(stored["suggested"] as? NSDictionary, ["character": "y", "modifiers": ["command"]])
+        XCTAssertEqual(try JSONDecoder().decode(ShortcutRingPlace.self, from: JSONEncoder().encode(redo)), redo)
+
+        // With an alternative: a listed action (Safari's Back), other keys (Opera's Back).
+        let safariBack = try SuggestionFixtures.app("Safari").places(on: .us)[6]
+        XCTAssertEqual(try written(safariBack)["suggested"] as? NSDictionary,
+                       ["character": "[", "modifiers": ["command"], "alternative": ["action": "navigateBack"]])
+        let notesZoom = try SuggestionFixtures.app("Notes").places(on: .us)[0]
+        XCTAssertEqual(try written(notesZoom)["suggested"] as? NSDictionary, ["character": ".", "modifiers": ["shift", "command"]])
+        for app in catalog.apps {
+            for place in app.places(on: .us) {
+                XCTAssertEqual(try JSONDecoder().decode(ShortcutRingPlace.self, from: JSONEncoder().encode(place)), place, app.appName)
+            }
+        }
+        let withKeys = ShortcutRingPlace(
+            action: custom(33, .maskCommand), label: ShortcutLabel(name: "Back", icon: nil),
+            suggested: .init(keys: .init(character: "[", modifiers: .maskCommand),
+                             alternative: .keys(.init(character: "left", modifiers: [.maskControl, .maskCommand])))
+        )
+        XCTAssertEqual(try written(withKeys)["suggested"] as? NSDictionary, [
+            "character": "[", "modifiers": ["command"], "alternative": ["character": "left", "modifiers": ["control", "command"]],
+        ])
+        XCTAssertEqual(try JSONDecoder().decode(ShortcutRingPlace.self, from: JSONEncoder().encode(withKeys)), withKeys)
+        SuggestionFixtures.use(SuggestionFixtures.withoutBrackets, id: "made up", for: self)
+        XCTAssertEqual(withKeys.inUse.action, custom(123, [.maskControl, .maskCommand, .maskSecondaryFn]), "its other keys")
+        XCTAssertEqual(withKeys.inUse.label?.name, "Back")
+        XCTAssertEqual(safariBack.inUse, ShortcutRingPlace(SystemShortcut.navigateBack), "its listed alternative")
+
+        // What cannot be read is no layout-free form: the keys stay.
+        let keys = #""action": "custom::16:1048576""#
+        for broken in [
+            #"{"character": "yy", "modifiers": ["command"]}"#,
+            #"{"character": "", "modifiers": []}"#,
+            #"{"character": "y", "modifiers": ["hyper"]}"#,
+            #"{"character": "y"}"#,
+            #"{"character": 7, "modifiers": []}"#,
+            #"{"character": "y", "modifiers": [], "alternative": {"action": "shortcutRing"}}"#,
+            #"{"character": "y", "modifiers": [], "alternative": {"action": "mouseLeftClick"}}"#,
+            #"{"character": "y", "modifiers": [], "alternative": {"character": "nokey", "modifiers": []}}"#,
+            #""y""#,
+        ] {
+            let place = try read("{\(keys), \"suggested\": \(broken)}")
+            XCTAssertNil(place.suggested, broken)
+            XCTAssertEqual(place.action, "custom::16:1048576", broken)
+            XCTAssertEqual(place.content, .keyCombination(code: 16, modifiers: command), broken)
+        }
+        // Only a recorded key combination keeps one.
+        let shortcut = #"{"character": "y", "modifiers": ["command"]}"#
+        XCTAssertNil(try read("{\"action\": \"copy\", \"suggested\": \(shortcut)}").suggested)
+        XCTAssertEqual(try read("{\"action\": \"copy\", \"suggested\": \(shortcut)}"), ShortcutRingPlace(SystemShortcut.copy))
+        XCTAssertNil(try read("{\"action\": \"\", \"suggested\": \(shortcut)}").suggested)
+        XCTAssertNil(try read("{\"action\": \"custom::m4:0\", \"suggested\": \(shortcut)}").suggested, "a recorded mouse button")
+        XCTAssertNotNil(try read("{\(keys), \"suggested\": \(shortcut)}").suggested)
+    }
+
+    /// A row of Settings that gives a suggested place another name or icon leaves it the
+    /// suggested shortcut (it goes on following the layout); other keys recorded into the
+    /// row make it a place of the user's own.
+    func testANewNameKeepsTheSuggestedShortcutAndOtherKeysDoNot() throws {
+        let german = try SuggestionFixtures.layout("com.apple.keylayout.German")
+        let redo = try SuggestionFixtures.app("Microsoft Word").places(on: .us)[2]
+        SuggestionFixtures.use(german, id: "German", for: self)
+        // The row shows the keys of the layout in use, and hands them back with the name.
+        let shownKeys = redo.asBinding().systemShortcutName
+        let renamed = redo.taking(action: shownKeys, label: ShortcutLabel(name: "Again", icon: .symbol("arrow.uturn.forward")))
+        XCTAssertEqual(renamed.suggested, redo.suggested)
+        XCTAssertEqual(renamed.action, redo.action, "the keys it was filled with stay what is stored")
+        XCTAssertEqual(renamed.label?.name, "Again")
+        XCTAssertEqual(renamed.content, .keyCombination(code: 6, modifiers: command))
+        XCTAssertEqual(redo.taking(action: shownKeys, label: nil).suggested, redo.suggested, "no name at all")
+
+        let recorded = redo.taking(action: custom(40, [.maskShift, .maskCommand]), label: redo.label)
+        XCTAssertNil(recorded.suggested)
+        XCTAssertEqual(recorded, ShortcutRingPlace(action: custom(40, [.maskShift, .maskCommand]), label: redo.label))
+        let plain = ShortcutRingPlace(action: custom(16, .maskCommand))
+        XCTAssertEqual(plain.taking(action: custom(16, .maskCommand), label: redo.label),
+                       ShortcutRingPlace(action: custom(16, .maskCommand), label: redo.label))
+    }
 }
 
 /// A layout source over one input source, for `KeyboardLayoutKeys`.
@@ -1161,6 +1449,66 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
             ApplicationRingPartViewController.suggestionNote(emptyPlaces: 1, startedFromIt: false),
             "Use Suggested Shortcuts leaves 1 place empty: its keys can't be typed on this keyboard layout."
         )
+    }
+
+    /// A ring filled on one layout and met on another, which cannot type two of its places:
+    /// the rows show them empty, and the page's line counts them as the places the layout
+    /// leaves empty, as after a fill there. Back on the first layout nothing is missing.
+    func testAfterALayoutChangeThePageCountsThePlacesThatCannotBeTyped() throws {
+        let finder = add(SuggestionFixtures.finderPath, name: "Finder")
+        let part = part(for: finder)
+        turn(part, general: false)
+        XCTAssertEqual(finder.ownRingPlaces?.filter { $0 == .empty }.count, 0, "filled on US: every place")
+        XCTAssertNil(part.suggestionNote.text)
+
+        SuggestionFixtures.use(SuggestionFixtures.withoutBrackets, id: "made up", for: self)
+        part.syncViewWithOptions()
+        XCTAssertEqual(finder.ownRingPlaces?.filter { !$0.runs }.count, 2, "Back and Forward")
+        XCTAssertEqual(finder.ownRingPlaces?.filter { $0 == .empty }.count, 0, "still stored")
+        XCTAssertEqual(part.suggestionNote.text, "2 places stay empty: their keys can't be typed on this keyboard layout.")
+        let rows = try XCTUnwrap(part.ringController?.placePopUps)
+        XCTAssertEqual(rows[6].binding.systemShortcutName, "", "the row shows no action")
+        XCTAssertNotEqual(rows[0].binding.systemShortcutName, "")
+
+        SuggestionFixtures.use(.us, id: "US", for: self)
+        part.syncViewWithOptions()
+        XCTAssertNil(part.suggestionNote.text)
+        XCTAssertNotEqual(try XCTUnwrap(part.ringController?.placePopUps)[6].binding.systemShortcutName, "")
+    }
+
+    /// A settings file carries the suggested shortcut of each place and gives it back; a
+    /// place the keyboard layout in use cannot type is not left out of an import (it is no
+    /// action this version does not know), in an app's ring and in the general one.
+    func testASettingsFileKeepsThePlacesTheLayoutInUseCannotType() throws {
+        let source = Options()
+        source.defaults = TestDefaults.make(for: self)
+        let filled = try SuggestionFixtures.app("Finder").places(on: .us)
+        XCTAssertNotNil(filled[6].suggested)
+        let finder = Application(path: SuggestionFixtures.finderPath)
+        finder.setUsesGeneralRing(false, general: .default, suggested: filled)
+        source.application.applications.append(finder)
+        source.ring = ShortcutRingSettings(places: filled)
+        let data = try SettingsFile.export(from: source, now: Date(timeIntervalSinceReferenceDate: 0)).get()
+        XCTAssertTrue(try XCTUnwrap(String(data: data, encoding: .utf8)).contains("\"suggested\""))
+
+        SuggestionFixtures.use(SuggestionFixtures.withoutBrackets, id: "made up", for: self)
+        XCTAssertFalse(filled[6].runs, "not on the layout the file is read on")
+        let contents = try SettingsFile.read(data).get()
+        XCTAssertEqual(contents.leftOutCount, 0)
+        XCTAssertEqual(contents.applications?.map(\.ring), [finder.ring])
+        XCTAssertEqual(contents.ring?.places, filled)
+        let target = Options()
+        target.defaults = TestDefaults.make(for: self)
+        target.readOptions()
+        XCTAssertTrue(SettingsFile.apply(contents, to: target))
+        XCTAssertEqual(target.application.applications.get(by: SuggestionFixtures.finderPath)?.ring, finder.ring)
+        XCTAssertEqual(target.ring.places, filled)
+        // And what was stored is read again as it was written.
+        let again = Options()
+        again.defaults = target.defaults
+        again.readOptions()
+        XCTAssertEqual(again.application.applications.get(by: SuggestionFixtures.finderPath)?.ring?.places[6].suggested, filled[6].suggested)
+        XCTAssertEqual(again.ring.places[6].suggested, filled[6].suggested)
     }
 
     /// A ring filled from a suggestion is ordinary places: it travels in a settings file

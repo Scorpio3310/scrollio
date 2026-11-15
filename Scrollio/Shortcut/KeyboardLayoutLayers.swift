@@ -9,10 +9,13 @@
 //  or German QWERTZ "z" is the US Y key, "-" the US "/" key, "=" is Shift-0 and "[" needs
 //  Option.
 //
-//  Read once per fill, in Settings: never in the event path. The letters and the zoom keys
-//  are found as `KeyboardLayoutKeys` and `AppZoomKeys` find them (their pure parts); the
-//  Option layer is never asked (Option changes the character on a Mac, and a shortcut with
-//  an Option it did not have is another shortcut).
+//  A place filled from a suggestion keeps the shortcut's US form and finds its key again on
+//  the layout in use whenever it runs or is shown (`ShortcutRingPlace.inUse`), so the
+//  layout in use is read once per layout (`inUse()`: its id is compared at each call, as
+//  `KeyboardLayoutKeys` does it), and translated again only after the layout changed. The
+//  letters and the zoom keys are found as `KeyboardLayoutKeys` and `AppZoomKeys` find them
+//  (their pure parts); the Option layer is never asked (Option changes the character on a
+//  Mac, and a shortcut with an Option it did not have is another shortcut).
 //
 
 import Carbon.HIToolbox
@@ -74,6 +77,39 @@ struct KeyboardLayoutLayers: Equatable {
     static func current() -> KeyboardLayoutLayers? {
         guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue() else { return nil }
         return of(source)
+    }
+
+    /// The layout that was read last, with its id (under `lastReadLock`: it is written on
+    /// the main thread and may be asked for from another).
+    private static var lastRead: (id: String, layers: KeyboardLayoutLayers)?
+    private static let lastReadLock = NSLock()
+
+    /// The layout macOS types with now, translated once per layout: its id is compared at
+    /// each call, which is cheap enough for a press of the ring's trigger. Nil when there
+    /// is none. Off the main thread nothing is asked (the input source functions want the
+    /// main thread): the layout read last, if any.
+    static func inUse() -> KeyboardLayoutLayers? {
+        lastReadLock.lock()
+        let last = lastRead
+        lastReadLock.unlock()
+        guard Thread.isMainThread else { return last?.layers }
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let id = SystemKeyboardLayoutSource.id(of: source) else { return nil }
+        if let last, last.id == id { return last.layers }
+        guard let layers = of(source) else { return nil }
+        lastReadLock.lock()
+        lastRead = (id, layers)
+        lastReadLock.unlock()
+        return layers
+    }
+
+    /// The id of the layout macOS types with now (its input source id): what tells one
+    /// layout from another without translating a key. Nil when there is none, and off the
+    /// main thread.
+    static func idInUse() -> String? {
+        guard Thread.isMainThread,
+              let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue() else { return nil }
+        return SystemKeyboardLayoutSource.id(of: source)
     }
 
     // MARK: - Lookups

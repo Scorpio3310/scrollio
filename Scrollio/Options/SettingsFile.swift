@@ -690,7 +690,7 @@ enum SettingsFile {
         }
         object["places"] = places.prefix(ShortcutRingSettings.placeCount).map { entry -> Any in
             // (A place that cannot be read is an empty one for the decoder, as at launch.)
-            guard let place: ShortcutRingPlace = decoded(entry), !place.isEmpty, !place.runs else { return entry }
+            guard let place: ShortcutRingPlace = decoded(entry), !place.isEmpty, !place.isKnown else { return entry }
             counts.unknownActions += 1
             return ["action": ""]
         }

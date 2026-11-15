@@ -15,18 +15,26 @@
 //  key combination with the suggestion's name and symbol as its label. So the settings
 //  file, Undo and older versions read them as any other place.
 //
+//  A place filled as a key combination also keeps the shortcut as the suggestion has it
+//  (`LayoutFreeKeys`, stored under "suggested" beside the keys), and finds its keys again
+//  on the keyboard layout in use each time it runs or is shown (`ShortcutRingPlace.inUse`):
+//  a ring filled on a US keyboard still sends Redo, not Undo, after a switch to German. A
+//  version from before that key reads the keys the place was filled with.
+//
 //  An app is found by the bundle identifier of its entry's app, read from the bundle's
 //  Info.plist when the page asks (never in the event path): one of the app's identifiers,
 //  case aside, or else the longest of its prefixes (versioned identifiers:
 //  "com.autodesk.AutoCAD2026").
 //
 //  The keys: a suggestion stores what a shortcut is on a US keyboard (the unshifted
-//  character of its key, or a named key, and its modifiers). When it fills a ring, each
-//  becomes the key that types that character on the keyboard layout in use
-//  (`KeyboardLayoutLayers`): on QWERTZ ⌘Z is the US Y key and stays Undo. A shortcut whose
-//  character the layout types only with Option ("[" on German) takes the layout-free
-//  alternative the suggestion names (Back and Forward of the browsers: Scrollio's own
-//  Back and Forward), else its place stays empty.
+//  character of its key, or a named key, and its modifiers). When it fills a ring, and
+//  whenever a place filled from it runs or is shown, each becomes the key that types that
+//  character on the keyboard layout in use (`KeyboardLayoutLayers`): on QWERTZ ⌘Z is the US
+//  Y key and stays Undo. A shortcut whose character the layout types only with Option ("["
+//  on German) takes the layout-free alternative the suggestion names (Back and Forward of
+//  the browsers: Scrollio's own Back and Forward), else its place stays empty: filled on
+//  that layout it is stored empty, met there later it sends nothing and shows as an empty
+//  place until a layout that types it is in use again.
 //
 //  Resource format (`scrollio-ring-suggestions`, version 1):
 //
@@ -139,10 +147,12 @@ struct ShortcutRingSuggestion: Equatable {
     }
 
     /// Of those (`placesLeftEmpty(in:)`), how many the ring `own` still has empty: a place
-    /// the user filled by hand is no longer one.
+    /// the user filled by hand is no longer one. A place filled from a suggestion on
+    /// another layout, whose keys the layout in use cannot type, is one: it shows and runs
+    /// as an empty place there.
     func placesStillEmpty(in places: [ShortcutRingPlace], own: [ShortcutRingPlace]) -> Int {
         return zip(zip(slots, places), own).filter { suggested, mine in
-            suggested.0.place != nil && suggested.1 == .empty && mine == .empty
+            suggested.0.place != nil && suggested.1 == .empty && (mine == .empty || (mine.suggested != nil && !mine.runs))
         }.count
     }
 
@@ -159,23 +169,17 @@ struct ShortcutRingSuggestion: Equatable {
     /// A suggested shortcut as a place: the listed action it is exactly (Undo, Copy …:
     /// the same name, symbol, US key and modifiers), sent with the layout's key when it
     /// runs; else the key combination that sends it on `layout`, named and with its
-    /// symbol; else its alternative; else nothing.
+    /// symbol; else its alternative; else nothing. A key combination keeps the shortcut's
+    /// layout-free form with it (`LayoutFreeKeys`), so the place finds its keys again when
+    /// another layout is in use; a listed action needs none, and an empty place has none.
     static func ringPlace(for place: Place, on layout: KeyboardLayoutLayers) -> ShortcutRingPlace {
         if let listed = listedAction(matching: place) {
             return ShortcutRingPlace(listed)
         }
-        if let keys = place.keys.combination(on: layout) {
-            return recorded(keys, named: place)
-        }
-        switch place.alternative {
-        case .listed(let shortcut)?:
-            return ShortcutRingPlace(shortcut)
-        case .keys(let alternative)?:
-            guard let keys = alternative.combination(on: layout) else { return .empty }
-            return recorded(keys, named: place)
-        case nil:
-            return .empty
-        }
+        let keys = LayoutFreeKeys(keys: place.keys, alternative: place.alternative)
+        let filled = keys.place(labelled: ShortcutLabel(name: place.name, icon: .symbol(place.symbol)), on: layout)
+        // (Only a key combination keeps it: `ShortcutRingPlace.init`.)
+        return ShortcutRingPlace(action: filled.action, label: filled.label, suggested: keys)
     }
 
     /// The listed actions a suggested place can be: those apps share under one name.
@@ -194,9 +198,138 @@ struct ShortcutRingSuggestion: Equatable {
         }
     }
 
-    private static func recorded(_ keys: (code: CGKeyCode, modifiers: CGEventFlags), named place: Place) -> ShortcutRingPlace {
-        let action = ButtonBinding.normalizedCustomBindingName(code: keys.code, modifiers: keys.modifiers.rawValue)
-        return ShortcutRingPlace(action: action, label: ShortcutLabel(name: place.name, icon: .symbol(place.symbol)))
+}
+
+// MARK: - A suggested shortcut kept with its place
+
+extension ShortcutRingSuggestion {
+
+    /// A suggested shortcut as a place of a ring keeps it: what the shortcut is on a US
+    /// keyboard and what it falls back to, as the suggestion has them. Free of any layout:
+    /// the place's keys are found from it on the keyboard layout in use each time the
+    /// place runs or is shown (`ShortcutRingPlace.inUse`), as a fill finds them.
+    ///
+    /// Stored with the place, under "suggested", in the words of the suggestions file:
+    ///
+    ///     {"action": "custom::16:1048576", "label": {"name": "Redo", "symbol": "arrow.uturn.forward"},
+    ///      "suggested": {"character": "y", "modifiers": ["command"]}}
+    ///     … "suggested": {"character": "[", "modifiers": ["command"], "alternative": {"action": "navigateBack"}}
+    ///     … "suggested": {"character": "[", "modifiers": ["command"],
+    ///                     "alternative": {"character": "left", "modifiers": ["command"]}}
+    ///
+    /// Read strictly: a character that is neither one character nor a named key, a modifier
+    /// or an action this version does not know, and the place has no layout-free form (it
+    /// keeps the keys it was filled with). Do not rename the keys.
+    struct LayoutFreeKeys: Codable, Equatable {
+        let keys: Keys
+        let alternative: Alternative?
+
+        init(keys: Keys, alternative: Alternative? = nil) {
+            self.keys = keys
+            self.alternative = alternative
+        }
+
+        /// The place this shortcut is on `layout`, under `label`: the key combination that
+        /// sends it there; else its alternative (a listed action, which has its own name,
+        /// or other keys under `label`); else an empty place. Never holds the layout-free
+        /// form itself.
+        func place(labelled label: ShortcutLabel?, on layout: KeyboardLayoutLayers) -> ShortcutRingPlace {
+            if let keys = keys.combination(on: layout) {
+                return Self.recorded(keys, labelled: label)
+            }
+            switch alternative {
+            case .listed(let shortcut)?:
+                return ShortcutRingPlace(shortcut)
+            case .keys(let alternative)?:
+                guard let keys = alternative.combination(on: layout) else { return .empty }
+                return Self.recorded(keys, labelled: label)
+            case nil:
+                return .empty
+            }
+        }
+
+        private static func recorded(
+            _ keys: (code: CGKeyCode, modifiers: CGEventFlags), labelled label: ShortcutLabel?
+        ) -> ShortcutRingPlace {
+            let action = ButtonBinding.normalizedCustomBindingName(code: keys.code, modifiers: keys.modifiers.rawValue)
+            return ShortcutRingPlace(action: action, label: label)
+        }
+
+        // MARK: Codable
+
+        private enum CodingKeys: String, CodingKey {
+            case character, modifiers, alternative
+        }
+
+        private enum AlternativeKeys: String, CodingKey {
+            case action, character, modifiers
+        }
+
+        /// The modifiers' names in the order they are written.
+        private static let writtenModifiers: [(name: String, flag: CGEventFlags)] = [
+            ("control", .maskControl), ("option", .maskAlternate), ("shift", .maskShift), ("command", .maskCommand),
+        ]
+
+        private static func names(of modifiers: CGEventFlags) -> [String] {
+            return writtenModifiers.filter { modifiers.contains($0.flag) }.map(\.name)
+        }
+
+        /// Throws for anything but one character or a named key with known modifiers.
+        private static func keys(character: String, modifiers: [String], at path: [CodingKey]) throws -> Keys {
+            var flags: CGEventFlags = []
+            for name in modifiers {
+                guard let flag = Keys.modifierNames[name] else {
+                    throw DecodingError.dataCorrupted(.init(codingPath: path, debugDescription: "Unknown modifier"))
+                }
+                flags.insert(flag)
+            }
+            guard character.count == 1 || Keys.namedKeys[character] != nil else {
+                throw DecodingError.dataCorrupted(.init(codingPath: path, debugDescription: "Neither a character nor a named key"))
+            }
+            return Keys(character: character, modifiers: flags)
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            keys = try Self.keys(
+                character: c.decode(String.self, forKey: .character), modifiers: c.decode([String].self, forKey: .modifiers),
+                at: decoder.codingPath
+            )
+            guard c.contains(.alternative) else {
+                alternative = nil
+                return
+            }
+            let a = try c.nestedContainer(keyedBy: AlternativeKeys.self, forKey: .alternative)
+            if let action = try a.decodeIfPresent(String.self, forKey: .action) {
+                // (Only what a place may hold: `ShortcutRingPlace.shortcut(named:)`.)
+                guard let shortcut = ShortcutRingPlace.shortcut(named: action) else {
+                    throw DecodingError.dataCorruptedError(forKey: .action, in: a, debugDescription: "Unknown action")
+                }
+                alternative = .listed(shortcut)
+            } else {
+                alternative = .keys(try Self.keys(
+                    character: a.decode(String.self, forKey: .character), modifiers: a.decode([String].self, forKey: .modifiers),
+                    at: a.codingPath
+                ))
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(keys.character, forKey: .character)
+            try c.encode(Self.names(of: keys.modifiers), forKey: .modifiers)
+            switch alternative {
+            case .listed(let shortcut)?:
+                var a = c.nestedContainer(keyedBy: AlternativeKeys.self, forKey: .alternative)
+                try a.encode(shortcut.identifier, forKey: .action)
+            case .keys(let other)?:
+                var a = c.nestedContainer(keyedBy: AlternativeKeys.self, forKey: .alternative)
+                try a.encode(other.character, forKey: .character)
+                try a.encode(Self.names(of: other.modifiers), forKey: .modifiers)
+            case nil:
+                break
+            }
+        }
     }
 }
 
@@ -252,11 +385,22 @@ enum ShortcutRingSuggestions {
     /// it). The seam: tests give fixture apps an identifier.
     static var bundleIdentifierOfApplication: (String) -> String? = { bundleIdentifier(ofApplicationAt: $0) }
 
-    /// The layout a fill resolves the keys on: the one in use; the US layout under XCTest
-    /// (tests that are about a layout set one) and when none can be read.
+    /// The layout a fill resolves the keys on, and a place filled from a suggestion finds
+    /// its keys on each time it runs or is shown: the one in use (read once per layout,
+    /// `KeyboardLayoutLayers.inUse`); the US layout under XCTest (tests that are about a
+    /// layout set one) and when none can be read.
     static var layout: () -> KeyboardLayoutLayers = {
         guard !AppRuntime.isRunningXCTest else { return .us }
-        return KeyboardLayoutLayers.current() ?? .us
+        return KeyboardLayoutLayers.inUse() ?? .us
+    }
+
+    /// What tells the layout in use from another: its input source id. Whatever was made
+    /// on a layout and is kept (a ring's face with its keys' names, which places of a ring
+    /// run) is made again when this changes. Nil under XCTest (tests that change the
+    /// layout set one) and when none can be read.
+    static var layoutID: () -> String? = {
+        guard !AppRuntime.isRunningXCTest else { return nil }
+        return KeyboardLayoutLayers.idInUse()
     }
 
     /// The suggestion for the app of `application`'s entry, if it has one.
