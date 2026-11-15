@@ -20,9 +20,11 @@ final class PreferencesScrollingTests: XCTestCase {
     private var originalScroll: OPTIONS_SCROLL_DEFAULT!
     private var originalThumbWheel = ThumbWheelSettings.default
     private var uiDefaults: UserDefaults!
+    private var originalNaturalScrolling: (() -> Bool)!
 
     override func setUp() {
         super.setUp()
+        originalNaturalScrolling = Options.naturalScrollingIsOn
         originalScroll = Options.shared.scroll
         originalThumbWheel = Options.shared.thumbWheel
         // A fresh container, so the tests never edit the one they restore.
@@ -32,6 +34,7 @@ final class PreferencesScrollingTests: XCTestCase {
     }
 
     override func tearDown() {
+        Options.naturalScrollingIsOn = originalNaturalScrolling
         Options.shared.scroll = originalScroll
         Options.shared.thumbWheel = originalThumbWheel
         originalScroll = nil
@@ -40,6 +43,11 @@ final class PreferencesScrollingTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// What macOS's Natural scrolling answers for the test (under XCTest: on, unless set).
+    private func macOSNaturalScrolling(_ on: Bool) {
+        Options.naturalScrollingIsOn = { on }
+    }
 
     private var storyboard: NSStoryboard {
         return NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesScrollingViewController.self))
@@ -1455,6 +1463,34 @@ final class PreferencesScrollingTests: XCTestCase {
 
         XCTAssertTrue(controller.hasSettingsToReset)
         XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
+    }
+
+    /// On a Mac with Natural scrolling off a new installation starts with "Reverse wheel
+    /// direction" off (the main flag; the axes keep theirs): nothing differs from the
+    /// defaults then, and a reset keeps the wheel in the classic direction.
+    func testResetKeepsTheClassicDirectionOfAMacWithoutNaturalScrolling() {
+        macOSNaturalScrolling(false)
+        Options.shared.scroll.reverse = false
+        let controller = makeController()
+        XCTAssertEqual(controller.reverseSwitch.state, .off)
+        XCTAssertFalse(controller.hasSettingsToReset)
+        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
+
+        choose(.glide, in: controller)
+        XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
+        send(controller.resetToDefaultsButton)
+
+        XCTAssertFalse(Options.shared.scroll.reversesWheel)
+        XCTAssertEqual(Options.shared.scroll.duration, OPTIONS_SCROLL_DEFAULT().duration)
+        XCTAssertEqual(controller.reverseSwitch.state, .off)
+        XCTAssertFalse(controller.resetToDefaultsButton.isEnabled)
+
+        // The direction turned on by hand differs from this Mac's defaults, and a reset
+        // turns it off again.
+        set(controller.reverseSwitch, true)
+        XCTAssertTrue(controller.resetToDefaultsButton.isEnabled)
+        send(controller.resetToDefaultsButton)
+        XCTAssertFalse(Options.shared.scroll.reversesWheel)
     }
 
     func testResetRestoresTheDefaultsAndLeavesAdvancedOpen() {

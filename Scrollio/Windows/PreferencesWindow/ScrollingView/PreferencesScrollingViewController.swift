@@ -597,7 +597,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         } else if Options.shared.thumbWheel != .default {
             return true
         }
-        return getTargetApplicationScrollOptions() != OPTIONS_SCROLL_DEFAULT()
+        return getTargetApplicationScrollOptions() != OPTIONS_SCROLL_DEFAULT.installationDefaults()
     }
 
     // MARK: - Preview
@@ -878,8 +878,11 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         thumbWheelSection.scrollToVisible(thumbWheelSection.bounds)
     }
 
-    /// Back to the scroll options of a new installation: the "Smooth" feel, the default
-    /// speed and step, the three default keys, trackpad-style scrolling off; also the
+    /// Back to the scroll options of a new installation on this Mac
+    /// (`OPTIONS_SCROLL_DEFAULT.installationDefaults`): the "Smooth" feel, the default
+    /// speed and step, the three default keys, trackpad-style scrolling off, the wheel in
+    /// the classic direction for this Mac ("Reverse wheel direction" on only while macOS's
+    /// Natural scrolling is); also the
     /// thumb wheel: on the tab it scrolls sideways at 1×, nothing reversed, desktops in
     /// steps. On an app's page ("Copy from Scrolling") a copy of the Scrolling settings
     /// instead, the thumb wheel's speed, reverses and follow switch those of Scrolling ›
@@ -988,7 +991,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         /// Scrolling settings, the thumb wheel's values of Scrolling › Thumb wheel.
         static func defaults(for application: Application?) -> ResettableSettings {
             guard application != nil else {
-                return ResettableSettings(scroll: OPTIONS_SCROLL_DEFAULT(), thumbWheel: .default, ownThumbWheel: nil)
+                return ResettableSettings(scroll: .installationDefaults(), thumbWheel: .default, ownThumbWheel: nil)
             }
             let scroll = Application.scrollingCopy(of: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
             return ResettableSettings(scroll: scroll, thumbWheel: nil, ownThumbWheel: nil)

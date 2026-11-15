@@ -372,7 +372,9 @@ extension Options {
     }
 
     /// Whether macOS's Natural scrolling is on (System Settings › Mouse; the same setting
-    /// for every pointing device). Read for a fresh installation only. Under XCTest the
+    /// for every pointing device). Read for the scroll options of a new installation
+    /// (`OPTIONS_SCROLL_DEFAULT.installationDefaults`: the first settings, and Scrolling ›
+    /// Reset to Defaults), never to change stored settings. Under XCTest the
     /// Mac's setting is not read: on, macOS's own default, so a test store starts as
     /// before; a test that needs the other answer replaces this.
     static var naturalScrollingIsOn: () -> Bool = {
@@ -392,11 +394,12 @@ extension Options {
     /// Mac. With Natural scrolling on macOS turns the wheel too, and "Reverse wheel
     /// direction" (on) turns it back; with Natural scrolling off the wheel is classic
     /// already, and the switch starts off: the main flag off, as the switch turns it off
-    /// (`reversesWheel`), the axes' flags at their defaults. Written to the store, which
-    /// the read that follows takes; nothing else changes and nobody is told.
+    /// (`reversesWheel`), the axes' flags at their defaults
+    /// (`OPTIONS_SCROLL_DEFAULT.installationDefaults`). Written to the store, which the read
+    /// that follows takes; nothing else changes and nobody is told.
     private func seedWheelDirectionFromTheSystem() {
         guard writesToDefaults else { return }
-        let reverses = Self.naturalScrollingIsOn()
+        let reverses = OPTIONS_SCROLL_DEFAULT.installationDefaults().reverse
         defaults.set(reverses, forKey: OptionItem.Scroll.Reverse)
         AppSystemLog.note("Settings: a fresh installation; the wheel starts in the classic direction for this Mac "
             + "(Natural scrolling \(reverses ? "on, Reverse wheel direction on" : "off, Reverse wheel direction off"))")

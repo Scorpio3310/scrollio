@@ -156,6 +156,22 @@ class OPTIONS_SCROLL_DEFAULT: Codable {
     var thumbWheel: ApplicationThumbWheelScrolling? = nil {
         didSet {Options.shared.markChanged(scrollContainer: self)}
     }
+
+    init() {}
+
+    /// Options with the main direction flag `reverse` from the start (no change is
+    /// reported): those of a new installation (`installationDefaults`).
+    init(reverse: Bool) {
+        self.reverse = reverse
+    }
+
+    /// The scroll options a new installation starts with on this Mac: the defaults, the
+    /// wheel in the classic direction for this Mac (`reverse` as macOS's Natural scrolling,
+    /// the axes' flags at their defaults, as the switch leaves them when turned off). What
+    /// "Reset to Defaults" gives back and what it compares with.
+    static func installationDefaults() -> OPTIONS_SCROLL_DEFAULT {
+        return OPTIONS_SCROLL_DEFAULT(reverse: Options.naturalScrollingIsOn())
+    }
     // 工具
     static func generateDurationTransition(with duration: Double) -> Double {
         // 上界, 此处需要与界面的 Slider 上界保持同步, 并添加 0.2 的偏移令结果不为 0
