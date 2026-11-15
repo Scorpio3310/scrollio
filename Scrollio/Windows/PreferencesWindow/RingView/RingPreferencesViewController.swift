@@ -65,16 +65,23 @@ struct ShortcutRingBindingSummary: Equatable {
     var onlyInApps: ApplicationTriggers?
     /// The trigger the pane's picture shows: the first of the row's (`TriggerPictureSource`).
     var picture: TriggerPictureSource
+    /// One of `triggerTitles` is a key combination: a line that names them does not add
+    /// that one works too.
+    var namesAKey: Bool
 
     /// A binding of the Buttons pane opens the ring.
     var hasTrigger: Bool {
         return !triggerTitles.isEmpty
     }
 
-    init(triggerTitles: [String], onlyInApps: ApplicationTriggers? = nil, picture: TriggerPictureSource = .none) {
+    init(
+        triggerTitles: [String], onlyInApps: ApplicationTriggers? = nil, picture: TriggerPictureSource = .none,
+        namesAKey: Bool = false
+    ) {
         self.triggerTitles = triggerTitles
         self.onlyInApps = triggerTitles.isEmpty ? onlyInApps : nil
         self.picture = picture
+        self.namesAKey = namesAKey
     }
 
     /// - Parameters:
@@ -95,6 +102,7 @@ struct ShortcutRingBindingSummary: Equatable {
             }
         }
         triggerTitles = names
+        namesAKey = bindings.contains { rule.takes($0) && $0.triggerEvent.type == .keyboard }
         let onlyInApps = ApplicationTriggers(rule.onlyInApps(general: bindings, applications: applications), titles: titles)
         self.onlyInApps = onlyInApps
         picture = TriggerPictureSource.make(rule: rule, general: bindings, onlyInApps: onlyInApps)
@@ -104,7 +112,8 @@ struct ShortcutRingBindingSummary: Equatable {
     /// names), what to do with it; with more, the buttons and keys, joined as a list; or
     /// in which apps only and with what ("Only in Figma: Thumb panel."); or that there is
     /// none yet; and that a key combination works too (but for the apps' line, also one
-    /// that Logi Options+ sends for a button), except while a key opens it.
+    /// that Logi Options+ sends for a button), except while a key is among what the line
+    /// names: then a key combination already opens the ring.
     var explanation: String {
         return explanation(fittingTwoLinesOf: nil)
     }
@@ -112,21 +121,25 @@ struct ShortcutRingBindingSummary: Equatable {
     /// The same for a line `width` wide (the row's, beside its pull-down as it is titled),
     /// which takes two lines at most: beside a long name ("Gesture button (button 6)",
     /// "Pointer speed button") the line says what to do and leaves out that a key
-    /// combination works too. nil: the width is not known, nothing is left out.
+    /// combination works too, and long names of apps are cut short
+    /// (`ApplicationTriggers.text(fittingTwoLinesOf:in:)`). nil: the width is not known,
+    /// nothing is left out or cut.
     func explanation(fittingTwoLinesOf width: CGFloat?) -> String {
         if triggerTitles.count == 1 {
-            let isKey = picture.onlyInAppPath == nil && picture.event?.type == .keyboard
+            let isKey = namesAKey || (picture.onlyInAppPath == nil && picture.event?.type == .keyboard)
             let whatToDo = NSLocalizedString("ring-trigger-one-key", comment: "")
             let withKeys = NSLocalizedString("ring-trigger-one", comment: "")
             return isKey || !Self.fitsTwoLines(withKeys, width: width) ? whatToDo : withKeys
         }
         if hasTrigger {
             let triggers = InterfaceList.joined(triggerTitles)
-            return String(format: NSLocalizedString("ring-trigger-bound", comment: ""), triggers)
+            return String(format: NSLocalizedString(namesAKey ? "ring-trigger-named" : "ring-trigger-bound", comment: ""), triggers)
         }
         if let onlyInApps {
             // (Shorter after it: the apps and their buttons take room of their own.)
-            return String(format: NSLocalizedString("ring-trigger-apps", comment: ""), onlyInApps.text)
+            let format = NSLocalizedString(onlyInApps.namesAKey ? "ring-trigger-named" : "ring-trigger-apps", comment: "")
+            let apps = width.map { onlyInApps.text(fittingTwoLinesOf: $0) { String(format: format, $0) } } ?? onlyInApps.text
+            return String(format: format, apps)
         }
         return NSLocalizedString("ring-trigger-none", comment: "")
     }

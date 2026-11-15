@@ -2884,8 +2884,9 @@ final class ApplicationPageTests: XCTestCase {
         textEdit.setOwnButtonBindings([binding(49, ringAction, modifiers: control, type: .keyboard)])
         let space = ButtonTriggerNaming.title(for: textEdit.ownButtonBindings[0].triggerEvent)
         ring = pane()
-        // (Each app with its own: the row never reads as if both worked in both, F28.)
-        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator (\(panel)) and TextEdit (\(space))." + key)
+        // (Each app with its own: the row never reads as if both worked in both, F28. A key
+        // combination is among them, so the line does not add that one works too.)
+        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator (\(panel)) and TextEdit (\(space)).")
         // The same in both: once, after the apps.
         textEdit.setOwnButtonBindings([binding(thumbPanel, ringAction)])
         XCTAssertEqual(pane().triggerRow.explanation, "Only in Calculator and TextEdit: \(panel)." + key)
@@ -2895,7 +2896,7 @@ final class ApplicationPageTests: XCTestCase {
         textEdit.setUsesGeneralRing(false, general: Options.shared.ring)
         XCTAssertEqual(
             pane().triggerRow.explanation,
-            "Only in Calculator (\(panel)) and TextEdit (\(space)), each with its own ring." + key
+            "Only in Calculator (\(panel)) and TextEdit (\(space)), each with its own ring."
         )
         calculator.setUsesGeneralRing(true, general: Options.shared.ring)
         textEdit.setUsesGeneralRing(true, general: Options.shared.ring)

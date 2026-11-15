@@ -1414,6 +1414,30 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertTrue(button.isEnabled)
     }
 
+    /// "Only in …" in the pane's row, as it lays it out: long names of apps are cut short
+    /// and the line keeps to two lines.
+    func testTheOnlyInLineOfTheButtonToHoldKeepsToTwoLines() {
+        summary = MouseGestureBindingSummary(
+            hasGestureButton: false, hasLogitechGestureButton: false,
+            onlyInApps: ApplicationTriggers(
+                applicationNames: ["DaVinci Resolve Studio", "Adobe Premiere Pro 2026", "Microsoft Visual Studio Code Insiders", "Final Cut Pro Trial"],
+                triggerTitles: ["Thumb panel", "Back button", "Gesture button (button 6)", "Forward button"],
+                ownOnly: .gestureNavigation,
+                appTriggerTitles: [["Thumb panel"], ["Back button"], ["Gesture button (button 6)"], ["Forward button"]]
+            )
+        )
+        let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
+        let label = controller.gestureButtonRow.explanationLabel
+        XCTAssertTrue(label.stringValue.hasPrefix("Only in DaVinci"), label.stringValue)
+        XCTAssertTrue(label.stringValue.contains("2 more"), "four apps: two named, the rest counted: \(label.stringValue)")
+        XCTAssertGreaterThan(label.frame.width, 200)
+        XCTAssertLessThanOrEqual(
+            ApplicationPagePart.LineCount(width: label.frame.width, font: PreferencesGroupedForm.explanationFont).of(label.stringValue), 2,
+            "\(label.stringValue) in \(label.frame.width) pt"
+        )
+    }
+
     /// "Undo Reset" is offered only while a click would do it. After a reset, the choice of
     /// the button to hold is a step Edit › Undo takes back first, and a binding of Buttons:
     /// the gesture settings are still the defaults. The offer ends with it. Regression: the

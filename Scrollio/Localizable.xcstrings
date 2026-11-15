@@ -11319,6 +11319,18 @@
           }
         }
       }
+    },
+    "ring-trigger-named": {
+      "comment": "Shortcut Ring pane, the line of the first row while it names what opens the ring and a key combination is among it (so the line does not add that one works too): %@ is the buttons and keys joined as a list, or \"Only in Figma: ⌃⌥ Space\"",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

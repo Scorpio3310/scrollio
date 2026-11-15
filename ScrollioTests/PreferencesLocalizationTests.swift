@@ -310,7 +310,7 @@ final class PreferencesLocalizationTests: XCTestCase {
     static let ringKeys = [
         "shortcutRing", "ring-menu-tooltip", "ring-tab-title",
         "ring-trigger", "ring-trigger-none", "ring-trigger-bound", "ring-trigger-choice-record", "ring-undo-choose-trigger", "ring-trigger-apps",
-        "ring-trigger-one", "ring-trigger-one-key",
+        "ring-trigger-one", "ring-trigger-one-key", "ring-trigger-named",
         "ring-places-header", "ring-places-hint",
         "ring-place-top", "ring-place-top-right", "ring-place-right", "ring-place-bottom-right",
         "ring-place-bottom", "ring-place-bottom-left", "ring-place-left", "ring-place-top-left",
@@ -452,6 +452,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-trigger-choice-replaced": "@",
         "ring-trigger-bound": "@",
         "ring-trigger-apps": "@",
+        "ring-trigger-named": "@",
         "general-settings-problem-damaged": "@",
         "general-settings-problem-too-many": "d",
         // Welcome Guide

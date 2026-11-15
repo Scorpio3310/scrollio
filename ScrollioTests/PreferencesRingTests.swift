@@ -707,6 +707,112 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(Options.shared.ring, .default)
     }
 
+    /// The lines "Only in …" of both panes name up to three apps and count the rest of four
+    /// or more ("Figma, Safari and 2 more"), as "Different in" does; in the room of the
+    /// row (350 pt beside "Choose") long names are cut short so that the line keeps to two
+    /// lines. Regression: every app was named whole, and two long names took three lines.
+    func testTheOnlyInLinesCountTheAppsAndCutLongNamesToTwoLines() {
+        let one = ApplicationTriggers(applicationNames: ["Figma", "Safari", "Notes"], triggerTitles: ["Thumb panel"])
+        XCTAssertEqual(one.text, InterfaceList.joined(["Only in Figma", "Safari", "Notes: Thumb panel"]), "three: all named")
+        let four = ApplicationTriggers(applicationNames: ["Figma", "Safari", "Notes", "Xcode"], triggerTitles: ["Thumb panel"])
+        XCTAssertEqual(four.text, InterfaceList.joined(["Only in Figma", "Safari", "2 more: Thumb panel"]), "four: two named, never \"1 more\"")
+        let each = ApplicationTriggers(
+            applicationNames: ["Figma", "Safari", "Notes", "Xcode", "Mail"], triggerTitles: ["Thumb panel", "Back button", "Middle button"],
+            ownOnly: .shortcutRing,
+            appTriggerTitles: [["Thumb panel"], ["Back button"], ["Thumb panel"], ["Middle button"], ["Back button"]]
+        )
+        XCTAssertEqual(
+            each.text,
+            InterfaceList.joined(["Only in Figma (Thumb panel)", "Safari (Back button)", "3 more"]) + ", each with its own ring",
+            "each with its own, the rest counted"
+        )
+
+        // In the row's room: two lines, whatever the names.
+        let lines = ApplicationPagePart.LineCount(width: 350, font: PreferencesGroupedForm.explanationFont)
+        let long = ["DaVinci Resolve Studio", "Adobe Premiere Pro 2026", "Microsoft Visual Studio Code Insiders", "Final Cut Pro Trial"]
+        let cases: [(String, ApplicationTriggers)] = [
+            ("two long names, each with its own ring",
+             ApplicationTriggers(applicationNames: Array(long.prefix(2)), triggerTitles: ["Thumb panel"], ownOnly: .shortcutRing)),
+            ("three long names",
+             ApplicationTriggers(applicationNames: Array(long.prefix(3)), triggerTitles: ["Thumb panel", "Back button"])),
+            ("four apps with different buttons", ApplicationTriggers(
+                applicationNames: long, triggerTitles: ["Thumb panel", "Back button", "Gesture button (button 6)", "Forward button"],
+                ownOnly: .gestureNavigation,
+                appTriggerTitles: [["Thumb panel"], ["Back button"], ["Gesture button (button 6)"], ["Forward button"]]
+            )),
+        ]
+        for (label, apps) in cases {
+            let ring = ShortcutRingBindingSummary(triggerTitles: [], onlyInApps: apps)
+            XCTAssertGreaterThan(lines.of(ring.explanation), 2, "\(label): whole, it does not fit (the case is one)")
+            let ringLine = ring.explanation(fittingTwoLinesOf: 350)
+            XCTAssertLessThanOrEqual(lines.of(ringLine), 2, "\(label): \(ringLine)")
+            XCTAssertTrue(ringLine.hasPrefix("Only in DaVinci") && ringLine.contains("…"), "\(label): cut, not dropped: \(ringLine)")
+            XCTAssertTrue(ringLine.hasSuffix(". A key combination works too."), ringLine)
+            let gestures = MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false, onlyInApps: apps)
+            let gesturesLine = gestures.gestureButtonExplanation(fittingTwoLinesOf: 350)
+            XCTAssertLessThanOrEqual(lines.of(gesturesLine), 2, "\(label): \(gesturesLine)")
+            XCTAssertTrue(gesturesLine.hasSuffix("."), gesturesLine)
+        }
+        // Names that fit stay whole, and a width that is not known cuts nothing.
+        let short = ShortcutRingBindingSummary(triggerTitles: [], onlyInApps: one)
+        XCTAssertEqual(short.explanation(fittingTwoLinesOf: 350), short.explanation)
+        XCTAssertFalse(short.explanation.contains("…"))
+
+        // In the pane, as it lays the row out: two lines, and the row as tall as ever.
+        let reference = makeController()
+        reference.view.layoutSubtreeIfNeeded()
+        summary = ShortcutRingBindingSummary(triggerTitles: [], onlyInApps: cases[0].1)
+        let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
+        let label = controller.triggerRow.explanationLabel
+        XCTAssertTrue(label.stringValue.contains("…"), label.stringValue)
+        XCTAssertLessThanOrEqual(
+            ApplicationPagePart.LineCount(width: label.frame.width, font: PreferencesGroupedForm.explanationFont).of(label.stringValue), 2,
+            "\(label.stringValue) in \(label.frame.width) pt"
+        )
+        XCTAssertEqual(controller.triggerRow.frame.height, reference.triggerRow.frame.height, accuracy: 0.5)
+    }
+
+    /// "A key combination works too." is left out where a key combination is among what
+    /// the line names: only in an app with a key, or several triggers of Buttons with a
+    /// key among them. With buttons alone it stays.
+    func testTheLineDoesNotAddThatAKeyWorksWhereAKeyIsNamed() {
+        let space = RecordedEvent(type: .keyboard, code: 49, modifiers: UInt(CGEventFlags.maskControl.rawValue), deviceFilter: nil)
+        let back = RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil)
+        let middle = RecordedEvent(type: .mouse, code: 2, modifiers: 0, deviceFilter: nil)
+        let ring = SystemShortcut.shortcutRing.identifier
+        func binding(_ event: RecordedEvent) -> ButtonBinding {
+            return ButtonBinding(triggerEvent: event, systemShortcutName: ring, isEnabled: true)
+        }
+        let titles: ([RecordedEvent]) -> [String] = { $0.map { $0.type == .keyboard ? "⌃ Space" : "Button \($0.code)" } }
+
+        // Only in an app.
+        let figma = Application(path: "/Applications/Figma.app")
+        figma.displayName = "Figma"
+        figma.setOwnButtonBindings([binding(space)])
+        var summary = ShortcutRingBindingSummary(bindings: [], applications: [figma], titles: titles)
+        XCTAssertEqual(summary.onlyInApps?.namesAKey, true)
+        XCTAssertEqual(summary.explanation, "Only in Figma: ⌃ Space.")
+        figma.setOwnButtonBindings([binding(back)])
+        summary = ShortcutRingBindingSummary(bindings: [], applications: [figma], titles: titles)
+        XCTAssertEqual(summary.onlyInApps?.namesAKey, false)
+        XCTAssertEqual(summary.explanation, "Only in Figma: Button 3. A key combination works too.")
+
+        // Several of Buttons ("Multiple" in the pull-down).
+        summary = ShortcutRingBindingSummary(bindings: [binding(space), binding(back)], titles: titles)
+        XCTAssertTrue(summary.namesAKey)
+        XCTAssertEqual(summary.explanation, InterfaceList.joined(["⌃ Space", "Button 3"]) + ".")
+        summary = ShortcutRingBindingSummary(bindings: [binding(middle), binding(back)], titles: titles)
+        XCTAssertFalse(summary.namesAKey)
+        XCTAssertEqual(
+            summary.explanation,
+            InterfaceList.joined(["Button 2", "Button 3"]) + ". A key combination works too, even one that Logi Options+ sends for a button."
+        )
+        // One key: what to do with it, as before.
+        summary = ShortcutRingBindingSummary(bindings: [binding(space)], titles: titles)
+        XCTAssertEqual(summary.explanation, "Hold it, move towards a shortcut and let go.")
+    }
+
     func testEveryExplanationFitsTwoLines() throws {
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
