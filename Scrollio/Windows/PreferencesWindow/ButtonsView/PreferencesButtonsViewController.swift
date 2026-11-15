@@ -20,7 +20,8 @@
 //  Options.shared.buttons.binding is edited, in the format it always had; a placed button
 //  adds the trigger's optional `mousePart`. The one row that is no button, the MX Master's
 //  thumb wheel (after the mode shift button), edits what the sideways wheel does instead
-//  (Options.shared.thumbWheel, as Scrolling › Thumb wheel does) and never a binding.
+//  (Options.shared.thumbWheel, as Scrolling › Thumb wheel does) and never a binding; its
+//  change has its Undo on the same manager too.
 //  Created by Claude on 2025/8/10.
 //  Copyright © 2025年 Caldis. All rights reserved.
 //
@@ -444,10 +445,23 @@ class PreferencesButtonsViewController: NSViewController {
     }
 
     /// Stores what the thumb wheel does, only when it changes. Both panes then show it
-    /// (ThumbWheelSettingsChange); the bindings are not touched.
+    /// (ThumbWheelSettingsChange); the bindings are not touched. Undo ("Undo Change
+    /// Action", as a button row's) puts back the function it had; Redo and Undo stay with
+    /// the manager the change used.
     func setThumbWheelFunction(_ function: ThumbWheelFunction) {
-        if Options.shared.thumbWheel.function != function {
+        setThumbWheelFunction(function, undoManager: undoTarget)
+    }
+
+    private func setThumbWheelFunction(_ function: ThumbWheelFunction, undoManager undo: UndoManager?) {
+        let old = Options.shared.thumbWheel.function
+        if old != function {
             Options.shared.thumbWheel.function = function
+            if let undo {
+                undo.registerUndo(withTarget: self) { [weak undo] controller in
+                    controller.setThumbWheelFunction(old, undoManager: undo)
+                }
+                undo.setActionName(text("buttons-undo-change-action"))
+            }
         }
         syncThumbWheel()
     }

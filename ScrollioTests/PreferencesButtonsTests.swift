@@ -478,6 +478,36 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertNil(pane.storedBinding(ofRow: ButtonsListLayout.thumbWheelRowID))
     }
 
+    /// Edit › Undo of a function chosen on the thumb wheel's row ("Undo Change Action", as
+    /// a button row's) puts back the one it had, and Redo chooses it again; the bindings
+    /// stay. Regression: the change had no Undo, so ⌘Z undid an older, other change.
+    func testUndoPutsBackTheThumbWheelsFunction() throws {
+        let bindings = [binding(3, "copy")]
+        let pane = makePane(bindings)
+        let row = try XCTUnwrap(pane.thumbWheelRow)
+        let undo = try XCTUnwrap(pane.paneUndoManager)
+        undo.groupsByEvent = false
+        XCTAssertEqual(Options.shared.thumbWheel.function, .scroll)
+        XCTAssertFalse(undo.canUndo)
+
+        let tabs = try XCTUnwrap(row.pullDown.functionItems.first { ThumbWheelPresentation.function(of: $0) == .tabs })
+        undo.beginUndoGrouping()
+        row.pullDown.functionChosen(tabs)
+        undo.endUndoGrouping()
+        XCTAssertEqual(Options.shared.thumbWheel.function, .tabs)
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+
+        undo.undo()
+        XCTAssertEqual(Options.shared.thumbWheel.function, .scroll)
+        XCTAssertEqual(shown(row.pullDown), "Default", "the row follows")
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Change Action")
+        undo.redo()
+        XCTAssertEqual(Options.shared.thumbWheel.function, .tabs)
+        XCTAssertEqual(shown(row.pullDown), "Switch Tabs")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        XCTAssertEqual(Options.shared.buttons.binding, bindings, "no binding is touched")
+    }
+
     /// The row's menu ends with "Thumb Wheel Settings…" (after a separator, with its
     /// symbol, never ticked): it opens the Scrolling pane and changes nothing.
     func testTheThumbWheelRowsMenuOpensItsSettings() throws {
