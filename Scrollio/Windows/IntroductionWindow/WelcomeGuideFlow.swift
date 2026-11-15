@@ -60,6 +60,9 @@ enum WelcomeGuideRunState: Equatable {
     case paused
     /// The access is there but an event tap could not be created; a timer tries again.
     case retrying
+    /// The event taps run, but macOS does not let Scrollio post events
+    /// (`ScrollPoster.canPostEvents`): nothing is smoothed.
+    case cannotPostEvents
     /// Not started (yet): the access is missing, or the start has not happened.
     case stopped
 }
@@ -76,6 +79,8 @@ enum WelcomeGuideAccessState: Equatable {
     case paused
     /// Allowed, but Scrollio couldn't start and is trying again.
     case couldNotStart
+    /// Allowed and Scrollio runs, but macOS does not let it post events: not "all is well".
+    case cannotPostEvents
 
     init(granted: Bool, run: WelcomeGuideRunState) {
         guard granted else {
@@ -86,6 +91,7 @@ enum WelcomeGuideAccessState: Equatable {
         case .running: self = .running
         case .paused: self = .paused
         case .retrying: self = .couldNotStart
+        case .cannotPostEvents: self = .cannotPostEvents
         case .stopped: self = .starting
         }
     }
@@ -95,8 +101,10 @@ enum WelcomeGuideAccessState: Equatable {
     }
 
     /// The guide may go on: the access is there and Scrollio runs (or was paused on purpose).
+    /// Also without the right to post events: Scrollio runs, and the way out is in System
+    /// Settings, not in waiting here.
     var isReady: Bool {
-        return self == .running || self == .paused
+        return self == .running || self == .paused || self == .cannotPostEvents
     }
 }
 
@@ -105,6 +113,8 @@ enum WelcomeGuideTryArea: Equatable {
     case smoothed
     /// The event taps do not run (no access yet, paused, could not start).
     case notRunning
+    /// They run, but macOS does not let Scrollio post events (`ScrollPoster.canPostEvents`).
+    case cannotPostEvents
     /// "Limit scrolling to these apps" is on and Scrollio is not on the list.
     case notInAppList
     /// "Smooth scrolling" is off for Scrollio's window (globally, or in its own rule).
@@ -112,11 +122,13 @@ enum WelcomeGuideTryArea: Equatable {
 
     /// - Parameters:
     ///   - running: the event taps run.
+    ///   - canPostEvents: macOS lets Scrollio post events (`ScrollPoster.canPostEvents`).
     ///   - rule: what the per-app list holds for Scrollio.
     static func state(
-        running: Bool, rule: AppSmoothing.Rule, scrollingSmooth: Bool, limitedToListedApps: Bool
+        running: Bool, canPostEvents: Bool, rule: AppSmoothing.Rule, scrollingSmooth: Bool, limitedToListedApps: Bool
     ) -> WelcomeGuideTryArea {
         guard running else { return .notRunning }
+        guard canPostEvents else { return .cannotPostEvents }
         let decision = AppSmoothing.decide(rule: rule, scrollingSmooth: scrollingSmooth, limitedToListedApps: limitedToListedApps)
         if decision.isSmoothed { return .smoothed }
         return rule == .notListed && limitedToListedApps ? .notInAppList : .smoothingOff

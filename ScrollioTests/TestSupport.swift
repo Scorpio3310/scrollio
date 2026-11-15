@@ -311,6 +311,19 @@ final class TestIsolationTests: XCTestCase {
         }
     }
 
+    /// The right to post events is read in one place, `ScrollPoster.postEventAccess`, which
+    /// says yes without asking macOS under XCTest. A test host that has the right reads
+    /// yes either way, so calling the default proves nothing: the guard is read from the
+    /// source.
+    func testTheRightToPostEventsIsReadOnlyBehindTheXCTestGuard() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let file = "Scrollio/ScrollCore/ScrollPoster.swift"
+        let uses = try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
+            .components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.contains("CGPreflightPostEventAccess(") && !$0.hasPrefix("//") }
+        XCTAssertEqual(uses, ["AppRuntime.isRunningXCTest ? true : CGPreflightPostEventAccess()"], file)
+    }
+
     /// The test host as the tests find it: nothing of the app was started, and what would
     /// reach out of the process is switched off or replaced by something inert.
     func testNothingOfTheAppRunsAndItsRealEffectsAreOff() {

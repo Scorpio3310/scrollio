@@ -11405,13 +11405,13 @@
       }
     },
     "status-menu-title-cannot-post-events": {
-      "comment": "Status bar menu: the title while Scrollio runs but macOS does not let it post events, so scrolling is not smoothed (the Post Event right)",
+      "comment": "Status bar menu: the title while Scrollio runs but macOS does not let it post events (the Post Event right): scrolling is not smoothed, and shortcuts from buttons, gestures and the Shortcut Ring may not reach apps",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio can't send scroll events"
+            "value": "Scrollio can't send events to apps"
           }
         }
       }
@@ -11423,13 +11423,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio can't send scroll events."
+            "value": "Scrollio can't send events to apps."
           }
         }
       }
     },
     "status-menu-open-accessibility-settings": {
-      "comment": "Status bar menu: the item under \"Scrollio can't send scroll events\"; opens System Settings › Privacy & Security › Accessibility",
+      "comment": "Status bar menu: the item under \"Scrollio can't send events to apps\"; opens System Settings › Privacy & Security › Accessibility; its tooltip is general-cannot-post-events-hint",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -11441,13 +11441,37 @@
       }
     },
     "general-cannot-post-events-hint": {
-      "comment": "General pane: under \"Scrollio can't send scroll events\" in the row under the card; the way out",
+      "comment": "General pane: under \"Scrollio can't send events to apps\" in the row under the card (three lines beside Pause); also the tooltip of the status bar menu's \"Open Accessibility Settings…\". Pause first: removing Scrollio from the list while its event taps run can stop the mouse and keyboard",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrolling isn't smooth. In Privacy & Security › Accessibility, remove Scrollio with − and add it again."
+            "value": "Scrolling isn't smoothed, and buttons, gestures and the Shortcut Ring may not work. Pause Scrollio, then in Privacy & Security › Accessibility remove it with − and add it again. This usually brings it back."
+          }
+        }
+      }
+    },
+    "intro-access-cannot-post-events-title": {
+      "comment": "Welcome Guide, Accessibility step: the status box's title while access is allowed and Scrollio runs, but macOS does not let it post events (the line under it is general-cannot-post-events-hint)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allowed, but Scrollio can't send events to apps"
+          }
+        }
+      }
+    },
+    "intro-feel-cannot-post-events": {
+      "comment": "Welcome Guide, feel step: the line over the sample page while macOS does not let Scrollio post events, so the page is not smoothed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not smoothed: Scrollio can't send events"
           }
         }
       }
