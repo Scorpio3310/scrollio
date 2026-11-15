@@ -19,9 +19,9 @@ it for the people who use the app, and give the version its part before you tag 
   each gesture direction and the click: they run while the app is in front.
 - **A Shortcut Ring for each app.** On an app's page in Apps, give the app eight shortcuts
   of its own: that ring opens while the app is in front.
-- **An app's page has everything the panes have.** The thumb wheel's speed and
-  direction, the gestures' mode, swipe speed and switches, and the ring's "Freeze
-  pointer" can be set for each app too.
+- **An app's page has everything Scrolling, Gestures and Shortcut Ring have.** The thumb
+  wheel's speed and direction, the gestures' mode, swipe speed and switches, and the
+  ring's "Freeze pointer" can be set for each app too.
 - **Suggested shortcuts for 100 apps.** Turn off "Use settings from Shortcut Ring" for Figma,
   Photoshop, Safari, Word, Discord, Zed and many more, and the app's ring starts with
   its most used shortcuts, on your keyboard layout.
@@ -32,9 +32,9 @@ it for the people who use the app, and give the version its part before you tag 
 - **Your button in the picture.** Gestures and Shortcut Ring draw the button or key that
   really runs them, on your mouse; with none yet, a dashed outline shows where it goes.
 - **Quiet until it runs, and a way back per app.** Gestures and Shortcut Ring fold their
-  settings while nothing runs them; an app's Scrolling part shows its settings only while
-  it has its own, as its Gestures and Ring do; each part of an app's page has a button
-  that puts it back.
+  settings while nothing runs them; Safari › Scrolling shows its settings only while
+  Safari has its own, as Safari › Gestures and Safari › Shortcut Ring do; each of them
+  has a button that puts it back.
 - **Thumb wheel, your way round.** Each thumb wheel action has its own "Reverse
   direction", and Switch Desktops can follow the wheel like a trackpad swipe.
 
@@ -50,32 +50,32 @@ it for the people who use the app, and give the version its part before you tag 
   click on a mouse's battery opens Settings › Mouse.
 - **Choose the button where you use it.** Gestures and Shortcut Ring list your mouse's
   buttons, with what each does now, and record one in place: no trip to Buttons.
-- **Undo for a button's action.** In Buttons and an app's Buttons part, Edit › Undo takes
+- **Undo for a button's action.** In Buttons and in Safari › Buttons, Edit › Undo takes
   back a changed action, name or "Which Button Is This?"; "−" sets your mouse's button
   back to Default.
-- **An app's page says which button runs its gestures and ring.** Its Gestures and
-  Shortcut Ring parts begin with that button ("Back button, only in Figma") and a button
-  that goes there, or sets one up for that app only.
+- **An app's page says which button runs its gestures and ring.** Figma › Gestures and
+  Figma › Shortcut Ring begin with that button ("Back button, only in Figma") and a
+  button that goes there, or sets one up for that app only.
 - **Apps says what each app has of its own.** "Own: scrolling and 2 buttons" in
-  the list and on the app's page, where a dot marks those parts.
+  the list and on the app's page, where a dot marks each of them.
 - **An app's buttons say what they do.** "Remove All Buttons", "Copy from Gestures",
   "Use Suggested Shortcuts" and "Copy from Scrolling" instead of "Reset to Defaults".
-- **Suggested rings are easy to find.** An app's Shortcut Ring part offers its suggested
+- **Suggested rings are easy to find.** Figma › Shortcut Ring offers its suggested
   shortcuts, and + in Apps marks the apps that have them.
 - **A click while you hold the ring's button belongs to the ring.** It runs the shortcut
   that is lit (nothing lit: the ring closes), and nothing reaches the app under the ring.
   A click right as you press the button does nothing.
-- **Scrolling in an app is one choice.** An app's Scrolling part asks "Scrolling in
-  Safari": Same as Scrolling, Own Settings or Left to macOS (not smoothed, not reversed).
+- **Scrolling in an app is one choice.** Safari › Scrolling asks "Scrolling in Safari":
+  Same as Scrolling, Own Settings or Left to macOS (not smoothed, not reversed).
   Nothing you set changes; an app whose own settings already had both off reads Left to
   macOS.
 - **"Default" means one thing.** Every button without an action says "Default", with what
-  it then does where that is certain ("Default (Back)", "Default (Switch Wheel Mode)"); an
-  app's Buttons part says "In other apps: …" under each row, and each row's menu starts
+  it then does where that is certain ("Default (Back)", "Default (Switch Wheel Mode)");
+  Safari › Buttons says "In other apps: …" under each row, and each row's menu starts
   with "Same as Other Apps (…)", which gives the button back to Buttons.
-- **One set of words.** An app's Gestures and Shortcut Ring parts say "Use settings from
-  Gestures" and "Use settings from Shortcut Ring", and their first line "…, as in other
-  apps".
+- **One set of words.** Safari › Gestures and Safari › Shortcut Ring say "Use settings
+  from Gestures" and "Use settings from Shortcut Ring", and their first line "…, as in
+  other apps".
 - **The Welcome Guide says where to go next.** Its last step leads on to Buttons, Gestures
   or the Shortcut Ring.
 - **An app's own ring shows whose it is.** The app's icon sits faintly in the middle of its
