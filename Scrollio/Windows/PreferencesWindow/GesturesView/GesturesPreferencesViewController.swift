@@ -15,11 +15,13 @@
 //  setting of a new installation; the button to hold is a binding of Buttons and stays.
 //  Mode, actions, invert and freeze come from MouseGestureSettingsControls, the rows from
 //  `MouseGestureRows` (an app's Gestures part shows the same rows for the app's own set).
-//  The tab only edits Options.shared.gesture; which button runs Gesture Navigation is
-//  chosen in the Buttons tab, and the first row ("Button to hold") names it and leads there:
-//  "Set Up…" records one, "Change" shows the Buttons pane with that button's row selected.
+//  The tab edits Options.shared.gesture. Which button runs Gesture Navigation is a binding
+//  of the Buttons tab, and the first row ("Button to hold") names it and chooses it in
+//  place: its pull-down (`TriggerChooser`) lists the connected mouse's buttons with what
+//  each does now, "Record a Button…" and "Show in Buttons" (the Buttons pane with that
+//  button's row selected), and a choice writes the binding Buttons would, with Undo.
 //  While only an app's own button runs it, the row says where ("Only in Figma: Back
-//  button.") and "Change" shows that app's Buttons part (`ApplicationTriggerRule`).
+//  button.") and "Show in Buttons" shows that app's Buttons part (`ApplicationTriggerRule`).
 //  While no button runs it at all, everything under the first box is folded under its
 //  titles ("Directions ›", "Behavior ›", "Logitech mouse ›",
 //  `PreferencesDisclosureSection`), each with the muted line that belongs to it: one click
@@ -67,14 +69,13 @@ final class GesturesPreferencesViewController: NSViewController {
     var deviceSource: MouseGestureDeviceSource = .live
     /// Which buttons use Gesture Navigation; tests and screenshots replace it with fixtures.
     var bindingSummary: () -> MouseGestureBindingSummary = { .current }
-    /// What the pane shows of it now: "Set Up…" and "Change" do what the row says.
+    /// What the pane shows of it now: "Show in Buttons" goes where the row says.
     private var shownSummary: MouseGestureBindingSummary?
-    /// "Set Up…" or "Change": shows the Buttons pane and, with no gesture button yet
-    /// (true), records one that gets Gesture Navigation; with one (false), selects its row
-    /// there. Tests replace it.
-    var openButtonsPane: ((Bool) -> Void)?
-    /// "Change" while only an app's own button runs Gesture Navigation: shows that app's
-    /// Buttons part, its row selected. Tests replace it.
+    /// "Show in Buttons": shows the Buttons pane, with the row of the button that runs
+    /// Gesture Navigation selected when one does. Tests replace it.
+    var openButtonsPane: (() -> Void)?
+    /// "Show in Buttons" while only an app's own button runs Gesture Navigation: shows that
+    /// app's Buttons part, its row selected. Tests replace it.
     var openApplicationButtons: ((ApplicationTriggers) -> Void)?
     /// "Open Mouse": shows the Mouse pane. Tests replace it.
     var openMousePane: (() -> Void)?
@@ -98,7 +99,11 @@ final class GesturesPreferencesViewController: NSViewController {
 
     /// The first box: which button runs Gesture Navigation, and the mode.
     private(set) var gestureButtonRow: PreferencesGroupRow!
-    private(set) var gestureButtonButton: NSButton!
+    /// "Button to hold"'s pull-down, and what it does.
+    private(set) var triggerChooser: TriggerChooser!
+    var gestureButtonButton: TriggerChoicePullDown {
+        return triggerChooser.pullDown
+    }
     private(set) var modeRow: PreferencesGroupRow!
     /// Up, Down, Left, Right, Click, in `Slot.allCases` order, and the line under the title.
     private(set) var directionRows: [PreferencesGroupRow] = []
@@ -268,6 +273,7 @@ final class GesturesPreferencesViewController: NSViewController {
         updatePreviewScene()
         // A recording that still waits for a key, and the popover, go with the pane.
         controls.endEditing()
+        triggerChooser.endEditing()
         resetToDefaults.endUndoOffer()
     }
 
@@ -295,9 +301,8 @@ final class GesturesPreferencesViewController: NSViewController {
         gestureButtonRow.explanation = summary.gestureButtonExplanation
         // The preview's mouse holds the first button the row names.
         previewView.picture = summary.picture
-        // (Run only by an app's own button: "Change" leads to it, not "Set Up…".)
-        let runs = summary.hasGestureButton || summary.onlyInApps != nil
-        gestureButtonButton.title = text(runs ? "gestures-gesture-button-change" : "gestures-gesture-button-set-up")
+        // The pull-down names what the row names first, and offers the mouse's buttons.
+        triggerChooser.update(triggerTitles: summary.buttonTitles)
         modeRow.explanation = text(presentation.descriptionKey)
         // No button runs these gestures (none at all, or only in apps that run their own):
         // what is under the first box waits, folded.
@@ -461,27 +466,29 @@ final class GesturesPreferencesViewController: NSViewController {
         return NSLocalizedString(key, comment: "")
     }
 
-    /// "Button to hold": the buttons that run Gesture Navigation, or none yet, and a push
-    /// button to the Buttons pane ("Set Up…" records a new one, "Change" shows the list with
-    /// the gesture button's row selected).
+    /// "Button to hold": the buttons that run Gesture Navigation, or none yet, and the
+    /// pull-down that chooses one (`TriggerChooser`): a choice shows at once in the row, the
+    /// preview and the sections, which no longer fold.
     private func makeGestureButtonRow() -> PreferencesGroupRow {
-        let button = PreferencesGroupedForm.makePushButton(
-            title: text("gestures-gesture-button-set-up"),
-            target: self,
-            action: #selector(gestureButtonClicked(_:))
-        )
-        button.identifier = Identifier.gestureButton
-        gestureButtonButton = button
+        let chooser = TriggerChooser(rule: .gestureNavigation)
+        chooser.undoManager = { [weak self] in self?.undoTarget }
+        chooser.showInButtons = { [weak self] in self?.showInButtons() }
+        chooser.didChange = { [weak self] in self?.reload() }
+        chooser.pullDown.identifier = Identifier.gestureButton
+        triggerChooser = chooser
         let row = PreferencesGroupRow(
             title: text("gestures-gesture-button"),
             explanation: text("gestures-gesture-button-none"),
-            accessory: button
+            accessory: chooser.pullDown
         )
         gestureButtonRow = row
         return row
     }
 
-    @objc func gestureButtonClicked(_ sender: NSButton) {
+    /// "Show in Buttons": the Buttons pane with the row of the button that runs the
+    /// gestures selected (and lit on its card); while only an app's own button runs them,
+    /// that app's Buttons part.
+    func showInButtons() {
         // (What the row says, which an Undo keeps up to date.)
         let summary = shownSummary ?? bindingSummary()
         if !summary.hasGestureButton, let apps = summary.onlyInApps {
@@ -492,20 +499,16 @@ final class GesturesPreferencesViewController: NSViewController {
             }
             return
         }
-        let addsButton = !summary.hasGestureButton
         if let openButtonsPane {
-            openButtonsPane(addsButton)
+            openButtonsPane()
             return
         }
         guard let split = PreferencesButtonsViewController.splitViewController(of: self),
               split.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons) else { return }
-        guard let buttons = split.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController else { return }
-        if addsButton {
-            buttons.beginAddingBinding(action: SystemShortcut.mouseGestureNavigation)
-        } else {
-            // The user sees which row to change: it is selected and its button lit on the card.
-            buttons.selectGestureButton()
-        }
+        guard summary.hasGestureButton,
+              let buttons = split.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController else { return }
+        // The user sees which row it is: it is selected and its button lit on the card.
+        buttons.selectGestureButton()
     }
 
     /// "Mode": what the selected mode does under the title, the two modes across the box.

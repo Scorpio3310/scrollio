@@ -46,6 +46,8 @@ it for the people who use the app, and give the version its part before you tag 
 - **The menu bar menu says when Scrollio is not working.** Paused, waiting for
   Accessibility or unable to start, its first line says so, with the way out under it; a
   click on a mouse's battery opens Settings › Mouse.
+- **Choose the button where you use it.** Gestures and Shortcut Ring list your mouse's
+  buttons, with what each does now, and record one in place: no trip to Buttons.
 - **A click while you hold the ring's button belongs to the ring.** It runs the shortcut
   that is lit (nothing lit: the ring closes), and nothing reaches the app under the ring.
   A click right as you press the button does nothing.

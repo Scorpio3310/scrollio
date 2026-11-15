@@ -84,6 +84,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-trigger-forward", "buttons-trigger-number", "buttons-trigger-gesture", "buttons-trigger-mode-shift",
         "buttons-trigger-thumb-panel", "buttons-trigger-pointer-speed",
         "buttons-trigger-logitech", "buttons-trigger-logitech-twin", "buttons-trigger-key",
+        "buttons-trigger-choice-choose", "buttons-trigger-choice-several", "buttons-trigger-choice-mouse",
+        "buttons-trigger-choice-item", "buttons-trigger-choice-replaced", "buttons-trigger-choice-show",
         "buttons-header-your-mouse", "buttons-header-count", "buttons-header-one", "buttons-header-none",
         "buttons-header-no-action", "buttons-header-recording", "buttons-header-recording-hint",
         "buttons-header-find-hint", "buttons-header-find-this-one", "buttons-header-answer", "buttons-note-extra-button",
@@ -134,8 +136,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gesture-mode-interactive-description", "gesture-invert-horizontal-hint", "gesture-freeze-pointer-hint",
         "gesture-tracking-speed-label", "gesture-tracking-speed-hint", "gesture-tracking-speed-hint-discrete",
         "gesture-tracking-speed-slower", "gesture-tracking-speed-faster",
-        "gestures-gesture-button", "gestures-gesture-button-none", "gestures-gesture-button-bound", "gestures-gesture-button-set-up",
-        "gestures-gesture-button-change", "gestures-directions-header", "gestures-directions-hint",
+        "gestures-gesture-button", "gestures-gesture-button-none", "gestures-gesture-button-bound",
+        "gestures-trigger-choice-record", "gestures-undo-choose-button", "gestures-directions-header", "gestures-directions-hint",
         "gestures-behaviour-header", "gestures-logitech-header", "gestures-logitech-needs",
         "mouse-gesture-device-tracking", "mouse-gesture-device-tracking-hint", "mouse-gesture-device-tracking-unavailable",
         "mouse-gesture-haptics", "mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable",
@@ -275,7 +277,7 @@ final class PreferencesLocalizationTests: XCTestCase {
     /// The Shortcut Ring: its action, its pane and its lines elsewhere.
     static let ringKeys = [
         "shortcutRing", "ring-menu-tooltip", "ring-tab-title",
-        "ring-trigger", "ring-trigger-none", "ring-trigger-bound", "ring-trigger-set-up", "ring-trigger-change", "ring-trigger-apps",
+        "ring-trigger", "ring-trigger-none", "ring-trigger-bound", "ring-trigger-choice-record", "ring-undo-choose-trigger", "ring-trigger-apps",
         "ring-places-header", "ring-places-hint",
         "ring-place-top", "ring-place-top-right", "ring-place-right", "ring-place-bottom-right",
         "ring-place-bottom", "ring-place-bottom-left", "ring-place-left", "ring-place-top-left",
@@ -403,6 +405,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-buttons-note-empty": "@",
         "apps-buttons-everywhere": "@",
         "apps-buttons-add-general-item": "@@",
+        // The trigger pull-down of the Gestures and Shortcut Ring panes
+        "buttons-trigger-choice-item": "@@",
+        "buttons-trigger-choice-replaced": "@",
         "ring-trigger-bound": "@",
         "ring-trigger-apps": "@",
         "general-settings-problem-damaged": "@",

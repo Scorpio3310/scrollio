@@ -50,6 +50,7 @@
 		DA90C2032298B457DC8490F9 /* ScrollioTests/GestureKeysTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2B7D5D3E62A8EF829552E9B /* ScrollioTests/GestureKeysTests.swift */; };
 		F1D732CFDB3FB13FFE35F65B /* ScrollioTests/ShortcutRingRenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D632CFDB3FB13FFE35F65B /* ScrollioTests/ShortcutRingRenderTests.swift */; };
 		F1D75851B1B49B311450D9E8 /* ScrollioTests/PreferencesRingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D65851B1B49B311450D9E8 /* ScrollioTests/PreferencesRingTests.swift */; };
+		A486850BA92CAE38B09D77B6 /* ScrollioTests/TriggerChoiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69D73C7300D2BEC89A533B96 /* ScrollioTests/TriggerChoiceTests.swift */; };
 		F1D749635974FA115FE5EBC4 /* ScrollioTests/ShortcutRingControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D649635974FA115FE5EBC4 /* ScrollioTests/ShortcutRingControllerTests.swift */; };
 		F1D7533CA63BB1838C8D2D04 /* ScrollioTests/ShortcutRingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D6533CA63BB1838C8D2D04 /* ScrollioTests/ShortcutRingTests.swift */; };
 		5BA2C1E00000000000000B02 /* ScrollioTests/UpdateCenterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA2C1E00000000000000B01 /* ScrollioTests/UpdateCenterTests.swift */; };
@@ -190,6 +191,7 @@
 		C2B7D5D3E62A8EF829552E9B /* ScrollioTests/GestureKeysTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/GestureKeysTests.swift; sourceTree = SOURCE_ROOT; };
 		F1D632CFDB3FB13FFE35F65B /* ScrollioTests/ShortcutRingRenderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ShortcutRingRenderTests.swift; sourceTree = SOURCE_ROOT; };
 		F1D65851B1B49B311450D9E8 /* ScrollioTests/PreferencesRingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/PreferencesRingTests.swift; sourceTree = SOURCE_ROOT; };
+		69D73C7300D2BEC89A533B96 /* ScrollioTests/TriggerChoiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/TriggerChoiceTests.swift; sourceTree = SOURCE_ROOT; };
 		F1D649635974FA115FE5EBC4 /* ScrollioTests/ShortcutRingControllerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ShortcutRingControllerTests.swift; sourceTree = SOURCE_ROOT; };
 		F1D6533CA63BB1838C8D2D04 /* ScrollioTests/ShortcutRingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/ShortcutRingTests.swift; sourceTree = SOURCE_ROOT; };
 		5BA2C1E00000000000000B01 /* ScrollioTests/UpdateCenterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/UpdateCenterTests.swift; sourceTree = SOURCE_ROOT; };
@@ -365,6 +367,7 @@
 				C2B7D5D3E62A8EF829552E9B /* ScrollioTests/GestureKeysTests.swift */,
 				F1D632CFDB3FB13FFE35F65B /* ScrollioTests/ShortcutRingRenderTests.swift */,
 				F1D65851B1B49B311450D9E8 /* ScrollioTests/PreferencesRingTests.swift */,
+				69D73C7300D2BEC89A533B96 /* ScrollioTests/TriggerChoiceTests.swift */,
 				F1D649635974FA115FE5EBC4 /* ScrollioTests/ShortcutRingControllerTests.swift */,
 				F1D6533CA63BB1838C8D2D04 /* ScrollioTests/ShortcutRingTests.swift */,
 				5BA2C1E00000000000000B01 /* ScrollioTests/UpdateCenterTests.swift */,
@@ -638,6 +641,7 @@
 				DA90C2032298B457DC8490F9 /* ScrollioTests/GestureKeysTests.swift in Sources */,
 				F1D732CFDB3FB13FFE35F65B /* ScrollioTests/ShortcutRingRenderTests.swift in Sources */,
 				F1D75851B1B49B311450D9E8 /* ScrollioTests/PreferencesRingTests.swift in Sources */,
+				A486850BA92CAE38B09D77B6 /* ScrollioTests/TriggerChoiceTests.swift in Sources */,
 				F1D749635974FA115FE5EBC4 /* ScrollioTests/ShortcutRingControllerTests.swift in Sources */,
 				F1D7533CA63BB1838C8D2D04 /* ScrollioTests/ShortcutRingTests.swift in Sources */,
 				5BA2C1E00000000000000B02 /* ScrollioTests/UpdateCenterTests.swift in Sources */,

@@ -498,6 +498,120 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
     }
 
+    /// The pull-down that chooses the button (`trigger-choice-<case>-<appearance>.png`): the
+    /// header and the first box of Gestures and of Shortcut Ring with nothing ("Choose"),
+    /// one button, a long name, a key (the ring's), two ("Multiple") and only in Notes; and
+    /// its open menu (`trigger-choice-menu-<case>-…`), drawn as a stand-in (a menu is a
+    /// window of its own and is never opened here): the items with their titles in the
+    /// menu's font and colours, the tick, the separators.
+    func testRenderTriggerChoice() throws {
+        let savedRing = Options.shared.ring
+        defer { Options.shared.ring = savedRing }
+        Options.shared.ring = .default
+        Options.shared.gesture = .default
+        func logi(_ role: LogiControlRole) -> UInt16 { return LogiCenter.shared.scrollioCode(for: role) }
+        func bind(_ code: UInt16, _ action: String, type: Scrollio_Debug.EventType = .mouse, modifiers: CGEventFlags = []) -> ButtonBinding {
+            return ButtonBinding(
+                triggerEvent: RecordedEvent(type: type, code: code, modifiers: UInt(modifiers.rawValue), deviceFilter: nil),
+                systemShortcutName: action, isEnabled: true
+            )
+        }
+        func source(_ name: String) -> ButtonsDeviceSource {
+            return ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { name }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+        }
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        let ring = SystemShortcut.shortcutRing.identifier
+        let copy = SystemShortcut.copy.identifier
+        let notes = Application(path: "/System/Applications/Notes.app")
+        notes.buttons = OPTIONS_BUTTONS_DEFAULT()
+
+        let gestureCases: [(name: String, bindings: [ButtonBinding], onlyInNotes: Bool)] = [
+            ("choose", [], false),
+            ("one", [bind(logi(.gesture), gestures)], false),
+            ("long-name", [bind(logi(.modeShift), gestures)], false),
+            ("multiple", [bind(3, gestures), bind(4, gestures)], false),
+            ("only-in-notes", [], true),
+        ]
+        for item in gestureCases {
+            Options.shared.buttons.binding = item.bindings
+            notes.buttons?.binding = item.onlyInNotes ? [bind(3, gestures)] : []
+            try renderPane(GesturesPreferencesViewController.tabIdentifier, name: "trigger-choice-gestures-\(item.name)",
+                           titled: TitledCut(boxes: 2), replacement: {
+                let pane = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+                pane.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+                pane.bindingSummary = {
+                    MouseGestureBindingSummary(bindings: item.bindings, applications: [notes], isLogitechCode: { LogiCenter.shared.isLogiCode($0) })
+                }
+                return pane
+            }, afterLoad: { controller in
+                guard let pane = controller as? GesturesPreferencesViewController else { return }
+                pane.triggerChooser.deviceSource = source("MX Master 3S")
+                pane.previewView.prefersReducedMotion = { true }
+                pane.previewView.reduceMotionDidChange()
+                pane.previewView.mouseSource = { .mxMaster3 }
+                pane.previewView.reloadMouse()
+                pane.reload()
+            })
+        }
+
+        let control: CGEventFlags = [.maskControl, .maskAlternate]
+        let ringCases: [(name: String, bindings: [ButtonBinding])] = [
+            ("choose", []),
+            ("one", [bind(logi(.thumbPanel), ring)]),
+            ("key", [bind(49, ring, type: .keyboard, modifiers: control)]),
+            ("multiple", [bind(logi(.thumbPanel), ring), bind(49, ring, type: .keyboard, modifiers: control)]),
+        ]
+        for item in ringCases {
+            Options.shared.buttons.binding = item.bindings
+            try renderPane(RingPreferencesViewController.tabIdentifier, name: "trigger-choice-ring-\(item.name)",
+                           titled: TitledCut(boxes: 1), replacement: {
+                let pane = RingPreferencesViewController()
+                pane.bindingSummary = { ShortcutRingBindingSummary(bindings: item.bindings) }
+                return pane
+            }, afterLoad: { controller in
+                guard let pane = controller as? RingPreferencesViewController else { return }
+                pane.triggerChooser?.deviceSource = source("MX Master 4")
+                Self.stillTriggerCard(of: pane, mouse: .mxMaster4)
+                pane.reload()
+            })
+        }
+
+        // The open menus.
+        func menuItems(gestures pane: Bool, mouse: String, bindings: [ButtonBinding]) throws -> [NSMenuItem] {
+            Options.shared.buttons.binding = bindings
+            let chooser: TriggerChooser
+            if pane {
+                let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+                gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+                _ = gestures.view
+                chooser = gestures.triggerChooser
+            } else {
+                let ring = RingPreferencesViewController()
+                _ = ring.view
+                chooser = try XCTUnwrap(ring.triggerChooser)
+            }
+            chooser.deviceSource = source(mouse)
+            chooser.update(triggerTitles: chooser.triggerTitles)
+            // (A pull-down's first item is its title; the menu shows the others.)
+            return Array(try XCTUnwrap(chooser.pullDown.menu).items.dropFirst())
+        }
+        let menus: [(name: String, items: [NSMenuItem])] = [
+            ("gestures-mx3", try menuItems(gestures: true, mouse: "MX Master 3S",
+                                          bindings: [bind(3, copy), bind(logi(.gesture), gestures)])),
+            ("ring-mx4", try menuItems(gestures: false, mouse: "MX Master 4",
+                                      bindings: [bind(logi(.thumbPanel), ring), bind(3, copy), bind(logi(.gesture), gestures)])),
+            ("ring-generic", try menuItems(gestures: false, mouse: "Mouse", bindings: [])),
+        ]
+        for menu in menus {
+            for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+                let sheet = MenuStandInView(items: menu.items)
+                sheet.appearance = appearance
+                try write(sheet, appearance: appearance, to: directory.appendingPathComponent("trigger-choice-menu-\(menu.name)-\(suffix).png"))
+            }
+        }
+    }
+
     /// Recorded key combinations with a name and an icon (`ShortcutLabel`), as the rows
     /// show them: the Shortcut Ring pane (`ring-pane-named-<appearance>.png`: a place with
     /// both lit, then one with a name only, one with an icon only, one with a typed
@@ -3222,5 +3336,66 @@ enum ForcedAppAccent {
         guard let original, let method = class_getClassMethod(NSColor.self, selector) else { return }
         method_setImplementation(method, original)
         self.original = nil
+    }
+}
+
+/// An open menu, drawn in-process as a stand-in (`testRenderTriggerChoice`): a menu is a
+/// window of its own, which the tests never open. The items' titles as the menu has them
+/// (their attributed titles, in the menu font), the tick, section headers and separators,
+/// on a plain rounded card (the real menu is a material).
+private final class MenuStandInView: NSView {
+
+    private let items: [NSMenuItem]
+    private static let rowHeight: CGFloat = 22
+    private static let separatorHeight: CGFloat = 11
+    private static let inset: CGFloat = 5
+
+    init(items: [NSMenuItem]) {
+        self.items = items
+        let height = items.reduce(2 * Self.inset) { $0 + ($1.isSeparatorItem ? Self.separatorHeight : Self.rowHeight) }
+        let font = NSFont.menuFont(ofSize: 0)
+        let width = items.map { item -> CGFloat in
+            (item.attributedTitle?.size().width ?? (item.title as NSString).size(withAttributes: [.font: font]).width)
+        }.max() ?? 100
+        super.init(frame: NSRect(x: 0, y: 0, width: ceil(width) + 48, height: height))
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("built in code")
+    }
+
+    override var isFlipped: Bool {
+        return true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let card = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+        NSColor.controlBackgroundColor.setFill()
+        card.fill()
+        NSColor.separatorColor.setStroke()
+        card.stroke()
+        let font = NSFont.menuFont(ofSize: 0)
+        var y = Self.inset
+        for item in items {
+            if item.isSeparatorItem {
+                NSColor.separatorColor.setFill()
+                NSRect(x: 12, y: y + 5, width: bounds.width - 24, height: 1).fill()
+                y += Self.separatorHeight
+                continue
+            }
+            if item.state == .on {
+                ("✓" as NSString).draw(at: NSPoint(x: 9, y: y + 3), withAttributes: [.font: font, .foregroundColor: NSColor.labelColor])
+            }
+            let title: NSAttributedString
+            if item.isSectionHeader {
+                title = NSAttributedString(string: item.title, attributes: [
+                    .font: NSFont.boldSystemFont(ofSize: NSFont.smallSystemFontSize), .foregroundColor: NSColor.secondaryLabelColor,
+                ])
+            } else {
+                title = item.attributedTitle ?? NSAttributedString(string: item.title, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
+            }
+            title.draw(at: NSPoint(x: 24, y: y + 3))
+            y += Self.rowHeight
+        }
     }
 }

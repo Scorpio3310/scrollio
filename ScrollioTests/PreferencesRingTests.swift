@@ -258,23 +258,27 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(controller.triggerRow.title, "Button or key")
         XCTAssertEqual(controller.triggerRow.explanation,
                        "Nothing opens the ring yet. A key combination works too, even one that Logi Options+ sends for a button.")
-        XCTAssertEqual(controller.triggerButton.title, "Set Up…")
-        var requests: [Bool] = []
-        controller.openButtonsPane = { requests.append($0) }
-        controller.triggerButton.performClick(nil)
-        XCTAssertEqual(requests, [true], "it records a button or key that gets the ring")
+        XCTAssertEqual(controller.triggerButton.shownTitle, "Choose")
+        XCTAssertEqual(controller.triggerButton.accessibilityLabel(), "Button or key", "named by the row")
+        var opened = 0
+        controller.openButtonsPane = { opened += 1 }
+        XCTAssertTrue(controller.triggerButton.chooseItemForTests(TriggerChooser.Identifier.showInButtons))
+        XCTAssertEqual(opened, 1)
     }
 
-    func testWithATriggerTheRowNamesItAndLeadsToItsRow() {
+    /// Two triggers: the pull-down says so and offers "Show in Buttons" only (which one
+    /// stays is decided there).
+    func testWithTwoTriggersTheRowNamesThemAndOffersOnlyShowInButtons() {
         summary = ShortcutRingBindingSummary(triggerTitles: ["Thumb panel", "⌃⌥ Space"])
         let controller = makeController()
         XCTAssertEqual(controller.triggerRow.explanation,
                        "Thumb panel and ⌃⌥ Space. A key combination works too, even one that Logi Options+ sends for a button.")
-        XCTAssertEqual(controller.triggerButton.title, "Change")
-        var requests: [Bool] = []
-        controller.openButtonsPane = { requests.append($0) }
-        controller.triggerButton.performClick(nil)
-        XCTAssertEqual(requests, [false])
+        XCTAssertEqual(controller.triggerButton.shownTitle, "Multiple")
+        XCTAssertEqual(controller.triggerButton.menu?.items.dropFirst().map(\.title), ["Show in Buttons"])
+        var opened = 0
+        controller.openButtonsPane = { opened += 1 }
+        XCTAssertTrue(controller.triggerButton.chooseItemForTests(TriggerChooser.Identifier.showInButtons))
+        XCTAssertEqual(opened, 1)
     }
 
     // MARK: Folded while nothing opens the ring
@@ -382,7 +386,7 @@ final class PreferencesRingTests: XCTestCase {
         window.contentViewController = controller
         addTeardownBlock { window.close() }
         let places = try XCTUnwrap(controller.placesSection)
-        XCTAssertEqual(controller.triggerButton.title, "Set Up…")
+        XCTAssertEqual(controller.triggerButton.shownTitle, "Choose")
         XCTAssertTrue(places.isCollapsible)
 
         let notes = ApplicationTriggers(applicationNames: ["Notes"], triggerTitles: ["Back button"], path: "/System/Applications/Notes.app")
@@ -397,20 +401,19 @@ final class PreferencesRingTests: XCTestCase {
         }
         undo.endUndoGrouping()
         undo.undo()
-        XCTAssertEqual(controller.triggerButton.title, "Change", "shown at once")
-        XCTAssertFalse(places.isCollapsible)
+        XCTAssertFalse(places.isCollapsible, "shown at once")
         XCTAssertEqual(controller.triggerRow.explanation, "Only in Notes: Back button. A key combination works too.")
+        XCTAssertEqual(controller.triggerButton.shownTitle, "Choose", "nothing of Buttons opens it")
         undo.redo()
-        XCTAssertEqual(controller.triggerButton.title, "Set Up…")
         XCTAssertTrue(places.isCollapsible)
 
-        // The button does what the row says, also when the bindings changed unseen.
-        var added: [Bool] = []
-        controller.openButtonsPane = { added.append($0) }
+        // "Show in Buttons" goes where the row says, also when the bindings changed unseen.
+        var opened = 0
+        controller.openButtonsPane = { opened += 1 }
         controller.openApplicationButtons = { _ in XCTFail("the row says that nothing opens the ring") }
         summary = opens
-        controller.triggerButton.performClick(nil)
-        XCTAssertEqual(added, [true], "Set Up…")
+        XCTAssertTrue(controller.triggerButton.chooseItemForTests(TriggerChooser.Identifier.showInButtons))
+        XCTAssertEqual(opened, 1)
     }
 
     /// A click on a place of the drawing while the places are folded opens them and
@@ -1062,7 +1065,7 @@ final class PreferencesRingTests: XCTestCase {
         let controller = RingPreferencesViewController()
         _ = controller.view
         let opens = try XCTUnwrap(controller.triggerRow.explanation)
-        XCTAssertEqual(controller.triggerButton.title, "Change")
+        XCTAssertEqual(controller.triggerButton.shownTitle, "Multiple")
         XCTAssertEqual(shownActions(controller)[0], "Undo")
         XCTAssertEqual(shownActions(controller)[3], "No Action")
         XCTAssertEqual((controller.freezeToggle as? NSSwitch)?.state, .on)
@@ -1098,7 +1101,7 @@ final class PreferencesRingTests: XCTestCase {
         // What opens the ring: as it was.
         XCTAssertEqual(Options.shared.buttons.binding, bindings)
         XCTAssertEqual(controller.triggerRow.explanation, opens)
-        XCTAssertEqual(controller.triggerButton.title, "Change")
+        XCTAssertEqual(controller.triggerButton.shownTitle, "Multiple")
 
         XCTAssertFalse(controller.resetToDefaultsButton.isEnabled, "nothing differs any more")
         XCTAssertEqual(controller.resetToDefaultsButton.title, "Reset to Defaults", "in no window there is no Undo to offer")

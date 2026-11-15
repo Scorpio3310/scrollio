@@ -14,13 +14,16 @@
 //  the row under the pointer is lit in the drawing, a place under the pointer is lit too,
 //  and a click on a place selects its row (its pull-down takes the keyboard and is
 //  scrolled into view; the place stays lit). Then a box
-//  with what opens the ring: which button or key runs the Shortcut Ring is chosen in the
-//  Buttons pane, and the row names it and leads there ("Set Up…" records one, "Change"
-//  shows the Buttons pane with its row selected), as the Gestures pane does for its button;
+//  with what opens the ring: which button or key runs the Shortcut Ring is a binding of
+//  the Buttons pane, and the row names it and chooses it in place, as the Gestures pane does
+//  for its button: its pull-down (`TriggerChooser`) lists the connected mouse's buttons
+//  with what each does now, "Record a Button or Key…" and "Show in Buttons" (the Buttons
+//  pane with its row selected), and a choice writes the binding Buttons would, with Undo;
 //  while only an app's own button or key opens it, the row says where ("Only in Figma:
-//  Thumb panel.") and "Change" shows that app's Buttons part (`ApplicationTriggerRule`);
-//  its explanation also says that a key combination works. Then the eight places, clockwise
-//  from the top, each with the pull-down a row of the Buttons pane has
+//  Thumb panel.") and "Show in Buttons" shows that app's Buttons part
+//  (`ApplicationTriggerRule`); its explanation also says that a key combination works.
+//  Then the eight places, clockwise from the top, each with the pull-down a row of the
+//  Buttons pane has
 //  (`ButtonActionPullDown`, with the menu of what a place can hold): a listed action, a
 //  key combination recorded there ("Keyboard Shortcut…") or an app, a file or a script
 //  ("Open App or File…", the Buttons pane's popover). While nothing opens the ring (no
@@ -252,14 +255,13 @@ final class RingPreferencesViewController: NSViewController {
 
     /// What opens the ring; tests and pictures replace it with fixtures.
     var bindingSummary: () -> ShortcutRingBindingSummary = { .current }
-    /// What the pane shows of it now: "Set Up…" and "Change" do what the row says.
+    /// What the pane shows of it now: "Show in Buttons" goes where the row says.
     private var shownSummary: ShortcutRingBindingSummary?
-    /// "Set Up…" or "Change": shows the Buttons pane and, with nothing that opens the ring
-    /// yet (true), records a button or key that gets the Shortcut Ring; with one (false),
-    /// selects its row there. Tests replace it.
-    var openButtonsPane: ((Bool) -> Void)?
-    /// "Change" while only an app's own button or key opens the ring: shows that app's
-    /// Buttons part, its row selected. Tests replace it.
+    /// "Show in Buttons": shows the Buttons pane, with the row of what opens the ring
+    /// selected when something does. Tests replace it.
+    var openButtonsPane: (() -> Void)?
+    /// "Show in Buttons" while only an app's own button or key opens the ring: shows that
+    /// app's Buttons part, its row selected. Tests replace it.
     var openApplicationButtons: ((ApplicationTriggers) -> Void)?
     /// Shows "Open App or File" at a place's pull-down, as the Buttons pane does. Tests
     /// replace it: nothing is shown.
@@ -317,7 +319,11 @@ final class RingPreferencesViewController: NSViewController {
         return headerView?.triggerCard
     }
     private(set) var triggerRow: PreferencesGroupRow!
-    private(set) var triggerButton: NSButton!
+    /// "Button or key"'s pull-down, and what it does; nil on an app's page.
+    private(set) var triggerChooser: TriggerChooser?
+    var triggerButton: TriggerChoicePullDown! {
+        return triggerChooser?.pullDown
+    }
     /// "Freeze pointer while the ring is held" and its switch (the app's own on its page).
     private(set) var freezeRow: PreferencesGroupRow!
     private(set) var freezeToggle: NSControl!
@@ -445,6 +451,7 @@ final class RingPreferencesViewController: NSViewController {
         showLitPlace()
         // A recording that still waits for a key, and the popover, go with the pane.
         endEditing()
+        triggerChooser?.endEditing()
         resetToDefaults?.endUndoOffer()
     }
 
@@ -467,9 +474,8 @@ final class RingPreferencesViewController: NSViewController {
             shownSummary = summary
             triggerRow.explanation = summary.explanation
             triggerCard?.source = summary.picture
-            // (Opened only by an app's own button: "Change" leads to it, not "Set Up…".)
-            let opens = summary.hasTrigger || summary.onlyInApps != nil
-            triggerButton.title = text(opens ? "ring-trigger-change" : "ring-trigger-set-up")
+            // The pull-down names what the row names first, and offers the mouse's buttons.
+            triggerChooser?.update(triggerTitles: summary.triggerTitles)
             // Nothing opens this ring (nothing at all, or only apps that open their own):
             // its places wait, folded, a click away.
             let opensThisRing = summary.hasTrigger || summary.onlyInApps?.usesGeneralSettings == true
@@ -555,7 +561,9 @@ final class RingPreferencesViewController: NSViewController {
 
     // MARK: - Actions
 
-    @objc func triggerButtonClicked(_ sender: NSButton) {
+    /// "Show in Buttons": the Buttons pane with the row of what opens the ring selected;
+    /// while only an app's own button or key opens it, that app's Buttons part.
+    func showInButtons() {
         // (What the row says, which an Undo keeps up to date.)
         let summary = shownSummary ?? bindingSummary()
         if !summary.hasTrigger, let apps = summary.onlyInApps {
@@ -566,19 +574,15 @@ final class RingPreferencesViewController: NSViewController {
             }
             return
         }
-        let addsTrigger = !summary.hasTrigger
         if let openButtonsPane {
-            openButtonsPane(addsTrigger)
+            openButtonsPane()
             return
         }
         guard let split = PreferencesButtonsViewController.splitViewController(of: self),
               split.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons) else { return }
-        guard let buttons = split.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController else { return }
-        if addsTrigger {
-            buttons.beginAddingBinding(action: SystemShortcut.shortcutRing)
-        } else {
-            buttons.selectRingTrigger()
-        }
+        guard summary.hasTrigger,
+              let buttons = split.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController else { return }
+        buttons.selectRingTrigger()
     }
 
     @objc func freezeToggled(_ sender: NSControl) {
@@ -673,20 +677,20 @@ final class RingPreferencesViewController: NSViewController {
         return NSLocalizedString(key, comment: "")
     }
 
-    /// "Button or key": what opens the ring, or nothing yet, and a push button to the
-    /// Buttons pane.
+    /// "Button or key": what opens the ring, or nothing yet, and the pull-down that
+    /// chooses it (`TriggerChooser`): a choice shows at once in the row, the picture and the
+    /// places, which no longer fold.
     private func makeTriggerRow() -> PreferencesGroupRow {
-        let button = PreferencesGroupedForm.makePushButton(
-            title: text("ring-trigger-set-up"),
-            target: self,
-            action: #selector(triggerButtonClicked(_:))
-        )
-        button.identifier = Identifier.triggerButton
-        triggerButton = button
+        let chooser = TriggerChooser(rule: .shortcutRing)
+        chooser.undoManager = { [weak self] in self?.undoTarget }
+        chooser.showInButtons = { [weak self] in self?.showInButtons() }
+        chooser.didChange = { [weak self] in self?.reload() }
+        chooser.pullDown.identifier = Identifier.triggerButton
+        triggerChooser = chooser
         let row = PreferencesGroupRow(
             title: text("ring-trigger"),
             explanation: text("ring-trigger-none"),
-            accessory: button
+            accessory: chooser.pullDown
         )
         // Room for two lines whatever the row says, so naming a button does not move the rows.
         row.reservedExplanations = [text("ring-trigger-none")]

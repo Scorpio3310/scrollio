@@ -10319,6 +10319,126 @@
           }
         }
       }
+    },
+    "buttons-trigger-choice-choose": {
+      "comment": "Gestures pane (Button to hold) and Shortcut Ring pane (Button or key): the pull-down while no button or key of Buttons does it",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose"
+          }
+        }
+      }
+    },
+    "buttons-trigger-choice-several": {
+      "comment": "Gestures pane (Button to hold) and Shortcut Ring pane (Button or key): the pull-down while two or more buttons or keys of Buttons do it",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Multiple"
+          }
+        }
+      }
+    },
+    "buttons-trigger-choice-mouse": {
+      "comment": "Gestures and Shortcut Ring panes: section of the trigger pull-down with the buttons of the connected mouse",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your Mouse"
+          }
+        }
+      }
+    },
+    "buttons-trigger-choice-item": {
+      "comment": "Gestures and Shortcut Ring panes: a button of the connected mouse in the trigger pull-down; the first %@ is the button (\"Back button\"), the second what it does now, shown in grey (\"Default\", \"Back, will be replaced\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ — %2$@"
+          }
+        }
+      }
+    },
+    "buttons-trigger-choice-replaced": {
+      "comment": "Gestures and Shortcut Ring panes: in grey after a button of the trigger pull-down that has another action; %@ is that action (\"Back\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, will be replaced"
+          }
+        }
+      }
+    },
+    "buttons-trigger-choice-show": {
+      "comment": "Gestures and Shortcut Ring panes: last item of the trigger pull-down, shows the button's row in the Buttons pane",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in Buttons"
+          }
+        }
+      }
+    },
+    "gestures-trigger-choice-record": {
+      "comment": "Gestures pane: item of the Button to hold pull-down that records the button to hold",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record a Button…"
+          }
+        }
+      }
+    },
+    "ring-trigger-choice-record": {
+      "comment": "Shortcut Ring pane: item of the Button or key pull-down that records what opens the ring",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record a Button or Key…"
+          }
+        }
+      }
+    },
+    "gestures-undo-choose-button": {
+      "comment": "Gestures pane: the Undo menu item reads \"Undo Change Button to Hold\" after a button was chosen in the Button to hold pull-down",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change Button to Hold"
+          }
+        }
+      }
+    },
+    "ring-undo-choose-trigger": {
+      "comment": "Shortcut Ring pane: the Undo menu item reads \"Undo Change What Opens the Ring\" after a button or key was chosen in the Button or key pull-down",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change What Opens the Ring"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

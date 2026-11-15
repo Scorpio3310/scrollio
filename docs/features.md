@@ -97,6 +97,16 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
 
 - Hold the button that has the action Gesture Navigation and move the mouse: up, down,
   left and right each run an action, and letting go without moving runs one more.
+- The button to hold is chosen in the Gestures pane's first row, "Button to hold": its
+  pull-down lists the buttons of the connected mouse in the order they sit on it, each
+  with what it does now in grey ("Back button — Back, will be replaced"), then "Record a
+  Button…" (press the button while the recorder waits at the pull-down) and "Show in
+  Buttons". A choice gives that button Gesture Navigation in Buttons, where it is
+  stored, as choosing it on the button's row there does; the button that had it until
+  then goes back to "Default", so one button runs the gestures. The row, the preview and
+  the folded settings show it at once, and Edit › Undo ("Undo Change Button to Hold")
+  puts back what was there. While two or more buttons run the gestures, the pull-down
+  reads "Multiple" and offers "Show in Buttons" only.
 - Each of the five takes one of the listed actions, or a key combination you record
   there ("Keyboard Shortcut…"), with a name and an icon if you like, as a button's (see
   [Buttons and keys](#buttons-and-keys)). It is sent as a place of the Shortcut Ring
@@ -126,7 +136,7 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   another button Gesture Navigation: the app's Gestures part then names the button to
   hold there, or says that none runs the gestures. While only an app's own button runs
   Gesture Navigation, the Gestures pane says in which apps and with which button, and
-  its "Change" shows that app's Buttons part. "Reset to Defaults" under the app's
+  its "Show in Buttons" shows that app's Buttons part. "Reset to Defaults" under the app's
   gestures puts them back to a copy of the pane's as they are then (all of them, the
   actions with their names and icons too); the switch stays off, and Edit › Undo takes
   it back. While no button runs Gesture Navigation with the app in front, "Directions",
@@ -150,11 +160,13 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
 
 A ring of eight shortcuts that opens around the pointer, for any mouse. Give a mouse
 button, a Logitech button such as the MX Master 4's thumb panel, or a key combination
-the action "Shortcut Ring" (in Buttons, or with "Set Up…" in the Shortcut Ring pane);
-nothing opens the ring until you do. A button or key of an app's own can open it too,
-only while that app is in front: while nothing else does, the pane says in which apps
-and with what, and its "Change" shows that app's Buttons part. The pane also sets what
-the eight places hold.
+the action "Shortcut Ring" (in Buttons, or in the Shortcut Ring pane's "Button or key",
+whose pull-down works as the Gestures pane's "Button to hold": the mouse's buttons with
+what each does now, "Record a Button or Key…", "Show in Buttons", and Undo, "Undo Change
+What Opens the Ring"); nothing opens the ring until you do. A button or key of an app's
+own can open it too, only while that app is in front: while nothing else does, the pane
+says in which apps and with what, and its "Show in Buttons" shows that app's Buttons
+part. The pane also sets what the eight places hold.
 
 - Two ways to choose, both always there:
   - Hold: press and hold the button, move the mouse towards a shortcut (it lights by
@@ -253,7 +265,8 @@ the eight places hold.
     drop lights without growing gradually.
 - With Logi Options+: if Logi Options+ manages your mouse, give the button there a
   keystroke (for example ⌃⌥Space), and record the same keystroke in Scrollio as the
-  ring's button ("Set Up…" in the Shortcut Ring pane, then press that button). The
+  ring's button ("Record a Button or Key…" in the Shortcut Ring pane, then press that
+  button). The
   ring then opens when you press the button and stays open for a click; if Options+
   holds the key while you hold the button, moving and letting go works as well. Use a
   key combination that no app needs.
