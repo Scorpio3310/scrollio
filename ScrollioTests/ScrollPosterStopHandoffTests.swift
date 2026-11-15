@@ -991,6 +991,30 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         XCTAssertEqual(display.made.count, 3)
     }
 
+    /// While a silent link is not replaced (once per 3 s), it follows the display of each
+    /// wheel event, as a link that is started does: moved to a display that works (the
+    /// pointer left a silent Sidecar or DisplayLink display), its frames come and smoothing
+    /// is back at once. It stayed on the silent display for up to 3 s, every event raw.
+    func testASilentLinkFollowsTheDisplayOfEachWheelEvent() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        var clock = 1_000.0
+        poster.inputClockForTests = { clock }
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+        clock += 0.11
+        XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()))
+        drainMainQueue()
+        let replacement = try XCTUnwrap(display.made.last)
+        XCTAssertEqual(replacement.followedPoints, [])
+
+        clock += 0.03
+        let elsewhere = try wheelEvent()
+        elsewhere.location = CGPoint(x: 3_000, y: 200)
+        XCTAssertFalse(poster.smooth(event: elsewhere, input: input()), "still silent")
+        XCTAssertEqual(display.made.count, 2, "not replaced again within 3 s")
+        XCTAssertEqual(replacement.followedPoints, [CGPoint(x: 3_000, y: 200)], "it follows the event's display")
+    }
+
     /// The frame that ends a silence while the wheel still turns leaves the link running:
     /// the next event is smoothed with it at once. It stopped the link, and the next event
     /// started it cold, to wait for a first frame once more.
@@ -4707,6 +4731,8 @@ final class FakeScrollDisplayLink: ScrollDisplayLink {
     private(set) var starts = 0
     private(set) var stops = 0
     private(set) var follows = 0
+    /// The places of `followDisplay(at:)`, in order.
+    private(set) var followedPoints: [CGPoint] = []
     var nominalHz = 60.0
     var followedDisplayHz = 60.0
 
@@ -4723,6 +4749,10 @@ final class FakeScrollDisplayLink: ScrollDisplayLink {
 
     func followDisplayUnderPointer() {
         follows += 1
+    }
+
+    func followDisplay(at point: CGPoint) {
+        followedPoints.append(point)
     }
 }
 

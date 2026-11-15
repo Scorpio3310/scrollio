@@ -956,7 +956,7 @@ extension ScrollPoster {
             }
         }
         guard tryStart() else { return false }
-        guard linkSendsFrames() else {
+        guard linkSendsFrames(at: event.location) else {
             notTakenReason = .silentDisplayLink
             return false
         }
@@ -2358,9 +2358,11 @@ extension ScrollPoster {
     /// (`replaceSilentLinkSoon`: from the main queue, once the event went on; at most once
     /// per `recreateCooldown`, and not within that time after a silence ended). One line
     /// goes to the log, at most one per `silentLinkLineInterval`. The first frame that comes
-    /// ends it (`frameCameLocked`, `silenceEnded`): the next event is smoothed again.
+    /// ends it (`frameCameLocked`, `silenceEnded`): the next event is smoothed again. Between
+    /// replacements the link follows the display of each event (`location`), as a link that
+    /// is started does: on a display that works its frames come at once.
     /// - Returns: false: the event is not taken.
-    private func linkSendsFrames() -> Bool {
+    private func linkSendsFrames(at location: CGPoint) -> Bool {
         let now = inputClock()
         lastWheelEventAt = now
         os_unfair_lock_lock(&stateLock)
@@ -2370,6 +2372,8 @@ extension ScrollPoster {
             os_unfair_lock_unlock(&stateLock)
             if maySilentLinkBeReplaced(at: now) {
                 replaceSilentLinkSoon(at: now)
+            } else {
+                poster?.followDisplay(at: location)
             }
             return false
         }
