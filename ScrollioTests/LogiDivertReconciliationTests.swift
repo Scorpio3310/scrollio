@@ -5,16 +5,22 @@ final class LogiDivertReconciliationTests: XCTestCase {
 
     /// The ledger's lines, here instead of the system log.
     private var ledgerLines: [String] = []
+    /// How often the ledger told of a divert written again (instead of a notification).
+    private var announcements = 0
     private var realLedgerLog: ((String) -> Void)?
+    private var realAnnounce: (() -> Void)?
 
     override func setUp() {
         super.setUp()
         realLedgerLog = LogiDivertLedger.log
+        realAnnounce = LogiDivertLedger.announceWrittenAgain
         LogiDivertLedger.log = { [weak self] in self?.ledgerLines.append($0) }
+        LogiDivertLedger.announceWrittenAgain = { [weak self] in self?.announcements += 1 }
     }
 
     override func tearDown() {
         if let log = realLedgerLog { LogiDivertLedger.log = log }
+        if let announce = realAnnounce { LogiDivertLedger.announceWrittenAgain = announce }
         super.tearDown()
     }
 
@@ -773,6 +779,171 @@ final class LogiDivertReconciliationTests: XCTestCase {
         ledger.expectAck(cid: 0x00C4, flags: 0x03, targetCID: 0, now: start)
         let late = start.addingTimeInterval(LogiPendingReportingAcks.lifetime + 0.5)
         XCTAssertFalse(ledger.consumeAck(cid: 0x00C4, flags: 0x03, targetCID: 0, now: late))
+    }
+
+    // MARK: - One more re-read after a divert written again
+
+    /// The ledger tells of a divert the mouse did not have that is written again: one held
+    /// back (no echo) and one a re-read found dropped. A new binding's divert is not one.
+    func testADivertTheMouseDidNotHaveIsAnnouncedWhenWrittenAgain() {
+        let gesture: UInt16 = 0x00C3, back: UInt16 = 0x0053
+        var refused = ModelledSlot()
+        refused.pass(bindings: [gesture])
+        XCTAssertEqual(announcements, 0, "a new divert")
+        refused.now += 15
+        refused.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        XCTAssertEqual(announcements, 1, "held back and written again")
+
+        var dropped = ModelledSlot()
+        dropped.pass(bindings: [gesture])
+        dropped.echo(gesture, divert: true)
+        dropped.now += 15
+        dropped.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        XCTAssertEqual(dropped.writes, [.divert(gesture), .divert(gesture)])
+        XCTAssertEqual(announcements, 2, "dropped and written again")
+
+        // Dropped while its binding went away: nothing is written. The next re-read forgets
+        // that it was dropped, and a binding made after it is a new divert.
+        var unbound = ModelledSlot()
+        unbound.pass(bindings: [back])
+        unbound.echo(back, divert: true)
+        unbound.now += 15
+        unbound.reRead(controls: [back], divertedOnTheMouse: [], bindings: [])
+        unbound.ledger.noteQuerySent(cid: back)
+        unbound.pass(bindings: [back])
+        XCTAssertEqual(unbound.writes, [.divert(back), .divert(back)])
+        XCTAssertEqual(announcements, 2)
+    }
+
+    /// Settings opens and re-reads the buttons; the mouse had not taken a divert, the pass
+    /// writes it again, and the mouse refuses that too; Settings is closed. A few seconds
+    /// later one more re-read writes it again. Its own re-read asks for no other; a later
+    /// re-read that writes a divert again gets its own.
+    func testAReReadThatWroteADivertAgainIsFollowedByOneMoreAndNoOther() {
+        let gesture: UInt16 = 0x00C3
+        let readAgain = LogiUsageBootstrap.ButtonsReadAgain()
+        var busy = false
+        var requests = 0
+        var pending: [(delay: TimeInterval, work: () -> Void)] = []
+        readAgain.isBusy = { busy }
+        readAgain.lastRequest = { nil }
+        readAgain.request = { requests += 1; busy = true }
+        readAgain.schedule = { pending.append((delay: $0, work: $1)) }
+        LogiDivertLedger.announceWrittenAgain = { readAgain.divertWrittenAgain() }
+
+        var slot = ModelledSlot()
+        /// One re-read as LogiCenter sees it: busy, the queries and their answers, the
+        /// closing pass, "reporting did complete", no longer busy.
+        func reRead(diverted: Set<UInt16>) {
+            busy = true
+            readAgain.activityChanged()
+            slot.now += 12
+            slot.reRead(controls: [gesture], divertedOnTheMouse: diverted, bindings: [gesture])
+            readAgain.reReadCompleted()
+            busy = false
+            readAgain.activityChanged()
+        }
+
+        slot.pass(bindings: [gesture])          // refused: no echo
+        reRead(diverted: [])
+        XCTAssertEqual(slot.writes.count, 2)
+        XCTAssertEqual(pending.map { $0.delay }, [LogiUsageBootstrap.ButtonsReadAgain.delay])
+        XCTAssertEqual(requests, 0)
+
+        guard !pending.isEmpty else { return XCTFail("no follow-up was scheduled") }
+        pending.removeFirst().work()
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(readAgain.phase, .running)
+        reRead(diverted: [])                    // refused again
+        XCTAssertEqual(slot.writes.count, 3, "written again by the follow-up")
+        XCTAssertTrue(pending.isEmpty, "the follow-up's own re-read asks for no other")
+        XCTAssertEqual(readAgain.phase, .idle)
+
+        // The mouse takes it: a re-read that writes nothing again asks for nothing.
+        slot.echo(gesture, divert: true)
+        reRead(diverted: [gesture])
+        XCTAssertEqual(slot.writes.count, 3)
+        XCTAssertTrue(pending.isEmpty)
+
+        // Dropped later, and written again: a follow-up of its own.
+        reRead(diverted: [])
+        XCTAssertEqual(slot.writes.count, 4)
+        XCTAssertEqual(pending.count, 1)
+    }
+
+    /// LogiCenter starts a re-read at most every 10 s from the last request: the follow-up of
+    /// a re-read Settings asked for comes once LogiCenter takes a request again. Two mice
+    /// whose re-reads end one after the other get one follow-up. A request LogiCenter still
+    /// refuses, or one with nothing to read, ends it.
+    func testTheFollowUpComesOnceLogiCenterTakesARequestAgain() {
+        let readAgain = LogiUsageBootstrap.ButtonsReadAgain()
+        let now = Date(timeIntervalSince1970: 5_000)
+        var last: Date? = now.addingTimeInterval(-1)
+        var pending: [(delay: TimeInterval, work: () -> Void)] = []
+        var requests = 0
+        readAgain.now = { now }
+        readAgain.lastRequest = { last }
+        readAgain.isBusy = { false }
+        readAgain.request = { requests += 1 }
+        readAgain.schedule = { pending.append((delay: $0, work: $1)) }
+
+        XCTAssertEqual(readAgain.delayFromNow(), LogiCenter.reportingRefreshMinimumInterval - 1 + 0.5, accuracy: 0.001)
+        last = now.addingTimeInterval(-20)
+        XCTAssertEqual(readAgain.delayFromNow(), LogiUsageBootstrap.ButtonsReadAgain.delay)
+        last = nil
+        XCTAssertEqual(readAgain.delayFromNow(), LogiUsageBootstrap.ButtonsReadAgain.delay)
+
+        readAgain.reReadCompleted()
+        XCTAssertTrue(pending.isEmpty, "nothing was written again")
+        readAgain.divertWrittenAgain()
+        readAgain.reReadCompleted()
+        readAgain.divertWrittenAgain()
+        readAgain.reReadCompleted()
+        XCTAssertEqual(pending.count, 1)
+        guard !pending.isEmpty else { return XCTFail("no follow-up was scheduled") }
+        pending.removeFirst().work()
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(readAgain.phase, .idle, "no re-read started: nothing to wait for")
+    }
+
+    /// From launch on (AppDelegate) the follow-up hears the ledger and LogiCenter.
+    func testTheFollowUpHearsTheLedgerAndLogiCenter() {
+        let readAgain = LogiUsageBootstrap.ButtonsReadAgain.shared
+        let saved = (readAgain.request, readAgain.isBusy, readAgain.lastRequest, readAgain.schedule)
+        var busy = false
+        var requests = 0
+        var pending: [() -> Void] = []
+        readAgain.request = { requests += 1; busy = true }
+        readAgain.isBusy = { busy }
+        readAgain.lastRequest = { nil }
+        readAgain.schedule = { pending.append($1) }
+        if let announce = realAnnounce { LogiDivertLedger.announceWrittenAgain = announce }
+        LogiUsageBootstrap.installReadAgainObserver()
+        defer {
+            LogiUsageBootstrap.removeReadAgainObserverForTests()
+            (readAgain.request, readAgain.isBusy, readAgain.lastRequest, readAgain.schedule) = saved
+        }
+        XCTAssertEqual(readAgain.phase, .idle)
+
+        LogiDivertLedger.announceWrittenAgain()
+        NotificationCenter.default.post(name: LogiCenter.reportingDidComplete, object: nil)
+        XCTAssertEqual(pending.count, 1)
+        guard !pending.isEmpty else { return XCTFail("no follow-up was scheduled") }
+        pending.removeFirst()()
+        XCTAssertEqual(requests, 1)
+        busy = false
+        NotificationCenter.default.post(name: LogiCenter.activityChanged, object: nil)
+        XCTAssertEqual(readAgain.phase, .idle)
+    }
+
+    /// LogiCenter's word for the session manager's limit is the manager's (private there).
+    func testLogiCenterKnowsTheManagersLimitForReReads() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let manager = try String(
+            contentsOf: root.appendingPathComponent("Scrollio/Logi/Core/LogiSessionManager.swift"), encoding: .utf8
+        )
+        let seconds = Int(LogiCenter.reportingRefreshMinimumInterval)
+        XCTAssertTrue(manager.contains("private static let reportingRefreshMinInterval: TimeInterval = \(seconds)\n"))
     }
 
     // MARK: - The left and the right button

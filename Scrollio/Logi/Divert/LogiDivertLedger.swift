@@ -83,9 +83,18 @@ struct LogiDivertLedger: Equatable {
     /// time is otherwise written again at every re-read with no word.
     private(set) var refusedInARow: [UInt16: Int] = [:]
     static let refusalsWorthALine = 3
+    /// Controls a re-read found dropped (`dropLost`), until their next write or query: a
+    /// divert of one of them is a divert the mouse had dropped, written again.
+    private(set) var droppedAtReRead: Set<UInt16> = []
 
     /// Where the ledger's lines go: the `logi` category of the system log. Tests set their own.
     static var log: (String) -> Void = { LogiSystemLog.note($0) }
+    /// Told when a divert the mouse did not have is written again: one held back, or one a
+    /// re-read found dropped. Its observer (`LogiUsageBootstrap.ButtonsReadAgain`) asks for
+    /// one more re-read a few seconds later. Tests set their own.
+    static var announceWrittenAgain: () -> Void = {
+        NotificationCenter.default.post(name: LogiCenter.divertWrittenAgain, object: nil)
+    }
 
     /// The line for a divert the mouse did not take `times` times in a row.
     static func keepsRefusingLine(cid: UInt16, times: Int) -> String {
@@ -115,6 +124,7 @@ struct LogiDivertLedger: Equatable {
     /// from `lastApplied` until the echo comes.
     mutating func noteQuerySent(cid: UInt16) {
         writtenSinceQuery.remove(cid)
+        droppedAtReRead.remove(cid)
         if unacknowledged.contains(cid), lastApplied.contains(cid) {
             lastApplied.remove(cid)
             heldBack.insert(cid)
@@ -148,6 +158,7 @@ struct LogiDivertLedger: Equatable {
         })
         lastApplied.subtract(lost)
         diverted.subtract(lost)
+        droppedAtReRead.formUnion(lost)
         return lost
     }
 
@@ -168,23 +179,31 @@ struct LogiDivertLedger: Equatable {
         unacknowledged.removeAll()
         heldBack.removeAll()
         refusedInARow.removeAll()
+        droppedAtReRead.removeAll()
     }
 
     // MARK: - Echoes of Scrollio's own writes
 
     /// A SetControlReporting of Scrollio is on its way (the session calls this right before
     /// `noteWrite`). Until its echo comes, a divert is not known to be taken. A divert of a
-    /// control held back is the one the mouse did not take, written again.
+    /// control held back is the one the mouse did not take, written again; one of a control
+    /// a re-read found dropped is the one the mouse dropped. Either is announced
+    /// (`announceWrittenAgain`).
     mutating func expectAck(cid: UInt16, flags: UInt8, targetCID: UInt16, now: Date) {
         pendingAcks.expect(cid: cid, flags: flags, targetCID: targetCID, now: now)
+        let dropped = droppedAtReRead.remove(cid) != nil
         switch Self.divert(statedBy: flags) {
         case true?:
-            if heldBack.contains(cid) {
+            let notTaken = heldBack.contains(cid)
+            if notTaken {
                 let refused = (refusedInARow[cid] ?? 0) + 1
                 refusedInARow[cid] = refused
                 if refused == Self.refusalsWorthALine {
                     Self.log(Self.keepsRefusingLine(cid: cid, times: refused))
                 }
+            }
+            if notTaken || dropped {
+                Self.announceWrittenAgain()
             }
             unacknowledged.insert(cid)
         case false?:
