@@ -1197,6 +1197,9 @@ final class PreferencesNavigationTests: XCTestCase {
 
         XCTAssertTrue(step(.back))
         assertShows(pane: "application", title: "Apps")
+        // (In a window on screen the pane lists what is stored when it appears; here it is told.)
+        apps.viewWillAppear()
+        XCTAssertNil(apps.rowID(for: calculator))
         XCTAssertTrue(step(.back))
         assertShows(pane: "scrolling", title: "Scrolling")
         XCTAssertTrue(step(.forward))

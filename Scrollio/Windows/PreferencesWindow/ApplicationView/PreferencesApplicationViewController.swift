@@ -1027,8 +1027,13 @@ extension PreferencesApplicationViewController: PreferencesPaneWithSubpage {
     /// remembered: no part is asked for).
     func showSubpage(_ token: String) {
         _ = view
-        reloadRows()
-        guard let application = applications.first(where: { $0.path == token }), let id = rowID(for: application) else { return }
+        guard let application = applications.first(where: { $0.path == token }) else { return }
+        // (The list has the app's row once the pane appeared; a pane that was never shown
+        // since the app came back does not.)
+        if rowID(for: application) == nil {
+            reloadRows()
+        }
+        guard let id = rowID(for: application) else { return }
         openApplication(withID: id)
     }
 }
