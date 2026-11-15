@@ -285,6 +285,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         LogiCenter.shared.installBridge(LogiIntegrationBridge.shared)
         Self.connectParts()
         LogiUsageBootstrap.installOptionsObservers()
+        // One more re-read of the Logitech buttons after a re-read that wrote a divert again.
+        LogiUsageBootstrap.installReadAgainObserver()
         LogiUsageBootstrap.refreshAll()
         // A Shortcut Ring that opens an app shows its icon from the first ring on, also
         // after a change of the settings made it a ring that can open.

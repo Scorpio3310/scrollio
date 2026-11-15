@@ -21,9 +21,12 @@
 //  Guide; the menu then has only the updater and Quit besides); "Scrollio couldn't start and
 //  is trying again" with "Try Again Now" (a start that failed, `AppRunController`) and
 //  the two pause items, or with the pause items alone (an event tap whose restarts are refused
-//  for a while comes back by itself, `Interceptor`); "Scrollio can't send scroll events" with
+//  for a while comes back by itself, `Interceptor`); "Scrollio can't send events to apps" with
 //  "Open Accessibility Settings…" and the pause items (macOS does not let Scrollio post events,
-//  `ScrollPoster.canPostEvents`: nothing is smoothed). The menu is built when it opens. Each
+//  `ScrollPoster.canPostEvents`: nothing is smoothed, and shortcuts may not reach apps; the
+//  item's tooltip is General's line with the way out, which starts with Pause: removing
+//  Scrollio from that list while its event taps run can stop the mouse and keyboard). The
+//  menu is built when it opens. Each
 //  item says what it does: Pause pauses and Resume resumes, so "Resume Scrollio" in a menu
 //  left open across the end of a pause does not pause again.
 //
@@ -100,7 +103,7 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             ) { [weak self] _ in
                 self?.updateIcon()
             },
-            // macOS stopped or started letting Scrollio post events: "can't send scroll events".
+            // macOS stopped or started letting Scrollio post events: "can't send events to apps".
             NotificationCenter.default.addObserver(
                 forName: ScrollPoster.postEventAccessDidChangeNotification,
                 object: nil,
@@ -311,17 +314,19 @@ enum StatusMenu {
         /// An event tap is off and its restarts are refused for up to a minute; it comes
         /// back by itself.
         case tapOff
-        /// The cores run, but macOS does not let Scrollio post events (after some macOS
-        /// updates, while the access still shows as allowed: `ScrollPoster.canPostEvents`).
-        /// Nothing is smoothed; the way out is in System Settings › Privacy & Security ›
-        /// Accessibility.
+        /// The cores run, but macOS does not let Scrollio post events, while the access may
+        /// still show as allowed (`ScrollPoster.canPostEvents`). Nothing is smoothed, and
+        /// what buttons, gestures and the Shortcut Ring send does not reach apps; the way out
+        /// is in System Settings › Privacy & Security › Accessibility, after a pause.
         case cannotPostEvents
     }
 
     /// The run state's start problem, by the icon's rule. A tap kept off comes first: it
-    /// comes back by itself, and until then nothing reaches the poster anyway.
+    /// comes back by itself, and until then nothing reaches the poster anyway. No argument
+    /// has a default: every caller says what it read (one that lost `canPostEvents` kept
+    /// every test green).
     static func startProblem(
-        coresActive: Bool, startFailed: Bool, tapRestartsThrottled: Bool, canPostEvents: Bool = true
+        coresActive: Bool, startFailed: Bool, tapRestartsThrottled: Bool, canPostEvents: Bool
     ) -> StartProblem? {
         if !coresActive && startFailed { return .retrying }
         if coresActive && tapRestartsThrottled { return .tapOff }
@@ -492,7 +497,8 @@ enum StatusMenu {
         case resume
         case tryAgain
         /// "Open Accessibility Settings…": System Settings › Privacy & Security ›
-        /// Accessibility, under "Scrollio can't send scroll events".
+        /// Accessibility, under "Scrollio can't send events to apps". Its tooltip says what
+        /// to do there, Pause first (General's line).
         case openAccessibilitySettings
         case settings
         case scrollMonitor
@@ -652,7 +658,10 @@ enum StatusMenu {
         case .tryAgain:
             return action("status-menu-try-again", #selector(StatusMenuActions.tryAgainClicked(_:)))
         case .openAccessibilitySettings:
-            return action("status-menu-open-accessibility-settings", #selector(StatusMenuActions.openAccessibilitySettingsClicked(_:)))
+            // What to do in that list, and to pause first: the words of General's line.
+            let open = action("status-menu-open-accessibility-settings", #selector(StatusMenuActions.openAccessibilitySettingsClicked(_:)))
+            open.toolTip = NSLocalizedString("general-cannot-post-events-hint", comment: "")
+            return open
         case .settings:
             return action("main-menu-settings", #selector(StatusMenuActions.settingsClicked(_:)), shortcut: ",")
         case .scrollMonitor:
@@ -745,7 +754,7 @@ enum StatusMenu {
         ///   - canPostEvents: macOS lets Scrollio post events (ScrollPoster.canPostEvents).
         init(
             hasAccess: Bool, coresActive: Bool, isPaused: Bool, startFailed: Bool = false,
-            tapRestartsThrottled: Bool = false, pauseEnd: Date? = nil, canPostEvents: Bool = true
+            tapRestartsThrottled: Bool = false, pauseEnd: Date? = nil, canPostEvents: Bool
         ) {
             let problem = StatusMenu.startProblem(
                 coresActive: coresActive, startFailed: startFailed, tapRestartsThrottled: tapRestartsThrottled,

@@ -410,8 +410,8 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(Status(hasAccess: true, isPaused: true, startProblem: .retrying).action, .resume, "then the pause")
         XCTAssertEqual(Status(hasAccess: true, isPaused: false, startProblem: .retrying).action, .tryAgain)
         XCTAssertEqual(Status(hasAccess: true, isPaused: false, startProblem: .tapOff).action, .pause, "it comes back by itself")
-        XCTAssertEqual(Status(hasAccess: true, isPaused: false, startProblem: .cannotPostEvents).action, .allowAccess,
-                       "the way out is in System Settings")
+        XCTAssertEqual(Status(hasAccess: true, isPaused: false, startProblem: .cannotPostEvents).action, .pause,
+                       "the cores run; System Settings is in Permissions")
         XCTAssertEqual(Status(hasAccess: true, isPaused: false, startProblem: nil).action, .pause)
 
         // The words are the menu's.
@@ -539,9 +539,11 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
     }
 
-    /// Without the right to post events: the menu's title, a line with what to do, and "Open
-    /// System Settings" (the Accessibility list). It follows the poster's notice.
-    func testWithoutTheRightToPostEventsTheRowSaysSoAndLeadsToSystemSettings() throws {
+    /// Without the right to post events: the menu's title, a line with what to do, and Pause
+    /// (the cores run, and the line says to pause before Scrollio is removed from the
+    /// Accessibility list); "Open System Settings" is the Permissions row's own. It follows
+    /// the poster's notice.
+    func testWithoutTheRightToPostEventsTheRowSaysSoAndOffersPause() throws {
         install(.notRegistered)
         let world = World()
         let pane = try makePane(world)
@@ -550,16 +552,17 @@ final class PreferencesGeneralTests: XCTestCase {
 
         world.startProblem = .cannotPostEvents
         NotificationCenter.default.post(name: ScrollPoster.postEventAccessDidChangeNotification, object: nil)
-        XCTAssertEqual(pane.statusRow.title, "Scrollio can't send scroll events")
-        XCTAssertEqual(pane.statusRow.explanation,
-                       "Scrolling isn't smooth. In Privacy & Security › Accessibility, remove Scrollio with − and add it again.")
-        XCTAssertEqual(pane.statusButton.title, "Open System Settings")
-        XCTAssertEqual(shownButtons(titled: "Open System Settings", in: pane), [pane.statusButton], "one, under the card")
+        XCTAssertEqual(pane.statusRow.title, "Scrollio can't send events to apps")
+        // More than scrolling stops, and Pause comes before the removal: removing Scrollio
+        // from that list while its event taps run can stop the mouse and keyboard.
+        XCTAssertEqual(pane.statusRow.explanation, "Scrolling isn't smoothed, and buttons, gestures and the Shortcut Ring may not work. Pause Scrollio, then in Privacy & Security › Accessibility remove it with − and add it again. This usually brings it back.")
+        XCTAssertEqual(pane.statusButton.title, "Pause", "the cores run: with the menu bar icon hidden this is the pause")
+        XCTAssertEqual(shownButtons(titled: "Open System Settings", in: pane), [pane.openAccessibilitySettingsButton],
+                       "one, in Permissions, beside \"Allowed\"")
         XCTAssertGreaterThan(pane.view.frame.height, runningHeight, "the pane makes room for the line")
         XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
-        click(pane.statusButton)
+        click(pane.openAccessibilitySettingsButton)
         XCTAssertEqual(world.accessibilitySettingsOpened, 1)
-        XCTAssertEqual(world.pauses, 0)
 
         // The menu bar's title for the same state.
         let menu = NSMenu()
@@ -571,12 +574,19 @@ final class PreferencesGeneralTests: XCTestCase {
         )
         XCTAssertEqual(pane.statusRow.title, menu.items.first?.title)
 
-        // Given back: on again.
+        click(pane.statusButton)
+        XCTAssertEqual(world.pauses, 1)
+        XCTAssertEqual(world.accessibilitySettingsOpened, 1)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is paused")
+
+        // Given back: on again, and Permissions has no button while the access is there.
+        world.paused = false
         world.startProblem = nil
         NotificationCenter.default.post(name: ScrollPoster.postEventAccessDidChangeNotification, object: nil)
         XCTAssertEqual(pane.statusRow.title, "Scrollio is on")
         XCTAssertNil(pane.statusRow.explanation)
         XCTAssertEqual(pane.statusButton.title, "Pause")
+        XCTAssertEqual(shownButtons(titled: "Open System Settings", in: pane), [])
     }
 
     /// Without the access, the row says so first (also while paused) and leads where the

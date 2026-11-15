@@ -261,15 +261,23 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(WelcomeGuideAccessState(granted: true, run: .paused), .paused)
         XCTAssertEqual(WelcomeGuideAccessState(granted: true, run: .retrying), .couldNotStart)
         XCTAssertEqual(WelcomeGuideAccessState(granted: true, run: .stopped), .starting)
-        XCTAssertEqual(WelcomeGuideAccessState.allReady, [.running, .paused])
+        XCTAssertEqual(WelcomeGuideAccessState(granted: true, run: .cannotPostEvents), .cannotPostEvents)
+        XCTAssertEqual(WelcomeGuideAccessState(granted: false, run: .cannotPostEvents), .missing)
+        XCTAssertEqual(WelcomeGuideAccessState.allReady, [.running, .paused, .cannotPostEvents])
     }
 
     func testTheTryAreaIsSmoothedAsTheEngineDecidesForScrollio() {
         func state(_ running: Bool, _ rule: AppSmoothing.Rule, smooth: Bool = true, limited: Bool = false) -> WelcomeGuideTryArea {
-            return WelcomeGuideTryArea.state(running: running, rule: rule, scrollingSmooth: smooth, limitedToListedApps: limited)
+            return WelcomeGuideTryArea.state(running: running, canPostEvents: true, rule: rule, scrollingSmooth: smooth,
+                                             limitedToListedApps: limited)
         }
         XCTAssertEqual(state(true, .notListed), .smoothed)
         XCTAssertEqual(state(false, .notListed), .notRunning)
+        // Without the right to post events the engine takes nothing: not smoothed, whatever the list says.
+        XCTAssertEqual(WelcomeGuideTryArea.state(running: true, canPostEvents: false, rule: .notListed, scrollingSmooth: true,
+                                                 limitedToListedApps: false), .cannotPostEvents)
+        XCTAssertEqual(WelcomeGuideTryArea.state(running: false, canPostEvents: false, rule: .notListed, scrollingSmooth: true,
+                                                 limitedToListedApps: false), .notRunning)
         XCTAssertEqual(state(true, .notListed, limited: true), .notInAppList)
         XCTAssertEqual(state(true, .usesScrollingSettings, limited: true), .smoothed)
         XCTAssertEqual(state(true, .notListed, smooth: false), .smoothingOff)
@@ -482,6 +490,33 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(controller.accessState, .starting)
         XCTAssertEqual(controller.accessStep.statusBox.detailLabel.stringValue, "Starting Scrollio…")
         XCTAssertFalse(controller.primaryButton.isEnabled)
+    }
+
+    /// Allowed and running, but macOS does not let Scrollio post events: the step said
+    /// "Allowed" and "Scrollio is running." with a green check while nothing was smoothed.
+    /// Now the menu's words and the way out, beside the orange sign; Continue stays on
+    /// (Scrollio runs, and waiting here changes nothing).
+    func testTheStepSaysWhenScrollioCannotPostEvents() {
+        world.runAfterGrant = .cannotPostEvents
+        let controller = makeAccessController()
+        world.accessGranted = true
+        controller.accessibilityPermissionsChecker(nil)
+        XCTAssertEqual(controller.accessState, .cannotPostEvents)
+        XCTAssertEqual(controller.accessStep.statusBox.titleLabel.stringValue, "Allowed, but Scrollio can't send events to apps")
+        XCTAssertEqual(
+            controller.accessStep.statusBox.detailLabel.stringValue,
+            "Scrolling isn't smoothed, and buttons, gestures and the Shortcut Ring may not work. Pause Scrollio, then in "
+                + "Privacy & Security › Accessibility remove it with − and add it again. This usually brings it back."
+        )
+        XCTAssertEqual(controller.accessStep.statusBox.iconView.contentTintColor, .systemOrange)
+        XCTAssertTrue(controller.primaryButton.isEnabled)
+
+        // Given back: all is well again.
+        world.run = .running
+        controller.runStateDidChange(nil)
+        XCTAssertEqual(controller.accessState, .running)
+        XCTAssertEqual(controller.accessStep.statusBox.titleLabel.stringValue, "Allowed")
+        XCTAssertEqual(controller.accessStep.statusBox.iconView.contentTintColor, .systemGreen)
     }
 
     /// The Accessibility step alone says where Scrollio lives (in the whole guide the last step does).
@@ -750,6 +785,7 @@ final class IntroductionWindowTests: XCTestCase {
             (.notRunning, "Not smoothed: Scrollio isn't running"),
             (.notInAppList, "Not smoothed: Scrollio isn't on the app list"),
             (.smoothingOff, "Not smoothed: Smooth scrolling is off"),
+            (.cannotPostEvents, "Not smoothed: Scrollio can't send events"),
         ]
         for (state, line) in cases {
             world.tryArea = state
@@ -2383,7 +2419,8 @@ final class IntroductionWindowTests: XCTestCase {
         welcome.mouse = .mxMaster4
         result.append(("welcome", welcome.makeController()))
         for (name, granted, run) in [("waiting", false, WelcomeGuideRunState.stopped), ("allowed", true, .running),
-                                     ("could not start", true, .retrying), ("starting", true, .stopped), ("paused", true, .paused)] {
+                                     ("could not start", true, .retrying), ("starting", true, .stopped), ("paused", true, .paused),
+                                     ("cannot post events", true, .cannotPostEvents)] {
             let access = GuideWorld()
             access.accessGranted = granted
             access.run = run
@@ -2562,7 +2599,7 @@ private final class GuideEventWindow: NSWindow {
 
 private extension WelcomeGuideAccessState {
     static var allReady: [WelcomeGuideAccessState] {
-        return [WelcomeGuideAccessState.missing, .starting, .running, .paused, .couldNotStart].filter(\.isReady)
+        return [WelcomeGuideAccessState.missing, .starting, .running, .paused, .couldNotStart, .cannotPostEvents].filter(\.isReady)
     }
 }
 
@@ -2670,6 +2707,11 @@ final class WelcomeGuideRenderTests: XCTestCase {
             controller.accessibilityPermissionsChecker(nil)
         }
         try render("guide-2-access-could-not-start", configure: { $0.runAfterGrant = .retrying }) { controller, world in
+            self.toStep(.access, in: controller)
+            world.accessGranted = true
+            controller.accessibilityPermissionsChecker(nil)
+        }
+        try render("guide-2-access-cannot-post-events", configure: { $0.runAfterGrant = .cannotPostEvents }) { controller, world in
             self.toStep(.access, in: controller)
             world.accessGranted = true
             controller.accessibilityPermissionsChecker(nil)

@@ -30,17 +30,18 @@ class ScrollCore: ScrollActionPort {
     var blockSmooth = false
     // 非修饰键热键的按下状态跟踪
     // A key that counts as up is held by no modifier (`releaseModifierHoldKeys`).
-    var dashKeyHeld = false { didSet { if !dashKeyHeld { dashHeldByModifier = [] } } }
-    var slowKeyHeld = false { didSet { if !slowKeyHeld { slowHeldByModifier = [] } } }
-    var toggleKeyHeld = false { didSet { if !toggleKeyHeld { toggleHeldByModifier = [] } } }
-    var blockKeyHeld = false { didSet { if !blockKeyHeld { blockHeldByModifier = [] } } }
-    /// The modifier (⌥, ⇧, ⌘ or ⌃) whose key holds each of the four, from that key's
-    /// flagsChanged; empty while the key is up, or held by a button, a plain key or fn.
-    /// Main thread.
-    private var dashHeldByModifier: CGEventFlags = []
-    private var slowHeldByModifier: CGEventFlags = []
-    private var toggleHeldByModifier: CGEventFlags = []
-    private var blockHeldByModifier: CGEventFlags = []
+    var dashKeyHeld = false { didSet { if !dashKeyHeld { dashHold = .none } } }
+    var slowKeyHeld = false { didSet { if !slowKeyHeld { slowHold = .none } } }
+    var toggleKeyHeld = false { didSet { if !toggleKeyHeld { toggleHold = .none } } }
+    var blockKeyHeld = false { didSet { if !blockKeyHeld { blockHold = .none } } }
+    /// The modifier key (⌥, ⇧, ⌘ or ⌃) pressed on a keyboard that holds each of the four,
+    /// from that key's flagsChanged; `.none` while the key is up, or held by a button, a
+    /// plain key, fn or a press another program posted. A change forgets the flags at which
+    /// the keys were found down (`keysFoundDown`). Main thread.
+    private var dashHold = ModifierHold.none { didSet { keysFoundDown = nil } }
+    private var slowHold = ModifierHold.none { didSet { keysFoundDown = nil } }
+    private var toggleHold = ModifierHold.none { didSet { keysFoundDown = nil } }
+    private var blockHold = ModifierHold.none { didSet { keysFoundDown = nil } }
     private var dashActionCount = 0
     private var slowActionCount = 0
     private var toggleActionCount = 0
@@ -204,8 +205,8 @@ class ScrollCore: ScrollActionPort {
             ScrollSystemLog.notePassthrough(.remoteSmoothed)
             return Unmanaged.passUnretained(event)
         }
-        // A hold key whose modifier this event does not carry is up: its release was lost.
-        // Before the keys are read below.
+        // A hold key whose modifier this event does not carry, and whose key the keyboard
+        // says is up, is up: its release was lost. Before the keys are read below.
         ScrollCore.shared.releaseModifierHoldKeys(notCarriedBy: event)
         // 当鼠标输入, 根据需要执行翻转方向/平滑滚动
         // 获取事件目标
@@ -503,57 +504,148 @@ class ScrollCore: ScrollActionPort {
 
     // MARK: - Hold keys whose release was lost
 
-    /// The modifier that holds a key after this flagsChanged of it: its own while it is a
-    /// modifier key and down, none for fn (whether macOS puts fn into a wheel event's flags
-    /// is not known here: if not, the wheel would let fn go at every turn).
-    static func holdingModifier(_ hotkey: ScrollHotkey?, isPressed: Bool) -> CGEventFlags {
-        guard isPressed, let hotkey = hotkey, hotkey.isModifierKey else { return [] }
-        let mask = hotkey.modifierMask
-        return mask == .maskSecondaryFn ? [] : mask
+    /// A hold key that is a modifier key, as its press on a keyboard was seen.
+    struct ModifierHold {
+        static let none = ModifierHold(modifier: [], code: 0, since: 0)
+        /// Its flag (⌥, ⇧, ⌘ or ⌃); empty: no such key holds it.
+        let modifier: CGEventFlags
+        /// Its key (so its side), which `isKeyDown` is asked about.
+        let code: UInt16
+        /// When it went down (`ScrollPoster.monotonicNow()`), for the log line.
+        let since: CFTimeInterval
     }
 
-    /// A hold key that is a modifier key (⌥, ⇧, ⌘, ⌃) is up as soon as a wheel event from the
-    /// hardware comes without its modifier. Its release is a flagsChanged event of its own, and
-    /// that one can be lost: another program swallowed it (a window switcher, a key remapper)
-    /// or secure keyboard entry hid it. The key then stayed held (five times the distance,
-    /// smoothing paused, sideways) until it was pressed again. Each wheel event carries the
-    /// modifiers down at that moment: one it does not carry lets its key go here, as the key's
-    /// own release would. The side is not compared (the flags do not say which ⌥ is down).
-    /// A wheel event another program posted carries the flags it was given and is not asked;
-    /// buttons, plain keys and fn wait for their own release, as before.
+    /// What holds a key after this flagsChanged of it: its modifier key while it is down and
+    /// was pressed on a keyboard; none for fn (whether macOS puts fn into a wheel event's
+    /// flags is not known here: if not, the wheel would let fn go at every turn).
+    static func modifierHold(_ hotkey: ScrollHotkey?, pressedOnAKeyboard: Bool) -> ModifierHold {
+        guard pressedOnAKeyboard, let hotkey = hotkey, hotkey.isModifierKey else { return .none }
+        let mask = hotkey.modifierMask
+        guard mask != .maskSecondaryFn else { return .none }
+        return ModifierHold(modifier: mask, code: hotkey.code, since: ScrollPoster.monotonicNow())
+    }
+
+    /// Whether a modifier key is down after its own flagsChanged. A key event from a keyboard
+    /// carries a bit for each side of each modifier (IOLLEvent.h, NX_DEVICEL…/R…KEYMASK):
+    /// letting go of the right ⌥ while the left one is down leaves ⌥ set, and only the right
+    /// one's bit says it is up. An event with neither side's bit (a posted one may have none)
+    /// is judged by the modifier alone, as before.
+    static func isModifierKeyDown(_ hotkey: ScrollHotkey, flags: CGEventFlags) -> Bool {
+        let sides = modifierSideBits(hotkey.code)
+        if flags.rawValue & sides.both != 0 {
+            return flags.rawValue & sides.own != 0
+        }
+        return flags.contains(hotkey.modifierMask)
+    }
+
+    /// The side bit of a modifier key, and those of both its sides; none for fn and others.
+    static func modifierSideBits(_ code: UInt16) -> (own: UInt64, both: UInt64) {
+        switch code {
+        case KeyCode.controlL: return (0x0001, 0x2001)
+        case KeyCode.controlR: return (0x2000, 0x2001)
+        case KeyCode.shiftL: return (0x0002, 0x0006)
+        case KeyCode.shiftR: return (0x0004, 0x0006)
+        case KeyCode.commandL: return (0x0008, 0x0018)
+        case KeyCode.commandR: return (0x0010, 0x0018)
+        case KeyCode.optionL: return (0x0020, 0x0060)
+        case KeyCode.optionR: return (0x0040, 0x0060)
+        default: return (0, 0)
+        }
+    }
+
+    /// Whether a key is down on the keyboards, as macOS keeps their state (`.hidSystemState`,
+    /// per key, so per side). Asked only when a hardware wheel event comes without a held
+    /// key's modifier, before that key is let go. Under XCTest nothing is asked and every key
+    /// is up; a test sets its own.
+    var isKeyDown: (UInt16) -> Bool = AppRuntime.isRunningXCTest
+        ? { _ in false }
+        : { CGEventSource.keyState(.hidSystemState, key: CGKeyCode($0)) }
+
+    /// How long a "still down" answer holds for the same flags (`keysFoundDown`).
+    static let keysFoundDownFor: UInt64 = 1_000_000_000
+    /// The flags of the last wheel event without the modifier of a held key whose key was
+    /// still down, and its time (`CGEvent.timestamp`, nanoseconds): more events with these
+    /// flags within `keysFoundDownFor` ask nothing (a spin sends dozens a second). Forgotten
+    /// when a hold changes. Main thread.
+    private var keysFoundDown: (flags: UInt64, at: UInt64)?
+
+    /// A hold key that is a modifier key (⌥, ⇧, ⌘, ⌃) pressed on a keyboard is up as soon as
+    /// a wheel event from the hardware comes without its modifier and the keyboard says its
+    /// key is up. Its release is a flagsChanged event of its own, and that one can be lost:
+    /// another program swallowed it (a window switcher) or secure keyboard entry hid it. The
+    /// key then stayed held (five times the distance, smoothing paused, sideways) until it
+    /// was pressed again. Each wheel event from the hardware carries the modifiers down at
+    /// that moment. The key itself is asked too (`isKeyDown`, by its code, so by its side),
+    /// since a modifier can be missing from the wheel's flags while its key is down (a
+    /// shortcut Scrollio or another program posted, a tap ahead of Scrollio's that took it
+    /// off). Not watched, as in 1.1.0: a wheel event a driver or another program posted
+    /// (source pid not 0: Logi Options+, SteerMouse, USB Overdrive) carries the flags it was
+    /// given and lets no key go; a key another program pressed, buttons, plain keys and fn
+    /// wait for their own release.
     /// Main thread (the scroll tap), before the keys are read: one comparison per wheel event
-    /// while no modifier holds a key, nothing allocated unless a key is let go.
+    /// while the wheel carries the held modifiers; the keyboard is asked at most once a
+    /// second per flags value (`keysFoundDown`); nothing allocated unless a key is let go.
     func releaseModifierHoldKeys(notCarriedBy event: CGEvent) {
-        let held = dashHeldByModifier.rawValue | slowHeldByModifier.rawValue
-            | toggleHeldByModifier.rawValue | blockHeldByModifier.rawValue
+        let held = dashHold.modifier.rawValue | slowHold.modifier.rawValue
+            | toggleHold.modifier.rawValue | blockHold.modifier.rawValue
         guard held != 0 else { return }
-        let flags = event.flags
-        guard flags.rawValue & held != held,
+        let flags = event.flags.rawValue
+        guard flags & held != held,
               event.getIntegerValueField(.eventSourceUnixProcessID) == 0 else { return }
-        if !flags.contains(dashHeldByModifier) {
+        let at = event.timestamp
+        if let found = keysFoundDown, found.flags == flags, at &- found.at < ScrollCore.keysFoundDownFor {
+            return
+        }
+        if isUp(dashHold, flags: flags) {
+            let hold = dashHold
             dashKeyHeld = false
             refreshDashState()
-            noteLostRelease(of: "Scroll faster")
+            noteLostRelease(of: "Scroll faster", hold)
         }
-        if !flags.contains(slowHeldByModifier) {
+        if isUp(slowHold, flags: flags) {
+            let hold = slowHold
             slowKeyHeld = false
             refreshDashState()
-            noteLostRelease(of: "Scroll slower")
+            noteLostRelease(of: "Scroll slower", hold)
         }
-        if !flags.contains(toggleHeldByModifier) {
+        if isUp(toggleHold, flags: flags) {
+            let hold = toggleHold
             toggleKeyHeld = false
             refreshToggleState()
-            noteLostRelease(of: "Scroll sideways")
+            noteLostRelease(of: "Scroll sideways", hold)
         }
-        if !flags.contains(blockHeldByModifier) {
+        if isUp(blockHold, flags: flags) {
+            let hold = blockHold
             blockKeyHeld = false
             refreshBlockState()
-            noteLostRelease(of: "Pause smoothing")
+            noteLostRelease(of: "Pause smoothing", hold)
+        }
+        // A key still held without its modifier in these flags was found down.
+        let stillHeld = dashHold.modifier.rawValue | slowHold.modifier.rawValue
+            | toggleHold.modifier.rawValue | blockHold.modifier.rawValue
+        if flags & stillHeld != stillHeld {
+            keysFoundDown = (flags, at)
         }
     }
 
-    private func noteLostRelease(of key: String) {
-        AppSystemLog.note("ScrollCore: let go of the \"\(key)\" key at a wheel event without its modifier (its release was not seen)")
+    /// Whether a hold is over at a wheel event with these flags: they lack its modifier and
+    /// the keyboard says its key is up.
+    private func isUp(_ hold: ModifierHold, flags: UInt64) -> Bool {
+        let modifier = hold.modifier.rawValue
+        return modifier != 0 && flags & modifier != modifier && !isKeyDown(hold.code)
+    }
+
+    private func noteLostRelease(of key: String, _ hold: ModifierHold) {
+        AppSystemLog.note(ScrollCore.lostReleaseLine(of: key, heldFor: ScrollPoster.monotonicNow() - hold.since))
+    }
+
+    /// The line for a hold key let go at a wheel event: which one, that it was pressed on a
+    /// keyboard (a key another program pressed is never let go here) and how long it was
+    /// held. No app names.
+    static func lostReleaseLine(of key: String, heldFor seconds: CFTimeInterval) -> String {
+        let held = String(format: "%.1f", max(0, seconds))
+        return "ScrollCore: let go of the \"\(key)\" key (pressed on a keyboard, held \(held) s) at a wheel event "
+            + "without its modifier while the keyboard says it is up: its release was not seen"
     }
 
     /// 处理来自 Logitech HID++ 的按键事件, 匹配 dash/toggle/block 滚动热键
@@ -603,28 +695,28 @@ class ScrollCore: ScrollActionPort {
         if let h = dashHotkey, h.type == .mouse, h.code == code {
             dashKeyHeld = true
             hidDashHeldCode = code
-            dashHeldByModifier = []
+            dashHold = .none
             refreshDashState()
             matched = true
         }
         if let h = slowHotkey, h.type == .mouse, h.code == code {
             slowKeyHeld = true
             hidSlowHeldCode = code
-            slowHeldByModifier = []
+            slowHold = .none
             refreshDashState()
             matched = true
         }
         if let h = toggleHotkey, h.type == .mouse, h.code == code {
             toggleKeyHeld = true
             hidToggleHeldCode = code
-            toggleHeldByModifier = []
+            toggleHold = .none
             refreshToggleState()
             matched = true
         }
         if let h = blockHotkey, h.type == .mouse, h.code == code {
             blockKeyHeld = true
             hidBlockHeldCode = code
-            blockHeldByModifier = []
+            blockHold = .none
             refreshBlockState()
             matched = true
         }
@@ -653,6 +745,10 @@ class ScrollCore: ScrollActionPort {
         let isKeyDown = (type == .keyDown || type == .otherMouseDown)
         let isKeyUp = (type == .keyUp || type == .otherMouseUp)
         let isFlagsChanged = (type == .flagsChanged)
+        // A press another program posted (source pid not 0) holds the key as in 1.1.0, but the
+        // wheel does not watch it: the hardware's wheel events need not carry that modifier
+        // (`releaseModifierHoldKeys`).
+        let posted = event.getIntegerValueField(.eventSourceUnixProcessID) != 0
 
         // 记录按键时的目标应用
         if (event.isKeyDown || isKeyDown) && ScrollCore.shared.currentApplication == nil {
@@ -672,7 +768,7 @@ class ScrollCore: ScrollActionPort {
             if hotkey.isModifierKey {
                 // 修饰键：通过 flagsChanged 事件检测
                 if isFlagsChanged && keyCode == hotkey.code {
-                    return event.flags.contains(hotkey.modifierMask)
+                    return ScrollCore.isModifierKeyDown(hotkey, flags: event.flags)
                 }
             } else if hotkey.matches(event, keyCode: keyCode, mouseButton: mouseButton, isMouseEvent: isMouseEvent) {
                 // 普通按键或鼠标按键
@@ -686,25 +782,25 @@ class ScrollCore: ScrollActionPort {
         // Dash
         if let isPressed = checkAndUpdateHotkey(dashHotkey, keyHeld: &ScrollCore.shared.dashKeyHeld) {
             ScrollCore.shared.dashKeyHeld = isPressed
-            ScrollCore.shared.dashHeldByModifier = ScrollCore.holdingModifier(dashHotkey, isPressed: isPressed)
+            ScrollCore.shared.dashHold = ScrollCore.modifierHold(dashHotkey, pressedOnAKeyboard: isPressed && !posted)
             ScrollCore.shared.refreshDashState()
         }
         // Slow (no key unless the user recorded one: then this is one test of nil)
         if let isPressed = checkAndUpdateHotkey(slowHotkey, keyHeld: &ScrollCore.shared.slowKeyHeld) {
             ScrollCore.shared.slowKeyHeld = isPressed
-            ScrollCore.shared.slowHeldByModifier = ScrollCore.holdingModifier(slowHotkey, isPressed: isPressed)
+            ScrollCore.shared.slowHold = ScrollCore.modifierHold(slowHotkey, pressedOnAKeyboard: isPressed && !posted)
             ScrollCore.shared.refreshDashState()
         }
         // Toggle
         if let isPressed = checkAndUpdateHotkey(toggleHotkey, keyHeld: &ScrollCore.shared.toggleKeyHeld) {
             ScrollCore.shared.toggleKeyHeld = isPressed
-            ScrollCore.shared.toggleHeldByModifier = ScrollCore.holdingModifier(toggleHotkey, isPressed: isPressed)
+            ScrollCore.shared.toggleHold = ScrollCore.modifierHold(toggleHotkey, pressedOnAKeyboard: isPressed && !posted)
             ScrollCore.shared.refreshToggleState()
         }
         // Block
         if let isPressed = checkAndUpdateHotkey(blockHotkey, keyHeld: &ScrollCore.shared.blockKeyHeld) {
             ScrollCore.shared.blockKeyHeld = isPressed
-            ScrollCore.shared.blockHeldByModifier = ScrollCore.holdingModifier(blockHotkey, isPressed: isPressed)
+            ScrollCore.shared.blockHold = ScrollCore.modifierHold(blockHotkey, pressedOnAKeyboard: isPressed && !posted)
             ScrollCore.shared.refreshBlockState()
         }
 

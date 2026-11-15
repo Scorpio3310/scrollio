@@ -195,9 +195,9 @@ class ScrollPoster {
     var isEventTargetingChrome: (CGEvent) -> Bool = {
         ScrollUtils.shared.isEventTargetingChrome($0)
     }
-    /// Whether macOS lets Scrollio post events (the Post Event right). After some macOS
-    /// updates it is gone while the Accessibility access still shows as allowed, and the
-    /// system drops every frame Scrollio posts without an error. Read with
+    /// Whether macOS lets Scrollio post events (the Post Event right). Without it the system
+    /// drops every frame Scrollio posts without an error, while the Accessibility access may
+    /// still show as allowed. Read with
     /// `CGPreflightPostEventAccess`, which never asks the user (`CGRequestPostEventAccess`
     /// would, and is never called). Under XCTest the default says yes without asking; a test
     /// says what it needs here.
@@ -761,6 +761,11 @@ class ScrollPoster {
     private var missingLinkRetryAt: CFTimeInterval = 0.0
     static let missingLinkBackoffLimit: TimeInterval = 60.0
     private var screensDidWakeObserver: NSObjectProtocol?
+    /// `com.apple.accessibility.api`, which macOS posts when the Accessibility list changes
+    /// (Scrollio removed and added again, switched off or on). Added at the first read of
+    /// the right to post events and kept: what it does waits for the cores
+    /// (`accessibilityListDidChange`).
+    private(set) var accessibilityListObserver: NSObjectProtocol?
     /// When the poster last had something to do: a wheel input, a posted frame, or the start
     /// of the display link. Guarded by stateLock. The keeper stops a link that runs on long
     /// after it (`idleLinkLimit`): the app idles at 0 % CPU whatever state it got into.
@@ -2726,12 +2731,49 @@ extension ScrollPoster {
     /// Reads the right to post events (`postEventAccess`) and says so when it changed: one
     /// line in the `app` log and `postEventAccessDidChangeNotification` (the menu bar icon
     /// and General read `canPostEvents`). Read when the keeper starts (the cores start:
-    /// launch, wake, resume) and at each of its looks while the right is missing, so that
-    /// smoothing comes back by itself once the right is given back. Whether a frame's
-    /// posted events have an effect cannot be told cheaply: `postToPid` says nothing, and
-    /// Scrollio's frames do not pass its own tap. Main thread.
+    /// launch, wake, resume), at each of its looks while the cores run, so that a right
+    /// taken away while Scrollio runs is seen and one given back brings smoothing back by
+    /// itself, and when the Accessibility list changes (`accessibilityListDidChange`).
+    /// Whether a frame's posted events have an effect cannot be told cheaply: `postToPid`
+    /// says nothing, and Scrollio's frames do not pass its own tap.
+    ///
+    /// Each read asks macOS (about 13 ms in a probe; longer at login or a wake), too long
+    /// for the main thread, which serves the event taps: it runs on
+    /// `postEventAccessQueue`, and its answer comes back on the main thread, in the order
+    /// of the reads. Main thread; never from a tap's callback.
     func checkPostEventAccess() {
-        let can = postEventAccess()
+        watchAccessibilityList()
+        let read = postEventAccess
+        Self.postEventAccessQueue.async { [weak self] in
+            let can = read()
+            DispatchQueue.main.async {
+                self?.applyPostEventAccess(can)
+            }
+        }
+    }
+    /// Where the right is read, one read after another.
+    static let postEventAccessQueue = DispatchQueue(label: "com.nikklemenc.Scrollio.postEventAccess", qos: .utility)
+    /// Listens to `com.apple.accessibility.api` (`accessibilityListObserver`) from the
+    /// first read on.
+    private func watchAccessibilityList() {
+        guard accessibilityListObserver == nil else { return }
+        accessibilityListObserver = DistributedNotificationCenter.default().addObserver(
+            forName: AppDelegate.accessibilityListChangedNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.accessibilityListDidChange()
+        }
+    }
+    /// The Accessibility list changed: the right is read again a moment later (macOS
+    /// answers with a short delay, as for the access itself), while the cores run (the
+    /// keeper runs). Stopped, their next start reads it. Main thread.
+    func accessibilityListDidChange() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + AppDelegate.accessibilityCheckDelay) { [weak self] in
+            guard let self, self.keeper != nil else { return }
+            self.checkPostEventAccess()
+        }
+    }
+    /// What a read of the right found, on the main thread.
+    private func applyPostEventAccess(_ can: Bool) {
         guard can != canPostEvents else { return }
         canPostEvents = can
         if can {
@@ -2751,9 +2793,9 @@ extension ScrollPoster {
 
     /// The keeper's look, every `keeperInterval`. `now`: `monotonicNow()`.
     private func healthCheck(now: CFTimeInterval) {
-        if !canPostEvents {
-            checkPostEventAccess()
-        }
+        // At every look, also with the right there: one taken away while Scrollio runs
+        // left every event taken and every frame dropped until the next wake or resume.
+        checkPostEventAccess()
         os_unfair_lock_lock(&stateLock)
         let lastCallback = lastCallbackTime
         let lastActivity = lastActivityTime
