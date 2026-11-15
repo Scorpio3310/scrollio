@@ -637,12 +637,20 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
     }
 }
 
-/// The pull-down: as wide as its title (its menu is wider, with what each button does).
+/// The pull-down: as wide as its title (its menu is wider, with what each button does), up
+/// to `maxWidth`: a longer title is cut short at its end, the whole of it in the tooltip, so
+/// that the row's line always has room beside it.
 final class TriggerChoicePullDown: NSPopUpButton {
+
+    /// The widest the pull-down gets. Every name of a button fits whole, with a modifier
+    /// key or two before it ("Gesture button (button 6)" is 204 pt wide); beside it a row's
+    /// short line ("Hold it, move towards a shortcut and let go.") still takes two lines.
+    static let maxWidth: CGFloat = 240
 
     init() {
         super.init(frame: .zero, pullsDown: true)
         translatesAutoresizingMaskIntoConstraints = false
+        cell?.lineBreakMode = .byTruncatingTail
         setContentHuggingPriority(.required, for: .horizontal)
         setContentCompressionResistancePriority(.required, for: .horizontal)
     }
@@ -656,19 +664,25 @@ final class TriggerChoicePullDown: NSPopUpButton {
         return menu?.items.first?.title ?? ""
     }
 
-    /// Item 0 changed: shown, and the width follows.
+    /// Item 0 changed: shown, and the width follows. A title too long for the pull-down
+    /// is whole in the tooltip.
     func titleDidChange() {
         synchronizeTitleAndSelectedItem()
         invalidateIntrinsicContentSize()
+        toolTip = titleWidth > Self.maxWidth ? shownTitle : nil
     }
 
-    override var intrinsicContentSize: NSSize {
-        let size = super.intrinsicContentSize
-        // A cell with the title alone: how wide the pull-down is with this title.
+    /// How wide the pull-down would be with its title whole: a cell with the title alone.
+    private var titleWidth: CGFloat {
         let probe = NSPopUpButtonCell(textCell: "", pullsDown: true)
         probe.font = font
         probe.controlSize = controlSize
         probe.addItem(withTitle: shownTitle)
-        return NSSize(width: ceil(probe.cellSize.width), height: size.height)
+        return ceil(probe.cellSize.width)
+    }
+
+    override var intrinsicContentSize: NSSize {
+        let size = super.intrinsicContentSize
+        return NSSize(width: min(titleWidth, Self.maxWidth), height: size.height)
     }
 }

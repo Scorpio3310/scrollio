@@ -106,9 +106,19 @@ struct ShortcutRingBindingSummary: Equatable {
     /// none yet; and that a key combination works too (but for the apps' line, also one
     /// that Logi Options+ sends for a button), except while a key opens it.
     var explanation: String {
+        return explanation(fittingTwoLinesOf: nil)
+    }
+
+    /// The same for a line `width` wide (the row's, beside its pull-down as it is titled),
+    /// which takes two lines at most: beside a long name ("Gesture button (button 6)",
+    /// "Pointer speed button") the line says what to do and leaves out that a key
+    /// combination works too. nil: the width is not known, nothing is left out.
+    func explanation(fittingTwoLinesOf width: CGFloat?) -> String {
         if triggerTitles.count == 1 {
             let isKey = picture.onlyInAppPath == nil && picture.event?.type == .keyboard
-            return NSLocalizedString(isKey ? "ring-trigger-one-key" : "ring-trigger-one", comment: "")
+            let whatToDo = NSLocalizedString("ring-trigger-one-key", comment: "")
+            let withKeys = NSLocalizedString("ring-trigger-one", comment: "")
+            return isKey || !Self.fitsTwoLines(withKeys, width: width) ? whatToDo : withKeys
         }
         if hasTrigger {
             let triggers = InterfaceList.joined(triggerTitles)
@@ -119,6 +129,13 @@ struct ShortcutRingBindingSummary: Equatable {
             return String(format: NSLocalizedString("ring-trigger-apps", comment: ""), onlyInApps.text)
         }
         return NSLocalizedString("ring-trigger-none", comment: "")
+    }
+
+    /// Whether `text` takes two lines at most `width` wide in the explanations' font, as
+    /// the row lays it out (true while the width is not known).
+    static func fitsTwoLines(_ text: String, width: CGFloat?) -> Bool {
+        guard let width, width > 0 else { return true }
+        return ApplicationPagePart.LineCount(width: width, font: PreferencesGroupedForm.explanationFont).of(text) <= 2
     }
 
     static var current: ShortcutRingBindingSummary {
@@ -576,7 +593,6 @@ final class RingPreferencesViewController: NSViewController {
         if application == nil {
             let summary = bindingSummary()
             shownSummary = summary
-            triggerRow.explanation = summary.explanation
             triggerCard?.source = summary.picture
             // The pull-down names what the row names first, and offers the mouse's buttons;
             // "Show in Buttons" says where it goes (`showInButtons`).
@@ -584,6 +600,8 @@ final class RingPreferencesViewController: NSViewController {
                 triggerTitles: summary.triggerTitles,
                 showsInApplication: summary.hasTrigger ? nil : summary.onlyInApps?.applicationNames.first
             )
+            // (After the pull-down has its title: the line is as wide as that leaves it.)
+            triggerRow.explanation = summary.explanation(fittingTwoLinesOf: triggerLineWidth)
             // Nothing opens this ring (nothing at all, or only apps that open their own):
             // its places wait, folded, a click away.
             let opensThisRing = summary.hasTrigger || summary.onlyInApps?.usesGeneralSettings == true
@@ -604,6 +622,18 @@ final class RingPreferencesViewController: NSViewController {
         if application == nil {
             PreferencesForm.fitToContent(self)
         }
+    }
+
+    /// A text of two lines at any width, for the room a row keeps (`reservedExplanations`).
+    private static let twoLines = "A\nA"
+
+    /// The room of the first row's line: the box's width without the row's margins, the
+    /// pull-down as it is titled now and the space before it (`PreferencesGroupRow.titleColumnWidth`,
+    /// which follows only at the next layout).
+    private var triggerLineWidth: CGFloat {
+        let row = Self.boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset
+        guard let pullDown = triggerChooser?.pullDown else { return row }
+        return row - pullDown.intrinsicContentSize.width - PreferencesGroupedForm.controlSpacing
     }
 
     /// The app's mark while the drawing is the app's own ring (its page, the app's own ring
@@ -1068,7 +1098,9 @@ final class RingPreferencesViewController: NSViewController {
             accessory: chooser.pullDown
         )
         // Room for two lines whatever the row says, so naming a button does not move the rows.
-        row.reservedExplanations = [text("ring-trigger-none")]
+        // (Two lines as such, not the longest of the row's lines: beside a long name in the
+        // pull-down that one would be measured at three, and the row grew with the name.)
+        row.reservedExplanations = [Self.twoLines]
         // Pointed at, the picture above shows what it names.
         row.addTrackingArea(NSTrackingArea(
             rect: .zero,
