@@ -14,6 +14,13 @@
 //  Scrollio for that control: a mouse answers its requests in the order they were sent, so the
 //  answer to a query that went out before a write tells the state before that write.
 //
+//  A divert counts as taken only when the mouse echoed it. A write the mouse did not take
+//  (asleep, out of range, busy; refused on the way or by the receiver) gets no echo, and the
+//  session only logs the refusal. The next re-read then finds the button not diverted: that
+//  is no evidence that another app cleared it, so the control is not counted as lost (two of
+//  those within 30 s used to mark it as taken over by Logi Options+ until Pause, sleep or a
+//  reconnect) and the pass that ends the re-read writes it again (`heldBack`).
+//
 //  Main thread only, like the session.
 //
 
@@ -37,15 +44,36 @@ struct LogiDivertLedger: Equatable {
         return recording ? .everyControl : .bindings
     }
 
-    /// The set the last pass wanted diverted.
-    var lastApplied: Set<UInt16> = []
-    /// Controls Scrollio sent "divert on" for and has not given back since.
-    var diverted: Set<UInt16> = []
+    /// The set the last pass wanted diverted, less the controls held back (`heldBack`). The
+    /// session also sets it directly (a slot that disconnects, a rediscovery): a control set
+    /// here is no longer held back.
+    var lastApplied: Set<UInt16> = [] {
+        didSet { heldBack.subtract(lastApplied) }
+    }
+    /// Controls Scrollio sent "divert on" for and has not given back since. A control the
+    /// session takes out of here (it forgets the slot, another app cleared the divert) no
+    /// longer waits for an echo and is no longer held back.
+    var diverted: Set<UInt16> = [] {
+        didSet {
+            unacknowledged.formIntersection(diverted)
+            heldBack.formIntersection(diverted)
+        }
+    }
     /// Controls Scrollio wrote since their GetControlReporting query went out: the answer
     /// to that query (already in hand, or still on its way) is older than the write.
     private(set) var writtenSinceQuery: Set<UInt16> = []
     /// SetControlReporting requests whose echo has not come back yet.
     private(set) var pendingAcks = LogiPendingReportingAcks()
+    /// Controls whose latest write of Scrollio was "divert on" and that the mouse has not
+    /// echoed since: whether the mouse took the divert is not known.
+    private(set) var unacknowledged: Set<UInt16> = []
+    /// Controls of the last pass left out of `lastApplied` because their GetControlReporting
+    /// went out while their divert was unacknowledged. The mouse answers in order, so an echo
+    /// comes before that answer if it comes at all, and puts the control back. Without one
+    /// the answer "not diverted" is the mouse's refusal, not another app's doing: `dropLost`
+    /// does not see the control, and the pass that ends the re-read writes it again, once
+    /// per re-read (a discovery, or the Buttons pane at most every 10 s).
+    private(set) var heldBack: Set<UInt16> = []
 
     // MARK: - Writes and queries, in the order they are sent
 
@@ -63,9 +91,14 @@ struct LogiDivertLedger: Equatable {
     }
 
     /// A GetControlReporting for `cid` was queued: its answer will tell the state after
-    /// every write so far.
+    /// every write so far. A control whose divert the mouse has not echoed yet is held back
+    /// from `lastApplied` until the echo comes.
     mutating func noteQuerySent(cid: UInt16) {
         writtenSinceQuery.remove(cid)
+        if unacknowledged.contains(cid), lastApplied.contains(cid) {
+            lastApplied.remove(cid)
+            heldBack.insert(cid)
+        }
     }
 
     /// Whether what is known about `cid` from GetControlReporting is older than a write of
@@ -79,7 +112,8 @@ struct LogiDivertLedger: Equatable {
     /// The controls of `lastApplied` that a re-read found not diverted: the mouse dropped
     /// the divert (it slept, another app cleared it). They are forgotten here, without a
     /// write. A control Scrollio wrote since its query went out is never among them: its
-    /// answer is older than the write.
+    /// answer is older than the write. Nor is one whose divert the mouse never echoed: it
+    /// is held back (`noteQuerySent`), not in `lastApplied`.
     @discardableResult
     mutating func dropLost(queriedControls: [LogiDeviceSession.QueriedControlState]) -> Set<UInt16> {
         let temporaryDivert: UInt8 = 0x01
@@ -111,18 +145,47 @@ struct LogiDivertLedger: Equatable {
         lastApplied.removeAll()
         diverted.removeAll()
         pendingAcks.removeAll()
+        unacknowledged.removeAll()
+        heldBack.removeAll()
     }
 
     // MARK: - Echoes of Scrollio's own writes
 
+    /// A SetControlReporting of Scrollio is on its way (the session calls this right before
+    /// `noteWrite`). Until its echo comes, a divert is not known to be taken.
     mutating func expectAck(cid: UInt16, flags: UInt8, targetCID: UInt16, now: Date) {
         pendingAcks.expect(cid: cid, flags: flags, targetCID: targetCID, now: now)
+        switch Self.divert(statedBy: flags) {
+        case true?:
+            unacknowledged.insert(cid)
+        case false?:
+            unacknowledged.remove(cid)
+            heldBack.remove(cid)
+        case nil:
+            break
+        }
     }
 
     /// Whether a SetControlReporting echo is the echo of a write of Scrollio (and takes that
-    /// write off the list). An echo that is not is another app's write.
+    /// write off the list). An echo that is not is another app's write. The echo of a divert
+    /// of Scrollio's shows that the mouse took it: a control held back goes back into
+    /// `lastApplied`. Another app's echo never does.
     mutating func consumeAck(cid: UInt16, flags: UInt8, targetCID: UInt16, now: Date) -> Bool {
-        return pendingAcks.consume(cid: cid, flags: flags, targetCID: targetCID, now: now)
+        guard pendingAcks.consume(cid: cid, flags: flags, targetCID: targetCID, now: now) else {
+            return false
+        }
+        if Self.divert(statedBy: flags) == true, unacknowledged.remove(cid) != nil,
+           heldBack.remove(cid) != nil {
+            lastApplied.insert(cid)
+        }
+        return true
+    }
+
+    /// What a SetControlReporting with these flags does to the divert: sets it, clears it,
+    /// or (without the "divert valid" bit) leaves it as it is.
+    static func divert(statedBy flags: UInt8) -> Bool? {
+        guard flags & LogiGestureProtocol.flagDivertValid != 0 else { return nil }
+        return flags & LogiGestureProtocol.flagDivert != 0
     }
 
     mutating func forgetPendingAcks() {

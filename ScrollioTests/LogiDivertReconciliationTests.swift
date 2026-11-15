@@ -440,6 +440,150 @@ final class LogiDivertReconciliationTests: XCTestCase {
         XCTAssertTrue(ledger.pendingAcks.isEmpty)
     }
 
+    // MARK: - A divert the mouse did not take
+
+    /// The calls `LogiDeviceSession` makes on one slot's ledger, in its order: a write
+    /// (`sendControlReporting`: expectAck, then noteWrite), an echo
+    /// (`handleSetControlReportingAck`), a re-read of the buttons' state (one
+    /// `sendGetControlReporting` per control, then `reconcileAppliedDivertsWithQueriedState`:
+    /// dropLost on a copy that is kept only when a control is lost, and one
+    /// `recordExternalClear` per lost control), and the pass for the bindings that follows
+    /// (`applyUsageToCursorSlot`: what is wanted and not in lastApplied is written, a
+    /// control taken over by another app is left out).
+    private struct ModelledSlot {
+        enum Write: Equatable { case divert(UInt16), giveBack(UInt16) }
+
+        var ledger = LogiDivertLedger()
+        let modes = LogiButtonDeliveryModeStore()
+        var now = Date(timeIntervalSince1970: 1_000)
+        private(set) var writes: [Write] = []
+
+        func key(_ cid: UInt16) -> LogiOwnershipKey {
+            return LogiOwnershipKey(vendorId: 0x046D, productId: 0xB034, name: "MX Master 3S", transport: .receiver, cid: cid)
+        }
+
+        mutating func write(_ cid: UInt16, divert: Bool) {
+            ledger.expectAck(cid: cid, flags: divert ? 0x03 : 0x02, targetCID: 0, now: now)
+            ledger.noteWrite(cid: cid, divert: divert)
+            writes.append(divert ? .divert(cid) : .giveBack(cid))
+        }
+
+        /// The mouse took a write of Scrollio's and echoed it.
+        mutating func echo(_ cid: UInt16, divert: Bool) {
+            XCTAssertTrue(ledger.consumeAck(cid: cid, flags: divert ? 0x03 : 0x02, targetCID: 0, now: now))
+        }
+
+        mutating func pass(bindings: Set<UInt16>) {
+            let target = bindings.filter { modes.mode(for: key($0)) == .hidpp }
+            for cid in target.subtracting(ledger.lastApplied).sorted() { write(cid, divert: true) }
+            for cid in ledger.lastApplied.subtracting(target).sorted() { write(cid, divert: false) }
+            ledger.lastApplied = target
+        }
+
+        /// The Buttons pane came forward: every control is asked, the mouse answers what it
+        /// has diverted, and a pass for the bindings follows.
+        mutating func reRead(controls: [UInt16], divertedOnTheMouse: Set<UInt16>, bindings: Set<UInt16>) {
+            for cid in controls { ledger.noteQuerySent(cid: cid) }
+            let answers = controls.map {
+                LogiDeviceSession.QueriedControlState(
+                    cid: $0, reportingFlags: divertedOnTheMouse.contains($0) ? 0x01 : 0x00, reportingQueried: true
+                )
+            }
+            var copy = ledger
+            let lost = copy.dropLost(queriedControls: answers)
+            if !lost.isEmpty {
+                ledger = copy
+                for cid in lost.sorted() { modes.recordExternalClear(for: key(cid), at: now) }
+            }
+            pass(bindings: bindings)
+        }
+    }
+
+    /// The mouse refuses a divert (asleep, out of range, busy): the write gets no echo, only
+    /// a line in the log. The next re-read finds the button not diverted. That used to count
+    /// as another app clearing it, and a second re-read within 30 s marked the button as
+    /// taken over: a notice, and the button was not diverted again until Pause, sleep or a
+    /// reconnect (Mos #1048).
+    func testADivertTheMouseDidNotTakeIsWrittenAgainAndIsNotAnotherApps() {
+        let gesture: UInt16 = 0x00C3, back: UInt16 = 0x0053
+        var slot = ModelledSlot()
+        slot.pass(bindings: [gesture])          // refused: no echo
+        slot.now += 15
+        slot.reRead(controls: [gesture, back], divertedOnTheMouse: [], bindings: [gesture])
+        slot.now += 12
+        slot.reRead(controls: [gesture, back], divertedOnTheMouse: [], bindings: [gesture])
+
+        XCTAssertEqual(slot.modes.mode(for: slot.key(gesture)), .hidpp, "a write the mouse did not take is not another app's")
+        XCTAssertEqual(slot.writes, [.divert(gesture), .divert(gesture), .divert(gesture)], "written again after each re-read")
+        XCTAssertEqual(slot.ledger.toGiveBack, [gesture], "given back at Pause all the same")
+
+        // The mouse takes the third write: the next re-read finds it, and nothing is written.
+        slot.echo(gesture, divert: true)
+        slot.now += 11
+        slot.reRead(controls: [gesture, back], divertedOnTheMouse: [gesture], bindings: [gesture])
+        XCTAssertEqual(slot.writes.count, 3)
+        XCTAssertEqual(slot.ledger.lastApplied, [gesture])
+    }
+
+    /// A divert the mouse echoed and that is gone at the next re-read was cleared by someone
+    /// else (Logi Options+): counted as before, and twice within 30 s leaves the button to it.
+    func testAnEchoedDivertThatIsGoneStillCountsAsAnotherApps() {
+        let gesture: UInt16 = 0x00C3
+        var slot = ModelledSlot()
+        slot.pass(bindings: [gesture])
+        slot.echo(gesture, divert: true)
+        slot.now += 15
+        slot.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        XCTAssertEqual(slot.modes.mode(for: slot.key(gesture)), .hidpp)
+        XCTAssertEqual(slot.writes, [.divert(gesture), .divert(gesture)], "taken back once")
+
+        slot.echo(gesture, divert: true)
+        slot.now += 12
+        slot.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        XCTAssertEqual(slot.modes.mode(for: slot.key(gesture)), .contended)
+        XCTAssertEqual(slot.writes.count, 2, "a button another app keeps taking is left to it")
+    }
+
+    /// Over Bluetooth an echo can take a few hundred milliseconds, so a query can go out
+    /// before it comes. The mouse answers in order: the echo comes before the answer, the
+    /// divert counts, and nothing is written twice.
+    func testAnEchoStillOnItsWayWhenTheQueryGoesOutKeepsTheDivert() {
+        let gesture: UInt16 = 0x00C3
+        var slot = ModelledSlot()
+        slot.pass(bindings: [gesture])
+        slot.ledger.noteQuerySent(cid: gesture)
+        slot.echo(gesture, divert: true)
+        XCTAssertEqual(slot.ledger.lastApplied, [gesture])
+
+        var copy = slot.ledger
+        XCTAssertEqual(copy.dropLost(queriedControls: [queried(gesture, diverted: true)]), [])
+        slot.pass(bindings: [gesture])
+        XCTAssertEqual(slot.writes, [.divert(gesture)])
+    }
+
+    /// Only an echo of Scrollio's own write counts: another app's divert of the button, or an
+    /// echo after the slot was forgotten, does not make Scrollio believe it diverted it.
+    func testOnlyScrolliosOwnEchoCountsADivertAsTaken() {
+        let gesture: UInt16 = 0x00C3
+        var slot = ModelledSlot()
+        slot.pass(bindings: [gesture])
+        slot.ledger.noteQuerySent(cid: gesture)
+        slot.now += LogiPendingReportingAcks.lifetime + 1
+        XCTAssertFalse(slot.ledger.consumeAck(cid: gesture, flags: 0x03, targetCID: 0, now: slot.now), "another app's write")
+        XCTAssertEqual(slot.ledger.lastApplied, [], "not believed applied: the pass after the re-read writes it again")
+        XCTAssertEqual(slot.ledger.toGiveBack, [gesture])
+
+        // The slot disconnects (the session forgets what it applied and diverted): an echo
+        // that comes after that puts nothing back.
+        slot.write(gesture, divert: true)
+        slot.ledger.noteQuerySent(cid: gesture)
+        slot.ledger.lastApplied.removeAll()
+        slot.ledger.diverted.removeAll()
+        slot.echo(gesture, divert: true)
+        XCTAssertEqual(slot.ledger.lastApplied, [])
+        XCTAssertEqual(slot.ledger.toGiveBack, [])
+    }
+
     func testAnEchoThatDiffersOrComesTooLateIsNotScrollios() {
         var ledger = LogiDivertLedger()
         let start = Date(timeIntervalSince1970: 1_000)
