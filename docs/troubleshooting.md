@@ -67,7 +67,7 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   The line ends with why the scroll ended: glided out, left click, a finger on the
   trackpad, the wheel went on in another app, trackpad-style was switched, the wheel
   turned between up-down and sideways, the scroll tap was restarted, ended by the keeper,
-  or stopped. (With one touch a scroll's line comes a fifth of a second later than its
+  the display link sent no frames, or stopped. (With one touch a scroll's line comes a fifth of a second later than its
   last frame: the touch rests that long, and a turn of the wheel in that time is still
   the same scroll.) Also one `thumb wheel:` line per roll of
   the sideways wheel: what the wheel sent, the action and its speed, and the steps that
@@ -85,7 +85,8 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   it, and a released copy never writes it). Also at
   most one line per reason every 3 seconds while wheel events are let through unsmoothed
   (trackpad events, a remote desktop, smoothing off for that event or that axis, no
-  display link, a Step or Speed that is not a number).
+  display link, a display link that sends no frames, a Step or Speed that is not a
+  number).
 - `logi`: what a Logitech mouse reported (battery, pointer speed, haptics, press force,
   wheel settings), each decision to write a value or not and why, the read-back after a
   write, requests the mouse refused or did not answer, gesture haptic cues, and slow
@@ -105,7 +106,9 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
 - `app`: Scrollio's own health: each start and stop with its cause (launch, sleep and
   wake, another user, Pause and a pause that ended by itself, Accessibility access lost
   or back, quit), event taps that
-  could not be created or that macOS turned off, restarts, settings that could not be
+  could not be created or that macOS turned off, restarts, a display link that runs and
+  sends no frames (one line each time; the wheel then goes on unsmoothed until frames
+  come again), settings that could not be
   read or written, an app, a file or a script that could not be opened (never its name
   or path), a held action whose release never came, each use of the Shortcut Ring ("opened
   by" a mouse button, a key or a button over HID++, and "the own ring of the app in

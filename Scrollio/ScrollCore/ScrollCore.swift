@@ -320,6 +320,9 @@ class ScrollCore: ScrollActionPort {
 #else
                 taken = ScrollPoster.shared.smooth(event: event, input: input)
 #endif
+                if !taken {
+                    notTaken = ScrollPoster.shared.notTakenReason
+                }
             }
         }
 
