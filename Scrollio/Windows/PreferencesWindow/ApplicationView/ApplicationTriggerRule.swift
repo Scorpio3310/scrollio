@@ -102,6 +102,9 @@ struct ApplicationTriggers: Equatable {
     /// then nothing uses the general settings, and the panes fold them as when nothing
     /// opens the ring. nil while one of them uses the general ones.
     var ownOnly: ApplicationTriggerRule?
+    /// One of the triggers named is a key combination: the Shortcut Ring pane's line then
+    /// does not add that one works too.
+    var namesAKey: Bool
 
     /// Whether one of these apps uses the general ring (or gestures).
     var usesGeneralSettings: Bool {
@@ -110,7 +113,8 @@ struct ApplicationTriggers: Equatable {
 
     init(
         applicationNames: [String], triggerTitles: [String], path: String = "", bindingID: UUID? = nil,
-        trigger: RecordedEvent? = nil, ownOnly: ApplicationTriggerRule? = nil, appTriggerTitles: [[String]] = []
+        trigger: RecordedEvent? = nil, ownOnly: ApplicationTriggerRule? = nil, appTriggerTitles: [[String]] = [],
+        namesAKey: Bool = false
     ) {
         self.applicationNames = applicationNames
         self.triggerTitles = triggerTitles
@@ -119,6 +123,7 @@ struct ApplicationTriggers: Equatable {
         self.bindingID = bindingID
         self.trigger = trigger
         self.ownOnly = ownOnly
+        self.namesAKey = namesAKey
     }
 
     /// - Parameter titles: what the Buttons pane calls the triggers, in order.
@@ -152,7 +157,8 @@ struct ApplicationTriggers: Equatable {
             bindingID: first.bindings.first?.id,
             trigger: first.bindings.first?.triggerEvent,
             ownOnly: ownOnly,
-            appTriggerTitles: appNames
+            appTriggerTitles: appNames,
+            namesAKey: entries.contains { $0.bindings.contains { $0.triggerEvent.type == .keyboard } }
         )
     }
 
@@ -160,10 +166,58 @@ struct ApplicationTriggers: Equatable {
     /// button", without a full stop (the panes' lines go on); while the apps do it with
     /// different buttons or keys, each with its own: "Only in Figma (Thumb panel) and
     /// Safari (Back button)". While every one of the apps uses its own ring (or gestures),
-    /// it says so: "Only in Figma, with its own ring: Thumb panel".
+    /// it says so: "Only in Figma, with its own ring: Thumb panel". Up to three apps are
+    /// named; of four or more the first two, and the rest are counted ("Only in Figma,
+    /// Safari and 2 more: Thumb panel"), as the panes' "Different in" line does it.
     var text: String {
+        return text(naming: namedApplications)
+    }
+
+    /// The same for a pane's line `width` wide, which takes two lines at most: long app
+    /// names are cut short at their end ("DaVinci Resolve St…"), all to the same length,
+    /// the longest with which `sentence` (the pane's line around this text) fits. The
+    /// whole names are a click away, in Apps ("Show in <app> › Buttons").
+    func text(fittingTwoLinesOf width: CGFloat, in sentence: (String) -> String = { $0 }) -> String {
+        let names = namedApplications
+        let whole = text(naming: names)
+        guard width > 0 else { return whole }
+        let lines = ApplicationPagePart.LineCount(width: width, font: PreferencesGroupedForm.explanationFont)
+        func fits(_ text: String) -> Bool {
+            return lines.of(sentence(text)) <= 2
+        }
+        guard !fits(whole) else { return whole }
+        func cut(to length: Int) -> String {
+            return text(naming: names.map { name in
+                name.count > length ? String(name.prefix(length)).trimmingCharacters(in: .whitespaces) + "…" : name
+            })
+        }
+        // The longest names that fit, by halves.
+        var shortest = 1, longest = (names.map(\.count).max() ?? 1) - 1
+        var fitting = cut(to: 1)
+        while shortest <= longest {
+            let length = (shortest + longest) / 2
+            let candidate = cut(to: length)
+            if fits(candidate) {
+                fitting = candidate
+                shortest = length + 1
+            } else {
+                longest = length - 1
+            }
+        }
+        return fitting
+    }
+
+    /// The apps the line names, in the order of the list (`DifferentInApps.namedCount`).
+    private var namedApplications: [String] {
+        return Array(applicationNames.prefix(DifferentInApps.namedCount(forCount: applicationNames.count)))
+    }
+
+    /// The line with its first apps called `names`; the apps after them are counted.
+    private func text(naming names: [String]) -> String {
+        let rest = applicationNames.count - names.count
+        let more = rest > 0 ? [DifferentInApps.moreTitle(rest)] : []
         if appTriggerTitles.count > 1, Set(appTriggerTitles.map { $0.sorted() }).count > 1 {
-            let pairs = zip(applicationNames, appTriggerTitles).map { name, titles in
+            let pairs = zip(names, appTriggerTitles).map { name, titles in
                 String(
                     format: NSLocalizedString("apps-trigger-app-with", comment: ""),
                     name, InterfaceList.joined(titles)
@@ -171,12 +225,12 @@ struct ApplicationTriggers: Equatable {
             }
             return String(
                 format: NSLocalizedString("apps-trigger-only-in-each", comment: ""),
-                whereText(InterfaceList.joined(pairs))
+                whereText(InterfaceList.joined(pairs + more))
             )
         }
         return String(
             format: NSLocalizedString("apps-trigger-only-in", comment: ""),
-            whereText(InterfaceList.joined(applicationNames)),
+            whereText(InterfaceList.joined(names + more)),
             InterfaceList.joined(triggerTitles)
         )
     }

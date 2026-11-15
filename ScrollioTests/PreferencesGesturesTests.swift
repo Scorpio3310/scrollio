@@ -1414,6 +1414,67 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertTrue(button.isEnabled)
     }
 
+    /// "Only in …" in the pane's row, as it lays it out: long names of apps are cut short
+    /// and the line keeps to two lines.
+    func testTheOnlyInLineOfTheButtonToHoldKeepsToTwoLines() {
+        summary = MouseGestureBindingSummary(
+            hasGestureButton: false, hasLogitechGestureButton: false,
+            onlyInApps: ApplicationTriggers(
+                applicationNames: ["DaVinci Resolve Studio", "Adobe Premiere Pro 2026", "Microsoft Visual Studio Code Insiders", "Final Cut Pro Trial"],
+                triggerTitles: ["Thumb panel", "Back button", "Gesture button (button 6)", "Forward button"],
+                ownOnly: .gestureNavigation,
+                appTriggerTitles: [["Thumb panel"], ["Back button"], ["Gesture button (button 6)"], ["Forward button"]]
+            )
+        )
+        let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
+        let label = controller.gestureButtonRow.explanationLabel
+        XCTAssertTrue(label.stringValue.hasPrefix("Only in DaVinci"), label.stringValue)
+        XCTAssertTrue(label.stringValue.contains("2 more"), "four apps: two named, the rest counted: \(label.stringValue)")
+        XCTAssertGreaterThan(label.frame.width, 200)
+        XCTAssertLessThanOrEqual(
+            ApplicationPagePart.LineCount(width: label.frame.width, font: PreferencesGroupedForm.explanationFont).of(label.stringValue), 2,
+            "\(label.stringValue) in \(label.frame.width) pt"
+        )
+    }
+
+    /// "Undo Reset" is offered only while a click would do it. After a reset, the choice of
+    /// the button to hold is a step Edit › Undo takes back first, and a binding of Buttons:
+    /// the gesture settings are still the defaults. The offer ends with it. Regression: the
+    /// button went on reading "Undo Reset", and a click did nothing but turn it into a
+    /// greyed "Reset to Defaults".
+    func testAnotherUndoStepAfterAResetEndsTheUndoOffer() throws {
+        Options.shared.gesture = changedGesture
+        let before = Options.shared.gesture
+        let (controller, undo) = makeControllerWithUndo()
+        var bindings: [ButtonBinding] = []
+        let chooser = try XCTUnwrap(controller.triggerChooser)
+        chooser.bindings = { bindings }
+        chooser.store = { bindings = $0 }
+        chooser.deviceSource = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        let button = controller.resetToDefaultsButton
+        click(button, undo)
+        XCTAssertEqual(button.title, "Undo Reset")
+
+        undo.beginUndoGrouping()
+        chooser.choose(RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil))
+        undo.endUndoGrouping()
+        XCTAssertEqual(bindings.map(\.systemShortcutName), [SystemShortcut.mouseGestureNavigation.identifier])
+        XCTAssertEqual(undo.undoActionName, "Change Button to Hold")
+        XCTAssertEqual(Options.shared.gesture, .default, "the gesture settings are untouched")
+        XCTAssertFalse(controller.resetToDefaults.offersUndo, "a click would not take the reset back")
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertFalse(button.isEnabled, "nothing differs from the defaults")
+
+        // Edit › Undo still takes back both, in their order.
+        undo.undo()
+        XCTAssertTrue(bindings.isEmpty)
+        undo.undo()
+        XCTAssertEqual(Options.shared.gesture, before)
+    }
+
     // MARK: - Strings
 
     func testEveryLocaleTranslatesTheGesturesTab() {
@@ -1768,6 +1829,151 @@ final class GestureDirectionUndoTests: XCTestCase {
         XCTAssertEqual(calculator.ownGestures?.actions.down, GestureAction(SystemShortcut.paste))
         XCTAssertEqual(shown.actionPopUp(for: .down).binding.systemShortcutName, SystemShortcut.paste.identifier, "the page on show follows")
         XCTAssertEqual(Options.shared.gesture, .default)
+    }
+
+    /// A direction of an app's own gestures, changed, then "Use settings from Gestures" is
+    /// on again: the set is kept for later and its part shows the switch alone. Undo and
+    /// Redo still reach the kept set, and nothing comes forward, from another pane or on
+    /// the app's page. Regression: the app's Gestures part came forward with nothing
+    /// changed in sight.
+    func testUndoOfADirectionOfASetKeptForLaterBringsNothingForward() throws {
+        let calculator = Application(path: Self.calculator)
+        Options.shared.application.applications.append(calculator)
+        calculator.setUsesGeneralGestures(false, general: Options.shared.gesture)
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: calculator)), part: .gestures)
+        let page = try XCTUnwrap(w.apps.detailController)
+        let controls = try XCTUnwrap(page.gesturesPart.controls)
+        try step(w.undo) { controls.actionPopUp(for: .up).onShortcutSelected?(SystemShortcut.paste) }
+        calculator.setUsesGeneralGestures(true, general: Options.shared.gesture)
+        page.gesturesPart.syncViewWithOptions()
+
+        // On the app's page, another part on show: it stays.
+        page.show(.scrolling)
+        w.undo.undo()
+        XCTAssertEqual(calculator.gestures?.actions.up, GestureActions.default.up, "the kept set has its direction back")
+        XCTAssertTrue(calculator.usesGeneralGestures)
+        XCTAssertEqual(page.shownPart, .scrolling, "the part on show stays")
+
+        // From another pane, the page closed: nothing comes forward.
+        w.apps.showList(focusList: false)
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.redo()
+        XCTAssertEqual(calculator.gestures?.actions.up, GestureAction(SystemShortcut.paste))
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.general, "nothing comes forward")
+        XCTAssertNil(w.apps.detailController)
+        XCTAssertEqual(Options.shared.gesture, .default, "the general gestures are untouched")
+    }
+
+    // MARK: - Undo of a step of the whole pane or part, shown where it acts too
+
+    /// "Undo Reset Gestures" from another pane (⌘Z after a slider elsewhere, which
+    /// registers nothing): Gestures comes forward and shows the settings that are back;
+    /// Redo too. The reset itself, clicked on the pane, moves nothing.
+    func testUndoOfTheGesturesResetFromAnotherPaneShowsGestures() throws {
+        Options.shared.gesture.actions.up = GestureAction(SystemShortcut.paste)
+        let edited = Options.shared.gesture
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: GesturesPreferencesViewController.tabIdentifier))
+        step(w.undo) { w.gestures.resetToDefaults.click(nil) }
+        XCTAssertEqual(Options.shared.gesture, .default)
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Reset Gestures")
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, GesturesPreferencesViewController.tabIdentifier)
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.gesture, edited)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, GesturesPreferencesViewController.tabIdentifier, "the pane comes forward")
+        XCTAssertEqual(
+            w.gestures.controls.actionPopUp(for: .up).binding.systemShortcutName, SystemShortcut.paste.identifier, "and shows them"
+        )
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.redo()
+        XCTAssertEqual(Options.shared.gesture, .default)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, GesturesPreferencesViewController.tabIdentifier, "Redo too")
+    }
+
+    /// "Undo Change Button to Hold" from another pane: the Back button has its action
+    /// again and nothing runs the gestures, and Gestures comes forward with its row saying
+    /// so; Redo too.
+    func testUndoOfTheButtonToHoldFromAnotherPaneShowsGestures() throws {
+        let back = RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil)
+        let copy = ButtonBinding(triggerEvent: back, systemShortcutName: SystemShortcut.copy.identifier, isEnabled: true)
+        Options.shared.buttons.binding = [copy]
+        let w = try makeWindow()
+        w.gestures.bindingSummary = { .current }
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: GesturesPreferencesViewController.tabIdentifier))
+        let chooser = try XCTUnwrap(w.gestures.triggerChooser)
+        chooser.deviceSource = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        step(w.undo) { chooser.choose(back) }
+        XCTAssertEqual(Options.shared.buttons.binding.first?.systemShortcutName, SystemShortcut.mouseGestureNavigation.identifier)
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Change Button to Hold")
+        let name = ButtonTriggerNaming.title(for: back)
+        XCTAssertEqual(w.gestures.gestureButtonButton.shownTitle, name)
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.scrolling))
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [copy], "Back is Copy again")
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, GesturesPreferencesViewController.tabIdentifier, "the pane comes forward")
+        XCTAssertEqual(w.gestures.gestureButtonButton.shownTitle, "Choose", "its row says that no button runs the gestures")
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.scrolling))
+        w.undo.redo()
+        XCTAssertEqual(Options.shared.buttons.binding.first?.systemShortcutName, SystemShortcut.mouseGestureNavigation.identifier)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, GesturesPreferencesViewController.tabIdentifier, "Redo too")
+        XCTAssertEqual(w.gestures.gestureButtonButton.shownTitle, name)
+    }
+
+    /// "Copy from Gestures" under an app's own set, undone after its page closed and while
+    /// General shows, and redone while the page shows another part: Apps comes forward with
+    /// the app's page on its Gestures part. A set kept for later (the switch on again)
+    /// takes the Undo too, and nothing comes forward: the part would show the switch alone.
+    func testUndoOfCopyFromGesturesShowsTheAppsGesturesPartUnlessTheSetIsKeptForLater() throws {
+        let calculator = Application(path: Self.calculator)
+        Options.shared.application.applications.append(calculator)
+        calculator.setUsesGeneralGestures(false, general: Options.shared.gesture)
+        var actions = GestureActions.default
+        actions.up = GestureAction(SystemShortcut.paste)
+        calculator.setOwnGestures(actions: actions, invertHorizontal: true)
+        let edited = try XCTUnwrap(calculator.ownGestures)
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: calculator)), part: .gestures)
+        let part = try XCTUnwrap(w.apps.detailController?.gesturesPart)
+        step(w.undo) { part.resetToDefaults.click(nil) }
+        XCTAssertEqual(calculator.ownGestures?.actions, GestureActions.default)
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Copy from Gestures in Calculator")
+
+        w.apps.showList(focusList: false)
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(calculator.ownGestures, edited)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application, "Apps comes forward")
+        let page = try XCTUnwrap(w.apps.detailController)
+        XCTAssertTrue(page.application === calculator)
+        XCTAssertEqual(page.shownPart, .gestures)
+        XCTAssertEqual(
+            page.gesturesPart.controls?.actionPopUp(for: .up).binding.systemShortcutName, SystemShortcut.paste.identifier,
+            "the page shows the set that is back"
+        )
+
+        page.show(.buttons)
+        w.undo.redo()
+        XCTAssertEqual(calculator.ownGestures?.actions, GestureActions.default)
+        XCTAssertEqual(page.shownPart, .gestures, "Redo shows its part too")
+
+        // Kept for later: the Undo reaches it, out of sight as the set is.
+        calculator.setUsesGeneralGestures(true, general: Options.shared.gesture)
+        w.apps.showList(focusList: false)
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(calculator.gestures?.actions, edited.actions, "the kept set is back as it was")
+        XCTAssertTrue(calculator.usesGeneralGestures)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.general, "nothing comes forward")
     }
 
     /// The pane in a window of its own (no window's panes): Undo and Redo go to that

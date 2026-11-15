@@ -4982,3 +4982,64 @@ extension PreferencesWindowRenderTests {
         })
     }
 }
+
+// MARK: - QA fix F4
+
+extension PreferencesWindowRenderTests {
+
+    /// The first row of the Shortcut Ring and Gestures panes with long names
+    /// (`qa-f4-<case>-<appearance>.png`, whole panes). Shortcut Ring: a short name with the
+    /// whole line; a long name whole, with the short line; a name longer than any real one,
+    /// cut short in the pull-down; only in two apps with long names, cut to two lines; only
+    /// in an app with a key combination (no "A key combination works too."). Gestures:
+    /// only in four apps with different buttons, two named and two counted.
+    func testRenderQAFixF4TriggerRows() throws {
+        let stored = Options.shared.application.applications
+        let savedRing = Options.shared.ring
+        defer {
+            Options.shared.application.applications = stored
+            Options.shared.ring = savedRing
+            ButtonUtils.shared.invalidateCache()
+        }
+        Options.shared.ring = .default
+        Options.shared.gesture = .default
+        Options.shared.buttons.binding = []
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [], matchKey: "path")
+        ButtonUtils.shared.invalidateCache()
+
+        func ring(_ summary: ShortcutRingBindingSummary) -> (PreferencesSplitViewController) -> Void {
+            return { preferences in
+                (preferences.controller(for: RingPreferencesViewController.tabIdentifier) as? RingPreferencesViewController)?
+                    .bindingSummary = { summary }
+            }
+        }
+        let pane = RingPreferencesViewController.tabIdentifier
+        try renderPane(pane, name: "qa-f4-ring-short-name", prepare: ring(ShortcutRingBindingSummary(triggerTitles: ["Back button"])))
+        try renderPane(pane, name: "qa-f4-ring-long-name", prepare: ring(ShortcutRingBindingSummary(triggerTitles: ["Gesture button (button 6)"])))
+        try renderPane(pane, name: "qa-f4-ring-endless-name", prepare: ring(ShortcutRingBindingSummary(
+            triggerTitles: ["⌃⌥⇧⌘ Gesture button of the left hand (button 16)"]
+        )))
+        let long = ["DaVinci Resolve Studio", "Adobe Premiere Pro 2026", "Microsoft Visual Studio Code Insiders", "Final Cut Pro Trial"]
+        try renderPane(pane, name: "qa-f4-ring-only-in-long", prepare: ring(ShortcutRingBindingSummary(
+            triggerTitles: [],
+            onlyInApps: ApplicationTriggers(applicationNames: Array(long.prefix(2)), triggerTitles: ["Thumb panel"], ownOnly: .shortcutRing)
+        )))
+        try renderPane(pane, name: "qa-f4-ring-only-in-key", prepare: ring(ShortcutRingBindingSummary(
+            triggerTitles: [],
+            onlyInApps: ApplicationTriggers(applicationNames: ["Figma"], triggerTitles: ["⌃⌥ Space"], namesAKey: true)
+        )))
+
+        let four = ApplicationTriggers(
+            applicationNames: long, triggerTitles: ["Thumb panel", "Back button", "Gesture button (button 6)", "Forward button"],
+            ownOnly: .gestureNavigation,
+            appTriggerTitles: [["Thumb panel"], ["Back button"], ["Gesture button (button 6)"], ["Forward button"]]
+        )
+        try renderPane(GesturesPreferencesViewController.tabIdentifier, name: "qa-f4-gestures-only-in-four", prepare: { preferences in
+            let gestures = preferences.controller(for: GesturesPreferencesViewController.tabIdentifier) as? GesturesPreferencesViewController
+            gestures?.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+            gestures?.bindingSummary = {
+                MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false, onlyInApps: four)
+            }
+        })
+    }
+}

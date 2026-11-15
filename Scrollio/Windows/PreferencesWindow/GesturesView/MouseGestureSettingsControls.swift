@@ -518,8 +518,11 @@ final class MouseGestureSettingsControls: NSObject {
     /// app's page under Apps on its Gestures part, comes forward and shows the gestures as
     /// stored, with the direction's row selected (`selectRow`). Not for Left or Right while
     /// the desktops follow the hand: the row shows the swipe and takes no choice, so nothing
-    /// there would show the change (the value is back all the same).
+    /// there would show the change (the value is back all the same). Nor for an app's set
+    /// kept for later (the app uses the general gestures again): its part shows the switch
+    /// alone.
     private static func show(_ slot: Slot, of entry: Application?, in showing: DirectionShowing) {
+        if let entry, entry.ownGestures == nil { return }
         guard isEditable(slot, of: entry, in: showing) else { return }
         if let split = showing.split {
             if let entry {

@@ -374,6 +374,88 @@ final class TriggerChoiceTests: XCTestCase {
         XCTAssertEqual(ringPane(undo: undoManager()).triggerRow.explanation?.hasPrefix("⌃ Back button and Middle button."), true)
     }
 
+    /// How many lines the row's explanation takes where it stands, by its height.
+    private func explanationLines(of row: PreferencesGroupRow) -> Int {
+        let font = PreferencesGroupedForm.explanationFont
+        let line = ceil(font.ascender - font.descender + font.leading)
+        let height = (row.explanationLabel.stringValue as NSString).boundingRect(
+            with: NSSize(width: row.explanationLabel.frame.width, height: 1000),
+            options: [.usesLineFragmentOrigin], attributes: [.font: font]
+        ).height
+        return Int((height / line).rounded())
+    }
+
+    /// The Shortcut Ring pane with one button that opens the ring, named `name`.
+    private func ringPane(naming name: String) -> RingPreferencesViewController {
+        let pane = ringPane(undo: undoManager())
+        pane.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: [name]) }
+        pane.reload()
+        pane.view.layoutSubtreeIfNeeded()
+        return pane
+    }
+
+    /// A long name in "Button or key" (the MX Vertical's "Pointer speed button", a button
+    /// told where it is, one with modifier keys) stays whole, and the line beside it keeps
+    /// to two lines: where the whole line has no room it says what to do and leaves out
+    /// that a key combination works too. The row is as tall as with a short name, so
+    /// nothing under it moves. Regression: three lines beside every pull-down wider than
+    /// 160 pt, and the room the row keeps for two lines was measured at three there.
+    func testALongNameInTheRingsPullDownKeepsItsLineToTwoLines() throws {
+        let short = ringPane(naming: "Back button")
+        XCTAssertEqual(short.triggerRow.explanation, Self.ringOneButton, "beside a short name, all of it")
+        XCTAssertEqual(explanationLines(of: short.triggerRow), 2)
+        let height = short.triggerRow.frame.height
+        XCTAssertGreaterThan(height, 0)
+        let lines = { (text: String, width: CGFloat) in
+            ApplicationPagePart.LineCount(width: width, font: PreferencesGroupedForm.explanationFont).of(text)
+        }
+
+        for name in [
+            "Pointer speed button", "Gesture button (button 6)", "Thumb panel (button 5)", "Back button (Logitech)",
+            "⌃⌥ Back button", "⌥ Mode shift button", "⌃⌥ Gesture button",
+        ] {
+            let pane = ringPane(naming: name)
+            XCTAssertEqual(pane.triggerButton.shownTitle, name)
+            XCTAssertNil(pane.triggerButton.toolTip, "\(name) is whole")
+            XCTAssertLessThan(pane.triggerButton.frame.width, TriggerChoicePullDown.maxWidth, name)
+            let room = pane.triggerRow.explanationLabel.preferredMaxLayoutWidth
+            XCTAssertGreaterThan(room, 150, name)
+            // The whole line where it has room for two lines, else what to do alone.
+            let whole = lines(Self.ringOneButton, room) <= 2
+            XCTAssertEqual(pane.triggerRow.explanation, whole ? Self.ringOneButton : Self.ringOneKey, "\(name), \(room) pt")
+            XCTAssertLessThanOrEqual(explanationLines(of: pane.triggerRow), 2, name)
+            XCTAssertEqual(pane.triggerRow.frame.height, height, accuracy: 0.5, "\(name): the row is as tall as ever")
+        }
+        XCTAssertEqual(ringPane(naming: "Gesture button (button 6)").triggerRow.explanation, Self.ringOneKey, "one of the wide ones")
+
+        // A name no row has room for is cut short at its end, whole in the tooltip.
+        let endless = "⌃⌥⇧⌘ Gesture button of the left hand (button 16)"
+        let pane = ringPane(naming: endless)
+        XCTAssertEqual(pane.triggerButton.shownTitle, endless)
+        XCTAssertEqual(pane.triggerButton.frame.width, TriggerChoicePullDown.maxWidth, accuracy: 0.5)
+        XCTAssertEqual(pane.triggerButton.toolTip, endless)
+        XCTAssertEqual(pane.triggerRow.explanation, Self.ringOneKey)
+        XCTAssertLessThanOrEqual(explanationLines(of: pane.triggerRow), 2)
+        XCTAssertEqual(pane.triggerRow.frame.height, height, accuracy: 0.5)
+        // Named anew, short: no tooltip stays behind.
+        pane.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: ["Back button"]) }
+        pane.reload()
+        XCTAssertNil(pane.triggerButton.toolTip)
+        XCTAssertEqual(pane.triggerRow.explanation, Self.ringOneButton)
+
+        // The Gestures pane's pull-down is the same one: its short line has room beside
+        // the widest.
+        let gesturesController = gesturesPane(undo: undoManager())
+        gesturesController.bindingSummary = {
+            MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: [endless])
+        }
+        gesturesController.reload()
+        gesturesController.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(gesturesController.gestureButtonButton.frame.width, TriggerChoicePullDown.maxWidth, accuracy: 0.5)
+        XCTAssertEqual(gesturesController.gestureButtonRow.explanation, Self.gesturesOne)
+        XCTAssertLessThanOrEqual(explanationLines(of: gesturesController.gestureButtonRow), 2)
+    }
+
     /// "Show in Buttons" says where it goes: the Buttons pane, or, while only an app's own
     /// button or key does it, that app's Buttons part ("Show in Notes › Buttons"), in both panes.
     func testTheShowItemSaysWhereItGoes() throws {

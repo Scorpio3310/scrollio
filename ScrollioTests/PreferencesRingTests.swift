@@ -687,7 +687,7 @@ final class PreferencesRingTests: XCTestCase {
         let controller = makeController()
         XCTAssertEqual(controller.freezeRow.title, "Freeze pointer while the ring is held")
         XCTAssertEqual(controller.freezeRow.explanation,
-                       "The pointer stays where it is while you hold the button. The way your hand moves still chooses.")
+                       "The pointer stays where it is while you hold the button or key. The way your hand moves still chooses.")
         XCTAssertTrue(controller.freezeRow.accessory === controller.freezeToggle)
         let toggle = try XCTUnwrap(controller.freezeToggle as? NSSwitch)
         XCTAssertEqual(toggle.state, .off, "a new ring leaves the pointer alone")
@@ -707,7 +707,113 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertEqual(Options.shared.ring, .default)
     }
 
-    func testEveryExplanationFitsTwoLines() {
+    /// The lines "Only in …" of both panes name up to three apps and count the rest of four
+    /// or more ("Figma, Safari and 2 more"), as "Different in" does; in the room of the
+    /// row (350 pt beside "Choose") long names are cut short so that the line keeps to two
+    /// lines. Regression: every app was named whole, and two long names took three lines.
+    func testTheOnlyInLinesCountTheAppsAndCutLongNamesToTwoLines() {
+        let one = ApplicationTriggers(applicationNames: ["Figma", "Safari", "Notes"], triggerTitles: ["Thumb panel"])
+        XCTAssertEqual(one.text, InterfaceList.joined(["Only in Figma", "Safari", "Notes: Thumb panel"]), "three: all named")
+        let four = ApplicationTriggers(applicationNames: ["Figma", "Safari", "Notes", "Xcode"], triggerTitles: ["Thumb panel"])
+        XCTAssertEqual(four.text, InterfaceList.joined(["Only in Figma", "Safari", "2 more: Thumb panel"]), "four: two named, never \"1 more\"")
+        let each = ApplicationTriggers(
+            applicationNames: ["Figma", "Safari", "Notes", "Xcode", "Mail"], triggerTitles: ["Thumb panel", "Back button", "Middle button"],
+            ownOnly: .shortcutRing,
+            appTriggerTitles: [["Thumb panel"], ["Back button"], ["Thumb panel"], ["Middle button"], ["Back button"]]
+        )
+        XCTAssertEqual(
+            each.text,
+            InterfaceList.joined(["Only in Figma (Thumb panel)", "Safari (Back button)", "3 more"]) + ", each with its own ring",
+            "each with its own, the rest counted"
+        )
+
+        // In the row's room: two lines, whatever the names.
+        let lines = ApplicationPagePart.LineCount(width: 350, font: PreferencesGroupedForm.explanationFont)
+        let long = ["DaVinci Resolve Studio", "Adobe Premiere Pro 2026", "Microsoft Visual Studio Code Insiders", "Final Cut Pro Trial"]
+        let cases: [(String, ApplicationTriggers)] = [
+            ("two long names, each with its own ring",
+             ApplicationTriggers(applicationNames: Array(long.prefix(2)), triggerTitles: ["Thumb panel"], ownOnly: .shortcutRing)),
+            ("three long names",
+             ApplicationTriggers(applicationNames: Array(long.prefix(3)), triggerTitles: ["Thumb panel", "Back button"])),
+            ("four apps with different buttons", ApplicationTriggers(
+                applicationNames: long, triggerTitles: ["Thumb panel", "Back button", "Gesture button (button 6)", "Forward button"],
+                ownOnly: .gestureNavigation,
+                appTriggerTitles: [["Thumb panel"], ["Back button"], ["Gesture button (button 6)"], ["Forward button"]]
+            )),
+        ]
+        for (label, apps) in cases {
+            let ring = ShortcutRingBindingSummary(triggerTitles: [], onlyInApps: apps)
+            XCTAssertGreaterThan(lines.of(ring.explanation), 2, "\(label): whole, it does not fit (the case is one)")
+            let ringLine = ring.explanation(fittingTwoLinesOf: 350)
+            XCTAssertLessThanOrEqual(lines.of(ringLine), 2, "\(label): \(ringLine)")
+            XCTAssertTrue(ringLine.hasPrefix("Only in DaVinci") && ringLine.contains("…"), "\(label): cut, not dropped: \(ringLine)")
+            XCTAssertTrue(ringLine.hasSuffix(". A key combination works too."), ringLine)
+            let gestures = MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false, onlyInApps: apps)
+            let gesturesLine = gestures.gestureButtonExplanation(fittingTwoLinesOf: 350)
+            XCTAssertLessThanOrEqual(lines.of(gesturesLine), 2, "\(label): \(gesturesLine)")
+            XCTAssertTrue(gesturesLine.hasSuffix("."), gesturesLine)
+        }
+        // Names that fit stay whole, and a width that is not known cuts nothing.
+        let short = ShortcutRingBindingSummary(triggerTitles: [], onlyInApps: one)
+        XCTAssertEqual(short.explanation(fittingTwoLinesOf: 350), short.explanation)
+        XCTAssertFalse(short.explanation.contains("…"))
+
+        // In the pane, as it lays the row out: two lines, and the row as tall as ever.
+        let reference = makeController()
+        reference.view.layoutSubtreeIfNeeded()
+        summary = ShortcutRingBindingSummary(triggerTitles: [], onlyInApps: cases[0].1)
+        let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
+        let label = controller.triggerRow.explanationLabel
+        XCTAssertTrue(label.stringValue.contains("…"), label.stringValue)
+        XCTAssertLessThanOrEqual(
+            ApplicationPagePart.LineCount(width: label.frame.width, font: PreferencesGroupedForm.explanationFont).of(label.stringValue), 2,
+            "\(label.stringValue) in \(label.frame.width) pt"
+        )
+        XCTAssertEqual(controller.triggerRow.frame.height, reference.triggerRow.frame.height, accuracy: 0.5)
+    }
+
+    /// "A key combination works too." is left out where a key combination is among what
+    /// the line names: only in an app with a key, or several triggers of Buttons with a
+    /// key among them. With buttons alone it stays.
+    func testTheLineDoesNotAddThatAKeyWorksWhereAKeyIsNamed() {
+        let space = RecordedEvent(type: .keyboard, code: 49, modifiers: UInt(CGEventFlags.maskControl.rawValue), deviceFilter: nil)
+        let back = RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil)
+        let middle = RecordedEvent(type: .mouse, code: 2, modifiers: 0, deviceFilter: nil)
+        let ring = SystemShortcut.shortcutRing.identifier
+        func binding(_ event: RecordedEvent) -> ButtonBinding {
+            return ButtonBinding(triggerEvent: event, systemShortcutName: ring, isEnabled: true)
+        }
+        let titles: ([RecordedEvent]) -> [String] = { $0.map { $0.type == .keyboard ? "⌃ Space" : "Button \($0.code)" } }
+
+        // Only in an app.
+        let figma = Application(path: "/Applications/Figma.app")
+        figma.displayName = "Figma"
+        figma.setOwnButtonBindings([binding(space)])
+        var summary = ShortcutRingBindingSummary(bindings: [], applications: [figma], titles: titles)
+        XCTAssertEqual(summary.onlyInApps?.namesAKey, true)
+        XCTAssertEqual(summary.explanation, "Only in Figma: ⌃ Space.")
+        figma.setOwnButtonBindings([binding(back)])
+        summary = ShortcutRingBindingSummary(bindings: [], applications: [figma], titles: titles)
+        XCTAssertEqual(summary.onlyInApps?.namesAKey, false)
+        XCTAssertEqual(summary.explanation, "Only in Figma: Button 3. A key combination works too.")
+
+        // Several of Buttons ("Multiple" in the pull-down).
+        summary = ShortcutRingBindingSummary(bindings: [binding(space), binding(back)], titles: titles)
+        XCTAssertTrue(summary.namesAKey)
+        XCTAssertEqual(summary.explanation, InterfaceList.joined(["⌃ Space", "Button 3"]) + ".")
+        summary = ShortcutRingBindingSummary(bindings: [binding(middle), binding(back)], titles: titles)
+        XCTAssertFalse(summary.namesAKey)
+        XCTAssertEqual(
+            summary.explanation,
+            InterfaceList.joined(["Button 2", "Button 3"]) + ". A key combination works too, even one that Logi Options+ sends for a button."
+        )
+        // One key: what to do with it, as before.
+        summary = ShortcutRingBindingSummary(bindings: [binding(space)], titles: titles)
+        XCTAssertEqual(summary.explanation, "Hold it, move towards a shortcut and let go.")
+    }
+
+    func testEveryExplanationFitsTwoLines() throws {
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
         func height(_ text: String, width: CGFloat) -> CGFloat {
@@ -736,9 +842,19 @@ final class PreferencesRingTests: XCTestCase {
         let freeze = controller.freezeRow.explanationLabel
         XCTAssertGreaterThan(freeze.frame.width, 200)
         XCTAssertLessThanOrEqual(height(freeze.stringValue, width: freeze.frame.width), twoLines, freeze.stringValue)
+        // An app's own ring has the same switch and line on the app's page.
+        let calculator = Application(path: "/System/Applications/Calculator.app")
+        calculator.setUsesGeneralRing(false, general: .default)
+        let own = RingPreferencesViewController(application: calculator)
+        own.view.layoutSubtreeIfNeeded()
+        let ownFreeze = try XCTUnwrap(own.freezeRow?.explanationLabel)
+        XCTAssertEqual(ownFreeze.stringValue, freeze.stringValue)
+        XCTAssertGreaterThan(ownFreeze.frame.width, 200)
+        XCTAssertLessThanOrEqual(height(ownFreeze.stringValue, width: ownFreeze.frame.width), twoLines, "on an app's page")
         let hint = controller.placesHintLabel.stringValue
         // Two sentences, each on its own line (wrapped as one text, the second line was two words).
-        XCTAssertEqual(hint, "Hold the button and move towards a shortcut, then let go.\nOr press and let go, then click one.")
+        // ("the button or key": the row above is titled so, and a key may be what opens the ring.)
+        XCTAssertEqual(hint, "Hold the button or key and move towards a shortcut, then let go.\nOr press and let go, then click one.")
         for line in hint.split(separator: "\n") {
             XCTAssertLessThanOrEqual(height(String(line), width: RingPreferencesViewController.boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset),
                                      twoLines / 2 + 1, String(line))
@@ -2345,6 +2461,43 @@ final class RingPlaceUndoTests: XCTestCase {
         XCTAssertEqual(Options.shared.ring, .default)
     }
 
+    /// A place of an app's own ring, changed, then "Use settings from Shortcut Ring" is on
+    /// again: the ring is kept for later and its part shows the switch alone. Undo and Redo
+    /// still reach the kept ring, and nothing comes forward, from another pane or on the
+    /// app's page. Regression: the app's Shortcut Ring part came forward with nothing
+    /// changed in sight.
+    func testUndoOfAPlaceOfARingKeptForLaterBringsNothingForward() throws {
+        let calculator = Application(path: Self.calculator)
+        Options.shared.application.applications.append(calculator)
+        calculator.setUsesGeneralRing(false, general: Options.shared.ring)
+        let before = try XCTUnwrap(calculator.ownRingPlaces?[0])
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: calculator)), part: .ring)
+        let page = try XCTUnwrap(w.apps.detailController)
+        let ring = try XCTUnwrap(page.ringPart.ringController)
+        try step(w.undo) { ring.placePopUps[0].onShortcutSelected?(SystemShortcut.paste) }
+        calculator.setUsesGeneralRing(true, general: Options.shared.ring)
+        page.ringPart.syncViewWithOptions()
+        XCTAssertNil(page.ringPart.ringController, "the part shows the switch alone")
+
+        // On the app's page, another part on show: it stays.
+        page.show(.scrolling)
+        w.undo.undo()
+        XCTAssertEqual(calculator.ring?.places[0], before, "the kept ring has its place back")
+        XCTAssertTrue(calculator.usesGeneralRing)
+        XCTAssertEqual(page.shownPart, .scrolling, "the part on show stays")
+
+        // From another pane, the page closed: nothing comes forward.
+        w.apps.showList(focusList: false)
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.redo()
+        XCTAssertEqual(calculator.ring?.places[0], ShortcutRingPlace(SystemShortcut.paste))
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.general, "nothing comes forward")
+        XCTAssertNil(w.apps.detailController)
+        XCTAssertEqual(Options.shared.ring, .default, "the general ring is untouched")
+    }
+
     /// A change in Buttons, then one in the ring: Undo takes back the ring's first and shows
     /// its pane, then the button's and shows Buttons with its row selected; Redo goes the
     /// other way.
@@ -2477,6 +2630,110 @@ final class RingPlaceUndoTests: XCTestCase {
         XCTAssertEqual(w.apps.applications.map(\.path), [textEdit.path])
         XCTAssertNil(w.apps.detailController, "the list, where the change is")
         XCTAssertNil(w.apps.list.rows.first { $0.id == AnyHashable(id) })
+    }
+
+    // MARK: - Undo of a step of the whole pane or part, shown where it acts too
+
+    /// "Undo Reset Shortcut Ring" from another pane (⌘Z after a slider elsewhere, which
+    /// registers nothing): the Shortcut Ring pane comes forward and shows the ring that is
+    /// back; Redo too. The reset itself, clicked on the pane, moves nothing.
+    func testUndoOfTheRingsResetFromAnotherPaneShowsTheRingPane() throws {
+        Options.shared.ring[2] = ShortcutRingPlace(SystemShortcut.paste)
+        let edited = Options.shared.ring
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: RingPreferencesViewController.tabIdentifier))
+        step(w.undo) { w.ring.resetToDefaults.click(nil) }
+        XCTAssertEqual(Options.shared.ring, .default)
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Reset Shortcut Ring")
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, RingPreferencesViewController.tabIdentifier)
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.ring, edited)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, RingPreferencesViewController.tabIdentifier, "the pane comes forward")
+        XCTAssertEqual(w.ring.placePopUps[2].binding.systemShortcutName, SystemShortcut.paste.identifier, "and shows the ring")
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.redo()
+        XCTAssertEqual(Options.shared.ring, .default)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, RingPreferencesViewController.tabIdentifier, "Redo too")
+    }
+
+    /// "Undo Change What Opens the Ring" from another pane: the binding of Buttons goes
+    /// again, and the Shortcut Ring pane comes forward with its row saying so; Redo too.
+    func testUndoOfWhatOpensTheRingFromAnotherPaneShowsTheRingPane() throws {
+        let w = try makeWindow()
+        w.ring.bindingSummary = { .current }
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: RingPreferencesViewController.tabIdentifier))
+        let chooser = try XCTUnwrap(w.ring.triggerChooser)
+        chooser.deviceSource = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        let back = RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil)
+        step(w.undo) { chooser.choose(back) }
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.triggerEvent), [back])
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Change What Opens the Ring")
+        let name = ButtonTriggerNaming.title(for: back)
+        XCTAssertEqual(w.ring.triggerButton.shownTitle, name)
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.scrolling))
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [])
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, RingPreferencesViewController.tabIdentifier, "the pane comes forward")
+        XCTAssertEqual(w.ring.triggerButton.shownTitle, "Choose", "its row says that nothing opens the ring")
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.scrolling))
+        w.undo.redo()
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.triggerEvent), [back])
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, RingPreferencesViewController.tabIdentifier, "Redo too")
+        XCTAssertEqual(w.ring.triggerButton.shownTitle, name)
+    }
+
+    /// "Copy from Shortcut Ring" under an app's own ring, undone after its page closed and
+    /// while General shows, and redone while the page shows another part: Apps comes
+    /// forward with the app's page on its Shortcut Ring part. A ring kept for later (the
+    /// switch on again) takes the Undo too, and nothing comes forward: the part would show
+    /// the switch alone.
+    func testUndoOfAnAppsRingResetShowsItsRingPartUnlessTheRingIsKeptForLater() throws {
+        let calculator = Application(path: Self.calculator)
+        Options.shared.application.applications.append(calculator)
+        calculator.setUsesGeneralRing(false, general: Options.shared.ring)
+        calculator.ring?[5] = ShortcutRingPlace(SystemShortcut.paste)
+        let edited = try XCTUnwrap(calculator.ownRingPlaces)
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: calculator)), part: .ring)
+        let part = try XCTUnwrap(w.apps.detailController?.ringPart)
+        step(w.undo) { part.resetToDefaults.click(nil) }
+        XCTAssertEqual(calculator.ownRingPlaces, ShortcutRingSettings.default.places)
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Copy from Shortcut Ring in Calculator")
+
+        w.apps.showList(focusList: false)
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(calculator.ownRingPlaces, edited)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application, "Apps comes forward")
+        let page = try XCTUnwrap(w.apps.detailController)
+        XCTAssertTrue(page.application === calculator)
+        XCTAssertEqual(page.shownPart, .ring)
+        XCTAssertEqual(
+            page.ringPart.ringController?.placePopUps[5].binding.systemShortcutName, SystemShortcut.paste.identifier,
+            "the page shows the ring that is back"
+        )
+
+        page.show(.buttons)
+        w.undo.redo()
+        XCTAssertEqual(calculator.ownRingPlaces, ShortcutRingSettings.default.places)
+        XCTAssertEqual(page.shownPart, .ring, "Redo shows its part too")
+
+        // Kept for later: the Undo reaches it, out of sight as the ring is.
+        calculator.setUsesGeneralRing(true, general: Options.shared.ring)
+        w.apps.showList(focusList: false)
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(calculator.ring?.places, edited, "the kept ring is back as it was")
+        XCTAssertTrue(calculator.usesGeneralRing)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.general, "nothing comes forward")
     }
 
     // MARK: - Swap

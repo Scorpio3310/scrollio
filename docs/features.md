@@ -286,7 +286,7 @@ name) shows that app's Buttons part. The pane also sets what the eight places ho
   hold" (a key works here too); while nothing opens the ring with the
   app in front, "Shortcuts" folds the app's ring away (a click on it opens it). "Copy from Shortcut
   Ring" (or "Use Suggested Shortcuts") under the app's ring puts it back where it started (its suggested shortcuts, see
-  below, else a copy of the general ring as it is then, and the general ring's freeze
+  below, which leave the app's freeze switch as it is; else a copy of the general ring as it is then, with the general ring's freeze
   switch as it is then); the switch stays off, and Edit › Undo takes it back. Turn the
   switch on again and the app's ring is kept for later. An app added for its ring has
   its scrolling changed too while "Change scrolling only in these apps" is on, as one

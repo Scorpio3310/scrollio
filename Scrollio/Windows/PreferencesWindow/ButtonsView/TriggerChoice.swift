@@ -351,6 +351,9 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
     var showInButtons: () -> Void = {}
     /// A choice, or its Undo or Redo, changed the bindings: the pane shows them.
     var didChange: () -> Void = {}
+    /// An Undo or Redo of a choice ran, maybe while another pane shows: the pane comes
+    /// forward, so that it shows where it acts. Not called for the choice itself.
+    var comeForward: () -> Void = {}
     /// Starts recording at the pull-down. nil: the real recorder, which taps the system's
     /// events; tests never use it.
     var startRecording: ((NSView) -> Void)?
@@ -541,6 +544,7 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
                 patch,
                 name: text(rule == .shortcutRing ? "ring-undo-choose-trigger" : "gestures-undo-choose-button"),
                 apply: { write($0.applied(to: read())) },
+                comeForward: { [weak self] in self?.comeForward() },
                 didChange: { [weak self] in self?.didChange() },
                 on: undo
             )
@@ -550,19 +554,23 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
 
     /// Undo applies `patch`'s inverse to the bindings as they are then, and registers Redo,
     /// which registers Undo again. Nothing of it needs the pane: it works after the pane
-    /// went away (the settings are the target).
+    /// went away (the settings are the target). While the pane is there it comes forward
+    /// (`comeForward`), with the row that names the trigger: the bindings change, and
+    /// nothing else on screen would say so.
     private static func register(
         _ patch: ButtonBindingsPatch,
         name: String,
         apply: @escaping (ButtonBindingsPatch) -> Void,
+        comeForward: @escaping () -> Void,
         didChange: @escaping () -> Void,
         on undo: UndoManager
     ) {
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
             apply(patch.inverse)
+            comeForward()
             didChange()
             guard let undo else { return }
-            register(patch.inverse, name: name, apply: apply, didChange: didChange, on: undo)
+            register(patch.inverse, name: name, apply: apply, comeForward: comeForward, didChange: didChange, on: undo)
         }
         undo.setActionName(name)
     }
@@ -629,12 +637,20 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
     }
 }
 
-/// The pull-down: as wide as its title (its menu is wider, with what each button does).
+/// The pull-down: as wide as its title (its menu is wider, with what each button does), up
+/// to `maxWidth`: a longer title is cut short at its end, the whole of it in the tooltip, so
+/// that the row's line always has room beside it.
 final class TriggerChoicePullDown: NSPopUpButton {
+
+    /// The widest the pull-down gets. Every name of a button fits whole, with a modifier
+    /// key or two before it ("Gesture button (button 6)" is 204 pt wide); beside it a row's
+    /// short line ("Hold it, move towards a shortcut and let go.") still takes two lines.
+    static let maxWidth: CGFloat = 240
 
     init() {
         super.init(frame: .zero, pullsDown: true)
         translatesAutoresizingMaskIntoConstraints = false
+        cell?.lineBreakMode = .byTruncatingTail
         setContentHuggingPriority(.required, for: .horizontal)
         setContentCompressionResistancePriority(.required, for: .horizontal)
     }
@@ -648,19 +664,25 @@ final class TriggerChoicePullDown: NSPopUpButton {
         return menu?.items.first?.title ?? ""
     }
 
-    /// Item 0 changed: shown, and the width follows.
+    /// Item 0 changed: shown, and the width follows. A title too long for the pull-down
+    /// is whole in the tooltip.
     func titleDidChange() {
         synchronizeTitleAndSelectedItem()
         invalidateIntrinsicContentSize()
+        toolTip = titleWidth > Self.maxWidth ? shownTitle : nil
     }
 
-    override var intrinsicContentSize: NSSize {
-        let size = super.intrinsicContentSize
-        // A cell with the title alone: how wide the pull-down is with this title.
+    /// How wide the pull-down would be with its title whole: a cell with the title alone.
+    private var titleWidth: CGFloat {
         let probe = NSPopUpButtonCell(textCell: "", pullsDown: true)
         probe.font = font
         probe.controlSize = controlSize
         probe.addItem(withTitle: shownTitle)
-        return NSSize(width: ceil(probe.cellSize.width), height: size.height)
+        return ceil(probe.cellSize.width)
+    }
+
+    override var intrinsicContentSize: NSSize {
+        let size = super.intrinsicContentSize
+        return NSSize(width: min(titleWidth, Self.maxWidth), height: size.height)
     }
 }

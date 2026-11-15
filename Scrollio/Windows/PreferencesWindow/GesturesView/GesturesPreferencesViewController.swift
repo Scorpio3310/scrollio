@@ -306,10 +306,6 @@ final class GesturesPreferencesViewController: NSViewController {
         let gesture = Options.shared.gesture
         let presentation = controls.modePresentation
 
-        // One button: the pull-down names it, the line says what to do with it. Two or more
-        // (the pull-down says "Multiple"), only an app's own, none: the line says which.
-        gestureButtonRow.explanation = summary.hasGestureButton && summary.buttonTitles.count == 1
-            ? text("gestures-gesture-button-one") : summary.gestureButtonExplanation
         // The preview's mouse holds the first button the row names.
         previewView.picture = summary.picture
         // The pull-down names what the row names first, and offers the mouse's buttons;
@@ -318,6 +314,11 @@ final class GesturesPreferencesViewController: NSViewController {
             triggerTitles: summary.buttonTitles,
             showsInApplication: summary.hasGestureButton ? nil : summary.onlyInApps?.applicationNames.first
         )
+        // One button: the pull-down names it, the line says what to do with it. Two or more
+        // (the pull-down says "Multiple"), only an app's own, none: the line says which, in
+        // the room the pull-down leaves it as it is titled now.
+        gestureButtonRow.explanation = summary.hasGestureButton && summary.buttonTitles.count == 1
+            ? text("gestures-gesture-button-one") : summary.gestureButtonExplanation(fittingTwoLinesOf: gestureButtonLineWidth)
         modeRow.explanation = text(presentation.descriptionKey)
         // No button runs these gestures (none at all, or only in apps that run their own):
         // what is under the first box waits, folded.
@@ -361,6 +362,14 @@ final class GesturesPreferencesViewController: NSViewController {
         updatePreviewScene()
         resetToDefaults?.settingsDidChange()
         PreferencesForm.fitToContent(self)
+    }
+
+    /// The room of the first row's line: the box's width without the row's margins, the
+    /// pull-down as it is titled now and the space before it (`PreferencesGroupRow.titleColumnWidth`,
+    /// which follows only at the next layout).
+    private var gestureButtonLineWidth: CGFloat {
+        let row = PreferencesGroupedForm.boxWidth(paneWidth: Self.paneWidth) - 2 * PreferencesGroupedForm.rowHorizontalInset
+        return row - triggerChooser.pullDown.intrinsicContentSize.width - PreferencesGroupedForm.controlSpacing
     }
 
     // MARK: - Preview
@@ -473,11 +482,19 @@ final class GesturesPreferencesViewController: NSViewController {
                 undoActionNameKey: "gestures-undo-reset"
             ),
             undoManager: { [weak self] in self?.undoTarget },
+            comeForward: { [weak self] in self?.comeForward() },
             didChange: { [weak self] in self?.reload() }
         )
         reset.willReset = { [weak self] in self?.controls.endEditing() }
         reset.button.identifier = Identifier.reset
         return reset
+    }
+
+    /// An Undo or Redo of a step of the whole pane (its reset, the choice of the button to
+    /// hold) shows where it acts, as one of a direction does: the pane comes forward while
+    /// another one shows.
+    private func comeForward() {
+        PreferencesUndoPlace(of: self).bringForward(pane: Self.tabIdentifier)
     }
 
     // MARK: - Rows
@@ -494,6 +511,7 @@ final class GesturesPreferencesViewController: NSViewController {
         chooser.undoManager = { [weak self] in self?.undoTarget }
         chooser.showInButtons = { [weak self] in self?.showInButtons() }
         chooser.didChange = { [weak self] in self?.reload() }
+        chooser.comeForward = { [weak self] in self?.comeForward() }
         chooser.pullDown.identifier = Identifier.gestureButton
         triggerChooser = chooser
         let row = PreferencesGroupRow(

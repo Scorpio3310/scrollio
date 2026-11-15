@@ -993,7 +993,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
                 self?.syncViewWithOptions()
                 thumbWheelChange?()
             },
-            showOnOpenPage: showOnOpenPage
+            showOnOpenPage: showOnOpenPage,
+            place: PreferencesUndoPlace(of: self)
         )
         beginUndoOffer()
         // (What the copy gives shows at once on the app's part: it may be Left to macOS.)
@@ -1093,7 +1094,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// thumb wheel settings; Undo gives back the ones it had. The undo target is the
     /// settings, not this controller: an app's page and its controller are gone once the
     /// list shows again, and its Undo still works. Undo and Redo find the app's entry by its
-    /// path when they run (`currentEntry`, as the other parts' resets do) and show it on the page
+    /// path when they run (`currentEntry`, as the other parts' resets do), come forward
+    /// (`place`: the Scrolling tab, or the app's page on its Scrolling part, as a row's Undo
+    /// shows where it acts) and show it on the page
     /// open then (`showOnOpenPage`), besides `didChange` (this controller, while it lives,
     /// and the list).
     private static func resetScrollOptions(
@@ -1101,15 +1104,18 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         undoManager undo: UndoManager?,
         didChange: @escaping () -> Void,
         showOnOpenPage: ((Application) -> Void)?,
+        place: PreferencesUndoPlace,
         isRedo: Bool = false
     ) {
         let previous = replaceSettings(of: application, with: .defaults(for: application))
+        if isRedo { comeForward(place, for: application) }
         didChange()
         if isRedo, let application { showOnOpenPage?(application) }
         guard let undo else { return }
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
             Self.restoreScrollOptions(
-                previous, of: currentEntry(of: application), undoManager: undo, didChange: didChange, showOnOpenPage: showOnOpenPage
+                previous, of: currentEntry(of: application), undoManager: undo, didChange: didChange,
+                showOnOpenPage: showOnOpenPage, place: place
             )
         }
         undo.setActionName(resetActionName(of: application))
@@ -1121,18 +1127,34 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         of application: Application?,
         undoManager undo: UndoManager?,
         didChange: @escaping () -> Void,
-        showOnOpenPage: ((Application) -> Void)?
+        showOnOpenPage: ((Application) -> Void)?,
+        place: PreferencesUndoPlace
     ) {
         replaceSettings(of: application, with: settings)
+        comeForward(place, for: application)
         didChange()
         if let application { showOnOpenPage?(application) }
         guard let undo else { return }
         undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
             Self.resetScrollOptions(
-                of: currentEntry(of: application), undoManager: undo, didChange: didChange, showOnOpenPage: showOnOpenPage, isRedo: true
+                of: currentEntry(of: application), undoManager: undo, didChange: didChange,
+                showOnOpenPage: showOnOpenPage, place: place, isRedo: true
             )
         }
         undo.setActionName(resetActionName(of: application))
+    }
+
+    /// An Undo or Redo of a reset shows where it acts: the Scrolling tab comes forward, or
+    /// Apps with the app's page on its Scrolling part. Not for an app that follows the
+    /// Scrolling settings again: its own values are kept for later, and its part would
+    /// show the choice alone.
+    private static func comeForward(_ place: PreferencesUndoPlace, for application: Application?) {
+        guard let application else {
+            place.bringForward(pane: PANEL_IDENTIFIER.scrolling)
+            return
+        }
+        guard !application.inherit else { return }
+        place.bringForward(pageOf: application, part: .scrolling)
     }
 
     /// Whose settings an Undo or Redo of a reset changes: nil, the tab's; else the entry the

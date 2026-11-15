@@ -65,16 +65,23 @@ struct ShortcutRingBindingSummary: Equatable {
     var onlyInApps: ApplicationTriggers?
     /// The trigger the pane's picture shows: the first of the row's (`TriggerPictureSource`).
     var picture: TriggerPictureSource
+    /// One of `triggerTitles` is a key combination: a line that names them does not add
+    /// that one works too.
+    var namesAKey: Bool
 
     /// A binding of the Buttons pane opens the ring.
     var hasTrigger: Bool {
         return !triggerTitles.isEmpty
     }
 
-    init(triggerTitles: [String], onlyInApps: ApplicationTriggers? = nil, picture: TriggerPictureSource = .none) {
+    init(
+        triggerTitles: [String], onlyInApps: ApplicationTriggers? = nil, picture: TriggerPictureSource = .none,
+        namesAKey: Bool = false
+    ) {
         self.triggerTitles = triggerTitles
         self.onlyInApps = triggerTitles.isEmpty ? onlyInApps : nil
         self.picture = picture
+        self.namesAKey = namesAKey
     }
 
     /// - Parameters:
@@ -95,6 +102,7 @@ struct ShortcutRingBindingSummary: Equatable {
             }
         }
         triggerTitles = names
+        namesAKey = bindings.contains { rule.takes($0) && $0.triggerEvent.type == .keyboard }
         let onlyInApps = ApplicationTriggers(rule.onlyInApps(general: bindings, applications: applications), titles: titles)
         self.onlyInApps = onlyInApps
         picture = TriggerPictureSource.make(rule: rule, general: bindings, onlyInApps: onlyInApps)
@@ -104,21 +112,43 @@ struct ShortcutRingBindingSummary: Equatable {
     /// names), what to do with it; with more, the buttons and keys, joined as a list; or
     /// in which apps only and with what ("Only in Figma: Thumb panel."); or that there is
     /// none yet; and that a key combination works too (but for the apps' line, also one
-    /// that Logi Options+ sends for a button), except while a key opens it.
+    /// that Logi Options+ sends for a button), except while a key is among what the line
+    /// names: then a key combination already opens the ring.
     var explanation: String {
+        return explanation(fittingTwoLinesOf: nil)
+    }
+
+    /// The same for a line `width` wide (the row's, beside its pull-down as it is titled),
+    /// which takes two lines at most: beside a long name ("Gesture button (button 6)",
+    /// "Pointer speed button") the line says what to do and leaves out that a key
+    /// combination works too, and long names of apps are cut short
+    /// (`ApplicationTriggers.text(fittingTwoLinesOf:in:)`). nil: the width is not known,
+    /// nothing is left out or cut.
+    func explanation(fittingTwoLinesOf width: CGFloat?) -> String {
         if triggerTitles.count == 1 {
-            let isKey = picture.onlyInAppPath == nil && picture.event?.type == .keyboard
-            return NSLocalizedString(isKey ? "ring-trigger-one-key" : "ring-trigger-one", comment: "")
+            let isKey = namesAKey || (picture.onlyInAppPath == nil && picture.event?.type == .keyboard)
+            let whatToDo = NSLocalizedString("ring-trigger-one-key", comment: "")
+            let withKeys = NSLocalizedString("ring-trigger-one", comment: "")
+            return isKey || !Self.fitsTwoLines(withKeys, width: width) ? whatToDo : withKeys
         }
         if hasTrigger {
             let triggers = InterfaceList.joined(triggerTitles)
-            return String(format: NSLocalizedString("ring-trigger-bound", comment: ""), triggers)
+            return String(format: NSLocalizedString(namesAKey ? "ring-trigger-named" : "ring-trigger-bound", comment: ""), triggers)
         }
         if let onlyInApps {
             // (Shorter after it: the apps and their buttons take room of their own.)
-            return String(format: NSLocalizedString("ring-trigger-apps", comment: ""), onlyInApps.text)
+            let format = NSLocalizedString(onlyInApps.namesAKey ? "ring-trigger-named" : "ring-trigger-apps", comment: "")
+            let apps = width.map { onlyInApps.text(fittingTwoLinesOf: $0) { String(format: format, $0) } } ?? onlyInApps.text
+            return String(format: format, apps)
         }
         return NSLocalizedString("ring-trigger-none", comment: "")
+    }
+
+    /// Whether `text` takes two lines at most `width` wide in the explanations' font, as
+    /// the row lays it out (true while the width is not known).
+    static func fitsTwoLines(_ text: String, width: CGFloat?) -> Bool {
+        guard let width, width > 0 else { return true }
+        return ApplicationPagePart.LineCount(width: width, font: PreferencesGroupedForm.explanationFont).of(text) <= 2
     }
 
     static var current: ShortcutRingBindingSummary {
@@ -576,7 +606,6 @@ final class RingPreferencesViewController: NSViewController {
         if application == nil {
             let summary = bindingSummary()
             shownSummary = summary
-            triggerRow.explanation = summary.explanation
             triggerCard?.source = summary.picture
             // The pull-down names what the row names first, and offers the mouse's buttons;
             // "Show in Buttons" says where it goes (`showInButtons`).
@@ -584,6 +613,8 @@ final class RingPreferencesViewController: NSViewController {
                 triggerTitles: summary.triggerTitles,
                 showsInApplication: summary.hasTrigger ? nil : summary.onlyInApps?.applicationNames.first
             )
+            // (After the pull-down has its title: the line is as wide as that leaves it.)
+            triggerRow.explanation = summary.explanation(fittingTwoLinesOf: triggerLineWidth)
             // Nothing opens this ring (nothing at all, or only apps that open their own):
             // its places wait, folded, a click away.
             let opensThisRing = summary.hasTrigger || summary.onlyInApps?.usesGeneralSettings == true
@@ -604,6 +635,18 @@ final class RingPreferencesViewController: NSViewController {
         if application == nil {
             PreferencesForm.fitToContent(self)
         }
+    }
+
+    /// A text of two lines at any width, for the room a row keeps (`reservedExplanations`).
+    private static let twoLines = "A\nA"
+
+    /// The room of the first row's line: the box's width without the row's margins, the
+    /// pull-down as it is titled now and the space before it (`PreferencesGroupRow.titleColumnWidth`,
+    /// which follows only at the next layout).
+    private var triggerLineWidth: CGFloat {
+        let row = Self.boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset
+        guard let pullDown = triggerChooser?.pullDown else { return row }
+        return row - pullDown.intrinsicContentSize.width - PreferencesGroupedForm.controlSpacing
     }
 
     /// The app's mark while the drawing is the app's own ring (its page, the app's own ring
@@ -970,8 +1013,11 @@ final class RingPreferencesViewController: NSViewController {
 
     /// Shows the place an Undo or Redo changed where it is: the Shortcut Ring pane, or the
     /// app's page under Apps on its Shortcut Ring part, comes forward and shows the ring as
-    /// stored, with the place's row selected (`selectPlace`).
+    /// stored, with the place's row selected (`selectPlace`). Not for an app's ring kept
+    /// for later (the app uses the general ring again): its part shows the switch alone,
+    /// so nothing there would show the change (the place is back all the same).
     private static func show(_ place: Int, of entry: Application?, in showing: PlaceShowing) {
+        if let entry, entry.ownRingPlaces == nil { return }
         if let split = showing.split {
             if let entry {
                 let part = split.bringForward(pageOf: entry, part: .ring)?.ringPart
@@ -1027,11 +1073,19 @@ final class RingPreferencesViewController: NSViewController {
                 undoActionNameKey: "ring-undo-reset"
             ),
             undoManager: { [weak self] in self?.undoTarget },
+            comeForward: { [weak self] in self?.comeForward() },
             didChange: { [weak self] in self?.reload() }
         )
         reset.willReset = { [weak self] in self?.endEditing() }
         reset.button.identifier = Identifier.reset
         return reset
+    }
+
+    /// An Undo or Redo of a step of the whole pane (its reset, the choice of what opens the
+    /// ring) shows where it acts, as one of a place does: the pane comes forward while
+    /// another one shows.
+    private func comeForward() {
+        PreferencesUndoPlace(of: self).bringForward(pane: Self.tabIdentifier)
     }
 
     // MARK: - Rows
@@ -1048,6 +1102,7 @@ final class RingPreferencesViewController: NSViewController {
         chooser.undoManager = { [weak self] in self?.undoTarget }
         chooser.showInButtons = { [weak self] in self?.showInButtons() }
         chooser.didChange = { [weak self] in self?.reload() }
+        chooser.comeForward = { [weak self] in self?.comeForward() }
         chooser.pullDown.identifier = Identifier.triggerButton
         triggerChooser = chooser
         let row = PreferencesGroupRow(
@@ -1056,7 +1111,9 @@ final class RingPreferencesViewController: NSViewController {
             accessory: chooser.pullDown
         )
         // Room for two lines whatever the row says, so naming a button does not move the rows.
-        row.reservedExplanations = [text("ring-trigger-none")]
+        // (Two lines as such, not the longest of the row's lines: beside a long name in the
+        // pull-down that one would be measured at three, and the row grew with the name.)
+        row.reservedExplanations = [Self.twoLines]
         // Pointed at, the picture above shows what it names.
         row.addTrackingArea(NSTrackingArea(
             rect: .zero,
@@ -1196,5 +1253,33 @@ extension PreferencesSplitViewController {
               let id = apps.rowID(for: application) else { return nil }
         apps.openApplication(withID: id, part: part)
         return apps.detailController
+    }
+}
+
+/// Where a step of a whole pane or of a whole part of an app's page shows itself when it
+/// is undone or redone: a reset, a copy, the choice of the button to hold or of what opens
+/// the ring, a pick of "Scrolling in Safari". The pane, or the app's page on that part,
+/// comes forward, as for a row's Undo; the step itself, made where it is in sight, moves
+/// nothing. Made when the step is registered, from the controller that makes it. The
+/// window's panes are not held, and without them (a pane in a window of its own) nothing
+/// comes forward.
+struct PreferencesUndoPlace {
+
+    private weak var split: PreferencesSplitViewController?
+
+    init(of controller: NSViewController?) {
+        split = controller.flatMap { PreferencesButtonsViewController.splitViewController(of: $0) }
+    }
+
+    /// The pane `identifier` comes forward, unless it is on show.
+    func bringForward(pane identifier: String) {
+        split?.bringForward(pane: identifier)
+    }
+
+    /// Apps comes forward with the page of `application` on `part`. Not for an entry the
+    /// list no longer holds: there is no page to show.
+    func bringForward(pageOf application: Application, part: ApplicationPagePart) {
+        guard let split, Options.shared.application.applications.get(by: application.path) === application else { return }
+        _ = split.bringForward(pageOf: application, part: part)
     }
 }

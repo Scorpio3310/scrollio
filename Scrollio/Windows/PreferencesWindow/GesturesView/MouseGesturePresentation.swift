@@ -135,12 +135,21 @@ struct MouseGestureBindingSummary: Equatable {
     /// ("Only in Figma: Back button."); or that there is none yet. The row's title is not
     /// "Gesture button": under it an MX Master's own "Gesture button" would read twice.
     var gestureButtonExplanation: String {
+        return gestureButtonExplanation(fittingTwoLinesOf: nil)
+    }
+
+    /// The same for a line `width` wide (the row's, beside its pull-down), which takes two
+    /// lines at most: long names of apps are cut short
+    /// (`ApplicationTriggers.text(fittingTwoLinesOf:in:)`). nil: the width is not known,
+    /// nothing is cut.
+    func gestureButtonExplanation(fittingTwoLinesOf width: CGFloat?) -> String {
+        let format = NSLocalizedString("gestures-gesture-button-bound", comment: "")
         if hasGestureButton {
-            let buttons = InterfaceList.joined(buttonTitles)
-            return String(format: NSLocalizedString("gestures-gesture-button-bound", comment: ""), buttons)
+            return String(format: format, InterfaceList.joined(buttonTitles))
         }
         if let onlyInApps {
-            return String(format: NSLocalizedString("gestures-gesture-button-bound", comment: ""), onlyInApps.text)
+            let apps = width.map { onlyInApps.text(fittingTwoLinesOf: $0) { String(format: format, $0) } } ?? onlyInApps.text
+            return String(format: format, apps)
         }
         return NSLocalizedString("gestures-gesture-button-none", comment: "")
     }

@@ -357,16 +357,20 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
             self?.application === entry ? self : nil
         }
         let copy = ApplicationGestures(inherit: false, copying: Options.shared.gesture)
-        Self.putGestures(of: application, set: copy, undoManager: undo, showing: showing)
+        Self.putGestures(
+            of: application, set: copy, undoManager: undo, showing: showing, place: PreferencesUndoPlace(of: self)
+        )
     }
 
     /// As the ring's reset (`ApplicationRingPartViewController`): the undo target is the
     /// settings, not the page; Undo and Redo find the app's entry by its path when they
-    /// run, and show the change on the part `showing` gives for it. (A set kept for later
-    /// takes them too: the switch is never touched.)
+    /// run, bring the app's page forward on this part (`place`; as an Undo of a direction
+    /// does) and show the change on the part `showing` gives for it. (A set kept for later
+    /// takes them too: the switch is never touched. Nothing comes forward then: the part
+    /// would show the switch alone.)
     private static func putGestures(
         of application: Application, set: ApplicationGestures, undoManager undo: UndoManager?,
-        showing: @escaping (Application) -> ApplicationGesturesPartViewController?
+        showing: @escaping (Application) -> ApplicationGesturesPartViewController?, place: PreferencesUndoPlace
     ) {
         guard let before = application.gestures else { return }
         application.replaceOwnGestureSet(with: set)
@@ -378,7 +382,10 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
             guard let entry = PreferencesApplicationViewController.existingApplication(
                 forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: path)
             ) else { return }
-            putGestures(of: entry, set: before, undoManager: undo, showing: showing)
+            if entry.ownGestures != nil {
+                place.bringForward(pageOf: entry, part: .gestures)
+            }
+            putGestures(of: entry, set: before, undoManager: undo, showing: showing, place: place)
         }
         undo.setActionName(resetActionName(for: application))
     }

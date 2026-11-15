@@ -641,6 +641,144 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(page.headerRow.explanation, Self.own("scrolling"))
     }
 
+    /// The window's panes with the Apps pane ready, in a window whose undo manager takes a
+    /// group per step: where an Undo that shows itself brings its place forward.
+    private func makePreferences() throws -> (
+        preferences: PreferencesSplitViewController, apps: PreferencesApplicationViewController, undo: UndoManager
+    ) {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let preferences = PreferencesSplitViewController(storyboard: storyboard, uiStateDefaults: nil)
+        let apps = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)
+        apps.uiStateDefaults = uiDefaults
+        apps.runningApplications = { [] }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = preferences
+        addTeardownBlock { window.close() }
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        return (preferences, apps, undo)
+    }
+
+    /// "Undo Change Scrolling in Calculator" from another pane (⌘Z after a switch
+    /// elsewhere, which registers nothing): Apps comes forward with the app's page on its
+    /// Scrolling part, which shows the choice that is back; Redo while the page shows
+    /// another part shows the Scrolling part too. The pick itself moves nothing.
+    func testUndoOfAPickFromAnotherPaneOpensTheAppsScrollingPart() throws {
+        let calculator = addApp(Self.calculator)
+        make(calculator, .ownSettings)
+        let w = try makePreferences()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: calculator)), part: .scrolling)
+        var page = try XCTUnwrap(w.apps.detailController)
+        w.undo.beginUndoGrouping()
+        pick(.leftToMacOS, on: page)
+        w.undo.endUndoGrouping()
+        XCTAssertEqual(calculator.scrollingChoice, .leftToMacOS)
+        XCTAssertEqual(w.undo.undoActionName, "Change Scrolling in Calculator")
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application)
+
+        w.apps.showList(focusList: false)
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(calculator.scrollingChoice, .ownSettings)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application, "Apps comes forward")
+        page = try XCTUnwrap(w.apps.detailController)
+        XCTAssertTrue(page.application === calculator)
+        XCTAssertEqual(page.shownPart, .scrolling)
+        XCTAssertEqual(shown(page), .ownSettings, "the part shows the choice that is back")
+
+        page.show(.buttons)
+        w.undo.redo()
+        XCTAssertEqual(calculator.scrollingChoice, .leftToMacOS)
+        XCTAssertEqual(page.shownPart, .scrolling, "Redo shows its part too")
+        XCTAssertEqual(shown(page), .leftToMacOS)
+    }
+
+    /// "Undo Copy from Scrolling in Calculator" from another pane: Apps comes forward with
+    /// the app's page on its Scrolling part and the values that are back; Redo too. Once
+    /// the app follows the Scrolling settings again, its own values are kept for later:
+    /// the Undo reaches them and nothing comes forward (the part would show the choice alone).
+    func testUndoOfCopyFromScrollingFromAnotherPaneOpensTheAppsScrollingPart() throws {
+        let calculator = addApp(Self.calculator, inherit: false)
+        calculator.scroll.speed = 4.5
+        let w = try makePreferences()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: calculator)), part: .scrolling)
+        var page = try XCTUnwrap(w.apps.detailController)
+        w.undo.beginUndoGrouping()
+        send(try XCTUnwrap(page.scrollingController.resetToDefaultsButton))
+        w.undo.endUndoGrouping()
+        XCTAssertEqual(calculator.scroll, OPTIONS_SCROLL_DEFAULT())
+        XCTAssertEqual(w.undo.undoActionName, "Copy from Scrolling in Calculator")
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(calculator.scroll.speed, 4.5)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application, "Apps comes forward")
+        page = try XCTUnwrap(w.apps.detailController)
+        XCTAssertTrue(page.application === calculator)
+        XCTAssertEqual(page.shownPart, .scrolling)
+        XCTAssertEqual(page.scrollingController.scrollSpeedSlider.doubleValue, 4.5, accuracy: 1e-9, "with the values that are back")
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.redo()
+        XCTAssertEqual(calculator.scroll, OPTIONS_SCROLL_DEFAULT())
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application, "Redo too")
+        XCTAssertEqual(w.apps.detailController?.shownPart, .scrolling)
+
+        // Kept for later: the app follows Scrolling again.
+        calculator.inherit = true
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(calculator.scroll.speed, 4.5, "the kept values are back")
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.general, "nothing comes forward")
+    }
+
+    /// "Set Up…" of an app's Gestures part, undone from another pane ("Undo Change Button
+    /// to Hold"): the step is the Buttons part's (the row it added goes), which brings Apps
+    /// forward with the app's page on its Buttons part; Redo too.
+    func testUndoOfSetUpFromAnotherPaneOpensTheAppsButtonsPart() throws {
+        let calculator = addApp(Self.calculator)
+        let w = try makePreferences()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: calculator)), part: .gestures)
+        var page = try XCTUnwrap(w.apps.detailController)
+        let buttons = try XCTUnwrap(page.buttonsPart)
+        buttons.startRecording = { _ in }
+        buttons.stopRecording = {}
+        buttons.openActionMenu = { _ in }
+        send(page.gesturesPart.holdButton)
+        let recorder = KeyRecorder()
+        let back = InputEvent(type: .mouse, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        w.undo.beginUndoGrouping()
+        buttons.onEventRecorded(recorder, didRecordEvent: back, isDuplicate: false)
+        buttons.onRecordingStopped(recorder, didRecord: true)
+        w.undo.endUndoGrouping()
+        drainMainQueue()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), [SystemShortcut.mouseGestureNavigation.identifier])
+        XCTAssertEqual(w.undo.undoActionName, "Change Button to Hold")
+
+        w.apps.showList(focusList: false)
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertTrue(calculator.ownButtonBindings.isEmpty)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application, "Apps comes forward")
+        page = try XCTUnwrap(w.apps.detailController)
+        XCTAssertTrue(page.application === calculator)
+        XCTAssertEqual(page.shownPart, .buttons, "where the row went")
+
+        w.apps.showList(focusList: false)
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.redo()
+        XCTAssertEqual(calculator.ownButtonBindings.count, 1)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application, "Redo too")
+        XCTAssertEqual(w.apps.detailController?.shownPart, .buttons)
+    }
+
     /// Smoothing and the direction switched off by hand under Own Settings: what is stored
     /// says Left to macOS, but while the part shows nothing folds under the pointer (also
     /// over a refresh of the page); the next showing of the part says Left to macOS, with
@@ -2746,8 +2884,9 @@ final class ApplicationPageTests: XCTestCase {
         textEdit.setOwnButtonBindings([binding(49, ringAction, modifiers: control, type: .keyboard)])
         let space = ButtonTriggerNaming.title(for: textEdit.ownButtonBindings[0].triggerEvent)
         ring = pane()
-        // (Each app with its own: the row never reads as if both worked in both, F28.)
-        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator (\(panel)) and TextEdit (\(space))." + key)
+        // (Each app with its own: the row never reads as if both worked in both, F28. A key
+        // combination is among them, so the line does not add that one works too.)
+        XCTAssertEqual(ring.triggerRow.explanation, "Only in Calculator (\(panel)) and TextEdit (\(space)).")
         // The same in both: once, after the apps.
         textEdit.setOwnButtonBindings([binding(thumbPanel, ringAction)])
         XCTAssertEqual(pane().triggerRow.explanation, "Only in Calculator and TextEdit: \(panel)." + key)
@@ -2757,7 +2896,7 @@ final class ApplicationPageTests: XCTestCase {
         textEdit.setUsesGeneralRing(false, general: Options.shared.ring)
         XCTAssertEqual(
             pane().triggerRow.explanation,
-            "Only in Calculator (\(panel)) and TextEdit (\(space)), each with its own ring." + key
+            "Only in Calculator (\(panel)) and TextEdit (\(space)), each with its own ring."
         )
         calculator.setUsesGeneralRing(true, general: Options.shared.ring)
         textEdit.setUsesGeneralRing(true, general: Options.shared.ring)
