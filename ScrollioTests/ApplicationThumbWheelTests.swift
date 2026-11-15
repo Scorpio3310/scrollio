@@ -506,6 +506,39 @@ final class ApplicationThumbWheelPageTests: XCTestCase {
         XCTAssertTrue(opened.last === row.pullDown)
     }
 
+    /// "+" › "Thumb wheel" has its Undo (QA B2): ⌘Z right after it takes the wheel's row
+    /// away again ("Undo Add Thumb Wheel") and Redo brings it back, selected, with the
+    /// keyboard in the list (QA B11). It registered none: ⌘Z undid an older change
+    /// elsewhere and the app kept its own thumb wheel.
+    func testAddingTheThumbWheelCanBeUndoneAndRedone() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .tabs, speed: 2)
+        let calculator = addCalculator()
+        let part = try buttonsPart()
+        let window = makeWindow(for: part)
+        let undo = try XCTUnwrap(part.paneUndoManager)
+        undo.groupsByEvent = false
+        undo.beginUndoGrouping()
+        part.addOwnThumbWheel()
+        undo.endUndoGrouping()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .tabs)
+        XCTAssertTrue(window.firstResponder === part.list, "the list has the keyboard")
+        XCTAssertTrue(undo.canUndo)
+        XCTAssertEqual(undo.undoActionName, "Add Thumb Wheel")
+
+        undo.undo()
+        XCTAssertNil(calculator.ownThumbWheelFunction, "the wheel is Buttons' again")
+        XCTAssertNil(part.thumbWheelRow)
+        XCTAssertEqual(undo.redoActionName, "Add Thumb Wheel")
+        window.makeFirstResponder(nil)
+        undo.redo()
+        XCTAssertEqual(calculator.ownThumbWheelFunction, .tabs)
+        XCTAssertEqual(part.list.selectedID, ButtonsListLayout.thumbWheelRowID)
+        XCTAssertTrue(window.firstResponder === part.list, "and after Redo")
+        XCTAssertEqual(undo.undoActionName, "Add Thumb Wheel")
+        XCTAssertEqual(Options.shared.thumbWheel, ThumbWheelSettings(function: .tabs, speed: 2), "Scrolling is not touched")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+
     /// The wheel's new row opens its menu from the run loop, not from a block of the main
     /// queue (QA B5), as a button's new row does.
     func testTheThumbWheelsMenuOpensWhereTheMainQueueGoesOn() throws {

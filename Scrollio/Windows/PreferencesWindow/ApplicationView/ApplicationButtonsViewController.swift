@@ -617,12 +617,11 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         if trigger.type == .mouse, deviceSource.captureStatus(trigger.code) == .bleHIDPPUnstable {
             deviceSource.warnBluetoothButton(trigger.code)
         }
-        if let undoName {
-            // (Undo takes the new row away again; Redo puts it back.)
-            registerOwnRowUndo(
-                ButtonRowChange(kind: .action, states: [.init(id: added.id, binding: nil, index: own.count)]), name: undoName
-            )
-        }
+        // (Undo takes the new row away again; Redo puts it back.)
+        registerOwnRowUndo(
+            ButtonRowChange(kind: .action, states: [.init(id: added.id, binding: nil, index: own.count)]),
+            name: undoName ?? text("buttons-undo-add")
+        )
         guard action == nil else { return added.id }
         // The new row's menu opens by itself, once the "+" menu or the recorder is gone.
         // From the run loop, never from a block of the main queue: a menu runs until it

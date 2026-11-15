@@ -897,24 +897,25 @@ class PreferencesButtonsViewController: NSViewController {
 
     /// Edit › Undo of a change of rows, on the manager a removal uses (`undoTarget` for a
     /// change made here). The target is this pane, which lives as long as the window (as a
-    /// removal's).
-    private func registerUndo(of change: ButtonRowChange) {
-        registerUndo(of: change, undoManager: undoTarget)
+    /// removal's). `name`: what Edit › Undo calls it where the change's kind has no name
+    /// for it ("Add Button", "Use Standard Button"); the kind's own when nil.
+    private func registerUndo(of change: ButtonRowChange, name: String? = nil) {
+        registerUndo(of: change, name: name, undoManager: undoTarget)
     }
 
-    private func registerUndo(of change: ButtonRowChange, undoManager undo: UndoManager?) {
+    private func registerUndo(of change: ButtonRowChange, name: String?, undoManager undo: UndoManager?) {
         guard let undo, !change.states.isEmpty else { return }
         undo.registerUndo(withTarget: self) { [weak undo] controller in
-            controller.takeBack(change, undoManager: undo)
+            controller.takeBack(change, name: name, undoManager: undo)
         }
-        undo.setActionName(change.kind.actionName)
+        undo.setActionName(name ?? change.kind.actionName)
     }
 
     /// Undo or Redo of a change of rows: the bindings it touched as they were, the pane
     /// brought forward while another one shows, the changed row selected and the list
     /// given the keyboard (as the Undo of a removal); the change the other way round goes
-    /// to the undo manager.
-    private func takeBack(_ change: ButtonRowChange, undoManager undo: UndoManager?) {
+    /// to the undo manager, under the same name.
+    private func takeBack(_ change: ButtonRowChange, name: String?, undoManager undo: UndoManager?) {
         let placed: (ButtonBinding) -> ButtonBinding = { [self] binding in
             let trigger = placedLikeItsButton(binding.triggerEvent, except: binding.id)
             return trigger.mousePart == binding.triggerEvent.mousePart ? binding : binding.replacingTriggerEvent(trigger)
@@ -935,7 +936,7 @@ class PreferencesButtonsViewController: NSViewController {
         }
         focusList()
         updateHeader()
-        registerUndo(of: ButtonRowChange(kind: change.kind, states: result.replaced), undoManager: undo)
+        registerUndo(of: ButtonRowChange(kind: change.kind, states: result.replaced), name: name, undoManager: undo)
     }
 
     /// An Undo or Redo shows where it acts, as for a place of the ring or a direction of
@@ -1006,7 +1007,9 @@ class PreferencesButtonsViewController: NSViewController {
     /// Adds `trigger` and returns the id. A trigger the list has already is selected and
     /// flashes; with `action` and no action of its own it gets `action` (a button of the
     /// mouse without a binding gets one, of what was pressed). The list then has the
-    /// keyboard.
+    /// keyboard. A new row has its Undo ("Undo Add Button"; with `action`, "Undo Change
+    /// Action", as a choice in a row's menu): without it ⌘Z right after "+" took back an
+    /// older change somewhere else, and a row added with "+" could never be undone.
     @discardableResult
     func addBinding(for trigger: RecordedEvent, action: SystemShortcut.Shortcut?) -> UUID {
         defer { focusList() }
@@ -1026,8 +1029,13 @@ class PreferencesButtonsViewController: NSViewController {
             systemShortcutName: action?.identifier ?? "",
             isEnabled: action != nil
         )
+        let index = buttonBindings.count
         append(binding)
         list.select(rowID(forBinding: binding.id))
+        registerUndo(
+            of: ButtonRowChange(kind: .action, states: [.init(id: binding.id, binding: nil, index: index)]),
+            name: action == nil ? text("buttons-undo-add") : nil
+        )
         return binding.id
     }
 

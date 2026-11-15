@@ -1053,6 +1053,46 @@ final class PreferencesButtonsTests: XCTestCase {
         pane.onRecordingStopped(recorder, didRecord: false)
     }
 
+    /// "+" has its Undo (QA B2): ⌘Z right after it takes the new row away, and Redo adds it
+    /// again. It registered none: ⌘Z undid an older change in another pane, and a row added
+    /// with "+" could never be undone (the first Undo only took its action away).
+    func testPlusCanBeUndoneAndRedone() throws {
+        deviceName = nil
+        let first = binding(3, "copy")
+        let pane = makePane([first])
+        let (window, _) = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        let recorder = KeyRecorder()
+        pane.beginAddingBinding()
+        pane.onRecordingStarted(recorder)
+        pane.onEventRecorded(recorder, didRecordEvent: mouseEvent(4, modifiers: .maskAlternate), isDuplicate: false)
+        step(undo) { pane.onRecordingStopped(recorder, didRecord: true) }
+        let added = try XCTUnwrap(Options.shared.buttons.binding.last)
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.id), [first.id, added.id])
+        XCTAssertTrue(undo.canUndo)
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Add Button")
+
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [first], "the new row is gone")
+        XCTAssertEqual(pane.rows.count, 1)
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Add Button")
+        undo.redo()
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.id), [first.id, added.id])
+        XCTAssertEqual(pane.list.selectedID, AnyHashable(added.id), "back, and selected")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Add Button")
+
+        // An action chosen in the menu that opened is its own step, before the row's.
+        let row = try XCTUnwrap(pane.row(for: added.id))
+        try step(undo) { row.pullDown.shortcutSelected(try XCTUnwrap(item("copy", in: row.pullDown.menu))) }
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding.last?.systemShortcutName, "")
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [first])
+        flush()
+    }
+
     /// The new row's menu opens from the run loop, not from a block of the main queue (QA
     /// B5): a menu runs until it closes, and a run loop that starts inside a block of the
     /// main queue does not serve that queue, so gesture actions and the thumb wheel's steps
@@ -2208,7 +2248,8 @@ final class PreferencesButtonsTests: XCTestCase {
         pane.onEventRecorded(recorder, didRecordEvent: mouseEvent(6, modifiers: .maskCommand), isDuplicate: false)
         XCTAssertEqual(pane.headerView.content.title, "⌘ Gesture button (button 6)")
         XCTAssertEqual(pane.headerView.content.part, .gesture)
-        pane.onRecordingStopped(recorder, didRecord: true)
+        // ("+" has its Undo, so it is a step of its own, as an event makes it.)
+        step(undo) { pane.onRecordingStopped(recorder, didRecord: true) }
         let added = try XCTUnwrap(pane.rows.last)
         XCTAssertEqual(added.title, "⌘ Gesture button (button 6)")
         XCTAssertEqual(Options.shared.buttons.binding.last?.triggerEvent.mousePart, .gestureButton)

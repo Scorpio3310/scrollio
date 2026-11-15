@@ -1327,6 +1327,38 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(calculator.ownButtonBindings.last?.isEnabled, true)
     }
 
+    /// "+" in an app's Buttons has its Undo (QA B2): ⌘Z right after it takes the new row
+    /// away and Redo adds it again, selected, with the keyboard in the list (QA B11). It
+    /// registered none: ⌘Z undid an older change elsewhere and the app kept its new row.
+    func testAddingARowCanBeUndoneAndRedone() throws {
+        Options.shared.buttons.binding = [binding(3, "missionControl")]
+        let general = Options.shared.buttons.binding
+        let calculator = addApp(Self.calculator)
+        let (_, part) = try buttonsPart()
+        let window = makeWindow(for: part)
+        let undo = try XCTUnwrap(part.paneUndoManager)
+        undo.groupsByEvent = false
+        undo.beginUndoGrouping()
+        let id = try XCTUnwrap(part.addOwnBinding(for: general[0].triggerEvent))
+        undo.endUndoGrouping()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.id), [id])
+        XCTAssertTrue(undo.canUndo)
+        XCTAssertEqual(undo.undoActionName, "Add Button")
+
+        undo.undo()
+        XCTAssertFalse(calculator.hasOwnButtons, "the new row is gone")
+        XCTAssertTrue(part.rows.isEmpty)
+        XCTAssertEqual(undo.redoActionName, "Add Button")
+        window.makeFirstResponder(nil)
+        undo.redo()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.id), [id])
+        XCTAssertEqual(part.list.selectedID, AnyHashable(id))
+        XCTAssertTrue(window.firstResponder === part.list, "the list has the keyboard after Redo")
+        XCTAssertEqual(undo.undoActionName, "Add Button")
+        XCTAssertEqual(Options.shared.buttons.binding, general, "Buttons is not touched")
+        drainMainQueue()
+    }
+
     /// The new row's menu opens from the run loop, not from a block of the main queue (QA
     /// B5): a menu runs until it closes, and a run loop that starts inside a block of the
     /// main queue does not serve that queue (gesture actions, the thumb wheel's steps).

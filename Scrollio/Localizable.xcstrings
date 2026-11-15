@@ -11355,6 +11355,30 @@
           }
         }
       }
+    },
+    "buttons-undo-add": {
+      "comment": "Buttons pane and an app's Buttons part: the Undo menu item reads \"Undo Add Button\" after \"+\" added a row",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Button"
+          }
+        }
+      }
+    },
+    "apps-buttons-undo-add-thumb-wheel": {
+      "comment": "An app's Buttons part: the Undo menu item reads \"Undo Add Thumb Wheel\" after \"+\" gave the app the thumb wheel",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Thumb Wheel"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

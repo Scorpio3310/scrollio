@@ -542,7 +542,10 @@ final class ApplicationPageResetTests: XCTestCase {
         calculator.setOwnButtonBindings([binding(3, "copy"), binding(4, "paste")])
         part.reloadRows()
         XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
+        // ("+" has its Undo, so it is a step of its own, as a click makes it.)
+        undo.beginUndoGrouping()
         part.addOwnThumbWheel()
+        undo.endUndoGrouping()
         calculator.setOwnThumbWheelFunction(.zoom)
         let own = calculator.ownButtonBindings
         part.syncViewWithOptions()
