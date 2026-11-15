@@ -3415,3 +3415,57 @@ private final class MenuStandInView: NSView {
         }
     }
 }
+
+// MARK: - Round 2 B3
+
+extension PreferencesWindowRenderTests {
+
+    /// One vocabulary (round 2, proposal 22): an app's Gestures and Shortcut Ring parts in
+    /// the pane's one column, for an app with a long name, with "Use settings from …" on
+    /// and off, while a button of Buttons and one of the app's own both do it (the longest
+    /// first line, "… as in other apps, … only in …")
+    /// (`r2b3-app-<gestures|ring>-<inherit|own>-<appearance>.png`).
+    func testRenderRound2B3AppPartWords() throws {
+        let stored = Options.shared.application.applications
+        let savedRing = Options.shared.ring
+        let savedGesture = Options.shared.gesture
+        let savedBindings = Options.shared.buttons.binding
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            Options.shared.ring = savedRing
+            Options.shared.gesture = savedGesture
+            Options.shared.buttons.binding = savedBindings
+            ShortcutRingController.forgetPreparedFaces()
+            ButtonUtils.shared.invalidateCache()
+        }
+        Options.shared.ring = .default
+        Options.shared.gesture = .default
+        Options.shared.buttons.binding = [
+            binding(3, SystemShortcut.mouseGestureNavigation.identifier),
+            binding(4, SystemShortcut.shortcutRing.identifier),
+        ]
+        for own in [false, true] {
+            let long = Application(path: "/Applications/Microsoft Visual Studio Code Insiders Edition With A Long Name.app")
+            long.displayName = "Microsoft Visual Studio Code Insiders Edition"
+            long.setOwnButtonBindings([
+                binding(5, SystemShortcut.mouseGestureNavigation.identifier),
+                binding(6, SystemShortcut.shortcutRing.identifier),
+            ])
+            if own {
+                long.setUsesGeneralGestures(false, general: .default)
+                long.setUsesGeneralRing(false, general: .default)
+            }
+            Options.shared.application.applications = EnhanceArray<Application>(withArray: [long], matchKey: "path")
+            for part in [ApplicationPagePart.gestures, .ring] {
+                let defaults = uiDefaults(advanced: false)
+                let name = "r2b3-app-\(part == .gestures ? "gestures" : "ring")-\(own ? "own" : "inherit")"
+                try renderPane(PANEL_IDENTIFIER.application, name: name, prepare: { preferences in
+                    (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                        .uiStateDefaults = defaults
+                }, afterLoad: { controller in
+                    (controller as? PreferencesApplicationViewController)?.openApplication(withID: long.path, part: part)
+                })
+            }
+        }
+    }
+}
