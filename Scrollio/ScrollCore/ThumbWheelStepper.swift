@@ -79,10 +79,13 @@ enum ThumbWheelTuning {
 
     /// The stray-tick filter (`ThumbWheelTickFilter`), for every function but Scroll Sideways:
     /// an event of fewer lines than this is small, and a small one at a start or against the
-    /// roll waits for a second event within `tickWindow` (s). The ticks where the thumb takes
-    /// the wheel again are about 0.1 line (the owner's log, 2026-11-14/15).
+    /// roll waits until the events that way within `tickWindow` (s) make this many lines in
+    /// all, or `tickConfirmingEvents` of them came. The ticks where the thumb takes the wheel
+    /// again are about 0.1 line, where it lets go a pair of 0.20 to 0.23 line in all (the
+    /// owner's log, 2026-11-14/15).
     static let tickSmallLines = 0.5
     static let tickWindow: TimeInterval = 0.45
+    static let tickConfirmingEvents = 3
 
     /// A pause this long (s) ends a roll for the log: its line is written.
     static let logRollRest: TimeInterval = 0.6

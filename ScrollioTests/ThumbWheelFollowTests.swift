@@ -334,6 +334,21 @@ final class ThumbWheelFollowTests: XCTestCase {
         XCTAssertTrue(rig.performed.isEmpty)
     }
 
+    /// Where the thumb lets go, a pair of ticks the other way 0.7 s after a stroke (+0.10
+    /// line, +0.10 0.12 s later) begins no swipe.
+    func testALetGoPairAfterAStrokeBeginsNoSwipe() throws {
+        for index in 0..<6 { try turn(at: Double(index) * 0.05, lines: -2, fixed: -2.5) }
+        rig.advance(to: 500.9)
+        XCTAssertEqual(beginCount, 1)
+        try turn(at: 0.25 + 0.7, lines: 1, fixed: 0.1)
+        try turn(at: 0.25 + 0.82, lines: 1, fixed: 0.1)
+        rig.advance(to: 505)
+        XCTAssertEqual(beginCount, 1, "\(dock.calls)")
+        let pair = try XCTUnwrap(rig.lines.first { $0.events == 2 }, "the pair is a roll of its own")
+        XCTAssertEqual(pair.ticksHeld, 2)
+        XCTAssertEqual(pair.ticksDropped, 2)
+    }
+
     /// Turned back to where it began: the swipe is cancelled (the same rule as Follow the
     /// hand's); turned the other way it slides toward the previous desktop; a long turn
     /// stops at one Space.

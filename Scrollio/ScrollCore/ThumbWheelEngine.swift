@@ -4,8 +4,9 @@
 //
 //  The sideways wheel's own settings (Options.thumbWheel) in the scroll tap. ScrollCore hands
 //  over every sideways wheel event (`ScrollCore.isSidewaysWheelEvent`); while the wheel runs a
-//  function, the event passes the stray-tick filter (`ThumbWheelTickFilter`: a single small
-//  tick at a start or against the roll waits for a second event, and does nothing alone),
+//  function, the event passes the stray-tick filter (`ThumbWheelTickFilter`: small ticks at
+//  a start or against the roll wait until they make half a line or a third comes, and do
+//  nothing alone),
 //  then feeds the stepper, and the steps it decides run their actions on the
 //  main queue, never inside the tap callback. A function with a pacing (volume, desktops in
 //  steps) runs them through `ThumbWheelPacer`: one at once, the others one per interval, a few
@@ -168,8 +169,8 @@ final class ThumbWheelEngine {
     var frontApplication: () -> ShortcutRingChoice.FrontApp? = { .current() }
 
     private(set) var stepper = ThumbWheelStepper()
-    /// Holds a small stray tick until a second event confirms it (every function but Scroll
-    /// Sideways, in steps and in Follow the wheel), and the function it filters for.
+    /// Holds small stray ticks until more of the roll confirms them (every function but
+    /// Scroll Sideways, in steps and in Follow the wheel), and the function it filters for.
     private(set) var tickFilter = ThumbWheelTickFilter()
     private var tickFilterFunction: ThumbWheelFunction?
     /// The roll whose events still come.
