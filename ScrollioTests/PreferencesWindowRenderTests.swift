@@ -3415,3 +3415,162 @@ private final class MenuStandInView: NSView {
         }
     }
 }
+
+// MARK: - Round 2 B2
+
+/// Round 2, proposal 23 and 22's words in an app's Buttons part (`round2-b2-*-<appearance>.png`):
+/// "Default" on every row of Buttons, with what it then does in parentheses where that is
+/// certain; an app's Buttons part with "In other apps: …" and its menus with "Same as
+/// Other Apps (…)"; the trigger chooser's "Default (Back), will be replaced" and the
+/// recorder's "Replaces: Copy".
+extension PreferencesWindowRenderTests {
+
+    private func round2Source(_ name: String?) -> ButtonsDeviceSource {
+        return ButtonsDeviceSource(captureStatus: { _ in .normal }, deviceName: { name }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in })
+    }
+
+    private func round2Binding(
+        _ code: UInt16, _ action: String = "", modifiers: CGEventFlags = [], type: Scrollio_Debug.EventType = .mouse
+    ) -> ButtonBinding {
+        let trigger = RecordedEvent(type: type, code: code, modifiers: UInt(modifiers.rawValue), deviceFilter: nil)
+        return ButtonBinding(triggerEvent: trigger, systemShortcutName: action, isEnabled: !action.isEmpty)
+    }
+
+    private func round2Menu(_ items: [NSMenuItem], name: String) throws {
+        for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            let sheet = MenuStandInView(items: items)
+            sheet.appearance = appearance
+            try write(sheet, appearance: appearance, to: directory.appendingPathComponent("\(name)-\(suffix).png"))
+        }
+    }
+
+    /// What a pull-down's menu shows: its items without the title and the hidden separator.
+    private func round2Shown(_ popUp: NSPopUpButton) throws -> [NSMenuItem] {
+        return Array(try XCTUnwrap(popUp.menu).items.dropFirst().filter { !$0.isHidden })
+    }
+
+    /// Buttons: an MX Master 4 with nothing set up (and with its Back row selected: the
+    /// card says what the row says), an MX Master 3S with a few bindings (its mode shift
+    /// button kept by "⌥ Mode shift button": plain "Default"), and a generic mouse whose
+    /// bindings include rows without an action (a button, one with ⌥, a numbered one, a
+    /// key). "Default (Switch Wheel Mode)", the longest, fits the 240 pt pull-down.
+    func testRenderRound2B2Buttons() throws {
+        Options.shared.buttons.binding = []
+        try renderButtons(name: "round2-b2-buttons-mx4", source: round2Source("MX Master 4")) { buttons in
+            let modeShift = buttons.row(for: ButtonsMousePart.modeShift)?.pullDown
+            XCTAssertEqual(modeShift?.menu?.items.first?.title, "Default (Switch Wheel Mode)")
+            if let modeShift, let title = modeShift.menu?.items.first?.attributedTitle {
+                let room = (modeShift.cell as? NSPopUpButtonCell)?.titleRect(forBounds: modeShift.bounds).width ?? 0
+                XCTAssertGreaterThanOrEqual(room, ceil(title.size().width), "Default (Switch Wheel Mode) fits")
+            }
+        }
+        try renderButtons(name: "round2-b2-buttons-mx4-back-selected", source: round2Source("MX Master 4")) { buttons in
+            buttons.list.select(ButtonsMousePart.back)
+        }
+        Options.shared.buttons.binding = [
+            round2Binding(3, SystemShortcut.copy.identifier),
+            round2Binding(1001, SystemShortcut.missionControl.identifier, modifiers: .maskAlternate),
+            round2Binding(7, SystemShortcut.paste.identifier),
+        ]
+        try renderButtons(name: "round2-b2-buttons-mx3s", source: round2Source("MX Master 3S"))
+        Options.shared.buttons.binding = [
+            round2Binding(3),
+            round2Binding(4, SystemShortcut.missionControl.identifier),
+            round2Binding(2),
+            round2Binding(3, modifiers: .maskAlternate),
+            round2Binding(6),
+            round2Binding(40, modifiers: [.maskControl, .maskAlternate], type: .keyboard),
+        ]
+        try renderButtons(name: "round2-b2-buttons-generic", source: round2Source(nil))
+        try renderButtons(name: "round2-b2-buttons-generic-back-selected", source: round2Source(nil)) { buttons in
+            buttons.list.select(buttons.rowID(forBinding: Options.shared.buttons.binding[0].id))
+        }
+
+        // The Back row's menu on an MX Master 4: "Default (Back)" first.
+        Options.shared.buttons.binding = []
+        let buttons = PreferencesButtonsViewController()
+        buttons.deviceSource = round2Source("MX Master 4")
+        buttons.presentPlaceMenu = { _, _ in }
+        _ = buttons.view
+        let back = try XCTUnwrap(buttons.row(for: ButtonsMousePart.back))
+        try round2Menu(try round2Shown(back.pullDown), name: "round2-b2-menu-buttons-back")
+    }
+
+    /// Safari's Buttons part with its own rows (Forward with an action of its own, Back on
+    /// "Default", the thumb wheel's function) on an MX Master 4, one row selected, and the
+    /// menus of a row and of the thumb wheel's row, each starting with "Same as Other Apps".
+    func testRenderRound2B2AppButtons() throws {
+        let stored = Options.shared.application.applications
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            ButtonUtils.shared.invalidateCache()
+        }
+        Options.shared.buttons.binding = [round2Binding(4, SystemShortcut.missionControl.identifier)]
+        let safari = Application(path: "/Applications/Safari.app")
+        safari.setOwnButtonBindings([
+            round2Binding(4, SystemShortcut.copy.identifier), round2Binding(3), round2Binding(2),
+            round2Binding(LogiCenter.shared.scrollioCode(for: .modeShift)),
+        ])
+        safari.setOwnThumbWheelFunction(.zoom)
+        // (An app's own "Default" is stored as an enabled binding without an action.)
+        safari.setOwnButtonBindings(safari.ownButtonBindings.map {
+            ButtonBinding(id: $0.id, triggerEvent: $0.triggerEvent, systemShortcutName: $0.systemShortcutName, isEnabled: true, createdAt: $0.createdAt)
+        })
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [safari], matchKey: "path")
+        let defaults = uiDefaults(advanced: false)
+        var part: ApplicationButtonsViewController?
+        for selected in [false, true] {
+            try renderPane(PANEL_IDENTIFIER.application, name: "round2-b2-app-buttons" + (selected ? "-selected" : ""), prepare: { preferences in
+                (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                    .uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                let apps = controller as? PreferencesApplicationViewController
+                apps?.openApplication(withID: safari.path, part: .buttons)
+                part = apps?.detailController?.buttonsPart
+                part?.deviceSource = self.round2Source("MX Master 4")
+                part?.reloadRows()
+                if selected, let id = part?.rows.last?.id {
+                    part?.list.select(id)
+                }
+            })
+        }
+        let shown = try XCTUnwrap(part)
+        let forward = try XCTUnwrap(shown.rows.first)
+        try round2Menu(try round2Shown(forward.pullDown), name: "round2-b2-menu-app-row")
+        let wheel = try XCTUnwrap(shown.thumbWheelRow)
+        try round2Menu(try round2Shown(wheel.pullDown), name: "round2-b2-menu-app-thumb-wheel")
+    }
+
+    /// The trigger chooser of Gestures on an MX Master 3S (Back has Copy, the gesture
+    /// button runs the gestures): what each button does, "Default (Forward), will be
+    /// replaced"; and the recorder's popover after "Record a Button…" caught Back:
+    /// "Replaces: Copy" under it.
+    func testRenderRound2B2TriggerChoiceAndRecorder() throws {
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        Options.shared.buttons.binding = [
+            round2Binding(3, SystemShortcut.copy.identifier), round2Binding(LogiCenter.shared.scrollioCode(for: .gesture), gestures),
+        ]
+        Options.shared.gesture = .default
+        let pane = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+        pane.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        _ = pane.view
+        let chooser: TriggerChooser = try XCTUnwrap(pane.triggerChooser)
+        chooser.deviceSource = round2Source("MX Master 3S")
+        chooser.update(triggerTitles: chooser.triggerTitles)
+        try round2Menu(Array(try XCTUnwrap(chooser.pullDown.menu).items.dropFirst()), name: "round2-b2-menu-trigger-choice")
+
+        let note = try XCTUnwrap(chooser.replacedNote(for: RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil)))
+        XCTAssertEqual(note, "Replaces: Copy")
+        let popover = KeyPopover()
+        popover.announce = { _ in }
+        popover.testingPrepareContent(waitingHint: NSLocalizedString("buttons-recorder-waiting-gesture", comment: ""))
+        popover.keyPreview.update(from: ["Back button"], status: .recorded)
+        popover.showRecordedNote(note)
+        let view = try XCTUnwrap(popover.testingContentView)
+        view.layoutSubtreeIfNeeded()
+        view.setFrameSize(view.fittingSize)
+        try renderInPopoverMaterial(view, name: "round2-b2-recorder-replaces")
+        popover.hide()
+    }
+}
