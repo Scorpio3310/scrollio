@@ -1550,3 +1550,219 @@ private extension NSView {
         return subviews + subviews.flatMap(\.allSubviewsForTests)
     }
 }
+
+// MARK: - Undo of a direction
+
+/// Edit › Undo and Redo of a direction of Gesture Navigation, the pane's and an app's own:
+/// the action as it was (with the name and icon of its keys), named as Buttons names it;
+/// the Gestures pane, or the app's page on its Gestures part, comes forward with the row
+/// selected, also from another pane and after the page closed. The window as the app makes
+/// it, never shown.
+final class GestureDirectionUndoTests: XCTestCase {
+
+    private static let calculator = "/System/Applications/Calculator.app"
+    /// A recorded key combination (⌘S as the settings store it).
+    private static let keys = "custom::1:1048576"
+
+    private var savedApplications: EnhanceArray<Application>!
+    private var savedBindings: [ButtonBinding] = []
+    private var savedGesture = MouseGestureSettings.default
+    private var uiDefaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        savedApplications = Options.shared.application.applications
+        savedBindings = Options.shared.buttons.binding
+        savedGesture = Options.shared.gesture
+        Options.shared.application.applications = EnhanceArray<Application>(
+            withArray: [], matchKey: "path", forObserver: { Options.shared.markChanged(.application) }
+        )
+        Options.shared.buttons.binding = []
+        Options.shared.gesture = .default
+        ButtonUtils.shared.invalidateCache()
+        uiDefaults = TestDefaults.make(for: self)
+    }
+
+    override func tearDown() {
+        Options.shared.application.applications = savedApplications
+        Options.shared.buttons.binding = savedBindings
+        Options.shared.gesture = savedGesture
+        ButtonUtils.shared.invalidateCache()
+        savedApplications = nil
+        uiDefaults = nil
+        super.tearDown()
+    }
+
+    private struct Window {
+        let window: NSWindow
+        let preferences: PreferencesSplitViewController
+        let undo: UndoManager
+        let gestures: GesturesPreferencesViewController
+        let apps: PreferencesApplicationViewController
+    }
+
+    /// The window's panes (nothing remembered, no mouse, no button that runs the gestures),
+    /// in a window of their own whose undo manager takes a group per step.
+    private func makeWindow() throws -> Window {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let preferences = PreferencesSplitViewController(storyboard: storyboard, uiStateDefaults: nil)
+        let gestures = try XCTUnwrap(
+            preferences.controller(for: GesturesPreferencesViewController.tabIdentifier) as? GesturesPreferencesViewController
+        )
+        gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        gestures.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: false, hasLogitechGestureButton: false) }
+        let apps = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)
+        apps.uiStateDefaults = uiDefaults
+        apps.runningApplications = { [] }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = preferences
+        addTeardownBlock { window.close() }
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        return Window(window: window, preferences: preferences, undo: undo, gestures: gestures, apps: apps)
+    }
+
+    /// One user action: one group on the undo manager.
+    private func step(_ undo: UndoManager, _ body: () throws -> Void) rethrows {
+        undo.beginUndoGrouping()
+        defer { undo.endUndoGrouping() }
+        try body()
+    }
+
+    private func label(_ name: String) throws -> ShortcutLabel {
+        return try XCTUnwrap(ShortcutLabel(name: name, icon: .symbol("square.and.arrow.down")))
+    }
+
+    /// The pane: Undo puts back the keys with their name and icon, selects the row (its
+    /// pull-down has the keyboard) and the preview shows that direction; Redo makes the
+    /// change again. A new name alone is a rename.
+    func testUndoPutsBackADirectionWithItsNameAndIconAndRedoChangesItAgain() throws {
+        let saved = GestureAction(action: Self.keys, label: try label("Save All"))
+        Options.shared.gesture.actions.up = saved
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: GesturesPreferencesViewController.tabIdentifier))
+        w.gestures.directionsSection.setExpanded(true)
+        let popUp = w.gestures.controls.actionPopUp(for: .up)
+        XCTAssertEqual(popUp.binding.label, saved.label)
+
+        try step(w.undo) { popUp.onShortcutSelected?(SystemShortcut.paste) }
+        XCTAssertEqual(Options.shared.gesture.actions.up, GestureAction(SystemShortcut.paste))
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Change Action")
+        w.window.makeFirstResponder(nil)
+
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.gesture.actions.up, saved, "the keys with their name and icon")
+        XCTAssertEqual(popUp.binding.label, saved.label, "the row shows them")
+        XCTAssertTrue(w.window.firstResponder === popUp, "the row's pull-down has the keyboard")
+        XCTAssertEqual(w.gestures.focusedSlot, .up, "the preview shows that direction")
+        XCTAssertEqual(w.undo.redoMenuItemTitle, "Redo Change Action")
+
+        w.undo.redo()
+        XCTAssertEqual(Options.shared.gesture.actions.up, GestureAction(SystemShortcut.paste))
+        XCTAssertEqual(popUp.binding.systemShortcutName, SystemShortcut.paste.identifier)
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.gesture.actions.up, saved)
+
+        // Only another name for the same keys.
+        let renamed = GestureAction(action: Self.keys, label: try label("Keep"))
+        try step(w.undo) { popUp.onCustomShortcutRecorded?(Self.keys, renamed.label) }
+        XCTAssertEqual(Options.shared.gesture.actions.up, renamed)
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Rename", "as Buttons calls it")
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.gesture.actions.up, saved)
+        XCTAssertEqual(w.undo.redoMenuItemTitle, "Redo Rename")
+    }
+
+    /// From another pane: Gestures comes forward, its folded directions open and the row is
+    /// selected.
+    func testUndoFromAnotherPaneShowsGesturesWithTheRowSelected() throws {
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: GesturesPreferencesViewController.tabIdentifier))
+        let directions = try XCTUnwrap(w.gestures.directionsSection)
+        XCTAssertTrue(directions.isCollapsible, "no button runs the gestures: the directions fold")
+        directions.setExpanded(true)
+        let popUp = w.gestures.controls.actionPopUp(for: .click)
+        try step(w.undo) { popUp.onShortcutSelected?(nil) }
+        XCTAssertEqual(Options.shared.gesture.actions.click, GestureAction.none)
+        directions.setExpanded(false)
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        XCTAssertNil(w.gestures.view.window, "the pane is out of the window")
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.gesture.actions.click, GestureActions.default.click)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, GesturesPreferencesViewController.tabIdentifier)
+        XCTAssertTrue(directions.showsBody, "the directions open")
+        XCTAssertTrue(w.window.firstResponder === popUp)
+        XCTAssertEqual(popUp.binding.systemShortcutName, GestureActions.default.click.action)
+    }
+
+    /// An app's own gestures, after its page closed and while General shows: Apps comes
+    /// forward with the app's page on its Gestures part, the row selected; Redo too. The
+    /// general gestures are never touched.
+    func testUndoOfAnAppsDirectionAfterItsPageClosedOpensThePageWithTheRowSelected() throws {
+        let calculator = Application(path: Self.calculator)
+        Options.shared.application.applications.append(calculator)
+        calculator.setUsesGeneralGestures(false, general: Options.shared.gesture)
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: calculator)), part: .gestures)
+        let controls = try XCTUnwrap(w.apps.detailController?.gesturesPart.controls)
+        try step(w.undo) { controls.actionPopUp(for: .down).onShortcutSelected?(SystemShortcut.paste) }
+        XCTAssertEqual(calculator.ownGestures?.actions.down, GestureAction(SystemShortcut.paste))
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Change Action")
+
+        w.apps.showList(focusList: false)
+        XCTAssertNil(w.apps.detailController, "the page closed")
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(calculator.ownGestures?.actions.down, GestureActions.default.down)
+        XCTAssertEqual(Options.shared.gesture, .default, "the general gestures are untouched")
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application)
+        let page = try XCTUnwrap(w.apps.detailController)
+        XCTAssertTrue(page.application === calculator)
+        XCTAssertEqual(page.shownPart, .gestures)
+        let part = try XCTUnwrap(page.gesturesPart)
+        let shown = try XCTUnwrap(part.controls)
+        XCTAssertEqual(shown.actionPopUp(for: .down).binding.systemShortcutName, GestureActions.default.down.action)
+        XCTAssertEqual(part.directionsFold?.showsBody, true, "its folded rows open")
+        XCTAssertTrue(w.window.firstResponder === shown.actionPopUp(for: .down))
+
+        w.undo.redo()
+        XCTAssertEqual(calculator.ownGestures?.actions.down, GestureAction(SystemShortcut.paste))
+        XCTAssertEqual(shown.actionPopUp(for: .down).binding.systemShortcutName, SystemShortcut.paste.identifier, "the page on show follows")
+        XCTAssertEqual(Options.shared.gesture, .default)
+    }
+
+    /// The pane in a window of its own (no window's panes): Undo and Redo go to that
+    /// window's undo manager and show on the pane. Out of any window nothing asks for one.
+    func testThePaneInAWindowOfItsOwnTakesUndoAndShowsIt() throws {
+        let pane = GesturesPreferencesViewController()
+        pane.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        pane.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false, buttonTitles: ["Back button"]) }
+        _ = pane.view
+        pane.controls.actionPopUp(for: .up).onShortcutSelected?(SystemShortcut.copy)
+        XCTAssertEqual(Options.shared.gesture.actions.up, GestureAction(SystemShortcut.copy), "stored, with nothing to undo it")
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 800), styleMask: [.titled], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = pane
+        addTeardownBlock { window.close() }
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        XCTAssertFalse(undo.canUndo)
+        try step(undo) { pane.controls.actionPopUp(for: .up).onShortcutSelected?(SystemShortcut.paste) }
+        undo.undo()
+        XCTAssertEqual(Options.shared.gesture.actions.up, GestureAction(SystemShortcut.copy))
+        XCTAssertEqual(pane.controls.actionPopUp(for: .up).binding.systemShortcutName, SystemShortcut.copy.identifier)
+        XCTAssertTrue(window.firstResponder === pane.controls.actionPopUp(for: .up))
+        XCTAssertFalse(undo.canUndo)
+        undo.redo()
+        XCTAssertEqual(Options.shared.gesture.actions.up, GestureAction(SystemShortcut.paste))
+    }
+}
