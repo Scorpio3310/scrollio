@@ -10,18 +10,37 @@ it for the people who use the app, and give the version its part before you tag 
 
 ## Unreleased
 
+**Nothing gets stuck:** the wheel never goes quiet, hold keys and Logitech buttons recover
+by themselves, and Scrollio says when macOS stops it.
+
+### New
+
+- **"Check for Updates…" is always in the Scrollio menu**, under About Scrollio. Where a
+  copy can't update itself (for example when it runs from the disk image), it opens
+  General › Updates, which says why.
+
 ### Fixed
 
 - **The wheel no longer goes quiet** when macOS stops drawing frames for smooth scrolling:
-  it scrolls unsmoothed at once, and smooth scrolling comes back by itself.
-- **When macOS stops letting Scrollio send scroll events** (after some updates), the menu
-  bar and General say "Scrollio can't send scroll events" and show where to fix it; the
-  wheel keeps scrolling, unsmoothed.
+  after a tenth of a second it scrolls unsmoothed, and smooth scrolling comes back by
+  itself. A display that is slow to start (24–30 Hz, a busy Mac) gives one hiccup at most.
+- **When no display sends frames at all**, the menu bar and General say "Smooth scrolling
+  is off: no display frames"; quitting and reopening Scrollio brings it back.
+- **When macOS does not let Scrollio send events**, the menu bar, General and the Welcome
+  Guide say "Scrollio can't send events to apps": scrolling isn't smoothed, and buttons,
+  gestures and the Shortcut Ring may not work. General shows what to do; the wheel keeps
+  scrolling, unsmoothed.
 - **A hold key on ⌥, ⇧, ⌘ or ⌃** no longer stays held when another app swallows its
-  release: the next turn of the wheel without it lets it go.
-- **A Logitech button the mouse did not take at first** (asleep or out of range) is set up
-  again the next time Scrollio checks the buttons, instead of "Logi Options+ keeps taking
-  this button over".
+  release: the next turn of the wheel lets it go once the keyboard says the key is up. A
+  key that another app holds down waits for its own release.
+- **"Scroll faster" and "Scroll slower" on the two ⌥ keys:** letting go of one while the
+  other is down lets it go at once.
+- **A flick whose display stalls** no longer glides on seconds later.
+- **With Scroll sideways on a key other than ⇧**, a turn that goes through unsmoothed
+  follows "Reverse wheel direction" too.
+- **A Logitech button the mouse did not take** is asked for again the next time Scrollio
+  checks the buttons (Settings opens, the mouse connects) and once more a few seconds
+  later, instead of "Logi Options+ keeps taking this button over".
 
 ## 1.1.0
 
