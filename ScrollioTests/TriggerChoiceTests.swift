@@ -439,6 +439,30 @@ final class TriggerChoiceTests: XCTestCase {
         XCTAssertEqual(Options.shared.buttons.binding, [])
     }
 
+    /// "Record a Button…" that catches a button with another action replaces that action,
+    /// as choosing it in the menu ("will be replaced") does, and Edit › Undo gives it back
+    /// (owner, Q9).
+    func testRecordingAButtonWithAnActionReplacesItAndUndoGivesItBack() throws {
+        let back = binding(3, SystemShortcut.copy.identifier)
+        Options.shared.buttons.binding = [back]
+        let undo = undoManager()
+        let pane = gesturesPane(undo: undo)
+        let chooser = pane.triggerChooser!
+        let recorder = KeyRecorder()
+        let press = InputEvent(type: .mouse, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        chooser.onRecordingStarted(recorder)
+        XCTAssertTrue(chooser.validateRecordedEvent(recorder, event: press), "not refused as a duplicate")
+        chooser.onEventRecorded(recorder, didRecordEvent: press, isDuplicate: false)
+        undo.beginUndoGrouping()
+        chooser.onRecordingStopped(recorder, didRecord: true)
+        undo.endUndoGrouping()
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.id), [back.id], "its binding keeps its id")
+        XCTAssertEqual(Options.shared.buttons.binding.first?.systemShortcutName, gestures)
+        XCTAssertEqual(undo.undoActionName, "Change Button to Hold")
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [back], "Copy is back")
+    }
+
     /// A recording that is closed without a press (Esc, the pane went away) chooses nothing.
     func testARecordingThatCaughtNothingChoosesNothing() throws {
         let pane = ringPane(undo: undoManager())
