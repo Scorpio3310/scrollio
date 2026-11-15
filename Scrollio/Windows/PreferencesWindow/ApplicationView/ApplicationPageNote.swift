@@ -3,7 +3,7 @@
 //  Scrollio
 //
 //  A muted line under a box of an app's page, with a small push button beside it when it
-//  leads somewhere, as "Haptic feedback is off under Mouse." + "Open Mouse" in the Gestures
+//  leads somewhere, as "Haptic feedback is off under Mouse." + "Show in Mouse" in the Gestures
 //  pane: "Scrollio has suggested shortcuts for Figma." + "Use Suggested Shortcuts". While
 //  it has nothing to say it takes no room at all, so the box's neighbours stand where they
 //  stood without it.

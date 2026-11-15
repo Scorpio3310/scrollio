@@ -229,9 +229,7 @@ extension ApplicationButtonsViewController {
         reloadRows()
         onOwnButtonsChange?()
         guard old != function else { return }
-        let showing = partShowing ?? { [weak self] entry in
-            self?.application === entry ? self : nil
-        }
+        let showing = undoShowing
         Self.registerThumbWheelFunctionUndo(
             back: old, of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange
         )
@@ -269,9 +267,7 @@ extension ApplicationButtonsViewController {
     /// what Edit › Undo calls it ("Remove Thumb Wheel" when nil; "Change Action" for "Same as
     /// Other Apps").
     func removeOwnThumbWheel(undoName: String? = nil) {
-        let showing = partShowing ?? { [weak self] entry in
-            self?.application === entry ? self : nil
-        }
+        let showing = undoShowing
         Self.removeOwnThumbWheel(
             of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange,
             undoName: undoName ?? NSLocalizedString("apps-buttons-undo-remove-thumb-wheel", comment: "")

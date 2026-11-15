@@ -175,7 +175,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
 
     /// The modes with and without a Logitech mouse, no gesture button, and the MX Master 4
     /// with its haptics off because they were switched off under Mouse (the line under the
-    /// Logitech box with "Open Mouse").
+    /// Logitech box with "Show in Mouse").
     func testRenderGestures() throws {
         let master4 = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
         let master4HapticsOff = MouseGestureDeviceSupport(deviceTracking: true, haptics: true, hapticsOffOnMouse: true)
@@ -1514,7 +1514,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
     /// Each action's own "Reverse direction" and Switch Desktops' "Follow the wheel"
     /// (`thumb-wheel-options-<case>-<appearance>.png`): Scrolling › Thumb wheel with Switch
     /// Desktops, both switches on; with Volume, its reverse on (no follow row); the
-    /// Buttons row's menu with "Thumb Wheel Settings…" (a stand-in drawn from the menu the
+    /// Buttons row's menu with "Show in Scrolling" (a stand-in drawn from the menu the
     /// row builds); an app's Scrolling part with its own Switch Desktops that follows.
     func testRenderThumbWheelOptions() throws {
         func scrolling(_ name: String) throws {
@@ -3888,7 +3888,7 @@ extension PreferencesWindowRenderTests {
 
 /// Round 3 C3 (`round3-c3-*-<appearance>.png`): General's row under the card in each of
 /// its four states (Scrollio is on with Pause, paused with Resume, a start that failed with
-/// Try Again, the access missing with Open System Settings), and "Restore…" as a pull-down
+/// Try Again Now, the access missing with Open System Settings), and "Restore…" as a pull-down
 /// of the kept settings by local date and time, then "Show in Finder" (the row and its
 /// menu, two backups of the same minute with their seconds).
 extension PreferencesWindowRenderTests {
@@ -4342,6 +4342,157 @@ extension PreferencesWindowRenderTests {
             undo({ ring.placePopUps[5].onShortcutSelected?(SystemShortcut.paste) }, in: ring, before: {
                 apps.showList(focusList: false)
             })
+        })
+    }
+}
+
+// MARK: - Round 3 fix
+
+extension PreferencesWindowRenderTests {
+
+    /// What the round 3 fix changes (`r3-fix-<case>-<appearance>.png`): General after a
+    /// start that failed ("Try Again Now") and without the access (one "Open System
+    /// Settings": the Accessibility row keeps its sign and line); the line that offers an
+    /// app, with a name that fits beside "Add" and one cut once; Calculator's own button
+    /// running the gestures ("Show in Calculator › Buttons" on its page and in the Gestures
+    /// pane's menu); and, each after a change, a move to General and Edit › Undo, Buttons with
+    /// a removed row back and selected, Calculator's page on Buttons with its removed row
+    /// back after the page closed, and Apps with a removed app back and selected.
+    func testRenderRound3Fix() throws {
+        let savedAutoLaunch = Options.shared.general.autoLaunch
+        let storedApplications = Options.shared.application.applications
+        defer {
+            LoginItem.service = InertLoginItemService()
+            Options.shared.general.autoLaunch = savedAutoLaunch
+            LoginItem.service = LoginItem.defaultService
+            Options.shared.application.applications = storedApplications
+            ButtonUtils.shared.invalidateCache()
+        }
+        LoginItem.service = InertLoginItemService()
+        let plain: [String: Any] = ["CFBundleShortVersionString": "1.0", "CFBundleVersion": "1"]
+        for (name, access, problem) in [("general-could-not-start", true, StatusMenu.StartProblem.retrying), ("general-needs-access", false, nil)] {
+            try renderPane(PANEL_IDENTIFIER.general, name: "r3-fix-" + name, prepare: { preferences in
+                guard let general = preferences.controller(for: PANEL_IDENTIFIER.general)
+                    as? PreferencesGeneralViewController else { return }
+                general.isAccessGranted = { access }
+                general.isPaused = { false }
+                general.startProblem = { problem }
+                general.pause = {}
+                general.resume = {}
+                general.tryAgain = {}
+                general.isMenuBarIconHidden = { false }
+                general.bundleInfo = { plain }
+            }, afterLoad: { controller in
+                controller.viewWillAppear()
+            })
+        }
+
+        Options.shared.application.allowlist = false
+        let two = ["/System/Applications/Calculator.app", "/System/Applications/TextEdit.app"]
+        for (name, app) in [
+            ("apps-offer-adobe", AppSmoothing.App(
+                name: "Adobe Illustrator 2026",
+                bundlePath: "/Applications/Adobe Test.app", executablePath: "/Applications/Adobe Test.app/Contents/MacOS/Adobe"
+            )),
+            ("apps-offer-long-name", AppSmoothing.App(
+                name: "Microsoft Visual Studio Code Insiders Edition With A Very Long Name",
+                bundlePath: "/Applications/Long Test.app", executablePath: "/Applications/Long Test.app/Contents/MacOS/Long"
+            )),
+        ] {
+            let defaults = uiDefaults(advanced: false)
+            try renderPane(PANEL_IDENTIFIER.application, name: "r3-fix-" + name, prepare: { preferences in
+                Options.shared.application.applications = EnhanceArray<Application>(withArray: two.map { Application(path: $0) }, matchKey: "path")
+                (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                    .uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                (controller as? PreferencesApplicationViewController)?.showSettings(for: app)
+            })
+        }
+
+        // Only Calculator's own button runs the gestures.
+        let path = "/System/Applications/Calculator.app"
+        Options.shared.buttons.binding = []
+        Options.shared.gesture = .default
+        func calculatorWithItsButton() -> Application {
+            let calculator = Application(path: path)
+            calculator.setOwnButtonBindings([round2Binding(3, SystemShortcut.mouseGestureNavigation.identifier)])
+            Options.shared.application.applications = EnhanceArray<Application>(withArray: [calculator], matchKey: "path")
+            ButtonUtils.shared.invalidateCache()
+            return calculator
+        }
+        _ = calculatorWithItsButton()
+        let pane = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+        pane.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        _ = pane.view
+        let chooser: TriggerChooser = try XCTUnwrap(pane.triggerChooser)
+        chooser.deviceSource = round2Source("MX Master 3S")
+        chooser.holdKeys = { [] }
+        pane.reload()
+        let menu = try round2Shown(pane.gestureButtonButton)
+        XCTAssertEqual(menu.last?.title, "Show in Calculator › Buttons")
+        try round2Menu(menu, name: "r3-fix-gestures-trigger-menu")
+        let pageDefaults = uiDefaults(advanced: false)
+        try renderPane(PANEL_IDENTIFIER.application, name: "r3-fix-app-gestures", prepare: { preferences in
+            _ = calculatorWithItsButton()
+            (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                .uiStateDefaults = pageDefaults
+        }, afterLoad: { controller in
+            guard let apps = controller as? PreferencesApplicationViewController else { return XCTFail("no apps") }
+            apps.openApplication(withID: path, part: .gestures)
+            XCTAssertEqual(apps.detailController?.gesturesPart.holdButton.title, "Show in Calculator › Buttons")
+        })
+
+        // Undo from General.
+        var split: PreferencesSplitViewController?
+        func undo(_ change: () -> Void, in controller: NSViewController, before leaving: () -> Void = {}) {
+            guard let preferences = split, let undo = controller.view.window?.undoManager else {
+                return XCTFail("no window")
+            }
+            undo.groupsByEvent = false
+            undo.beginUndoGrouping()
+            change()
+            undo.endUndoGrouping()
+            leaving()
+            XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+            undo.undo()
+        }
+        let copy = round2Binding(4, SystemShortcut.copy.identifier, modifiers: .maskAlternate)
+        try renderPane(PANEL_IDENTIFIER.buttons, name: "r3-fix-undo-buttons", prepare: { preferences in
+            split = preferences
+            Options.shared.application.applications = EnhanceArray<Application>(withArray: [], matchKey: "path")
+            Options.shared.buttons.binding = [copy, self.round2Binding(5, SystemShortcut.paste.identifier, modifiers: .maskAlternate)]
+            (preferences.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController)?.deviceSource = self.round2Source(nil)
+        }, afterLoad: { controller in
+            guard let buttons = controller as? PreferencesButtonsViewController else { return XCTFail("no buttons") }
+            undo({ buttons.removeBinding(id: copy.id) }, in: buttons)
+            XCTAssertEqual(split?.selectedPaneIdentifier, PANEL_IDENTIFIER.buttons)
+        })
+        Options.shared.buttons.binding = []
+
+        try renderPane(PANEL_IDENTIFIER.application, name: "r3-fix-undo-app-buttons", prepare: { preferences in
+            split = preferences
+            _ = calculatorWithItsButton()
+            (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                .uiStateDefaults = pageDefaults
+        }, afterLoad: { controller in
+            guard let apps = controller as? PreferencesApplicationViewController else { return XCTFail("no apps") }
+            apps.openApplication(withID: path, part: .buttons)
+            guard let part = apps.detailController?.buttonsPart, let own = part.application.ownButtonBindings.first else {
+                return XCTFail("no own row")
+            }
+            undo({ part.removeOwnBinding(id: own.id) }, in: apps, before: { apps.showList(focusList: false) })
+            XCTAssertEqual(apps.detailController?.shownPart, .buttons)
+        })
+
+        try renderPane(PANEL_IDENTIFIER.application, name: "r3-fix-undo-app-removed", prepare: { preferences in
+            split = preferences
+            Options.shared.application.applications = EnhanceArray<Application>(withArray: two.map { Application(path: $0) }, matchKey: "path")
+            (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                .uiStateDefaults = pageDefaults
+        }, afterLoad: { controller in
+            guard let apps = controller as? PreferencesApplicationViewController else { return XCTFail("no apps") }
+            undo({ apps.removeApplication(withID: path) }, in: apps)
+            XCTAssertEqual(apps.list.selectedID, AnyHashable(path))
         })
     }
 }

@@ -842,7 +842,8 @@ class PreferencesButtonsViewController: NSViewController {
     }
 
     /// Puts a removed binding back where it was, selects it and gives the list the
-    /// keyboard (Undo). Redo removes it again.
+    /// keyboard (Undo); the pane comes forward while another one shows. Redo removes it
+    /// again, also in sight.
     func restoreBinding(_ binding: ButtonBinding, at index: Int) {
         restoreBinding(binding, at: index, undoManager: undoTarget)
     }
@@ -850,6 +851,7 @@ class PreferencesButtonsViewController: NSViewController {
     private func restoreBinding(_ binding: ButtonBinding, at index: Int, undoManager undo: UndoManager?) {
         if let existing = buttonBindings.first(where: { $0.triggerEvent == binding.triggerEvent }) {
             // Recorded again meanwhile: the new one stays.
+            comeForward()
             list.select(rowID(forBinding: existing.id))
             focusList()
             return
@@ -859,6 +861,7 @@ class PreferencesButtonsViewController: NSViewController {
         let binding = placed.mousePart == binding.triggerEvent.mousePart ? binding : binding.replacingTriggerEvent(placed)
         buttonBindings.insert(binding, at: min(max(0, index), buttonBindings.count))
         save()
+        comeForward()
         reloadRows()
         list.select(rowID(forBinding: binding.id))
         focusList()
@@ -866,6 +869,7 @@ class PreferencesButtonsViewController: NSViewController {
         guard let undo else { return }
         undo.registerUndo(withTarget: self) { [weak undo] controller in
             controller.removeBinding(id: binding.id, undoManager: undo)
+            controller.comeForward()
         }
         undo.setActionName(text("buttons-undo-remove"))
     }
@@ -911,14 +915,7 @@ class PreferencesButtonsViewController: NSViewController {
         guard let result = change.applied(to: buttonBindings, sameTrigger: { $0.triggerEvent == $1.triggerEvent }, place: placed) else { return }
         buttonBindings = result.bindings
         save()
-        // Undo shows where it acts, as for a place of the ring or a direction of Gestures.
-        if let showPane {
-            if !isViewLoaded || view.window == nil {
-                showPane(PANEL_IDENTIFIER.buttons)
-            }
-        } else if let split = Self.splitViewController(of: self) {
-            split.bringForward(pane: PANEL_IDENTIFIER.buttons)
-        }
+        comeForward()
         reloadRows()
         if let first = change.states.first {
             if rows.contains(where: { $0.isStored && $0.binding.id == first.id }) {
@@ -932,6 +929,18 @@ class PreferencesButtonsViewController: NSViewController {
         focusList()
         updateHeader()
         registerUndo(of: ButtonRowChange(kind: change.kind, states: result.replaced), undoManager: undo)
+    }
+
+    /// An Undo or Redo shows where it acts, as for a place of the ring or a direction of
+    /// Gestures: this pane comes forward while another one shows.
+    private func comeForward() {
+        if let showPane {
+            if !isViewLoaded || view.window == nil {
+                showPane(PANEL_IDENTIFIER.buttons)
+            }
+        } else if let split = Self.splitViewController(of: self) {
+            split.bringForward(pane: PANEL_IDENTIFIER.buttons)
+        }
     }
 
     /// The list takes the keyboard (after an add or an Undo), when the pane is shown.

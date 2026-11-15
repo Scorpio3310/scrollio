@@ -3002,7 +3002,7 @@
       }
     },
     "apps-open-panel-prompt": {
-      "comment": "Apps pane: the button of the panel that chooses apps in Finder",
+      "comment": "Apps pane: the button of the panel that chooses apps in Finder; also the button of the line that offers to add an app (“Microsoft Visual St… isn't on the list.”) when the app's name is too long to be read in both",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -4417,7 +4417,7 @@
       }
     },
     "general-accessibility-hint-not-allowed": {
-      "comment": "General pane, Accessibility row while access is missing: the status and what the permission is for in one line under the title (an orange sign and \"Open System Settings\" stand on the right)",
+      "comment": "General pane, Accessibility row while access is missing: the status and what the permission is for in one line under the title (an orange sign stands on the right; the row under the card offers “Open System Settings”)",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -10586,18 +10586,6 @@
         }
       }
     },
-    "buttons-trigger-choice-show-in-app": {
-      "comment": "Gestures and Shortcut Ring panes: last item of the trigger pull-down while only an app's own button or key does it; it shows that app's Buttons part. %@ is the app's name (“Show in Notes”). The app's page can use it for the same place",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show in %@"
-          }
-        }
-      }
-    },
     "gestures-gesture-button-one": {
       "comment": "Gestures pane: under Button to hold while one button runs the gestures (the pull-down names it)",
       "extractionState": "manual",
@@ -10882,18 +10870,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pause"
-          }
-        }
-      }
-    },
-    "general-try-again": {
-      "comment": "General pane: the button of \"Scrollio couldn't start and is trying again\": tries at once, as \"Try Again Now\" in the status-bar menu",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Try Again"
           }
         }
       }

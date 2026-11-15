@@ -200,9 +200,9 @@ struct ApplicationTriggers: Equatable {
 /// key"): what does it while the app is in front, by the rule above, and where the row's
 /// button leads. "Gesture button, as everywhere" (Buttons' button: "Show in Buttons", the
 /// Buttons pane with its row selected); "Back button, only in Figma" (a button of the app's
-/// own: "Show in Figma", the app's Buttons part with that row selected); "None in Figma"
-/// ("Set Up…", which records a button for this app only; or "Show in Figma" when one of the
-/// app's own rows took what does it everywhere else, that row selected).
+/// own: "Show in Figma › Buttons", the app's Buttons part with that row selected); "None in
+/// Figma" ("Set Up…", which records a button for this app only; or "Show in Figma › Buttons"
+/// when one of the app's own rows took what does it everywhere else, that row selected).
 struct ApplicationTriggerRow: Equatable {
 
     /// Where the row's button leads.
@@ -224,23 +224,21 @@ struct ApplicationTriggerRow: Equatable {
 
     /// The button's title, which says where it goes, in the words of the Gestures and
     /// Shortcut Ring panes' pull-down: "Show in Buttons" (the Buttons pane), "Show in
-    /// Figma" (the app's Buttons part; `name` is the app's), or the part's "Set Up…"
+    /// Figma › Buttons" (the app's Buttons part; `name` is the app's), or the part's "Set Up…"
     /// (`setUpKey`).
     func buttonTitle(applicationName name: String, setUpKey: String = "gestures-gesture-button-set-up") -> String {
         switch destination {
         case .buttonsPane:
             return NSLocalizedString("apps-trigger-show-in-buttons", comment: "")
         case .applicationButtons:
-            // (The pull-down's key; `value` is its English, should the catalog lack it.)
-            let format = NSLocalizedString("buttons-trigger-choice-show-in-app", value: "Show in %@", comment: "")
-            return String(format: format, name)
+            return ButtonActionPullDown.showInTitle(paneKey: "apps-trigger-show-in-buttons", part: .buttons, application: name)
         case .setUp:
             return NSLocalizedString(setUpKey, comment: "")
         }
     }
 
     /// The width of the row's line beside the row's button at its widest
-    /// (`buttonMaxWidth`, which "Show in <app>" reaches with a long name).
+    /// (`buttonMaxWidth`, which "Show in <app> › Buttons" reaches with a long name).
     static var lineWidth: CGFloat {
         let box = PreferencesGroupedForm.boxWidth(paneWidth: ApplicationDetailViewController.paneWidth)
         return box - 2 * PreferencesGroupedForm.rowHorizontalInset - buttonMaxWidth - PreferencesGroupedForm.controlSpacing

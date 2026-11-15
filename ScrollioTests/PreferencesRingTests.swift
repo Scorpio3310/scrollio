@@ -1695,6 +1695,104 @@ final class RingPlaceUndoTests: XCTestCase {
         XCTAssertEqual(w.preferences.selectedPaneIdentifier, RingPreferencesViewController.tabIdentifier)
     }
 
+    // MARK: - Undo of a button or an app, shown where it acts too
+
+    /// "Undo Remove Button" from another pane: Buttons comes forward with the row selected
+    /// and the list has the keyboard; Redo removes it again, in sight too.
+    func testUndoOfARemovedButtonFromAnotherPaneShowsButtonsWithTheRowSelected() throws {
+        let copy = ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: SystemShortcut.copy.identifier, isEnabled: true
+        )
+        Options.shared.buttons.binding = [copy]
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons))
+        try step(w.undo) { w.buttons.removeBinding(id: copy.id) }
+        XCTAssertEqual(Options.shared.buttons.binding, [])
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Remove Button")
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        XCTAssertNil(w.buttons.view.window, "the pane is out of the window")
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [copy])
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.buttons, "Buttons comes forward")
+        XCTAssertEqual(w.buttons.list.selectedID, w.buttons.rowID(forBinding: copy.id))
+        XCTAssertTrue(w.window.firstResponder === w.buttons.list)
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.redo()
+        XCTAssertEqual(Options.shared.buttons.binding, [])
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.buttons)
+    }
+
+    /// A row of an app's own Buttons, removed; its page closed and General shows: Undo
+    /// brings Apps forward with the app's page on its Buttons part and the row selected.
+    /// Buttons is never touched.
+    func testUndoOfAnAppsRemovedButtonAfterItsPageClosedOpensItsButtonsWithTheRowSelected() throws {
+        let calculator = Application(path: Self.calculator)
+        Options.shared.application.applications.append(calculator)
+        let own = ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: SystemShortcut.copy.identifier, isEnabled: true
+        )
+        calculator.setOwnButtonBindings([own])
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: calculator)), part: .buttons)
+        let part = try XCTUnwrap(w.apps.detailController?.buttonsPart)
+        try step(w.undo) { part.removeOwnBinding(id: own.id) }
+        XCTAssertTrue(calculator.ownButtonBindings.isEmpty)
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Remove Button")
+
+        w.apps.showList(focusList: false)
+        XCTAssertNil(w.apps.detailController, "the page closed")
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.id), [own.id])
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application, "Apps comes forward")
+        let page = try XCTUnwrap(w.apps.detailController)
+        XCTAssertTrue(page.application === calculator)
+        XCTAssertEqual(page.shownPart, .buttons)
+        XCTAssertEqual(page.buttonsPart.list.selectedID, AnyHashable(own.id), "the row is selected")
+        XCTAssertEqual(Options.shared.buttons.binding, [], "Buttons is untouched")
+
+        w.apps.showList(focusList: false)
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.redo()
+        XCTAssertTrue(calculator.ownButtonBindings.isEmpty)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application)
+        XCTAssertEqual(w.apps.detailController?.shownPart, .buttons)
+    }
+
+    /// "Undo Remove App" from another pane: Apps comes forward with the list, the app back
+    /// in its place and selected. Redo while another app's page shows: the list, without it.
+    func testUndoOfARemovedAppFromAnotherPaneShowsAppsWithTheRowSelected() throws {
+        let calculator = Application(path: Self.calculator)
+        let textEdit = Application(path: "/System/Applications/TextEdit.app")
+        Options.shared.application.applications.append(calculator)
+        Options.shared.application.applications.append(textEdit)
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        let id = try XCTUnwrap(w.apps.rowID(for: calculator))
+        try step(w.undo) { w.apps.removeApplication(withID: id) }
+        XCTAssertEqual(w.apps.applications.map(\.path), [textEdit.path])
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Remove App")
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(w.apps.applications.map(\.path), [calculator.path, textEdit.path])
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application, "Apps comes forward")
+        XCTAssertNil(w.apps.detailController)
+        XCTAssertEqual(w.apps.list.selectedID, AnyHashable(id), "the row is selected")
+        XCTAssertTrue(w.window.firstResponder === w.apps.list)
+
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: textEdit)))
+        w.undo.redo()
+        XCTAssertEqual(w.apps.applications.map(\.path), [textEdit.path])
+        XCTAssertNil(w.apps.detailController, "the list, where the change is")
+        XCTAssertNil(w.apps.list.rows.first { $0.id == AnyHashable(id) })
+    }
+
     /// The pane on its own (no window's panes): Undo and Redo go to the pane's undo manager
     /// and show on the pane.
     func testThePaneOnItsOwnTakesUndoAndShowsIt() {

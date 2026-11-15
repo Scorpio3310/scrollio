@@ -561,6 +561,17 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(Options.shared.thumbWheel, before, "nothing changes")
         XCTAssertEqual(shown(row.pullDown), "Volume")
         XCTAssertEqual(item.state, .off)
+
+        // One tick, the function's, never beside it on "Show in Scrolling": AppKit does not
+        // tick the item a click chose (it does so only while the mouse tracks the menu, which
+        // a test cannot do: the setting is checked), and choosing it through the menu leaves
+        // the one tick.
+        XCTAssertEqual((row.pullDown.cell as? NSPopUpButtonCell)?.altersStateOfSelectedItem, false)
+        menu.performActionForItem(at: menu.index(of: item))
+        XCTAssertEqual(shownPanes, [PANEL_IDENTIFIER.scrolling, PANEL_IDENTIFIER.scrolling])
+        let ticked = menu.items.filter { $0.state == .on }
+        XCTAssertEqual(ticked.count, 1, ticked.map(\.title).description)
+        XCTAssertEqual(ticked.first.flatMap(ThumbWheelPresentation.function(of:)), .volume)
     }
 
     /// The row follows the mouse: an MX Master 3S has it, a mouse without a thumb wheel

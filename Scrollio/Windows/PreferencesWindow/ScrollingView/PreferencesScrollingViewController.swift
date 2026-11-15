@@ -956,8 +956,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         application.setOwnThumbWheelScrolling(settings)
     }
 
-    /// Brings the Thumb wheel box into view: "Thumb Wheel Settings…" of a thumb wheel row
-    /// opened this pane (or an app's Scrolling part).
+    /// Brings the Thumb wheel box into view: "Show in Scrolling" of a thumb wheel row opened
+    /// this pane ("Show in Safari › Scrolling": an app's Scrolling part).
     func revealThumbWheel() {
         guard isViewLoaded else { return }
         view.layoutSubtreeIfNeeded()

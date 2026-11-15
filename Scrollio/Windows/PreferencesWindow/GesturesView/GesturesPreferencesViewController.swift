@@ -494,7 +494,7 @@ final class GesturesPreferencesViewController: NSViewController {
 
     /// "Show in Buttons": the Buttons pane with the row of the button that runs the
     /// gestures selected (and lit on its card); while only an app's own button runs them,
-    /// that app's Buttons part (the item then says "Show in Notes").
+    /// that app's Buttons part (the item then says "Show in Notes › Buttons").
     func showInButtons() {
         // (What the row says, which an Undo keeps up to date.)
         let summary = shownSummary ?? bindingSummary()

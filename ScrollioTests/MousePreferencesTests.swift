@@ -1420,7 +1420,7 @@ final class MousePreferencesViewControllerTests: XCTestCase {
         XCTAssertNotEqual(controller.pointerSpeedSlider.maxValue, MousePaneModel.percentSliderRange.upperBound)
     }
 
-    // MARK: - Pointer (macOS)
+    // MARK: - All mice (macOS)
 
     func testTheMacOSBoxShowsWhatMacOSHas() {
         mac.trackingSpeed = 3

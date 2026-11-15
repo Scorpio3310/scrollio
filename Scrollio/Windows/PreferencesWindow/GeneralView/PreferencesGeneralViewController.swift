@@ -159,7 +159,7 @@ class PreferencesGeneralViewController: NSViewController {
     /// The box under the card, always there: whether Scrollio works, and the way out.
     private(set) var statusSection: PreferencesGroupSection!
     private(set) var statusRow: PreferencesGroupRow!
-    /// "Pause", "Resume", "Try Again" or "Open System Settings", by `runStatus`.
+    /// "Pause", "Resume", "Try Again Now" or "Open System Settings", by `runStatus`.
     private(set) var statusButton: NSButton!
     private(set) var launchOnLoginRow: PreferencesSwitchRow!
     /// Shown while macOS waits for the login item to be approved in System Settings.
@@ -702,7 +702,7 @@ class PreferencesGeneralViewController: NSViewController {
     /// What the row under the card says and what its button does. Pure. The title is the
     /// status-bar menu's, by the menu's rule and in its order (the missing access first,
     /// also while paused, then the pause, then a start problem); while Scrollio works,
-    /// "Scrollio is on". The button is the menu's way out: Pause, Resume, Try Again (a
+    /// "Scrollio is on". The button is the menu's way out: Pause, Resume, Try Again Now (a
     /// start that failed; an event tap kept off comes back by itself, so Pause there, as
     /// in the menu), and for the missing access the Permissions row's way to System Settings.
     struct RunStatus: Equatable {
@@ -740,7 +740,8 @@ class PreferencesGeneralViewController: NSViewController {
             switch action {
             case .pause: return "general-pause"
             case .resume: return "general-resume"
-            case .tryAgain: return "general-try-again"
+            // The menu's words: the line says it is trying again already; this tries now.
+            case .tryAgain: return "status-menu-try-again"
             case .allowAccess: return "general-accessibility-open-settings"
             }
         }
@@ -751,6 +752,7 @@ class PreferencesGeneralViewController: NSViewController {
         guard isViewLoaded else { return }
         let status = RunStatus(hasAccess: isAccessGranted(), isPaused: isPaused(), startProblem: startProblem())
         runStatus = status
+        syncAccessButton()
         let title = text(status.titleKey)
         let explanation = status.explanationKey.map(text)
         let buttonTitle = text(status.buttonKey)
@@ -835,13 +837,23 @@ class PreferencesGeneralViewController: NSViewController {
         accessibilityStatusIcon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         accessibilityStatusIcon.contentTintColor = hasAccess ? .systemGreen : .systemOrange
         accessibilityStatusLabel.stringValue = text(hasAccess ? "general-accessibility-allowed" : "general-accessibility-not-allowed")
-        // Without access the words are in the row's line, and the sign alone stands by the button.
+        // Without access the words are in the row's line, and the sign stands alone.
         accessibilityStatusLabel.isHidden = !hasAccess
-        openAccessibilitySettingsButton.isHidden = hasAccess
+        syncAccessButton()
         let explanation = text(hasAccess ? "general-accessibility-hint" : "general-accessibility-hint-not-allowed")
         if accessibilityRow.explanation != explanation {
             accessibilityRow.explanation = explanation
         }
+        PreferencesForm.fitToContent(self)
+    }
+
+    /// One "Open System Settings" on General: while the row under the card offers it (the
+    /// access is missing, which it says first), the Accessibility row keeps its sign and its
+    /// "Not allowed." line and shows no button of its own.
+    private func syncAccessButton() {
+        let hidden = hasAccess || runStatus.action == .allowAccess
+        guard openAccessibilitySettingsButton.isHidden != hidden else { return }
+        openAccessibilitySettingsButton.isHidden = hidden
         PreferencesForm.fitToContent(self)
     }
 

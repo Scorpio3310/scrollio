@@ -478,10 +478,11 @@ final class PreferencesApplicationTests: XCTestCase {
     }
 
     /// One line at a time; it goes when the pane is left or when the app gets on the list
-    /// another way (the menu bar's "Smooth Scrolling in …", "+"), and its button then adds
-    /// nothing more.
+    /// another way (the menu bar's "Smooth Scrolling in …", seen when the window becomes key
+    /// again; "+"), and its button then adds nothing more.
     func testTheLineIsOneAndGoesWithItsReason() throws {
         let controller = makeController(running: [candidate(Self.textEdit, program: Self.textEditProgram, name: "TextEdit")])
+        let window = makeWindow(for: controller)
         controller.showSettings(for: Self.calculatorApp)
         controller.showSettings(for: Self.textEditApp)
         XCTAssertEqual(controller.list.rows.map(\.title), ["TextEdit isn't on the list."], "the empty list's line makes way")
@@ -494,7 +495,13 @@ final class PreferencesApplicationTests: XCTestCase {
         controller.showSettings(for: Self.textEditApp)
         let add = try XCTUnwrap(controller.list.rows.first?.accessory as? NSButton)
         AppSmoothing.addWithSmoothingOff(path: Self.textEditProgram, list: Options.shared.application, scrolling: Options.shared.scroll)
-        controller.reloadRows()
+        // Another window becoming key changes nothing here; this pane's window does.
+        let other = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100), styleMask: [.titled], backing: .buffered, defer: true)
+        other.isReleasedWhenClosed = false
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: other)
+        XCTAssertNotNil(controller.offeredApplication)
+        XCTAssertEqual(controller.list.rows.map { $0.id as? String }, [PreferencesApplicationViewController.offerRowID])
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
         XCTAssertNil(controller.offeredApplication)
         XCTAssertEqual(controller.list.rows.map { $0.id as? String }, [Self.textEditProgram])
         controller.addOfferedApplication(add)
@@ -518,10 +525,11 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(controller.list.rows.map { $0.id as? String }, [Self.calculator])
     }
 
-    /// A long name is cut short in the line and in the button, so that both still say what
-    /// they are about and fit side by side; whole in the tooltips and for VoiceOver. A short
-    /// name stays whole.
-    func testALongNameIsCutInTheLineAndItsButton() throws {
+    /// A name too long for the line and its button side by side is read once: the button
+    /// says "Add" and the line has the room it frees, with the name whole when it fits
+    /// there, else cut short at its end; whole in the tooltips and for VoiceOver. A short
+    /// name stays whole in both.
+    func testALongNameIsReadOnceAndItsButtonSaysAdd() throws {
         let long = AppSmoothing.App(
             name: "Microsoft Visual Studio Code Insiders Edition With A Very Long Name",
             bundlePath: "/Applications/Long Test.app", executablePath: "/Applications/Long Test.app/Contents/MacOS/Long"
@@ -536,18 +544,36 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertTrue(cut.hasSuffix("…"))
         XCTAssertTrue(long.name.hasPrefix(String(cut.dropLast())))
         XCTAssertEqual(line.title, cut + " isn't on the list.")
-        XCTAssertEqual(add.title, "Add " + cut)
+        XCTAssertEqual(add.title, "Add", "the name is read once, in the line")
+        XCTAssertEqual(add.title, Self.catalog("apps-open-panel-prompt"))
         XCTAssertLessThanOrEqual(line.titleLabel.intrinsicContentSize.width, line.titleLabel.frame.width + 0.5, "not cut again")
         XCTAssertLessThanOrEqual(add.intrinsicContentSize.width, add.frame.width + 0.5, "not cut again")
-        XCTAssertLessThanOrEqual(add.frame.width, PreferencesApplicationViewController.boxWidth / 2 + 0.5)
         XCTAssertLessThanOrEqual(line.titleLabel.frame.maxX, add.frame.minX)
         XCTAssertLessThanOrEqual(add.frame.maxX, line.bounds.maxX)
+        XCTAssertGreaterThan(line.titleLabel.frame.width, PreferencesApplicationViewController.boxWidth / 2, "the room the button frees")
         XCTAssertEqual(line.toolTip, long.name + " isn't on the list.", "whole in the tooltip")
         XCTAssertEqual(add.toolTip, "Add " + long.name)
         XCTAssertEqual(add.accessibilityLabel(), "Add " + long.name)
 
-        XCTAssertEqual(PreferencesApplicationViewController.offerName("Safari"), "Safari")
-        XCTAssertEqual(PreferencesApplicationViewController.offerName("Visual Studio Code"), "Visual Studio Code")
+        // Too long for "Add Adobe Illustrator 2026" beside the line, short enough for "Add".
+        let adobe = AppSmoothing.App(
+            name: "Adobe Illustrator 2026",
+            bundlePath: "/Applications/Adobe Test.app", executablePath: "/Applications/Adobe Test.app/Contents/MacOS/Adobe"
+        )
+        controller.showSettings(for: adobe)
+        controller.view.layoutSubtreeIfNeeded()
+        let whole = try XCTUnwrap(controller.list.rows.first)
+        XCTAssertEqual(whole.title, "Adobe Illustrator 2026 isn't on the list.", "whole")
+        XCTAssertLessThanOrEqual(whole.titleLabel.intrinsicContentSize.width, whole.titleLabel.frame.width + 0.5, "not cut")
+        let adobeAdd = try XCTUnwrap(whole.accessory as? NSButton)
+        XCTAssertEqual(adobeAdd.title, "Add")
+        XCTAssertEqual(adobeAdd.toolTip, "Add Adobe Illustrator 2026")
+        XCTAssertEqual(adobeAdd.accessibilityLabel(), "Add Adobe Illustrator 2026")
+
+        let safari = PreferencesApplicationViewController.offerTitles("Safari")
+        XCTAssertEqual([safari.name, safari.button], ["Safari", "Add Safari"])
+        let code = PreferencesApplicationViewController.offerTitles("Visual Studio Code")
+        XCTAssertEqual([code.name, code.button], ["Visual Studio Code", "Add Visual Studio Code"])
     }
 
     /// From the menu bar: the window on Apps, whichever pane it showed, with the app's page

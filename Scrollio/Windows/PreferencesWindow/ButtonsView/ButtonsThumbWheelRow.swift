@@ -69,6 +69,9 @@ final class ThumbWheelPullDown: NSPopUpButton {
         super.init(frame: .zero, pullsDown: true)
         translatesAutoresizingMaskIntoConstraints = false
         widthAnchor.constraint(equalToConstant: ButtonActionPullDown.width).isActive = true
+        // The tick is the function's (`show`), not the item AppKit last chose: "Show in
+        // Scrolling" is never ticked beside it (as `ButtonActionPullDown`).
+        (cell as? NSPopUpButtonCell)?.altersStateOfSelectedItem = false
         menu = makeMenu()
         show(function)
     }

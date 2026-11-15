@@ -366,7 +366,7 @@ final class ApplicationDetailViewController: NSViewController {
         scrolling.scrollingController.revealThumbWheel()
     }
 
-    /// "Show in Figma" of the Gestures and Shortcut Ring parts' first rows: the Buttons part,
+    /// "Show in Figma › Buttons" of the Gestures and Shortcut Ring parts' first rows: the Buttons part,
     /// with the row of the app's own binding `id` selected.
     func showButtons(selecting id: UUID) {
         show(.buttons)

@@ -17,7 +17,7 @@
 //  or "No Action"; the one that does it is ticked); then
 //  "Record a Button…" (the ring: "Record a Button or Key…"), the recorder's popover at the
 //  pull-down, which says what the caught button or key loses ("Replaces: Copy",
-//  `TriggerChoiceMenu.replaced`); then "Show in Buttons", which says where it goes: "Show in Notes" while only
+//  `TriggerChoiceMenu.replaced`); then "Show in Buttons", which says where it goes: "Show in Notes › Buttons" while only
 //  an app's own button or key does it, since it then shows that app's Buttons part. While
 //  two or more of Buttons' buttons or keys do it, the menu offers "Show in Buttons" only:
 //  which one to keep is decided there.
@@ -362,7 +362,7 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
     /// What the pane's row names as doing it.
     private(set) var triggerTitles: [String] = []
     /// The app whose Buttons part "Show in Buttons" shows (only its own button or key does
-    /// it): the item says "Show in <app>". nil: the Buttons pane.
+    /// it): the item says "Show in <app> › Buttons". nil: the Buttons pane.
     private(set) var showsInApplication: String?
     /// What the menu shows, as last built.
     private(set) var menuModel = TriggerChoiceMenu(title: .choose, items: [])
@@ -456,8 +456,9 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
             menu.addItem(record)
             menu.addItem(.separator())
         }
-        let showTitle = showsInApplication.map { String(format: text("buttons-trigger-choice-show-in-app"), $0) }
-            ?? text("buttons-trigger-choice-show")
+        let showTitle = ButtonActionPullDown.showInTitle(
+            paneKey: "buttons-trigger-choice-show", part: .buttons, application: showsInApplication
+        )
         let show = NSMenuItem(title: showTitle, action: #selector(showChosen(_:)), keyEquivalent: "")
         show.target = self
         show.identifier = Identifier.showInButtons

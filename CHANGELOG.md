@@ -16,9 +16,9 @@ it for the people who use the app, and give the version its part before you tag 
   to do in one app, the Shortcut Ring and Gesture Navigation too; every other button does
   what Buttons says.
 - **Gestures for each app.** On an app's page in Apps, give the app its own action for
-  each gesture direction and the click: they run while the app is in front.
+  each gesture direction and the click: they run in that app.
 - **A Shortcut Ring for each app.** On an app's page in Apps, give the app eight shortcuts
-  of its own: that ring opens while the app is in front.
+  of its own: that ring opens in that app.
 - **An app's page has everything Scrolling, Gestures and Shortcut Ring have.** The thumb
   wheel's speed and direction, the gestures' mode, swipe speed and switches, and the
   ring's "Freeze pointer" can be set for each app too.
@@ -85,16 +85,17 @@ it for the people who use the app, and give the version its part before you tag 
 - **Menus show what is set.** An action menu ticks the action in use (its group shows a
   dash), and every jump inside Settings reads "Show in …": Show in Gestures, Show in
   Scrolling, Show in Mouse, Show in Shortcut Ring, "Show in Safari › Gestures".
-- **Undo for the ring's places and the gesture directions.** In Shortcut Ring, Gestures
-  and an app's own ring and gestures, Edit › Undo takes back a changed action, name or
-  icon, and shows where: the pane or the app's page comes forward with the row selected.
+- **Undo for the ring's places and the gesture directions.** In Shortcut Ring, Gestures,
+  Safari › Shortcut Ring and Safari › Gestures, Edit › Undo takes back a changed action,
+  name or icon, and shows it: that place comes forward with the row selected. So does
+  Undo in Buttons and Safari › Buttons, and of an app removed from Apps.
 - **Pause from Settings.** The top of General always says whether Scrollio works, in the
-  menu bar's words, with Pause (or Resume, Try Again, Open System Settings).
+  menu bar's words, with Pause (or Resume, Try Again Now, Open System Settings).
 - **Restore by date.** Restore… in General lists the kept settings by date and time.
 - **Settings for the app in front.** The menu bar menu has "Settings for Safari…": it
   opens that app's page in Apps, or offers "Add Safari" there.
-- **Mouse starts with your mouse.** With a Logitech mouse, the Mouse pane starts with "Let
-  Scrollio manage this mouse" and that mouse's settings; "All mice (macOS)" comes last.
+- **Mouse starts with your mouse.** With a Logitech mouse, Mouse starts with "Let Scrollio
+  manage this mouse" and that mouse's settings; "All mice (macOS)" comes last.
 - **The thumb wheel reaches the next desktop.** Switch Desktops moves a desktop every few
   notches of one roll (at most one each quarter second), Follow the wheel chains swipes so
   one long roll moves several desktops, and a single stray tick of the wheel does nothing.

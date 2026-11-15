@@ -20,7 +20,7 @@
 //  with what each does now, "Record a Button or Key…" and "Show in Buttons" (the Buttons
 //  pane with its row selected), and a choice writes the binding Buttons would, with Undo;
 //  while only an app's own button or key opens it, the row says where ("Only in Figma:
-//  Thumb panel.") and "Show in Figma" shows that app's Buttons part
+//  Thumb panel.") and "Show in Figma › Buttons" shows that app's Buttons part
 //  (`ApplicationTriggerRule`). With one button or key chosen the row says what to do with
 //  it ("Hold it, move towards a shortcut and let go."); its explanation also says that a
 //  key combination works, where that adds something (not when a key opens it).
@@ -626,7 +626,7 @@ final class RingPreferencesViewController: NSViewController {
 
     /// "Show in Buttons": the Buttons pane with the row of what opens the ring selected;
     /// while only an app's own button or key opens it, that app's Buttons part (the item
-    /// then says "Show in Figma").
+    /// then says "Show in Figma › Buttons").
     func showInButtons() {
         // (What the row says, which an Undo keeps up to date.)
         let summary = shownSummary ?? bindingSummary()

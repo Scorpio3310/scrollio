@@ -288,6 +288,9 @@ that must stay separate:
     user reads. Write "in Safari" and "in other apps".
   - A switch that follows a pane: "Use settings from <Pane>"; on, its line says "Changes
     under <Pane> apply to <App> too." A pop-up item that follows one: "Same as <Pane>".
+  - Every jump inside Settings says "Show in <Place>" ("Show in Gestures", and "Show in
+    Safari › Gestures" for an app's place); "Open …" only for places outside Scrollio
+    ("Open System Settings").
   - Buttons say "Default", with the effect in parentheses where it is known ("Default
     (Back)"). The places of Gestures and of the Shortcut Ring say "No Action".
   - What macOS does by itself: "the way macOS does", or "Left to macOS".

@@ -415,8 +415,8 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.statusRow.title, NSLocalizedString(StatusMenu.Title.paused.key, comment: ""))
     }
 
-    /// A start that failed: the menu's title, and Try Again tries at once (as "Try Again
-    /// Now" in the menu). A tap kept off comes back by itself: Pause, as in the menu.
+    /// A start that failed: the menu's title, and "Try Again Now", the menu's item in the
+    /// menu's words, tries at once. A tap kept off comes back by itself: Pause, as in the menu.
     func testAStartThatFailedOffersTryAgain() throws {
         install(.notRegistered)
         let world = World()
@@ -424,7 +424,18 @@ final class PreferencesGeneralTests: XCTestCase {
         let pane = try makePane(world)
         XCTAssertEqual(pane.statusRow.title, "Scrollio couldn't start and is trying again")
         XCTAssertNil(pane.statusRow.explanation)
-        XCTAssertEqual(pane.statusButton.title, "Try Again")
+        XCTAssertEqual(pane.statusButton.title, "Try Again Now")
+        let menu = NSMenu()
+        StatusMenu.build(
+            into: menu,
+            state: StatusMenu.State(
+                hasAccess: true, isPaused: false, showsDiagnostics: false, batteries: [], appSmoothing: nil,
+                appSettings: nil, updates: .none, startProblem: .retrying
+            ),
+            actions: StatusMenuActions()
+        )
+        let item = try XCTUnwrap(menu.items.first { $0.action == #selector(StatusMenuActions.tryAgainClicked(_:)) })
+        XCTAssertEqual(pane.statusButton.title, item.title, "the menu's item for the same state")
         XCTAssertTrue(pane.statusButton.accessibilityTitleUIElement() as? NSTextField === pane.statusRow.titleLabel)
         click(pane.statusButton)
         XCTAssertEqual(world.tryAgains, 1)
@@ -453,6 +464,7 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.statusRow.title, "Scrollio needs Accessibility access")
         XCTAssertEqual(pane.statusButton.title, "Open System Settings")
         XCTAssertEqual(pane.statusButton.title, pane.openAccessibilitySettingsButton.title)
+        XCTAssertEqual(shownButtons(titled: "Open System Settings", in: pane), [pane.statusButton], "one, under the card")
         click(pane.statusButton)
         XCTAssertEqual(world.accessibilitySettingsOpened, 1)
         XCTAssertEqual(world.resumes, 0, "Resume is not offered without the access")
@@ -624,19 +636,24 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertTrue(shownTexts(pane).contains("Permissions"))
     }
 
-    func testWithoutAccessTheRowLeadsToSystemSettings() throws {
+    /// Without access the row says "Not allowed." with its orange sign; the way to System
+    /// Settings is the row under the card's, once on the pane (its own button stays hidden
+    /// while that row offers it).
+    func testWithoutAccessTheRowSaysSoAndTheRowUnderTheCardLeadsToSystemSettings() throws {
         install(.notRegistered)
         let world = World()
         world.access = false
         let pane = try makePane(world)
         XCTAssertEqual(pane.accessibilityStatusLabel.stringValue, "Not allowed")
         XCTAssertEqual(pane.accessibilityStatusIcon.contentTintColor, .systemOrange)
-        XCTAssertFalse(pane.openAccessibilitySettingsButton.isHidden)
+        XCTAssertEqual(pane.runStatus.action, .allowAccess)
+        XCTAssertTrue(pane.openAccessibilitySettingsButton.isHidden, "the row under the card offers it")
+        XCTAssertEqual(shownButtons(titled: "Open System Settings", in: pane), [pane.statusButton])
         // Where it leads, in the words of macOS's own alert (not "Open Settings…", which the
         // Welcome Guide uses for Scrollio's own settings).
         XCTAssertEqual(pane.openAccessibilitySettingsButton.title, "Open System Settings")
-        // "Not allowed" is said in the row's line; by the button stands the orange sign alone,
-        // so the line keeps room for two lines (it was a narrow column of three).
+        // "Not allowed" is said in the row's line; the orange sign stands alone, so the line
+        // keeps room for two lines (it was a narrow column of three).
         XCTAssertTrue(pane.accessibilityStatusLabel.isHidden)
         XCTAssertFalse(pane.accessibilityStatusIcon.isHidden)
         XCTAssertEqual(
@@ -652,8 +669,25 @@ final class PreferencesGeneralTests: XCTestCase {
         )
         XCTAssertEqual(world.accessibilitySettingsOpened, 0, "showing the row opens nothing")
 
-        click(pane.openAccessibilitySettingsButton)
+        click(pane.statusButton)
         XCTAssertEqual(world.accessibilitySettingsOpened, 1)
+    }
+
+    /// With access, no "Open System Settings" at all.
+    func testWithAccessNoButtonLeadsToSystemSettings() throws {
+        install(.notRegistered)
+        let world = World()
+        let pane = try makePane(world)
+        XCTAssertTrue(shownButtons(titled: "Open System Settings", in: pane).isEmpty)
+    }
+
+    /// The push buttons titled `title` that show on the pane.
+    private func shownButtons(titled title: String, in pane: PreferencesGeneralViewController) -> [NSButton] {
+        func buttons(in view: NSView) -> [NSButton] {
+            let own = (view as? NSButton).map { [$0] } ?? []
+            return own + view.subviews.flatMap(buttons(in:))
+        }
+        return buttons(in: pane.view).filter { $0.title == title && !$0.isHiddenOrHasHiddenAncestor }
     }
 
     /// The access was turned off while Scrollio ran, and came back later.
@@ -668,7 +702,8 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(pane.accessibilityStatusLabel.stringValue, "Not allowed")
         XCTAssertTrue(pane.accessibilityStatusLabel.isHidden, "said in the row's line")
         XCTAssertEqual(pane.accessibilityRow.explanation?.hasPrefix("Not allowed. "), true)
-        XCTAssertFalse(pane.openAccessibilitySettingsButton.isHidden)
+        XCTAssertTrue(pane.openAccessibilitySettingsButton.isHidden, "the row under the card offers it")
+        XCTAssertEqual(pane.statusButton.title, "Open System Settings")
 
         world.access = true
         NotificationCenter.default.post(name: AppRunController.didChangeNotification, object: nil)
@@ -973,10 +1008,11 @@ final class PreferencesGeneralTests: XCTestCase {
                 func alignment(_ view: NSView) -> NSRect {
                     return row.convert(view.alignmentRect(forFrame: view.frame), from: view.superview)
                 }
-                // Allowed: the check and "Allowed"; not allowed: the sign and the button.
-                let status = alignment(access ? pane.accessibilityStatusLabel : pane.openAccessibilitySettingsButton)
+                // Allowed: the check and "Allowed"; not allowed: the sign alone (the row under
+                // the card offers "Open System Settings").
                 let sign = alignment(pane.accessibilityStatusIcon)
-                XCTAssertLessThanOrEqual(sign.maxX, status.minX, name)
+                let status = access ? alignment(pane.accessibilityStatusLabel) : sign
+                XCTAssertLessThanOrEqual(sign.maxX, access ? status.minX : sign.maxX, name)
                 let explanation = alignment(row.explanationLabel)
                 XCTAssertLessThanOrEqual(explanation.maxX, sign.minX, name)
                 XCTAssertLessThanOrEqual(explanation.maxX, status.minX, name)

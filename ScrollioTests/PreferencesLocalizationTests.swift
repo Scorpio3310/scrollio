@@ -86,7 +86,6 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-trigger-logitech", "buttons-trigger-logitech-twin", "buttons-trigger-key",
         "buttons-trigger-choice-choose", "buttons-trigger-choice-several", "buttons-trigger-choice-mouse",
         "buttons-trigger-choice-item", "buttons-trigger-choice-replaced", "buttons-trigger-choice-show",
-        "buttons-trigger-choice-show-in-app",
         "buttons-header-your-mouse", "buttons-header-count", "buttons-header-one", "buttons-header-none",
         "buttons-header-recording", "buttons-header-recording-hint",
         "buttons-header-find-hint", "buttons-header-find-this-one", "buttons-header-answer", "buttons-note-extra-button",
@@ -238,7 +237,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-problem-not-imported-title", "general-settings-problem-too-many",
         "general-settings-problem-not-stored",
         // The row under the card: whether Scrollio works, and its button.
-        "general-status-on", "general-pause", "general-try-again",
+        "general-status-on", "general-pause",
         // "Restore…": the last item under the kept settings.
         "general-settings-file-show-in-finder",
     ]
@@ -436,7 +435,6 @@ final class PreferencesLocalizationTests: XCTestCase {
         // The trigger pull-down of the Gestures and Shortcut Ring panes
         "buttons-trigger-choice-item": "@@",
         "buttons-trigger-choice-replaced": "@",
-        "buttons-trigger-choice-show-in-app": "@",
         "ring-trigger-bound": "@",
         "ring-trigger-apps": "@",
         "general-settings-problem-damaged": "@",
