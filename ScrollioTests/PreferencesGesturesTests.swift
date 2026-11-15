@@ -749,7 +749,7 @@ final class PreferencesGesturesTests: XCTestCase {
     /// "Show in Buttons" in the window: the Buttons pane opens with the row of the button
     /// that runs Gesture Navigation selected and lit on the card, and nothing is recorded or
     /// changed.
-    func testChangeInTheWindowSelectsTheGestureButtonsRowInButtons() throws {
+    func testShowInButtonsInTheWindowSelectsTheGestureButtonsRowInButtons() throws {
         let savedBindings = Options.shared.buttons.binding
         defer { Options.shared.buttons.binding = savedBindings }
         func binding(_ code: UInt16, _ shortcut: String) -> ButtonBinding {
