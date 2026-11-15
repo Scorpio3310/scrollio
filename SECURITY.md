@@ -22,10 +22,12 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
 - With Accessibility access, scroll and mouse button events pass through Scrollio while
   it runs and is not paused. It changes scroll events, takes the buttons and keys you
   gave an action, and posts the events those actions make.
-- Key presses pass through Scrollio only while a key is bound to an action in Buttons,
-  while a button you hold stands for a modifier, or while you record a key in Settings.
-  Otherwise it only listens to them, for the keys under Scrolling › While you hold a key,
-  and cannot delay them. It keeps no record of what you type.
+- Key presses pass through Scrollio only while a key is bound to an action (in Buttons,
+  or among an app's own buttons under Apps: then in every app, not only in that one, and
+  until a key that started an action is up), while a button you hold stands for a
+  modifier, while a Shortcut Ring is open (Esc closes it), or while you record a key in
+  Settings. Otherwise it only listens to them, for the keys under Scrolling › While you
+  hold a key, and cannot delay them. It keeps no record of what you type.
 - A released copy updates itself with [Sparkle](https://sparkle-project.org), and that
   is its only use of the network: it asks GitHub for the file `appcast.xml` of the
   newest release (once a day if the user allowed it, and on "Check for Updates…") and
@@ -37,9 +39,14 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
 - The released app is signed with a Developer ID, notarized by Apple, runs with the
   hardened runtime without exceptions and has no entitlements. It is not sandboxed: a
   sandboxed app cannot change other apps' events, talk to the mouse or run your scripts.
-- "Follow the hand" uses private macOS interfaces, looked up while the app runs. Where
-  they are missing the mode is not available. Starting a script (see below) uses one
-  more function that is in no public header.
+- Four things use macOS interfaces that are in no public header, each looked up by name
+  while the app runs and left alone where it is missing. "Follow the hand", and the thumb
+  wheel's "Follow the wheel", make the swipe between desktops with them (missing: the
+  mode is not available, and the thumb wheel switches desktops in steps). Mission Control
+  and Show Desktop ask the Dock through `CoreDockSendNotification` (missing: they are
+  sent as key presses). "Trackpad-style scrolling (Experimental)" takes the wheel's
+  hardware record off the events it sends, on macOS 27 and later (missing: the record
+  stays on). Starting a script (see below) uses one function more.
 
 ## How an update is trusted
 
@@ -87,13 +94,16 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
   does not check a script before it runs it. A planted binding cannot hang on ordinary
   typing or clicking: a key runs an action only with ⌘, ⌥, ⌃ or ⇧ held or when it is an
   F-key, and the left and right mouse buttons never do. (The ring opens only at its own
-  button or key, under the same rule; a click then runs only the place it is on.)
+  button or key, under the same rule; a click then runs one place of that ring and
+  nothing else: the place that is lit while the button is held, the place the click is
+  on in a ring left open.)
 - **A settings file can give a button a script.** General › Settings file › Import…
   takes a JSON file that can hold everything the panes can set: buttons and keys that
   open an app or a file or run a script, that press any key combination, that run a
-  system action such as Move to Trash, or that run a Logitech action; and places of the
-  Shortcut Ring that do the first three. What Scrollio
-  does about it:
+  system action such as Move to Trash, or that run a Logitech action; places of the
+  Shortcut Ring that do the first three; gesture directions that press any key
+  combination or run a system or a Logitech action; and all of these once more for each
+  app on the list (an app's own buttons, ring and gestures). What Scrollio does about it:
   - It reads only a regular file of at most 2 MB with at most 1000 buttons and keys and
     1000 apps. It takes only the settings on its list (anything else in the file is
     ignored), only entries this version can read and only actions this version runs;
@@ -102,7 +112,8 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
     is what was understood, written by Scrollio's own code.
   - Before anything changes, a sheet shows what the file holds: every button and key
     with what it will do, in the words of the Buttons pane, and every gesture direction
-    and place of the Shortcut Ring whose action is not the default one. For an action
+    and place of the Shortcut Ring whose action is not the default one, an app's own
+    with the app's name. For an action
     (of a button, a key or a place of the ring) that opens or runs something it
     also lists the whole path and the arguments, and for an app the identifier by which
     macOS would find it when nothing is at the path. Characters that draw nothing, are

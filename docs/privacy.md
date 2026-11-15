@@ -44,8 +44,14 @@ browsers" off, neither is a browser, Dia and Arc included.
 "Open at login" registers Scrollio as a login item; macOS may ask you to approve it in
 System Settings under Login Items.
 
-Key presses pass through Scrollio only while a key is bound to an action in Buttons,
-while a button you hold stands for a modifier, or while you record a key in Settings.
+Key presses pass through Scrollio only:
+
+- while a key is bound to an action, in Buttons or among an app's own buttons under Apps
+  (then in every app, not only in that one), and until a key that started an action is up;
+- while a button you hold stands for a modifier;
+- while a Shortcut Ring is open (Esc closes it);
+- while you record a key in Settings.
+
 Otherwise it only listens to them, for the keys under Scrolling › While you hold a key,
 and cannot delay them.
 
@@ -82,8 +88,10 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](../SECU
 - Besides its own settings, Scrollio reads:
   - the macOS keyboard shortcuts for Spaces (to run them), the keyboard layout in use
     (to press the right key for shortcuts such as ⌘A, and to name keys) and the macOS
-    setting for natural scrolling (for "Follow the hand", and once on a new
-    installation for the wheel's first direction);
+    setting for natural scrolling: for "Follow the hand"; for the wheel's first
+    direction, on a new installation and when an app under Apps gets scrolling settings
+    of its own; and in Settings, for Reset to Defaults in Scrolling and for the Scrolling
+    preview, each time Scrolling is shown;
   - for a swipe of the desktops ("Follow the hand", and the thumb wheel's "Follow the
     wheel"): the window server's list of the desktops (Spaces) of the display under the
     pointer, for how many there are, when a swipe begins; "Follow the wheel" also hears
