@@ -1500,6 +1500,48 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertNil(row.explanation)
     }
 
+    /// "Use Standard Button" has its own Undo ("Undo Which Button"): ⌘Z takes the
+    /// conversion back first, the merged row with it, and the row's older change of action
+    /// afterwards. Regression: it had none, and the older Undo, which puts back the row's
+    /// whole binding, took the standard button back to the Logitech one unseen.
+    func testUseStandardButtonHasItsOwnUndoBeforeTheRowsOlderChange() throws {
+        deviceName = nil
+        let logiBack = binding(1006, "copy")
+        let nativeBack = binding(3)
+        let other = binding(5, "paste")
+        let pane = makePane([nativeBack, logiBack, other])
+        let undo = try XCTUnwrap(pane.paneUndoManager)
+        undo.groupsByEvent = false
+        let missionControl = SystemShortcut.missionControl.identifier
+
+        undo.beginUndoGrouping()
+        pane.setAction(of: logiBack.id, to: SystemShortcut.missionControl)
+        undo.endUndoGrouping()
+        undo.beginUndoGrouping()
+        pane.useStandardButton(for: logiBack.id)
+        undo.endUndoGrouping()
+        let converted = try XCTUnwrap(pane.binding(for: logiBack.id))
+        XCTAssertEqual(converted.triggerEvent.code, 3, "the standard Back button")
+        XCTAssertEqual(converted.systemShortcutName, missionControl)
+        XCTAssertNil(pane.binding(for: nativeBack.id), "the Back button's own binding merged into it")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Which Button")
+
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.id), [nativeBack.id, logiBack.id, other.id], "the merged row is back")
+        let back = try XCTUnwrap(pane.binding(for: logiBack.id))
+        XCTAssertEqual(back.triggerEvent.code, 1006, "the conversion is taken back first")
+        XCTAssertEqual(back.systemShortcutName, missionControl, "the newer action stays")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [nativeBack, logiBack, other])
+
+        undo.redo()
+        undo.redo()
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.id), [logiBack.id, other.id])
+        XCTAssertEqual(pane.binding(for: logiBack.id)?.triggerEvent.code, 3)
+        XCTAssertEqual(pane.binding(for: logiBack.id)?.systemShortcutName, missionControl)
+    }
+
     /// A numbered button's row says it is an extra one only when nothing more pressing
     /// is to be said: a problem or what the action needs comes first.
     func testTheExtraButtonNoteComesLast() throws {

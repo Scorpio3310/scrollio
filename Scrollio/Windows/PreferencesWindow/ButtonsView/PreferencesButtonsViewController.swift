@@ -693,13 +693,23 @@ class PreferencesButtonsViewController: NSViewController {
     }
 
     /// Replaces a binding (its trigger may change: "Use Standard Button"); a binding of the
-    /// same trigger merges into it.
+    /// same trigger merges into it. Undo ("Undo Which Button": the row's button changed)
+    /// puts back the replaced binding and the merged ones, so that an older Undo of the row,
+    /// which puts back its whole binding, never takes the new trigger back unseen.
     func replaceBinding(_ binding: ButtonBinding) {
         guard buttonBindings.contains(where: { $0.id == binding.id }) else { return }
+        let before = buttonBindings
         buttonBindings = ButtonBindingReplacement.replacing(binding, in: buttonBindings)
         save()
         reloadRows()
         updateHeader()
+        let touched = before.enumerated().compactMap { index, old -> ButtonRowChange.State? in
+            let now = buttonBindings.first { $0.id == old.id }
+            return ButtonRowChange.isSame(now, old) ? nil : .init(id: old.id, binding: old, index: index)
+        }
+        // The replaced row first: Undo shows that one.
+        let states = touched.filter { $0.id == binding.id } + touched.filter { $0.id != binding.id }
+        registerUndo(of: ButtonRowChange(kind: .whichButton, states: states))
     }
 
     /// "Use Standard Button": the Logitech button becomes the standard button it stands for.
