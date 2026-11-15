@@ -1469,3 +1469,250 @@ final class ShortcutRingButtonsTests: XCTestCase {
         XCTAssertTrue(StoredAction.isKnown(stored))
     }
 }
+
+// MARK: - Undo of a place
+
+/// Edit › Undo and Redo of a place of the ring, the pane's and an app's own: the place as it
+/// was (with the name and icon of its keys), named as Buttons names it; the pane, or the
+/// app's page on its Shortcut Ring part, comes forward with the place's row selected, also
+/// from another pane and after the page closed; in order with a change in Buttons, whose
+/// Undo brings its pane forward too. The window as the app makes it, never shown.
+final class RingPlaceUndoTests: XCTestCase {
+
+    private static let calculator = "/System/Applications/Calculator.app"
+    /// A recorded key combination (⌘S as the settings store it).
+    private static let keys = "custom::1:1048576"
+
+    private var savedApplications: EnhanceArray<Application>!
+    private var savedBindings: [ButtonBinding] = []
+    private var savedRing = ShortcutRingSettings.default
+    private var uiDefaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        savedApplications = Options.shared.application.applications
+        savedBindings = Options.shared.buttons.binding
+        savedRing = Options.shared.ring
+        Options.shared.application.applications = EnhanceArray<Application>(
+            withArray: [], matchKey: "path", forObserver: { Options.shared.markChanged(.application) }
+        )
+        Options.shared.buttons.binding = []
+        Options.shared.ring = .default
+        ButtonUtils.shared.invalidateCache()
+        uiDefaults = TestDefaults.make(for: self)
+    }
+
+    override func tearDown() {
+        Options.shared.application.applications = savedApplications
+        Options.shared.buttons.binding = savedBindings
+        Options.shared.ring = savedRing
+        ShortcutRingController.forgetPreparedFaces()
+        ButtonUtils.shared.invalidateCache()
+        savedApplications = nil
+        uiDefaults = nil
+        super.tearDown()
+    }
+
+    private struct Window {
+        let window: NSWindow
+        let preferences: PreferencesSplitViewController
+        let undo: UndoManager
+        let ring: RingPreferencesViewController
+        let buttons: PreferencesButtonsViewController
+        let apps: PreferencesApplicationViewController
+    }
+
+    /// The window's panes (nothing remembered, no mouse), in a window of their own whose
+    /// undo manager takes a group per step.
+    private func makeWindow() throws -> Window {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let preferences = PreferencesSplitViewController(storyboard: storyboard, uiStateDefaults: nil)
+        let ring = try XCTUnwrap(preferences.controller(for: RingPreferencesViewController.tabIdentifier) as? RingPreferencesViewController)
+        ring.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: []) }
+        let buttons = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController)
+        buttons.deviceSource = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        let apps = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)
+        apps.uiStateDefaults = uiDefaults
+        apps.runningApplications = { [] }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = preferences
+        addTeardownBlock { window.close() }
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        return Window(window: window, preferences: preferences, undo: undo, ring: ring, buttons: buttons, apps: apps)
+    }
+
+    /// One user action: one group on the undo manager.
+    private func step(_ undo: UndoManager, _ body: () throws -> Void) rethrows {
+        undo.beginUndoGrouping()
+        defer { undo.endUndoGrouping() }
+        try body()
+    }
+
+    private func label(_ name: String) throws -> ShortcutLabel {
+        return try XCTUnwrap(ShortcutLabel(name: name, icon: .symbol("square.and.arrow.down")))
+    }
+
+    /// The pane: Undo puts back the keys with their name and icon, selects the row and gives
+    /// its pull-down the keyboard; Redo makes the change again. A new name alone is a rename.
+    func testUndoPutsBackAPlaceWithItsNameAndIconAndRedoChangesItAgain() throws {
+        let saved = ShortcutRingPlace(action: Self.keys, label: try label("Save All"))
+        Options.shared.ring[2] = saved
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: RingPreferencesViewController.tabIdentifier))
+        let popUp = w.ring.placePopUps[2]
+        XCTAssertEqual(popUp.binding.label, saved.label)
+
+        try step(w.undo) { popUp.onShortcutSelected?(SystemShortcut.paste) }
+        XCTAssertEqual(Options.shared.ring[2], ShortcutRingPlace(SystemShortcut.paste))
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Change Action")
+        w.ring.selectPlace(5)
+        w.window.makeFirstResponder(nil)
+
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.ring[2], saved, "the keys with their name and icon")
+        XCTAssertEqual(popUp.binding.label, saved.label, "the row shows them")
+        XCTAssertEqual(w.ring.selectedPlace, 2, "the row is selected")
+        XCTAssertTrue(w.window.firstResponder === popUp, "its pull-down has the keyboard")
+        XCTAssertEqual(w.undo.redoMenuItemTitle, "Redo Change Action")
+
+        w.undo.redo()
+        XCTAssertEqual(Options.shared.ring[2], ShortcutRingPlace(SystemShortcut.paste))
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Change Action")
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.ring[2], saved)
+
+        // Only another name for the same keys.
+        let renamed = ShortcutRingPlace(action: Self.keys, label: try label("Keep"))
+        try step(w.undo) { popUp.onCustomShortcutRecorded?(Self.keys, renamed.label) }
+        XCTAssertEqual(Options.shared.ring[2], renamed)
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Rename", "as Buttons calls it")
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.ring[2], saved)
+        XCTAssertEqual(w.undo.redoMenuItemTitle, "Redo Rename")
+    }
+
+    /// From another pane: the Shortcut Ring pane comes forward, its folded places open and
+    /// the row is selected. A pane on show stays where it is.
+    func testUndoFromAnotherPaneShowsTheRingPaneWithTheRowSelected() throws {
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: RingPreferencesViewController.tabIdentifier))
+        let places = try XCTUnwrap(w.ring.placesSection)
+        XCTAssertTrue(places.isCollapsible, "nothing opens the ring: the places fold")
+        places.setExpanded(true)
+        try step(w.undo) { w.ring.placePopUps[6].onShortcutSelected?(nil) }
+        XCTAssertEqual(Options.shared.ring[6], .empty)
+        places.setExpanded(false)
+
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        XCTAssertNil(w.ring.view.window, "the pane is out of the window")
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.ring[6], ShortcutRingSettings.default[6])
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, RingPreferencesViewController.tabIdentifier)
+        XCTAssertTrue(places.showsBody, "the places open")
+        XCTAssertEqual(w.ring.selectedPlace, 6)
+        XCTAssertTrue(w.window.firstResponder === w.ring.placePopUps[6])
+        XCTAssertEqual(w.ring.placePopUps[6].binding.systemShortcutName, ShortcutRingSettings.default[6].action)
+    }
+
+    /// An app's own ring, after its page closed and while General shows: Apps comes forward
+    /// with the app's page on its Shortcut Ring part, the row selected; Redo too. The general
+    /// ring is never touched.
+    func testUndoOfAnAppsPlaceAfterItsPageClosedOpensThePageWithTheRowSelected() throws {
+        let calculator = Application(path: Self.calculator)
+        Options.shared.application.applications.append(calculator)
+        calculator.setUsesGeneralRing(false, general: Options.shared.ring)
+        let before = try XCTUnwrap(calculator.ownRingPlaces?[5])
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        w.apps.openApplication(withID: try XCTUnwrap(w.apps.rowID(for: calculator)), part: .ring)
+        let ring = try XCTUnwrap(w.apps.detailController?.ringPart.ringController)
+        try step(w.undo) { ring.placePopUps[5].onShortcutSelected?(SystemShortcut.paste) }
+        XCTAssertEqual(calculator.ownRingPlaces?[5], ShortcutRingPlace(SystemShortcut.paste))
+        XCTAssertEqual(w.undo.undoMenuItemTitle, "Undo Change Action")
+
+        w.apps.showList(focusList: false)
+        XCTAssertNil(w.apps.detailController, "the page closed")
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        w.undo.undo()
+        XCTAssertEqual(calculator.ownRingPlaces?[5], before)
+        XCTAssertEqual(Options.shared.ring, .default, "the general ring is untouched")
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application)
+        let page = try XCTUnwrap(w.apps.detailController)
+        XCTAssertTrue(page.application === calculator)
+        XCTAssertEqual(page.shownPart, .ring)
+        let shown = try XCTUnwrap(page.ringPart.ringController)
+        XCTAssertEqual(shown.placePopUps[5].binding.systemShortcutName, before.action)
+        XCTAssertEqual(shown.placesSection?.showsBody, true, "its folded rows open")
+        XCTAssertEqual(shown.selectedPlace, 5)
+        XCTAssertTrue(w.window.firstResponder === shown.placePopUps[5])
+
+        w.undo.redo()
+        XCTAssertEqual(calculator.ownRingPlaces?[5], ShortcutRingPlace(SystemShortcut.paste))
+        XCTAssertEqual(shown.placePopUps[5].binding.systemShortcutName, SystemShortcut.paste.identifier, "the page on show follows")
+        XCTAssertEqual(Options.shared.ring, .default)
+    }
+
+    /// A change in Buttons, then one in the ring: Undo takes back the ring's first and shows
+    /// its pane, then the button's and shows Buttons with its row selected; Redo goes the
+    /// other way.
+    func testUndoTakesBackAPlaceAndAButtonsChangeInOrderEachInItsPane() throws {
+        let copy = ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: SystemShortcut.copy.identifier, isEnabled: true
+        )
+        Options.shared.buttons.binding = [copy]
+        let w = try makeWindow()
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons))
+        let row = try XCTUnwrap(w.buttons.row(for: copy.id))
+        try step(w.undo) { row.pullDown.onShortcutSelected?(SystemShortcut.paste) }
+        XCTAssertEqual(Options.shared.buttons.binding.first?.systemShortcutName, SystemShortcut.paste.identifier)
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: RingPreferencesViewController.tabIdentifier))
+        try step(w.undo) { w.ring.placePopUps[1].onShortcutSelected?(SystemShortcut.copy) }
+        XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.ring, .default)
+        XCTAssertEqual(Options.shared.buttons.binding.first?.systemShortcutName, SystemShortcut.paste.identifier, "not yet")
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, RingPreferencesViewController.tabIdentifier)
+        w.undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [copy])
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.buttons, "Buttons comes forward")
+        XCTAssertEqual(w.buttons.list.selectedID, w.buttons.rowID(forBinding: copy.id))
+        XCTAssertFalse(w.undo.canUndo)
+
+        w.undo.redo()
+        XCTAssertEqual(Options.shared.buttons.binding.first?.systemShortcutName, SystemShortcut.paste.identifier)
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.buttons)
+        w.undo.redo()
+        XCTAssertEqual(Options.shared.ring[1], ShortcutRingPlace(SystemShortcut.copy))
+        XCTAssertEqual(w.preferences.selectedPaneIdentifier, RingPreferencesViewController.tabIdentifier)
+    }
+
+    /// The pane on its own (no window's panes): Undo and Redo go to the pane's undo manager
+    /// and show on the pane.
+    func testThePaneOnItsOwnTakesUndoAndShowsIt() {
+        let controller = RingPreferencesViewController()
+        controller.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: []) }
+        _ = controller.view
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        controller.paneUndoManager = undo
+        step(undo) { controller.placePopUps[0].onShortcutSelected?(SystemShortcut.paste) }
+        XCTAssertEqual(Options.shared.ring[0], ShortcutRingPlace(SystemShortcut.paste))
+        controller.selectPlace(4)
+        undo.undo()
+        XCTAssertEqual(Options.shared.ring, .default)
+        XCTAssertEqual(controller.placePopUps[0].binding.systemShortcutName, ShortcutRingSettings.default[0].action)
+        XCTAssertEqual(controller.selectedPlace, 0)
+        XCTAssertFalse(undo.canUndo)
+        undo.redo()
+        XCTAssertEqual(Options.shared.ring[0], ShortcutRingPlace(SystemShortcut.paste))
+    }
+}
