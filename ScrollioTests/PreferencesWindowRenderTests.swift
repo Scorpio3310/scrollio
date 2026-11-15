@@ -1091,9 +1091,11 @@ final class PreferencesWindowRenderTests: XCTestCase {
                         continue
                     }
                     let isHeader = item.isSectionHeader
+                    // An item without an action is dimmed, as AppKit shows it.
+                    let isDimmed = !isHeader && item.action == nil && item.submenu == nil
                     let attributes: [NSAttributedString.Key: Any] = [
                         .font: isHeader ? NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold) : font,
-                        .foregroundColor: isHeader ? NSColor.secondaryLabelColor : NSColor.labelColor,
+                        .foregroundColor: isHeader ? NSColor.secondaryLabelColor : isDimmed ? NSColor.tertiaryLabelColor : NSColor.labelColor,
                     ]
                     let title = NSAttributedString(string: item.title, attributes: attributes)
                     var x: CGFloat = 14
@@ -1104,8 +1106,19 @@ final class PreferencesWindowRenderTests: XCTestCase {
                         }
                         x += 16
                         if let image = item.image {
-                            image.draw(in: NSRect(x: x, y: y + (height - image.size.height) / 2, width: image.size.width, height: image.size.height),
-                                       from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                            let place = NSRect(x: x, y: y + (height - image.size.height) / 2, width: image.size.width, height: image.size.height)
+                            var shown = image
+                            if image.isTemplate {
+                                // A symbol takes the text's colour, as in a menu.
+                                let tint = NSColor(cgColor: (attributes[.foregroundColor] as? NSColor ?? .labelColor).cgColor) ?? .black
+                                shown = NSImage(size: image.size, flipped: false) { rect in
+                                    image.draw(in: rect)
+                                    tint.setFill()
+                                    rect.fill(using: .sourceAtop)
+                                    return true
+                                }
+                            }
+                            shown.draw(in: place, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
                             x += image.size.width + 6
                         }
                     }
@@ -1113,6 +1126,12 @@ final class PreferencesWindowRenderTests: XCTestCase {
                     if item.submenu != nil {
                         let chevron = NSAttributedString(string: "›", attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
                         chevron.draw(at: NSPoint(x: width - 14 - chevron.size().width, y: y + (height - chevron.size().height) / 2))
+                    }
+                    if !item.keyEquivalent.isEmpty {
+                        let keys = NSAttributedString(string: "⌘" + item.keyEquivalent.uppercased(), attributes: [
+                            .font: font, .foregroundColor: NSColor.secondaryLabelColor,
+                        ])
+                        keys.draw(at: NSPoint(x: width - 14 - keys.size().width, y: y + (height - keys.size().height) / 2))
                     }
                     if let mark = item.badge?.stringValue {
                         let badge = NSAttributedString(string: mark, attributes: [
@@ -1125,6 +1144,41 @@ final class PreferencesWindowRenderTests: XCTestCase {
             NSGraphicsContext.restoreGraphicsState()
             let png = try XCTUnwrap(canvas.representation(using: .png, properties: [:]))
             try png.write(to: directory.appendingPathComponent("\(name)-\(suffix).png"))
+        }
+    }
+
+    /// The menu bar menu (`status-menu-<case>-<appearance>.png`), drawn as a stand-in from
+    /// the menu `StatusMenu` builds: working (batteries, the app in front, the updater),
+    /// and with its title while Scrollio does not work: paused, waiting for the access, a
+    /// start that failed, an event tap kept off.
+    func testRenderStatusMenu() throws {
+        let actions = StatusMenuActions()
+        let batteries = StatusMenu.batteries(from: [
+            MouseDeviceFixtures.mxMaster4(),
+            MouseDeviceFixtures.mxMaster3S(battery: MouseDeviceFixtures.battery(40, charging: .charging)),
+        ])
+        let safari = AppSmoothing.App(name: "Safari", bundlePath: "/Applications/Safari.app",
+                                      executablePath: "/Applications/Safari.app/Contents/MacOS/Safari")
+        let smoothing = StatusMenu.appSmoothingItem(front: safari, isScrollio: false, scrollingRuns: true,
+                                                    rule: .usesScrollingSettings, scrollingSmooth: true, limitedToListedApps: false)
+        func state(access: Bool = true, paused: Bool = false, problem: StatusMenu.StartProblem? = nil,
+                   smoothing: StatusMenu.AppSmoothingItem? = nil) -> StatusMenu.State {
+            var state = StatusMenu.State(hasAccess: access, isPaused: paused, showsDiagnostics: false,
+                                         batteries: access ? batteries : [], appSmoothing: smoothing,
+                                         updates: .check(enabled: true), startProblem: problem)
+            state.isDebugBuild = false
+            return state
+        }
+        for (name, shown) in [
+            ("working", state(smoothing: smoothing)),
+            ("paused", state(paused: true)),
+            ("needs-access", state(access: false)),
+            ("could-not-start", state(problem: .retrying)),
+            ("tap-off", state(problem: .tapOff)),
+        ] {
+            let menu = NSMenu()
+            StatusMenu.build(into: menu, state: shown, actions: actions)
+            try renderMenuStandIn(menu.items, name: "status-menu-\(name)")
         }
     }
 

@@ -22,14 +22,22 @@ final class StatusMenuTests: XCTestCase {
         let shortcut: String
         let enabled: Bool
         let checked: Bool
+        /// A section header: the title of the group under it.
+        let header: Bool
 
         static let separator = Row(title: "—")
 
-        init(title: String, shortcut: String = "", enabled: Bool = true, checked: Bool = false) {
+        init(title: String, shortcut: String = "", enabled: Bool = true, checked: Bool = false, header: Bool = false) {
             self.title = title
             self.shortcut = shortcut
             self.enabled = enabled
             self.checked = checked
+            self.header = header
+        }
+
+        /// The title at the top of the menu while Scrollio does not work.
+        static func title(_ text: String) -> Row {
+            return Row(title: text, enabled: false, header: true)
         }
 
         init(_ item: NSMenuItem) {
@@ -43,11 +51,12 @@ final class StatusMenuTests: XCTestCase {
             }
             // AppKit enables an item whose target implements its action (autoenablesItems).
             let enabled = item.action.map { action in (item.target as? NSObject)?.responds(to: action) ?? false } ?? false
-            self.init(title: item.title, shortcut: shortcut, enabled: enabled, checked: item.state == .on)
+            self.init(title: item.title, shortcut: shortcut, enabled: enabled, checked: item.state == .on,
+                      header: item.isSectionHeader)
         }
 
         var description: String {
-            return "\(checked ? "✓ " : "")\(title)\(shortcut.isEmpty ? "" : " [\(shortcut)]")\(enabled ? "" : " (disabled)")"
+            return "\(header ? "# " : "")\(checked ? "✓ " : "")\(title)\(shortcut.isEmpty ? "" : " [\(shortcut)]")\(enabled ? "" : " (disabled)")"
         }
     }
 
@@ -67,6 +76,8 @@ final class StatusMenuTests: XCTestCase {
         actions.showSettings = { calls.log.append("settings") }
         actions.showWelcomeGuide = { calls.log.append("guide") }
         actions.togglePause = { calls.log.append("pause") }
+        actions.tryAgain = { calls.log.append("try again") }
+        actions.showMouseSettings = { calls.log.append("mouse") }
         actions.toggleAppSmoothing = { calls.log.append("smoothing \($0.name)") }
         actions.showScrollMonitor = { calls.log.append("monitor") }
         actions.showDiagnostics = { calls.log.append("diagnostics") }
@@ -95,13 +106,17 @@ final class StatusMenuTests: XCTestCase {
     private func state(
         access: Bool = true, paused: Bool = false, diagnostics: Bool = false,
         batteries: [StatusMenu.Battery] = [], appSmoothing: StatusMenu.AppSmoothingItem? = nil,
-        updates: StatusMenu.Updates = .none
+        updates: StatusMenu.Updates = .none, startProblem: StatusMenu.StartProblem? = nil
     ) -> StatusMenu.State {
         return StatusMenu.State(
             hasAccess: access, isPaused: paused, showsDiagnostics: diagnostics, batteries: batteries,
-            appSmoothing: appSmoothing, updates: updates
+            appSmoothing: appSmoothing, updates: updates, startProblem: startProblem
         )
     }
+
+    private static let pausedTitle = Row.title("Scrollio is paused")
+    private static let needsAccessTitle = Row.title("Scrollio needs Accessibility access")
+    private static let couldNotStartTitle = Row.title("Scrollio couldn't start and is trying again")
 
     private static let safari = AppSmoothing.App(
         name: "Safari",
@@ -130,10 +145,30 @@ final class StatusMenuTests: XCTestCase {
 
     // MARK: - Contents
 
+    /// While Scrollio works the menu has no title: Pause | Settings | Quit.
     func testWithAccess() {
         XCTAssertEqual(rows(state()), [
             Row(title: "Pause Scrollio"),
+            .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+    }
+
+    /// The groups: the batteries | the app in front and Pause | Settings and the check for
+    /// updates | Quit.
+    func testTheGroups() throws {
+        let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
+        let smoothing = try XCTUnwrap(safariItem(.usesScrollingSettings))
+        XCTAssertEqual(rows(state(batteries: [battery], appSmoothing: smoothing, updates: .check(enabled: true))), [
+            Row(title: "MX Master 4: 75%"),
+            .separator,
+            Row(title: "Smooth Scrolling in Safari", checked: true),
+            Row(title: "Pause Scrollio"),
+            .separator,
+            Row(title: "Settings…", shortcut: "⌘,"),
+            Row(title: "Check for Updates…"),
             .separator,
             Row(title: "Quit Scrollio", shortcut: "⌘Q"),
         ])
@@ -145,6 +180,7 @@ final class StatusMenuTests: XCTestCase {
     func testCheckForUpdatesFollowsSettings() throws {
         XCTAssertEqual(rows(state(updates: .check(enabled: true))), [
             Row(title: "Pause Scrollio"),
+            .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             Row(title: "Check for Updates…"),
             .separator,
@@ -158,6 +194,7 @@ final class StatusMenuTests: XCTestCase {
     func testCheckForUpdatesIsDimmedWhileACheckRuns() {
         XCTAssertEqual(rows(state(updates: .check(enabled: false))), [
             Row(title: "Pause Scrollio"),
+            .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             Row(title: "Check for Updates…", enabled: false),
             .separator,
@@ -173,9 +210,10 @@ final class StatusMenuTests: XCTestCase {
         XCTAssertEqual(rows(waiting), [
             Row(title: "Update to Scrollio 1.1.0…"),
             .separator,
-            Row(title: "MX Master 4: 75%", enabled: false),
+            Row(title: "MX Master 4: 75%"),
             .separator,
             Row(title: "Pause Scrollio"),
+            .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
             Row(title: "Quit Scrollio", shortcut: "⌘Q"),
@@ -187,16 +225,19 @@ final class StatusMenuTests: XCTestCase {
     /// An update may be what a copy without the access needs.
     func testWithoutAccessTheUpdaterIsStillThere() {
         XCTAssertEqual(rows(state(access: false, updates: .check(enabled: true))), [
+            Self.needsAccessTitle,
             Row(title: "Allow Accessibility Access…"),
             .separator,
             Row(title: "Check for Updates…"),
             .separator,
             Row(title: "Quit Scrollio", shortcut: "⌘Q"),
         ])
+        // The title and its action first, the waiting update under them.
         XCTAssertEqual(rows(state(access: false, updates: .waiting(version: "2.0"))), [
-            Row(title: "Update to Scrollio 2.0…"),
-            .separator,
+            Self.needsAccessTitle,
             Row(title: "Allow Accessibility Access…"),
+            .separator,
+            Row(title: "Update to Scrollio 2.0…"),
             .separator,
             Row(title: "Quit Scrollio", shortcut: "⌘Q"),
         ])
@@ -216,13 +257,110 @@ final class StatusMenuTests: XCTestCase {
         XCTAssertEqual(StatusItemManager.liveState().updates, .none)
     }
 
+    /// Paused: the title, Resume under it, then the rest as always.
     func testPaused() {
         XCTAssertEqual(rows(state(paused: true)), [
+            Self.pausedTitle,
             Row(title: "Resume Scrollio"),
+            .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
             Row(title: "Quit Scrollio", shortcut: "⌘Q"),
         ])
+        // A waiting update and the batteries under the title's group.
+        let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
+        XCTAssertEqual(rows(state(paused: true, batteries: [battery], updates: .waiting(version: "1.1.0"))), [
+            Self.pausedTitle,
+            Row(title: "Resume Scrollio"),
+            .separator,
+            Row(title: "Update to Scrollio 1.1.0…"),
+            .separator,
+            Row(title: "MX Master 4: 75%"),
+            .separator,
+            Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+    }
+
+    /// A start that failed: the title, "Try Again Now", and Pause (which stops the tries).
+    func testCouldNotStartOffersToTryAgainNow() throws {
+        XCTAssertEqual(rows(state(startProblem: .retrying)), [
+            Self.couldNotStartTitle,
+            Row(title: "Try Again Now"),
+            Row(title: "Pause Scrollio"),
+            .separator,
+            Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+        try choose("Try Again Now", in: menu(state(startProblem: .retrying)))
+        XCTAssertEqual(calls.log, ["try again"])
+    }
+
+    /// An event tap kept off for a while comes back by itself: the title over Pause, no
+    /// "Try Again Now" (the wait keeps input usable).
+    func testATapKeptOffSaysSoWithoutTryingAgain() {
+        let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
+        XCTAssertEqual(rows(state(batteries: [battery], startProblem: .tapOff)), [
+            Self.couldNotStartTitle,
+            Row(title: "Pause Scrollio"),
+            .separator,
+            Row(title: "MX Master 4: 75%"),
+            .separator,
+            Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+    }
+
+    /// The title is there only while Scrollio does not work, always first, a section
+    /// header; and it says what the icon's tooltip says.
+    func testTheTitleOnlyWhileScrollioDoesNotWork() {
+        let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
+        for access in [true, false] {
+            for paused in [false, true] {
+                for problem in [nil, .retrying, .tapOff] as [StatusMenu.StartProblem?] {
+                    for updates in [StatusMenu.Updates.none, .check(enabled: true), .waiting(version: "1.1.0")] {
+                        let shown = state(access: access, paused: paused, diagnostics: true, batteries: [battery],
+                                          updates: updates, startProblem: problem)
+                        let built = menu(shown)
+                        let headers = built.items.filter(\.isSectionHeader)
+                        let works = access && !paused && problem == nil
+                        let label = "access \(access), paused \(paused), \(String(describing: problem)), \(updates)"
+                        XCTAssertEqual(headers.count, works ? 0 : 1, label)
+                        XCTAssertEqual(StatusMenu.title(for: shown) == nil, works, label)
+                        guard !works else { continue }
+                        XCTAssertTrue(built.items[0].isSectionHeader, label)
+                        XCTAssertFalse(built.items[1].isSeparatorItem, "an action under the title: \(label)")
+                        // Without the access the menu offers only the way to it, and says so.
+                        guard access else {
+                            XCTAssertEqual(built.items[0].title, "Scrollio needs Accessibility access", label)
+                            continue
+                        }
+                        let tooltip = StatusMenu.IconLook(
+                            coresActive: problem != .retrying && !paused, isPaused: paused,
+                            startFailed: problem == .retrying, tapRestartsThrottled: problem == .tapOff
+                        ).toolTip
+                        XCTAssertEqual(built.items[0].title + ".", tooltip, label)
+                    }
+                }
+            }
+        }
+    }
+
+    /// "Couldn't start" by the icon's rule: a failed start while the cores are off, or a tap
+    /// kept off while they run.
+    func testTheStartProblemFollowsTheIconsRule() {
+        XCTAssertNil(StatusMenu.startProblem(coresActive: true, startFailed: false, tapRestartsThrottled: false))
+        XCTAssertNil(StatusMenu.startProblem(coresActive: false, startFailed: false, tapRestartsThrottled: false),
+                     "waiting for the access, asleep or another user: not a start problem")
+        XCTAssertNil(StatusMenu.startProblem(coresActive: false, startFailed: false, tapRestartsThrottled: true))
+        XCTAssertEqual(StatusMenu.startProblem(coresActive: false, startFailed: true, tapRestartsThrottled: false), .retrying)
+        XCTAssertEqual(StatusMenu.startProblem(coresActive: false, startFailed: true, tapRestartsThrottled: true), .retrying)
+        XCTAssertEqual(StatusMenu.startProblem(coresActive: true, startFailed: false, tapRestartsThrottled: true), .tapOff)
+        // Under tests nothing fails and nothing is throttled: the live menu has no title for it.
+        XCTAssertNil(StatusItemManager.liveState().startProblem)
     }
 
     func testWithoutAccess() {
@@ -231,6 +369,7 @@ final class StatusMenuTests: XCTestCase {
             for diagnostics in [false, true] {
                 let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
                 XCTAssertEqual(rows(state(access: false, paused: paused, diagnostics: diagnostics, batteries: [battery])), [
+                    Self.needsAccessTitle,
                     Row(title: "Allow Accessibility Access…"),
                     .separator,
                     Row(title: "Quit Scrollio", shortcut: "⌘Q"),
@@ -243,6 +382,7 @@ final class StatusMenuTests: XCTestCase {
     func testOptionAddsTheDiagnosticsAboveQuit() {
         XCTAssertEqual(rows(state(diagnostics: true)), [
             Row(title: "Pause Scrollio"),
+            .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
             Row(title: "Scroll Monitor"),
@@ -260,6 +400,7 @@ final class StatusMenuTests: XCTestCase {
         release.isDebugBuild = false
         XCTAssertEqual(rows(release), [
             Row(title: "Pause Scrollio"),
+            .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
             Row(title: "Logitech Diagnostics"),
@@ -280,24 +421,41 @@ final class StatusMenuTests: XCTestCase {
         XCTAssertTrue(state().isDebugBuild)
     }
 
-    func testOneDisabledBatteryLinePerMouseOnTop() {
+    /// One line per mouse, in a group of their own at the top (under the title, when there is
+    /// one); a click on a line opens Settings › Mouse.
+    func testOneBatteryLinePerMouseThatOpensTheMousePane() throws {
         let batteries = StatusMenu.batteries(from: [
             MouseDeviceFixtures.mxMaster4(),
             MouseDeviceFixtures.mxMaster3S(battery: MouseDeviceFixtures.battery(40, charging: .charging)),
         ])
-        let built = menu(state(paused: true, batteries: batteries))
+        let built = menu(state(batteries: batteries))
         XCTAssertEqual(built.items.map(Row.init), [
-            Row(title: "MX Master 4: 75%", enabled: false),
-            Row(title: "MX Master 3S: 40%, charging", enabled: false),
+            Row(title: "MX Master 4: 75%"),
+            Row(title: "MX Master 3S: 40%, charging"),
             .separator,
-            Row(title: "Resume Scrollio"),
+            Row(title: "Pause Scrollio"),
+            .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
             Row(title: "Quit Scrollio", shortcut: "⌘Q"),
         ])
         XCTAssertNotNil(built.items[0].image, "a battery symbol")
         XCTAssertEqual(built.items[0].tag, StatusMenu.batteryTag)
-        XCTAssertNil(built.items[0].action)
+        for title in ["MX Master 4: 75%", "MX Master 3S: 40%, charging"] {
+            calls.log = []
+            try choose(title, in: built)
+            XCTAssertEqual(calls.log, ["mouse"], title)
+        }
+        // Paused: under the title's group.
+        XCTAssertEqual(rows(state(paused: true, batteries: batteries)).map(\.title), [
+            "Scrollio is paused", "Resume Scrollio", "—", "MX Master 4: 75%", "MX Master 3S: 40%, charging", "—",
+            "Settings…", "—", "Quit Scrollio",
+        ])
+    }
+
+    /// The pane a battery line opens is the Mouse pane, by its identifier.
+    func testTheMousePaneIsTheOneTheBatteryLinesOpen() {
+        XCTAssertEqual(MousePreferencesViewController.tabIdentifier, "mouse")
     }
 
     func testBatteryLines() {
@@ -328,7 +486,7 @@ final class StatusMenuTests: XCTestCase {
         let after = StatusMenu.batteries(from: [MouseDeviceFixtures.mxMaster4(battery: MouseDeviceFixtures.battery(74))])
         StatusMenu.updateBatteryItems(in: built, with: after)
         XCTAssertEqual(built.items[0].title, "MX Master 4: 74%")
-        XCTAssertEqual(built.items.count, 6)
+        XCTAssertEqual(built.items.count, 7)
 
         // A mouse that came or went waits for the next opening.
         StatusMenu.updateBatteryItems(in: built, with: [])
@@ -339,7 +497,9 @@ final class StatusMenuTests: XCTestCase {
         let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
         for access in [true, false] {
             for paused in [true, false] {
-                let built = menu(state(access: access, paused: paused, diagnostics: true, batteries: [battery]))
+              for problem in [nil, .retrying, .tapOff] as [StatusMenu.StartProblem?] {
+                let built = menu(state(access: access, paused: paused, diagnostics: true, batteries: [battery],
+                                       startProblem: problem))
                 for item in built.items where !item.isSeparatorItem {
                     XCTAssertEqual(item.title, item.title.trimmingCharacters(in: .whitespaces), item.title)
                     XCTAssertFalse(item.title.contains("-menu-"), "\(item.title) shows the raw key")
@@ -347,7 +507,9 @@ final class StatusMenuTests: XCTestCase {
                     if item.tag != StatusMenu.batteryTag {
                         XCTAssertNil(item.image, item.title)
                     }
+                    XCTAssertFalse(item.title.hasSuffix("."), "no full stop in a menu: \(item.title)")
                 }
+              }
             }
         }
     }
@@ -366,14 +528,14 @@ final class StatusMenuTests: XCTestCase {
 
     // MARK: - Smooth Scrolling in the app in front
 
-    /// One item for the app in front, in a group of its own above Pause, checked while the
-    /// app is smoothed.
+    /// One item for the app in front, in Pause's group above it, checked while the app is
+    /// smoothed.
     func testTheAppInFrontHasItsSmoothingItemAbovePause() throws {
         let checked = try XCTUnwrap(safariItem(.usesScrollingSettings))
         XCTAssertEqual(rows(state(appSmoothing: checked)), [
             Row(title: "Smooth Scrolling in Safari", checked: true),
-            .separator,
             Row(title: "Pause Scrollio"),
+            .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
             Row(title: "Quit Scrollio", shortcut: "⌘Q"),
@@ -382,11 +544,11 @@ final class StatusMenuTests: XCTestCase {
         let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
         let unchecked = try XCTUnwrap(safariItem(.own(smooth: false)))
         XCTAssertEqual(rows(state(batteries: [battery], appSmoothing: unchecked)), [
-            Row(title: "MX Master 4: 75%", enabled: false),
+            Row(title: "MX Master 4: 75%"),
             .separator,
             Row(title: "Smooth Scrolling in Safari"),
-            .separator,
             Row(title: "Pause Scrollio"),
+            .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
             Row(title: "Quit Scrollio", shortcut: "⌘Q"),
@@ -397,7 +559,7 @@ final class StatusMenuTests: XCTestCase {
         XCTAssertNil(menu(state(appSmoothing: disabled)).items.first?.action)
         // Without the access only the way to it and Quit, as before.
         XCTAssertEqual(rows(state(access: false, appSmoothing: checked)).map(\.title),
-                       ["Allow Accessibility Access…", "—", "Quit Scrollio"])
+                       ["Scrollio needs Accessibility access", "Allow Accessibility Access…", "—", "Quit Scrollio"])
     }
 
     /// No item without an app in front (or one without a path), for Scrollio itself, and
@@ -465,12 +627,21 @@ final class StatusMenuTests: XCTestCase {
         calls.log = []
         try choose("Allow Accessibility Access…", in: menu(state(access: false)))
         XCTAssertEqual(calls.log, ["guide"], "the Welcome Guide, not the system prompt")
+        calls.log = []
+        try choose("Try Again Now", in: menu(state(startProblem: .retrying)))
+        XCTAssertEqual(calls.log, ["try again"])
+        calls.log = []
+        try choose("MX Master 4: 75%", in: menu(state(batteries: StatusMenu.batteries(from: [MouseDeviceFixtures.mxMaster4()]))))
+        XCTAssertEqual(calls.log, ["mouse"])
     }
 
     func testBuildingTheMenuDoesNothing() {
         _ = menu(state(diagnostics: true, batteries: StatusMenu.batteries(from: [MouseDeviceFixtures.mxMaster4()]),
                        appSmoothing: safariItem(.usesScrollingSettings)))
         _ = menu(state(access: false))
+        _ = menu(state(paused: true))
+        _ = menu(state(startProblem: .retrying))
+        _ = menu(state(startProblem: .tapOff))
         XCTAssertEqual(calls.log, [])
     }
 
@@ -872,6 +1043,54 @@ final class AppRunControllerTests: XCTestCase {
         controller.setPaused(true)
         XCTAssertFalse(controller.isRetryingStart)
         XCTAssertNil(controller.recoveryTimer)
+    }
+
+    /// "Try Again Now" of the status-bar menu: a failed start's next try comes at once, and
+    /// a try that fails again keeps the timer.
+    func testTryAgainNowTriesAFailedStartAtOnce() {
+        let world = World()
+        world.tapsStart = false
+        let controller = make(world)
+        controller.start()
+        XCTAssertEqual(changes(of: controller) { controller.tryAgainNow() }, 1)
+        XCTAssertEqual(world.log, ["start", "stop", "start", "stop"])
+        XCTAssertTrue(controller.isRetryingStart)
+        XCTAssertEqual(controller.recoveryTimer?.timeInterval, AppRunController.launchRecoveryInterval)
+
+        world.tapsStart = true
+        controller.tryAgainNow()
+        XCTAssertEqual(world.log, ["start", "stop", "start", "stop", "start"])
+        XCTAssertTrue(controller.coresActive)
+        XCTAssertFalse(controller.isRetryingStart)
+        XCTAssertNil(controller.recoveryTimer)
+    }
+
+    /// Nothing to try while the cores run, while they wait for the access, or while paused.
+    func testTryAgainNowDoesNothingOtherwise() {
+        let running = World()
+        let started = make(running)
+        started.start()
+        XCTAssertEqual(changes(of: started) { started.tryAgainNow() }, 0)
+        XCTAssertEqual(running.log, ["start"])
+
+        let noAccess = World()
+        noAccess.access = false
+        let waiting = make(noAccess)
+        waiting.start()
+        noAccess.access = true
+        XCTAssertEqual(changes(of: waiting) { waiting.tryAgainNow() }, 0)
+        XCTAssertEqual(noAccess.log, ["guide"], "the wait for the access keeps its own timer")
+        XCTAssertTrue(waiting.isWaitingForAccess)
+
+        let failing = World()
+        failing.tapsStart = false
+        let paused = make(failing)
+        paused.start()
+        paused.setPaused(true)
+        failing.log = []
+        paused.tryAgainNow()
+        XCTAssertEqual(failing.log, [])
+        XCTAssertFalse(paused.coresActive)
     }
 
     /// A start that keeps failing is tried every 10 s; the log gets the first three and then

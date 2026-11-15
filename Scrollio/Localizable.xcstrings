@@ -10275,6 +10275,50 @@
           }
         }
       }
+    },
+    "status-menu-title-paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio is paused"
+          }
+        }
+      }
+    },
+    "status-menu-title-needs-access": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio needs Accessibility access"
+          }
+        }
+      }
+    },
+    "status-menu-title-could-not-start": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio couldn't start and is trying again"
+          }
+        }
+      }
+    },
+    "status-menu-try-again": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try Again Now"
+          }
+        }
+      }
     }
   },
   "version": "1.1"
