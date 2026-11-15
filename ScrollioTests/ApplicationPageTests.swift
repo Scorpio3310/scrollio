@@ -1605,6 +1605,24 @@ final class ApplicationPageTests: XCTestCase {
         wait(for: [drained], timeout: 1)
     }
 
+    /// "None in Calculator" because a row of the app's own is on the button that does it
+    /// everywhere: the first row's button leads to the row of that very button, not to one
+    /// of the same button with modifier keys (which a press of it would match too), also
+    /// when that one comes first in the app's list.
+    func testTheFirstRowLeadsToTheOwnRowOfTheSameButton() {
+        let calculator = addApp(Self.calculator)
+        let optionBack = binding(3, "copy", modifiers: UInt(CGEventFlags.maskAlternate.rawValue))
+        let back = binding(3, "paste")
+        for rule in [ApplicationTriggerRule.shortcutRing, .gestureNavigation] {
+            let action = rule == .shortcutRing ? SystemShortcut.shortcutRing : SystemShortcut.mouseGestureNavigation
+            let general = [binding(3, action.identifier)]
+            calculator.setOwnButtonBindings([optionBack, back])
+            let row = ApplicationTriggerRow.make(rule, application: calculator, general: general)
+            XCTAssertEqual(row.text, "None in Calculator", "\(rule)")
+            XCTAssertEqual(row.destination, .applicationButtons(back.id), "\(rule): the row of the back button itself")
+        }
+    }
+
     /// The first row's buttons go where its line says: "Show in Buttons" to the Buttons
     /// pane, "Show Buttons" to the app's Buttons part with that row selected, "Set Up…"
     /// records a mouse button at the push button that runs the gestures only in this app

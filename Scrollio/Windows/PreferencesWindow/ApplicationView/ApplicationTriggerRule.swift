@@ -239,8 +239,11 @@ struct ApplicationTriggerRow: Equatable {
         let here = rule.bindings(general: general, own: own)
         guard !here.isEmpty else {
             let text = String(format: NSLocalizedString("apps-trigger-none", comment: ""), name)
-            // A row of the app's own on what does it everywhere else: that row is why.
-            if let taken = own.first(where: { ApplicationButtons.generalBinding(for: $0.triggerEvent, in: everywhere) != nil }) {
+            // A row of the app's own on what does it everywhere else: that row is why; the
+            // row of that very trigger first, before one a press of it matches too (with
+            // modifier keys).
+            let exact = own.first { binding in everywhere.contains { $0.identity == binding.identity } }
+            if let taken = exact ?? own.first(where: { ApplicationButtons.generalBinding(for: $0.triggerEvent, in: everywhere) != nil }) {
                 return ApplicationTriggerRow(text: text, destination: .applicationButtons(taken.id))
             }
             return ApplicationTriggerRow(text: text, destination: .setUp)
