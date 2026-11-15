@@ -83,7 +83,10 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   "No Action" and says why: "A press runs Mission Control." (another row's button with
   fewer modifier keys runs) or "Scrollio keeps it for another row, so a press does
   nothing." (Scrollio catches that control for another row or a hold key). A key without
-  an action reads "Default", "Does what the key does on its own."
+  an action reads "Default", "Does what the key does on its own." On an MX Master, the
+  free Gesture button and Thumb panel say what they are good for while no button does it
+  yet: "Good for Gestures or the Shortcut Ring." (or only the one still without a
+  button); a line only, nothing is assigned.
 - Buttons for one app: an app's page in Apps (add the app there, or open it in the list)
   has four parts, chosen at its top: Scrolling, Buttons, Gestures and Shortcut Ring; the page
   opens on the part you looked at last, for any app. Scrolling asks "Scrolling in Figma":
@@ -164,7 +167,11 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   slides the desktops with your hand, like a trackpad swipe. "Follow the hand" uses a
   private macOS interface; where it is missing, the mode is not available.
 - "Freeze pointer during a gesture" keeps the pointer where it is while you hold the
-  button.
+  button. While the mouse tracks every button that runs the gestures itself ("Let the
+  mouse track the gesture"), the mouse holds the pointer still whatever the switch says:
+  it then reads on, dimmed, with the reason, and shows your own choice again afterwards
+  (the stored value never changes). With some buttons tracked and others not, the switch
+  decides for the others and says so.
 - An app can have gestures of its own. Its page in Apps (add the app there, or open it
   in the list) has a "Gestures" part. "Use settings from Gestures" is on for every app;
   turn it off and the app gets everything of the Gestures pane but the button to hold,

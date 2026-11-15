@@ -1033,17 +1033,6 @@
         }
       }
     },
-    "gestures-logitech-needs": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connect a Logitech MX Master to let the mouse track gestures, with haptic feedback on the MX Master 4."
-          }
-        }
-      }
-    },
     "mouse-battery-about": {
       "extractionState": "manual",
       "localizations": {
@@ -11003,6 +10992,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "Scrolling, buttons, gestures and the Shortcut Ring are off until then."
+          }
+        }
+      }
+    },
+    "gesture-freeze-pointer-mouse-holds": {
+      "comment": "Gestures pane and an app's Gestures part: under \"Freeze pointer during a gesture\" while the switch reads on and is dimmed, because the mouse tracks every button that runs the gestures; the quoted name is the switch of the Logitech mouse box (mouse-gesture-device-tracking)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The mouse holds the pointer still while “Let the mouse track the gesture” is on."
+          }
+        }
+      }
+    },
+    "gesture-freeze-pointer-mouse-holds-some": {
+      "comment": "Gestures pane and an app's Gestures part: under \"Freeze pointer during a gesture\" while the mouse tracks some of the buttons that run the gestures and not others; the switch then decides for the others only",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For buttons the mouse does not track. It holds the pointer still for the ones it tracks."
+          }
+        }
+      }
+    },
+    "buttons-default-good-for-both": {
+      "comment": "Buttons pane: under the Gesture button or the Thumb panel of the connected mouse while it has no action and no button runs Gesture Navigation or opens the Shortcut Ring yet; Gestures and Shortcut Ring are named as in the sidebar",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Good for Gestures or the Shortcut Ring."
+          }
+        }
+      }
+    },
+    "buttons-default-good-for-gestures": {
+      "comment": "Buttons pane: the same line while something already opens the Shortcut Ring and no button runs Gesture Navigation yet",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Good for Gestures."
+          }
+        }
+      }
+    },
+    "buttons-default-good-for-ring": {
+      "comment": "Buttons pane: the same line while a button already runs Gesture Navigation and nothing opens the Shortcut Ring yet",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Good for the Shortcut Ring."
           }
         }
       }

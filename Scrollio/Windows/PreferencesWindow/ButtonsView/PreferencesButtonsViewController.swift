@@ -523,13 +523,19 @@ class PreferencesButtonsViewController: NSViewController {
         return binding
     }
 
-    /// The line of a button of the mouse without an action.
+    /// The line of a button of the mouse without an action. The free Gesture button and
+    /// Thumb panel say what they are good for, of what nothing of Buttons does yet (a key
+    /// that opens the ring counts as taken).
     func defaultNote(for part: ButtonsMousePart, trigger: RecordedEvent, outcome: ButtonDefaultOutcome? = nil) -> ButtonRowNote? {
+        var free: ButtonRowNote.Uses = []
+        if ApplicationTriggerRule.gestureNavigation.bindings(general: buttonBindings).isEmpty { free.insert(.gestures) }
+        if ApplicationTriggerRule.shortcutRing.bindings(general: buttonBindings).isEmpty { free.insert(.ring) }
         return ButtonRowNote.makeDefault(
             for: part,
             trigger: trigger,
             scrollHoldKeys: scrollHoldKeys(),
-            outcome: outcome ?? defaultOutcome(of: trigger, part: part)
+            outcome: outcome ?? defaultOutcome(of: trigger, part: part),
+            free: free
         )
     }
 

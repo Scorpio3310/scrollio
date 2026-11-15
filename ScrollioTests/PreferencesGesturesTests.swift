@@ -573,8 +573,7 @@ final class PreferencesGesturesTests: XCTestCase {
             for view in folded {
                 XCTAssertTrue(view.isHiddenOrHasHiddenAncestor)
             }
-            XCTAssertTrue(controller.hapticsOffNote.isHidden, "the muted lines fold with their box")
-            XCTAssertTrue(try XCTUnwrap(controller.logitechNeedsLabel.superview).isHidden)
+            XCTAssertTrue(controller.hapticsOffNote.isHidden, "the muted line folds with its box")
             XCTAssertEqual(controller.logitechSection.isHidden, connected == .none, "a Logitech title only with such a mouse")
             for view in [controller.previewView!, controller.gestureButtonRow!, controller.modeRow!, controller.footer!] as [NSView] {
                 XCTAssertFalse(view.isHiddenOrHasHiddenAncestor)
@@ -599,15 +598,14 @@ final class PreferencesGesturesTests: XCTestCase {
         controller.foldingSections.forEach { $0.prefersReducedMotion = { true } }
         let folded = controller.view.frame.height
 
-        // No Logitech mouse: "Behavior" opens with the line on what one adds under it.
+        // No Logitech mouse: "Behavior" opens as the last box, the footer a section's room
+        // under it (no line asks for a Logitech mouse).
         XCTAssertTrue(controller.behaviourSection.disclosure.accessibilityPerformPress())
         controller.view.layoutSubtreeIfNeeded()
         XCTAssertTrue(controller.behaviourSection.showsBody)
         XCTAssertFalse(controller.directionsSection.showsBody)
-        let needs = try XCTUnwrap(controller.logitechNeedsLabel.superview)
-        XCTAssertFalse(needs.isHidden)
-        XCTAssertEqual(rect(controller.behaviourSection, in: controller).minY - rect(needs, in: controller).maxY,
-                       PreferencesGroupedForm.noteSpacing, accuracy: 0.5)
+        XCTAssertEqual(rect(controller.behaviourSection, in: controller).minY - rect(controller.footer, in: controller).maxY,
+                       PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
         XCTAssertGreaterThan(controller.view.frame.height, folded)
         XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
         toggle(controller.controls.invertToggle, on: !Options.shared.gesture.invertHorizontal)
@@ -626,7 +624,6 @@ final class PreferencesGesturesTests: XCTestCase {
         Options.shared.logiMouse.hapticsOn = false
         support = MouseGestureDeviceSupport(deviceTracking: true, haptics: true, hapticsOffOnMouse: true)
         controller.reload()
-        XCTAssertTrue(needs.isHidden)
         XCTAssertTrue(controller.hapticsOffNote.isHidden, "folded with its box")
         controller.logitechSection.toggle()
         controller.view.layoutSubtreeIfNeeded()
@@ -661,7 +658,7 @@ final class PreferencesGesturesTests: XCTestCase {
             }
             XCTAssertFalse(controller.directionRows[0].isHiddenOrHasHiddenAncestor)
             XCTAssertFalse(controller.invertRow.isHiddenOrHasHiddenAncestor)
-            XCTAssertFalse(try XCTUnwrap(controller.logitechNeedsLabel.superview).isHidden, "no Logitech mouse: its line")
+            XCTAssertTrue(controller.logitechSection.isHidden, "no Logitech mouse: no box, and no line about one")
             XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
         }
 
@@ -1117,7 +1114,7 @@ final class PreferencesGesturesTests: XCTestCase {
     }
 
     /// The button is the Scrolling pane's, in a footer that is the last thing in the pane,
-    /// with a section's room above it whatever shows last: the muted line (no Logitech
+    /// with a section's room above it whatever shows last: "Behavior" (no Logitech
     /// mouse), the Logitech box, or the line under that box.
     func testResetToDefaultsSitsLastUnderWhateverShowsAboveIt() throws {
         let savedMouse = Options.shared.logiMouse
@@ -1143,7 +1140,7 @@ final class PreferencesGesturesTests: XCTestCase {
             XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize, what, line: line)
             XCTAssertFalse(controller.view.hasAmbiguousLayout, what, line: line)
         }
-        check(under: try XCTUnwrap(controller.logitechNeedsLabel.superview), "no Logitech mouse: the muted line")
+        check(under: controller.behaviourSection, "no Logitech mouse: Behavior is the last box")
 
         support = master4
         controller.reload()
@@ -1432,7 +1429,7 @@ final class PreferencesGesturesTests: XCTestCase {
             "gestures-trigger-choice-record", "gestures-undo-choose-button", "buttons-trigger-choice-choose",
             "buttons-trigger-choice-several", "buttons-trigger-choice-show",
             "gestures-directions-header", "gestures-directions-hint", "gestures-behaviour-header",
-            "gestures-logitech-needs",
+            "gesture-freeze-pointer-mouse-holds", "gesture-freeze-pointer-mouse-holds-some",
         ]
         for locale in PreferencesLocalizationTests.locales {
             guard let path = app.path(forResource: locale, ofType: "lproj"), let bundle = Bundle(path: path) else {

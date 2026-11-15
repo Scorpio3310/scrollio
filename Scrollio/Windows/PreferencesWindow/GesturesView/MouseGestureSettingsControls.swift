@@ -668,12 +668,35 @@ enum MouseGestureRows {
         )
     }
 
+    /// "Freeze pointer during a gesture"; who holds the pointer decides what it shows
+    /// (`show(_:stored:keepsRoom:in:toggle:)`).
     static func freeze(_ toggle: NSControl) -> PreferencesGroupRow {
         return PreferencesGroupRow(
             title: text("gesture-freeze-pointer"),
             explanation: text("gesture-freeze-pointer-hint"),
             accessory: toggle
         )
+    }
+
+    /// Puts who holds the pointer into the Freeze row: while the mouse does, for every
+    /// button that runs the gestures, the switch reads on and is dimmed with the reason
+    /// (the kit gives the line to VoiceOver as the switch's help); else it shows `stored`
+    /// and can be changed. Display only: nothing is stored, and a dimmed switch sends no
+    /// action.
+    /// - Parameter keepsRoom: a connected mouse can track a hold, so "Let the mouse track
+    ///   the gesture" can change the line: the row keeps room for each of its lines and
+    ///   never changes its height under that switch. Without such a mouse the row is as
+    ///   it always was.
+    static func show(
+        _ holder: MouseGesturePointerHolder, stored: Bool, keepsRoom: Bool, in row: PreferencesGroupRow, toggle: NSControl
+    ) {
+        MouseGestureSettingsControls.setOn(holder.showsFreeze(stored: stored), toggle)
+        row.isEnabled = holder.isFreezeEditable
+        row.explanation = text(holder.freezeHintKey)
+        let reserved = keepsRoom ? MouseGesturePointerHolder.freezeHintKeys.map(text) : []
+        if row.reservedExplanations != reserved {
+            row.reservedExplanations = reserved
+        }
     }
 
     /// "Swipe speed": the slider stands where the Scrolling pane's sliders stand.

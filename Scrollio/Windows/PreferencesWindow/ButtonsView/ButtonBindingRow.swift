@@ -11,10 +11,12 @@
 //  pull-down reads "Default" where its press passes through: where what the button then
 //  does is certain the pull-down says it ("Default (Back)", its sentence in the tooltip) and
 //  the row has no line; elsewhere a button's line says "Does what the mouse does on its
-//  own." (a key's, "Does what the key does on its own."). Where the press does not pass
-//  through (`ButtonDefaultOutcome`) it reads "No Action", and the line says why: "A press
-//  runs Mission Control." or "Scrollio keeps it for another row, so a press does
-//  nothing.".
+//  own." (a key's, "Does what the key does on its own."), and in the Buttons pane the free
+//  Gesture button and Thumb panel say what they are good for while no button does it yet
+//  ("Good for Gestures or the Shortcut Ring.": a line only, nothing is assigned). Where the
+//  press does not pass through (`ButtonDefaultOutcome`) it reads "No Action", and the line
+//  says why: "A press runs Mission Control." or "Scrollio keeps it for another row, so a
+//  press does nothing.".
 //
 
 import Cocoa
@@ -53,6 +55,29 @@ struct ButtonRowNote: Equatable {
         case doesNothing
         /// A button of an app's own (its page under Apps): what it does in every other app.
         case everywhere
+        /// The free Gesture button or Thumb panel of the Buttons pane: what it is good for,
+        /// of what no button does yet. A line only: no sign, no ⓘ, nothing assigned.
+        case goodFor(Uses)
+    }
+
+    /// What a free button of the mouse is good for: the features that want a button to hold.
+    struct Uses: OptionSet {
+        let rawValue: Int
+
+        /// Gesture Navigation (the Gestures pane).
+        static let gestures = Uses(rawValue: 1 << 0)
+        /// The Shortcut Ring.
+        static let ring = Uses(rawValue: 1 << 1)
+
+        /// The line that names them; nil for none.
+        var lineKey: String? {
+            switch self {
+            case [.gestures, .ring]: return "buttons-default-good-for-both"
+            case .gestures: return "buttons-default-good-for-gestures"
+            case .ring: return "buttons-default-good-for-ring"
+            default: return nil
+            }
+        }
     }
 
     enum Tone: Equatable {
@@ -70,7 +95,7 @@ struct ButtonRowNote: Equatable {
     var tone: Tone {
         switch kind {
         case .gestureNavigation, .shortcutRing, .holdAction, .noAction, .extraButton, .defaultAction, .runsAnother,
-             .doesNothing, .everywhere:
+             .doesNothing, .everywhere, .goodFor:
             return .plain
         case .alsoScrollKey, .keyGestureNavigation:
             return .problem
@@ -95,7 +120,7 @@ struct ButtonRowNote: Equatable {
         case .keyGestureNavigation: return Self.text("buttons-gesture-needs-mouse-button")
         case .capture(let status): return Self.text(status.titleKey)
         case .gestureNavigation, .shortcutRing, .holdAction, .noAction, .extraButton, .defaultAction, .runsAnother,
-             .doesNothing, .everywhere: return text
+             .doesNothing, .everywhere, .goodFor: return text
         }
     }
 
@@ -105,7 +130,7 @@ struct ButtonRowNote: Equatable {
         case .keyGestureNavigation: return Self.text("buttons-gesture-needs-mouse-button-detail")
         case .capture(let status): return Self.text(status.detailKey)
         case .gestureNavigation, .shortcutRing, .holdAction, .noAction, .extraButton, .defaultAction, .runsAnother,
-             .doesNothing, .everywhere: return ""
+             .doesNothing, .everywhere, .goodFor: return ""
         }
     }
 
@@ -157,22 +182,30 @@ struct ButtonRowNote: Equatable {
     }
 
     /// The line of a button of the connected mouse without an action ("Default"): that it
-    /// is also a key under Scrolling › While you hold a key, else `defaultLine`.
+    /// is also a key under Scrolling › While you hold a key; for the Gesture button and the
+    /// Thumb panel while the press passes through with no certain effect, what the button
+    /// is good for (`free`); else `defaultLine`.
     /// - Parameters:
     ///   - trigger: what the row stores once it gets an action. A numbered button the user
     ///     placed there sends its number, not a standard button: no claim beyond its own.
     ///   - outcome: what a press of it does (`ButtonDefaultOutcome.of`).
+    ///   - free: what no button of the Buttons pane does yet (Gesture Navigation, the
+    ///     Shortcut Ring); none: the line stays "Does what the mouse does on its own.".
     static func makeDefault(
         for part: ButtonsMousePart,
         trigger: RecordedEvent,
         scrollHoldKeys: [ScrollHotkey],
-        outcome: ButtonDefaultOutcome
+        outcome: ButtonDefaultOutcome,
+        free: Uses = []
     ) -> ButtonRowNote? {
         let isScrollKey = scrollHoldKeys.contains { key in
             key.type == .mouse && ButtonsMousePart.part(for: RecordedEvent(type: .mouse, code: key.code, modifiers: 0, deviceFilter: nil)) == part
         }
         if isScrollKey {
             return ButtonRowNote(kind: .alsoScrollKey, text: text("buttons-note-scroll-key"))
+        }
+        if part == .gesture || part == .thumbPanel, case .passes(nil) = outcome, let key = free.lineKey {
+            return ButtonRowNote(kind: .goodFor(free), text: text(key))
         }
         return defaultLine(for: trigger, part: part, outcome: outcome)
     }
