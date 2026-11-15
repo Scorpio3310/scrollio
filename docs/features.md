@@ -71,7 +71,11 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   is certain, the effect stands in parentheses, in the row and in its menu: "Default
   (Back)", "Default (Forward)", "Default (Middle Click)", "Default (Switch Wheel Mode)"
   for the mode shift button, and "Default (Scroll Sideways)" for the thumb wheel; the
-  row's tooltip says it in a sentence.
+  row's tooltip says it in a sentence. Where a press does not reach the app, the row reads
+  "No Action" and says why: "A press runs Mission Control." (another row's button with
+  fewer modifier keys runs) or "Scrollio keeps it for another row, so a press does
+  nothing." (Scrollio catches that control for another row or a hold key). A key without
+  an action reads "Default", "Does what the key does on its own."
 - Buttons for one app: an app's page in Apps (add the app there, or open it in the list)
   has four parts, chosen at its top: Scrolling, Buttons, Gestures and Shortcut Ring; the page
   opens on the part you looked at last, for any app. Scrolling asks "Scrolling in Figma":
