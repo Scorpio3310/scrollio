@@ -401,10 +401,11 @@ if [ -e "$BUILT/Contents/Resources/DGCharts_DGCharts.bundle" ] || grep -a -q -F 
 fi
 
 # The thumb wheel's trace line (every event of a roll, written to the scroll log after the
-# roll's own line) is in every build only while the wheel is being tuned on the owner's
-# Release builds. No release carries it: the words are looked for in the binary.
+# roll's own line) is for tuning the wheel: only a debug build and a build made with
+# SCROLLIO_TRACE have it (scripts/install.sh passes it; this script never does). No release
+# carries it: the words are looked for in the binary.
 if grep -a -q -F "thumb wheel trace:" "$BINARY"; then
-    fail "the release app still writes the \"thumb wheel trace:\" log line (every event of a thumb wheel roll), which is in every build only while the wheel is tuned: cut it, or put it inside #if DEBUG, in ${APP_NAME}/ScrollCore/ThumbWheelEngine.swift (write(_:trace:): the writeTrace call) and ${APP_NAME}/ScrollCore/ScrollSystemLog.swift (thumbWheelTraceMessage, which holds the words), then commit and build again"
+    fail "the release app writes the \"thumb wheel trace:\" log line (every event of a thumb wheel roll): what makes and writes it belongs inside #if DEBUG || SCROLLIO_TRACE, in ${APP_NAME}/ScrollCore/ThumbWheelEngine.swift (write(_:trace:): the writeTrace call) and ${APP_NAME}/ScrollCore/ScrollSystemLog.swift (thumbWheelTraceMessage, which holds the words), and no setting of this build may pass SCROLLIO_TRACE; then commit and build again"
 fi
 
 ACKNOWLEDGEMENTS="$BUILT/Contents/Resources/Acknowledgements.txt"

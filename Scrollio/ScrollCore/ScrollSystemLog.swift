@@ -8,10 +8,10 @@
 //
 //  One line per finished scroll (never per event), and one line now and then when wheel
 //  events are let through unsmoothed, with the reason; one line per roll of the sideways
-//  (thumb) wheel, with what it sent and what it ran, and for now a trace line next to it
-//  for a roll that runs a function (each event's gap and lines; in every build until the
-//  wheel is tuned: cut it, or keep it to DEBUG, before the next release). Tests pass on a
-//  simulated wheel; this is how to see what happened on the real one.
+//  (thumb) wheel, with what it sent and what it ran, and in a debug build or one made by
+//  `scripts/install.sh` a trace line next to it for a roll that runs a function (each
+//  event's gap and lines; `#if DEBUG || SCROLLIO_TRACE`, so a release never has it). Tests
+//  pass on a simulated wheel; this is how to see what happened on the real one.
 //
 
 import Foundation
@@ -576,6 +576,10 @@ enum ScrollSystemLog {
         var fixed: Double
     }
 
+    // The trace line is for tuning the wheel: a debug build has it, and a build that
+    // `scripts/install.sh` makes (it passes SCROLLIO_TRACE). A release has neither, and
+    // `scripts/release.sh` refuses a binary that holds the line's words.
+    #if DEBUG || SCROLLIO_TRACE
     /// A function roll's trace, one line next to its roll line, to tune the wheel from: each
     /// event as `ms since the one before/fixed-point lines`, the first
     /// `ThumbWheelTuning.traceEntries` of them, for example
@@ -597,6 +601,7 @@ enum ScrollSystemLog {
     static func noteThumbWheelTrace(_ line: String) {
         logger.notice("\(line, privacy: .public)")
     }
+    #endif
 
     /// Main queue, never inside the tap callback.
     static func noteThumbWheelRoll(_ roll: ThumbWheelRoll) {

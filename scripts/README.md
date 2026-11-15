@@ -5,6 +5,9 @@ Repeatable automation.
 - `install.sh`: builds the release app, checks its signature against the installed app's
   (so the Accessibility permission is kept), its entitlements and its binary, stamps it
   with the commit, and installs it to `/Applications`. `--check` stops before installing.
+  It builds with `SCROLLIO_TRACE`, so its builds write the `thumb wheel trace:` line to
+  the scroll log (every event of a thumb wheel roll, for tuning the wheel); a release
+  never has it.
   A `Local.xcconfig` in the repository root (ignored by git, template
   `Local.xcconfig.example`) is passed to the build: another Mac's signing team.
 - `release.sh`: builds the app for other people's Macs, from a commit tagged `v<version>`:

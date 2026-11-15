@@ -15,6 +15,11 @@
 # The build is stamped with the commit it was made from (CFBundleVersion = number of
 # commits, ScrollioBuildCommit, ScrollioBuildDate), shown under General in Settings.
 #
+# It is also built with SCROLLIO_TRACE: the scroll log then has a "thumb wheel trace:" line
+# after each roll of the thumb wheel that runs an action (every event of the roll), which is
+# what the wheel is tuned from. Only this script and a debug build have it; a release
+# (scripts/release.sh) never passes it and refuses a binary that holds the line.
+#
 # The project signs for its author's team. To build with your own, do not edit the project:
 # copy Local.xcconfig.example to Local.xcconfig (ignored by git) and put your team there.
 # This script passes that file to the build when it exists.
@@ -77,6 +82,7 @@ if ! xcodebuild -project "${APP_NAME}.xcodeproj" -scheme Debug -configuration Re
         CURRENT_PROJECT_VERSION="$COUNT" \
         SCROLLIO_BUILD_COMMIT="$COMMIT" \
         SCROLLIO_BUILD_DATE="$DATE" \
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) SCROLLIO_TRACE' \
         build > "$LOG" 2>&1; then
     grep -E "error:|\*\* BUILD" "$LOG" | tail -20 >&2 || true
     fail "the build failed (log: $LOG)"

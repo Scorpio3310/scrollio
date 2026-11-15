@@ -221,8 +221,10 @@ final class ThumbWheelEngine {
     }
     /// Writes a roll's log line.
     var writeLog: (Roll) -> Void = ScrollSystemLog.noteThumbWheelRoll
+    #if DEBUG || SCROLLIO_TRACE
     /// Writes a function roll's trace line (`ScrollSystemLog.thumbWheelTraceMessage`).
     var writeTrace: (String) -> Void = ScrollSystemLog.noteThumbWheelTrace
+    #endif
     /// Seconds on a monotonic clock: when the callback saw an event (the look at the open roll
     /// uses only these), and the time of an event without a timestamp.
     var clock: () -> TimeInterval = { CACurrentMediaTime() } {
@@ -356,10 +358,12 @@ final class ThumbWheelEngine {
                 }
             }
         }
+        #if DEBUG || SCROLLIO_TRACE
         if settings.function != .scroll, traceOpen.count < ThumbWheelTuning.traceEntries, let open = roll {
             let gap = open.events > 0 ? time - open.lastEventAt : 0
             traceOpen.append(ScrollSystemLog.ThumbWheelTraceEntry(gap: gap, fixed: event.fixedDelta))
         }
+        #endif
         roll?.add(event, travel: travel, at: time, seenAt: seenAt)
         roll?.ticksFiltered(tick)
         scheduleRollLook()
@@ -505,15 +509,17 @@ final class ThumbWheelEngine {
     }
 
     /// Writes a roll's line and, for a roll that ran a function, its trace line right after
-    /// it; the trace is emptied (its room kept). The trace line is written in every build for
-    /// now, the owner runs Release builds to tune the wheel: cut it, or keep it to DEBUG,
-    /// before the next release (`scripts/release.sh` refuses a build that still has the
-    /// words "thumb wheel trace:" in it).
+    /// it; the trace is emptied (its room kept). The trace line is written by a debug build
+    /// and by a build made with SCROLLIO_TRACE (`scripts/install.sh` passes it: the owner
+    /// tunes the wheel on those builds); a release holds neither the line nor its events
+    /// (`scripts/release.sh` refuses a build that has the words "thumb wheel trace:" in it).
     private func write(_ done: Roll, trace: inout ContiguousArray<ScrollSystemLog.ThumbWheelTraceEntry>) {
         writeLog(done)
+        #if DEBUG || SCROLLIO_TRACE
         if done.function != .scroll, done.events > 0 {
             writeTrace(ScrollSystemLog.thumbWheelTraceMessage(entries: trace, events: done.events))
         }
+        #endif
         trace.removeAll(keepingCapacity: true)
     }
 
