@@ -5,9 +5,12 @@
 //  Scrollio icon pulses twice and then opens its menu (the real items of the status-bar
 //  menu); with Reduce Motion the menu is simply open. With the menu bar icon hidden the
 //  picture shows only the empty place of the icon, and the text says how to reach Settings.
-//  Under the text, General's "Open at login" switch: on for a new user, the system's state
-//  when the guide runs by hand. The choice is the container's, applied when the user leaves
-//  the step (IntroductionViewController.applyOpenAtLogin).
+//  Under the text, where to go next: one box with a row for Buttons, Gestures and the
+//  Shortcut Ring (the sidebar's tile and name, a hint, a chevron); a click opens Settings on
+//  that pane and ends the guide (the container's `nextPlaceClicked`). Under it, General's
+//  "Open at login" switch: on for a new user, the system's state when the guide runs by
+//  hand. The choice is the container's, applied when the user leaves the step
+//  (IntroductionViewController.applyOpenAtLogin).
 //
 
 import Cocoa
@@ -21,6 +24,11 @@ final class WelcomeGuideFinishStep: WelcomeGuideStepView {
     let artwork: WelcomeGuideFinishPicture
     private(set) var titleLabel: NSTextField!
     private(set) var textLabel: NSTextField!
+    /// Where to go next: Buttons, Gestures, Shortcut Ring, in the sidebar's order.
+    private(set) var nextBox: WelcomeGuideNextBox!
+    var nextRows: [WelcomeGuideNextRow] {
+        return nextBox.rows
+    }
     /// "Open at login", General's row, in a box of its own.
     private(set) var loginRow: PreferencesSwitchRow!
     private(set) var loginBox: PreferencesGroupBox!
@@ -39,7 +47,7 @@ final class WelcomeGuideFinishStep: WelcomeGuideStepView {
         isPaused: @escaping () -> Bool,
         opensAtLogin: @escaping () -> Bool,
         loginItemWaitsForApproval: @escaping () -> Bool,
-        target: AnyObject, loginAction: Selector
+        target: AnyObject, loginAction: Selector, nextAction: Selector
     ) {
         self.isMenuBarIconHidden = isMenuBarIconHidden
         self.isPaused = isPaused
@@ -49,18 +57,24 @@ final class WelcomeGuideFinishStep: WelcomeGuideStepView {
         picture = artwork
         let title = WelcomeGuideText.makeTitle(WelcomeGuideText.localized("intro-finish-title"))
         let text = WelcomeGuideText.makeText("")
+        let next = WelcomeGuideNextBox(
+            width: WelcomeGuideLayout.rowBoxWidth,
+            rows: WelcomeGuideNextPlace.allCases.map { WelcomeGuideNextRow(place: $0, target: target, action: nextAction) }
+        )
         let login = PreferencesSwitchRow(
             title: WelcomeGuideText.localized("general-launch-at-login"),
             explanation: WelcomeGuideText.localized("general-launch-at-login-hint"),
             target: target, action: loginAction
         )
         let box = PreferencesGroupBox(width: WelcomeGuideLayout.rowBoxWidth, rows: [login])
-        let (view, stack) = WelcomeGuideText.makeContent([title, text, box])
+        let (view, stack) = WelcomeGuideText.makeContent([title, text, next, box])
         stack.setCustomSpacing(WelcomeGuideLayout.titleToText, after: title)
         stack.setCustomSpacing(WelcomeGuideLayout.textToControl, after: text)
+        stack.setCustomSpacing(WelcomeGuideLayout.controlToControl, after: next)
         content = view
         titleLabel = title
         textLabel = text
+        nextBox = next
         loginRow = login
         loginBox = box
         refresh()
@@ -95,6 +109,279 @@ final class WelcomeGuideFinishStep: WelcomeGuideStepView {
     static func textKey(iconHidden: Bool, paused: Bool) -> String {
         guard iconHidden else { return "intro-finish-text" }
         return paused ? "intro-finish-hidden-icon-paused" : "intro-status-granted-detail-hidden-icon"
+    }
+}
+
+// MARK: - Where to go next
+
+/// A pane of Settings the last step leads to, in the sidebar's order.
+enum WelcomeGuideNextPlace: CaseIterable {
+    case buttons, gestures, ring
+
+    /// The pane's identifier, as the sidebar and `showPreferencesWindow` know it.
+    var paneIdentifier: String {
+        switch self {
+        case .buttons: return PANEL_IDENTIFIER.buttons
+        case .gestures: return GesturesPreferencesViewController.tabIdentifier
+        case .ring: return RingPreferencesViewController.tabIdentifier
+        }
+    }
+
+    /// The pane as the sidebar shows it: its symbol on its coloured tile.
+    var pane: PreferencesPane? {
+        return PreferencesPane.all.first { $0.identifier == paneIdentifier }
+    }
+
+    /// The pane's name as the sidebar shows it. The sidebar names Gestures and the
+    /// Shortcut Ring by these keys; Buttons' sidebar title comes from the storyboard, and
+    /// an app's page names the same place "Buttons" with `apps-detail-part-buttons`.
+    var title: String {
+        switch self {
+        case .buttons: return WelcomeGuideText.localized("apps-detail-part-buttons")
+        case .gestures: return WelcomeGuideText.localized("gestures-tab-title")
+        case .ring: return WelcomeGuideText.localized("ring-tab-title")
+        }
+    }
+
+    /// What the pane is for, in a few words.
+    var hint: String {
+        switch self {
+        case .buttons: return WelcomeGuideText.localized("intro-finish-next-buttons")
+        case .gestures: return WelcomeGuideText.localized("intro-finish-next-gestures")
+        case .ring: return WelcomeGuideText.localized("intro-finish-next-ring")
+        }
+    }
+}
+
+/// The box of the "where next" rows, drawn as the boxes of the Settings panes
+/// (PreferencesGroupBox): the same fill, hairlines between the rows, an outline under
+/// Increase Contrast. Its rows are buttons, which a PreferencesGroupBox does not hold.
+final class WelcomeGuideNextBox: WelcomeGuideFlippedView {
+
+    let rows: [WelcomeGuideNextRow]
+
+    init(width: CGFloat, rows: [WelcomeGuideNextRow]) {
+        self.rows = rows
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: 0))
+        translatesAutoresizingMaskIntoConstraints = false
+        let stack = NSStackView(views: rows)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        var constraints = [
+            widthAnchor.constraint(equalToConstant: width),
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ]
+        constraints += rows.map { $0.widthAnchor.constraint(equalTo: stack.widthAnchor) }
+        NSLayoutConstraint.activate(constraints)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("built in code")
+    }
+
+    /// The hairlines in the box's (flipped) coordinates: on top of every row but the first,
+    /// inset as the rows' texts are in the panes, one pixel thick.
+    var separatorRects: [NSRect] {
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        let thickness = 1 / max(1, window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2)
+        return rows.dropFirst().map { row in
+            let top = convert(row.bounds, from: row).minY
+            return NSRect(x: inset, y: top, width: bounds.width - 2 * inset, height: thickness)
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let radius = PreferencesGroupedForm.boxCornerRadius
+        PreferencesGroupedForm.boxFillColor.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+        PreferencesGroupedForm.hairlineColor.setFill()
+        separatorRects.forEach { $0.fill() }
+        if PreferencesGroupedForm.isHighContrast(effectiveAppearance) {
+            PreferencesGroupedForm.drawOutline(of: bounds)
+        }
+    }
+}
+
+/// One row of the "where next" box: the sidebar's tile and the pane's name on the left,
+/// the hint and a chevron on the right, all on one line (two-line rows do not fit the
+/// window with "Open at login" under them). The whole row is one button: a click anywhere
+/// on it sends the action when the mouse goes up on it, as a push button does; Space and
+/// VoiceOver press it too. Not the window's default button: that is Done.
+final class WelcomeGuideNextRow: NSButton {
+
+    /// 36 pt, as a row of a Settings box; 28 pt in the window of a short screen, where the
+    /// step would otherwise come closer to the bar than the grid allows.
+    static var height: CGFloat {
+        return WelcomeGuideLayout.metrics == .tight ? 28 : 36
+    }
+    static let tileSize = PreferencesSidebarViewController.tileSize
+    static let tileSpacing: CGFloat = 8
+    static let chevronSize = NSSize(width: 10, height: 16)
+    static let chevronSpacing: CGFloat = 8
+    /// The least room between the name and the hint.
+    static let hintSpacing: CGFloat = 12
+    /// The pressed fill and the focus ring stand this far inside the row, with the
+    /// corners of a list's selection (PreferencesListBox).
+    static let highlightInset = NSSize(width: 4, height: 2)
+    static let highlightRadius = PreferencesListBox.selectionCornerRadius
+
+    let place: WelcomeGuideNextPlace
+    let tileView: NSImageView
+    let nameLabel: NSTextField
+    let hintLabel: NSTextField
+    let chevronView: NSImageView
+
+    init(place: WelcomeGuideNextPlace, target: AnyObject?, action: Selector?) {
+        self.place = place
+        tileView = PreferencesListImageView()
+        nameLabel = NSTextField(labelWithString: place.title)
+        hintLabel = NSTextField(labelWithString: place.hint)
+        chevronView = PreferencesListImageView()
+        super.init(frame: NSRect(x: 0, y: 0, width: WelcomeGuideLayout.rowBoxWidth, height: Self.height))
+        self.target = target
+        self.action = action
+        setButtonType(.momentaryPushIn)
+        isBordered = false
+        title = ""
+        imagePosition = .noImage
+        translatesAutoresizingMaskIntoConstraints = false
+        // (A button without a title of its own reads as an unknown element otherwise.)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(place.title)
+        setAccessibilityHelp(place.hint)
+
+        if let pane = place.pane {
+            tileView.image = PreferencesSidebarViewController.tileImage(symbolName: pane.symbolName, color: pane.tileColor)
+        }
+        tileView.imageScaling = .scaleNone
+        let chevron = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        chevronView.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)?.withSymbolConfiguration(chevron)
+        chevronView.imageScaling = .scaleNone
+        chevronView.contentTintColor = .tertiaryLabelColor
+        nameLabel.font = PreferencesGroupedForm.titleFont
+        nameLabel.textColor = .labelColor
+        nameLabel.lineBreakMode = .byTruncatingTail
+        hintLabel.font = PreferencesGroupedForm.explanationFont
+        hintLabel.textColor = .secondaryLabelColor
+        hintLabel.alignment = .right
+        hintLabel.lineBreakMode = .byTruncatingTail
+        // The name keeps its room; a hint too long for the row is cut short.
+        hintLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        nameLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        for view in [tileView, nameLabel, hintLabel, chevronView] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            view.setAccessibilityElement(false)
+            addSubview(view)
+        }
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: Self.height),
+            tileView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
+            tileView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            tileView.widthAnchor.constraint(equalToConstant: Self.tileSize),
+            tileView.heightAnchor.constraint(equalToConstant: Self.tileSize),
+            nameLabel.leadingAnchor.constraint(equalTo: tileView.trailingAnchor, constant: Self.tileSpacing),
+            nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            chevronView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
+            chevronView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            chevronView.widthAnchor.constraint(equalToConstant: Self.chevronSize.width),
+            chevronView.heightAnchor.constraint(equalToConstant: Self.chevronSize.height),
+            hintLabel.trailingAnchor.constraint(equalTo: chevronView.leadingAnchor, constant: -Self.chevronSpacing),
+            hintLabel.leadingAnchor.constraint(greaterThanOrEqualTo: nameLabel.trailingAnchor, constant: Self.hintSpacing),
+            hintLabel.firstBaselineAnchor.constraint(equalTo: nameLabel.firstBaselineAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("built in code")
+    }
+
+    override var isFlipped: Bool { return true }
+
+    override var intrinsicContentSize: NSSize {
+        return NSSize(width: NSView.noIntrinsicMetric, height: Self.height)
+    }
+
+    override var isHighlighted: Bool {
+        didSet { if isHighlighted != oldValue { needsDisplay = true } }
+    }
+
+    /// The pressed fill and the focus ring.
+    var highlightRect: NSRect {
+        return bounds.insetBy(dx: Self.highlightInset.width, dy: Self.highlightInset.height)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard isHighlighted else { return }
+        WelcomeGuidePalette.pressed.setFill()
+        NSBezierPath(roundedRect: highlightRect, xRadius: Self.highlightRadius, yRadius: Self.highlightRadius).fill()
+    }
+
+    override var focusRingMaskBounds: NSRect {
+        return highlightRect
+    }
+
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: highlightRect, xRadius: Self.highlightRadius, yRadius: Self.highlightRadius).fill()
+    }
+
+    // MARK: The mouse
+
+    /// The tile, the texts and the chevron are the row's: a click on them is the row's.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        return super.hitTest(point) == nil ? nil : self
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+
+    override var mouseDownCanMoveWindow: Bool {
+        return false
+    }
+
+    /// As a push button tracks: pressed while the pointer is on the row, sent when the
+    /// button goes up on it; released elsewhere, nothing happens.
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabled, let window else { return }
+        var inside = contains(event)
+        isHighlighted = inside
+        while let next = window.nextEvent(matching: [.leftMouseUp, .leftMouseDragged]) {
+            inside = contains(next)
+            isHighlighted = inside
+            if next.type == .leftMouseUp { break }
+        }
+        isHighlighted = false
+        if inside {
+            sendAction(action, to: target)
+        }
+    }
+
+    private func contains(_ event: NSEvent) -> Bool {
+        return bounds.contains(convert(event.locationInWindow, from: nil))
+    }
+
+    /// Space on the focused row, and VoiceOver's press.
+    override func performClick(_ sender: Any?) {
+        guard isEnabled else { return }
+        sendAction(action, to: target)
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        guard isEnabled else { return false }
+        sendAction(action, to: target)
+        return true
     }
 }
 

@@ -277,7 +277,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "intro-access-todo-detail", "intro-status-running",
         "intro-finish-title", "intro-finish-text", "intro-finish-picture", "intro-finish-picture-hidden-icon",
         "intro-finish-hidden-icon-paused", "intro-finish-title-hidden-icon-paused",
-        "intro-open-app-settings-button", "intro-done-button",
+        "intro-done-button",
+        "intro-finish-next-buttons", "intro-finish-next-gestures", "intro-finish-next-ring",
     ]
 
     /// The Shortcut Ring: its action, its pane and its lines elsewhere.

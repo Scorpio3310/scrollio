@@ -4734,17 +4734,6 @@
         }
       }
     },
-    "intro-open-app-settings-button": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open Settings"
-          }
-        }
-      }
-    },
     "gestures-gesture-button-bound": {
       "comment": "Gestures pane: the explanation of the Gesture button row, %@ = the buttons that have Gesture Navigation (\"Back button and Gesture button\")",
       "extractionState": "manual",
@@ -10688,6 +10677,42 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hold it, move towards a shortcut and let go."
+          }
+        }
+      }
+    },
+    "intro-finish-next-buttons": {
+      "comment": "Welcome Guide, last step: the hint of the row that opens Settings on Buttons",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Give any button its own action."
+          }
+        }
+      }
+    },
+    "intro-finish-next-gestures": {
+      "comment": "Welcome Guide, last step: the hint of the row that opens Settings on Gestures",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold a button and move the mouse."
+          }
+        }
+      }
+    },
+    "intro-finish-next-ring": {
+      "comment": "Welcome Guide, last step: the hint of the row that opens Settings on Shortcut Ring",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eight shortcuts around the pointer."
           }
         }
       }

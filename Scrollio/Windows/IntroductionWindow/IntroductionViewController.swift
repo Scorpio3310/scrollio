@@ -18,10 +18,11 @@
 //  - "Having trouble?" shows the help for a stale entry; it opens by itself once when the
 //    user comes back from System Settings without the access.
 //
-//  Done (or Open Settings) marks the guide finished, and so does closing the window once
-//  the access is allowed (WelcomeGuideProgress). Leaving the last step (Done, Open Settings,
-//  or closing the window there) also applies its "Open at login" switch as it shows, through
-//  General's code (LoginItem); nothing is registered before. Return presses the main button,
+//  Done (or a row of the last step's "where next" box, which opens Settings on its pane)
+//  marks the guide finished, and so does closing the window once the access is allowed
+//  (WelcomeGuideProgress). Leaving the last step (Done, a row, or closing the window there)
+//  also applies its "Open at login" switch as it shows, through General's code (LoginItem);
+//  nothing is registered before. Return presses the main button,
 //  ⌘[ goes back, Esc does nothing (it does not close the guide either); with Reduce Motion
 //  the steps change by a short crossfade. The bar takes one press per click: the second
 //  click of a double-click, a held key and a press while the steps change do nothing, so
@@ -65,9 +66,10 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     var runState: () -> WelcomeGuideRunState = IntroductionViewController.liveRunState
     /// Whether the menu bar icon is hidden (General › Show in menu bar is off).
     var isMenuBarIconHidden: () -> Bool = { Options.shared.general.hideStatusItem }
-    /// Opens the Preferences window on Scrolling ("Open Settings" on the last step).
-    var openAppSettings: () -> Void = {
-        MainMenuManager.showPreferencesWindow(paneIdentifier: PANEL_IDENTIFIER.scrolling)
+    /// Opens the Preferences window on a pane (a row of the last step: Buttons, Gestures,
+    /// Shortcut Ring), as the menu's Settings… does; nothing in the pane is started.
+    var openAppSettings: (_ paneIdentifier: String) -> Void = { pane in
+        MainMenuManager.showPreferencesWindow(paneIdentifier: pane)
     }
     /// Accessibility › Display › Reduce motion: steps change by a crossfade, pictures stand still.
     var prefersReducedMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
@@ -164,8 +166,6 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
     private(set) var contentHost: WelcomeGuideStepHost!
     private(set) var backButton: NSButton!
     private(set) var primaryButton: NSButton!
-    /// "Open Settings", next to Done on the last step.
-    private(set) var secondaryButton: NSButton!
     private(set) var dots: WelcomeGuideStepDots!
 
     private(set) lazy var welcomeStep: WelcomeGuideWelcomeStep = {
@@ -212,7 +212,8 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
             isPaused: { [weak self] in self?.runState() == .paused },
             opensAtLogin: { [weak self] in self?.openAtLoginChoice ?? false },
             loginItemWaitsForApproval: { LoginItem.service.status == .requiresApproval },
-            target: self, loginAction: #selector(openAtLoginClicked(_:))
+            target: self, loginAction: #selector(openAtLoginClicked(_:)),
+            nextAction: #selector(nextPlaceClicked(_:))
         )
         step.artwork.prefersReducedMotion = reducedMotion
         return step
@@ -273,11 +274,8 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         primary.bezelStyle = .push
         primary.controlSize = .large
         primary.keyEquivalent = "\r"
-        let secondary = NSButton(title: WelcomeGuideText.localized("intro-open-app-settings-button"), target: self, action: #selector(secondaryButtonClicked(_:)))
-        secondary.bezelStyle = .push
-        secondary.controlSize = .large
         let dots = WelcomeGuideStepDots(frame: .zero)
-        for view in [back, primary, secondary, dots] as [NSView] {
+        for view in [back, primary, dots] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             canvas.addSubview(view)
         }
@@ -289,16 +287,12 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
             primary.trailingAnchor.constraint(equalTo: canvas.leadingAnchor, constant: bar.maxX),
             primary.centerYAnchor.constraint(equalTo: back.centerYAnchor),
             primary.widthAnchor.constraint(greaterThanOrEqualToConstant: 96),
-            secondary.trailingAnchor.constraint(equalTo: primary.leadingAnchor, constant: -10),
-            secondary.centerYAnchor.constraint(equalTo: back.centerYAnchor),
-            secondary.widthAnchor.constraint(greaterThanOrEqualToConstant: 96),
             dots.centerXAnchor.constraint(equalTo: canvas.centerXAnchor),
             dots.centerYAnchor.constraint(equalTo: back.centerYAnchor),
             dots.heightAnchor.constraint(equalToConstant: 12),
         ])
         backButton = back
         primaryButton = primary
-        secondaryButton = secondary
         self.dots = dots
 
         view = root
@@ -508,7 +502,6 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         backButton.isHidden = index == 0
         dots.isHidden = steps.count < 2
         dots.set(current: index, of: steps.count)
-        secondaryButton.isHidden = step != .finish
         switch step {
         case .welcome, .feel:
             primaryButton.title = WelcomeGuideText.localized("intro-continue-button")
@@ -681,13 +674,14 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         }
     }
 
-    /// "Open Settings": the Preferences on Scrolling, then the guide closes (the app keeps
-    /// its Dock icon). The Preferences come first: "Open at login" may open Login Items for an
-    /// approval, which must stay in front.
-    @objc func secondaryButtonClicked(_ sender: Any?) {
-        guard takesPress else { return }
+    /// A row of the last step (Buttons, Gestures, Shortcut Ring): the Preferences on its
+    /// pane, then the guide closes as Done closes it (the app keeps its Dock icon). The
+    /// Preferences come first: "Open at login" may open Login Items for an approval, which
+    /// must stay in front.
+    @objc func nextPlaceClicked(_ sender: Any?) {
+        guard takesPress, currentStep == .finish, let row = sender as? WelcomeGuideNextRow else { return }
         markGuideFinished()
-        openAppSettings()
+        openAppSettings(row.place.paneIdentifier)
         applyOpenAtLogin()
         view.window?.close()
     }
@@ -705,7 +699,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         }
     }
 
-    /// Leaving the last step (Done, Open Settings, or the window closed there): the switch
+    /// Leaving the last step (Done, a row, or the window closed there): the switch
     /// is applied as it shows, as General applies its own (`chooseOpenAtLogin`: on registers,
     /// and opens Login Items when macOS wants an approval; off removes the registration).
     /// Only a choice that differs from what the system said at the start, and only once;
@@ -740,7 +734,7 @@ final class IntroductionViewController: NSViewController, NSPopoverDelegate {
         view.window?.close()
     }
 
-    /// The window closes (its close button, Done, Open Settings): with the access allowed
+    /// The window closes (its close button, Done, a row of the last step): with the access allowed
     /// the guide counts as finished, so it does not come back by itself. Closed on the last
     /// step, its "Open at login" switch counts as the user left it.
     func windowWillClose() {
