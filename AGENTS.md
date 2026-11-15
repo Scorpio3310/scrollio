@@ -260,7 +260,7 @@ that must stay separate:
 
 | File | Strings | Keys |
 | --- | --- | --- |
-| `Scrollio/Localizable.xcstrings` | Used from Swift with `NSLocalizedString` | Readable phrases (older keys) or identifiers: those of `SystemShortcut.Shortcut`, and by area `general-*`, `scrolling-*`, `buttons-*`, `mouse-*`, `gesture-*` / `gestures-*`, `ring-*`, `apps-*`, `about-*`, `preferences-*`, `main-menu-*`, `status-menu-*` / `status-item-*`, `intro-*`, `toast-*` |
+| `Scrollio/Localizable.xcstrings` | Used from Swift with `NSLocalizedString` | Readable phrases (older keys) or identifiers: those of `SystemShortcut.Shortcut`, and by area `general-*`, `scrolling-*`, `buttons-*`, `mouse-*`, `gesture-*` / `gestures-*`, `ring-*`, `apps-*`, `about-*`, `preferences-*`, `main-menu-*`, `status-menu-*` / `status-item-*`, `intro-*`, `toast-*`, `key-recorder-*`, `open-target-*`, `thumb-wheel-*`, `logi-*`, `launch-location-*` |
 | `Scrollio/mul.lproj/Main.xcstrings` | The storyboard (`Scrollio/Base.lproj/Main.storyboard`) | Interface Builder object ids (`AYu-sK-qS6.title`) |
 
 - Every user-visible string is localized. In Swift use `NSLocalizedString(_:comment:)`,
@@ -286,7 +286,11 @@ that must stay separate:
   `menuKeys`, `introKeys`), and that each string formatted with `String(format:)` takes
   the arguments its call site passes (`formatArguments`). Add a new key to the array of
   its area, and a formatted one to `formatArguments` too: several keys are built from
-  variables, and a missing one would only show up as the raw key in the UI.
+  variables, and a missing one would only show up as the raw key in the UI. The test
+  reads the rule from the catalog: a key written as an identifier (`ring-freeze-pointer`)
+  that is in no array fails it (the names of the recorder's icons,
+  `key-recorder-icon-name-*`, are `ShortcutIconChooserTests`'). A key no code uses any
+  more goes from the catalog and from its array together.
 - Words in the interface: one vocabulary everywhere the window speaks (the Settings
   window, the menus, the Welcome Guide, the toasts).
   - Name a place as the sidebar does ("Buttons", "Shortcut Ring"), and an app's part as

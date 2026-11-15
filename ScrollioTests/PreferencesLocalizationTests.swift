@@ -54,6 +54,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "scrolling-advanced", "scrolling-glide-time-label", "scrolling-glide-time-hint",
         "scrolling-step-label", "scrolling-step-hint",
         "scrolling-trackpad-events", "scrolling-trackpad-events-hint",
+        "scrolling-trackpad-browsers", "scrolling-trackpad-browsers-hint",
+        "scrolling-trackpad-mac-apps", "scrolling-trackpad-mac-apps-hint",
         "scrolling-keys-header", "scrolling-key-faster", "scrolling-key-faster-hint",
         "scrolling-key-slower", "scrolling-key-slower-hint",
         "scrolling-key-sideways", "scrolling-key-sideways-hint", "scrolling-key-pause", "scrolling-key-pause-hint",
@@ -70,6 +72,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "thumb-wheel-function-volume-hint",
         "scrolling-thumb-wheel-function", "scrolling-thumb-wheel-speed",
         "scrolling-thumb-wheel-speed-hint-scroll", "scrolling-thumb-wheel-speed-hint-steps",
+        "scrolling-thumb-wheel-speed-hint-smoothing-off",
         "scrolling-thumb-wheel-reverse", "scrolling-thumb-wheel-reverse-hint-scroll",
         "scrolling-thumb-wheel-reverse-hint-zoom", "scrolling-thumb-wheel-reverse-hint-tabs",
         "scrolling-thumb-wheel-reverse-hint-desktops", "scrolling-thumb-wheel-reverse-hint-back-forward",
@@ -109,6 +112,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "categoryMouseScroll", "categoryLogiActions", "categoryFinderActions",
         "open-target-title", "open-target-empty-primary", "open-target-empty-secondary",
         "open-target-arguments-placeholder", "open-target-stale-warning", "open-target-cancel", "open-target-done",
+        "open-target-placeholder-stale", "open-target-arguments-label", "open-target-arguments-optional-suffix",
+        "open-target-empty-tooltip", "open-target-filled-tooltip", "open-target-clear-tooltip",
+        "open-target-panel-message", "open-target-panel-prompt",
         "appExposeApps", "categoryMissionControlAndSpaces",
         "key-recorder-waiting-combination", "key-recorder-waiting-adaptive", "buttons-recorder-waiting-gesture",
         "key-recorder-left-right-refused", "key-recorder-left-refused", "key-recorder-secure-input",
@@ -143,6 +149,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gesture-tracking-speed-label", "gesture-tracking-speed-hint", "gesture-tracking-speed-hint-discrete",
         "gesture-tracking-speed-slower", "gesture-tracking-speed-faster",
         "gestures-gesture-button", "gestures-gesture-button-none", "gestures-gesture-button-bound", "gestures-gesture-button-one",
+        "gestures-gesture-button-set-up",
         "gestures-trigger-choice-record", "gestures-undo-choose-button", "gestures-directions-header", "gestures-directions-hint",
         "gestures-behaviour-header", "gestures-logitech-header",
         "mouse-gesture-device-tracking", "mouse-gesture-device-tracking-hint", "mouse-gesture-device-tracking-unavailable",
@@ -265,6 +272,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "toast-accessibility-lost", "toast-battery-low", "toast-battery-low-plain",
         "toast-battery-critical", "toast-battery-critical-plain",
         "logi_ble_hidpp_unstable_toast", "logi_ble_contention_standard_mouse_alias_toast",
+        "logi-toast-a-button", "logi-toast-a-button-start", "logi-feature-pointer-speed", "logi-feature-haptics",
+        "logi-feature-wheel-force", "logi-feature-press-force",
         "logi_hidpp_contention_toast", "openTargetScriptNotExecutable",
         "openTargetScriptExitedWithError", "toast-mos-quit", "toast-system-shortcut-off",
         "launch-location-title", "launch-location-message", "launch-location-quit", "launch-location-continue",
@@ -311,6 +320,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "shortcutRing", "ring-menu-tooltip", "ring-tab-title",
         "ring-trigger", "ring-trigger-none", "ring-trigger-bound", "ring-trigger-choice-record", "ring-undo-choose-trigger", "ring-trigger-apps",
         "ring-trigger-one", "ring-trigger-one-key",
+        "ring-trigger-set-up", "ring-freeze-pointer", "ring-freeze-pointer-hint",
         "ring-places-header", "ring-places-hint",
         "ring-place-top", "ring-place-top-right", "ring-place-right", "ring-place-bottom-right",
         "ring-place-bottom", "ring-place-bottom-left", "ring-place-left", "ring-place-top-left",
@@ -546,6 +556,27 @@ final class PreferencesLocalizationTests: XCTestCase {
         let app = Bundle(for: PreferencesSplitViewController.self)
         guard let path = app.path(forResource: locale, ofType: "lproj") else { return nil }
         return Bundle(path: path)
+    }
+
+    /// A key that is in no array is checked by nobody: about 25 were not (the ring's "Freeze
+    /// pointer" row, "Set Up…", the two switches under trackpad-style, eight of the "Open
+    /// App or File…" popover, the Logitech toasts' words). So the rule of AGENTS.md is read
+    /// from the catalog: every key written as an identifier (lower-case words joined by
+    /// hyphens) is in the array of its area. The names of the recorder's icons are left to
+    /// `ShortcutIconChooserTests.testEverySymbolIsReadByAName`.
+    func testEveryKeyOfTheCatalogWrittenAsAnIdentifierIsListed() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("Scrollio/Localizable.xcstrings"))
+        let catalog = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let strings = try XCTUnwrap(catalog["strings"] as? [String: Any])
+        XCTAssertGreaterThan(strings.count, 900, "the catalog was read")
+        let identifier = try NSRegularExpression(pattern: "^[a-z]+(-[a-z0-9]+)+$")
+        let listed = Set(Self.keys)
+        let unlisted = strings.keys.filter { key in
+            identifier.firstMatch(in: key, range: NSRange(key.startIndex..., in: key)) != nil
+                && !key.hasPrefix("key-recorder-icon-name-") && !listed.contains(key)
+        }
+        XCTAssertEqual(unlisted.sorted(), [], "add each to the array of its area")
     }
 
     /// A key belongs to one area, so two tasks never list the same key.
