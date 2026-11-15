@@ -598,8 +598,19 @@ class PreferencesApplicationViewController: NSViewController {
         undo.setActionName(text("apps-undo-remove"))
     }
 
+    /// An Undo or Redo of a removal shows where it acts, as one of a place of the ring
+    /// does: Apps comes forward while another pane shows, with the list, unless the page
+    /// open is `application`'s (an app that was added again: its page shows the settings).
+    private func comeForward(showing application: Application?) {
+        PreferencesButtonsViewController.splitViewController(of: self)?.bringForward(pane: PANEL_IDENTIFIER.application)
+        if let detail = detailController, detail.application !== application {
+            showList(focusList: false)
+        }
+    }
+
     /// Undo of a removal: the same app, with all its settings, in its old place, selected,
-    /// and the list has the keyboard. Redo removes it again.
+    /// and the list has the keyboard; Apps comes forward while another pane shows. Redo
+    /// removes it again, in sight too.
     ///
     /// The app may be on the list again (added anew after the removal): then no second
     /// entry is made for it. The removed entry's settings go onto the entry that is there,
@@ -611,16 +622,19 @@ class PreferencesApplicationViewController: NSViewController {
     private func restoreApplication(_ application: Application, at position: Int, undoManager undo: UndoManager?) {
         if index(of: application) == nil {
             if let existing = Self.existingApplication(forPaths: Self.knownPaths(forStoredPath: application.path)) {
+                comeForward(showing: existing)
                 apply(ApplicationSettings(of: application), to: existing, undoManager: undo)
                 return
             }
             Options.shared.application.applications.insert(application, at: position)
         }
+        comeForward(showing: application)
         reloadRows()
         list.select(rowID(for: application))
         focusList()
         guard let undo else { return }
         undo.registerUndo(withTarget: self) { [weak undo] controller in
+            controller.comeForward(showing: nil)
             controller.remove(application, undoManager: undo)
         }
         undo.setActionName(text("apps-undo-remove"))
@@ -644,6 +658,7 @@ class PreferencesApplicationViewController: NSViewController {
         focusList()
         guard let undo else { return }
         undo.registerUndo(withTarget: self) { [weak undo] controller in
+            controller.comeForward(showing: application)
             controller.apply(previous, to: application, undoManager: undo)
         }
         undo.setActionName(text("apps-undo-remove"))

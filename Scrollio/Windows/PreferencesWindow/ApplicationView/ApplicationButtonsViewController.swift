@@ -60,6 +60,21 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// or Redo of a removal asks it when it runs, maybe after this page closed and the
     /// app's page opened again: it must not hold the page. nil: this part, while it is there.
     var partShowing: ((Application) -> ApplicationButtonsViewController?)?
+
+    /// Where a change of the rows or of the thumb wheel, its Undo and its Redo show: the
+    /// part `partShowing` gives (this one, without it); when no page of the app is open
+    /// (it closed, another pane shows), Apps comes forward with the app's page on its
+    /// Buttons part, as an Undo of a place of the ring shows itself. Holds neither the page
+    /// nor the window's panes.
+    var undoShowing: (Application) -> ApplicationButtonsViewController? {
+        let showing = partShowing ?? { [weak self] entry in
+            self?.application === entry ? self : nil
+        }
+        weak var split = PreferencesButtonsViewController.splitViewController(of: self)
+        return { entry in
+            showing(entry) ?? split?.bringForward(pageOf: entry, part: .buttons)?.buttonsPart
+        }
+    }
     /// "Show in Safari › Gestures" was chosen in a row's menu: the page shows the app's
     /// Gestures part.
     var onGestureSettingsRequested: (() -> Void)?
@@ -446,9 +461,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     /// Registers Undo of `change` on the undo target, for this part's app.
     private func registerOwnRowUndo(_ change: ButtonRowChange, name: String?) {
-        let showing = partShowing ?? { [weak self] entry in
-            self?.application === entry ? self : nil
-        }
+        let showing = undoShowing
         Self.registerOwnRowUndo(
             change, name: name, of: application, undoManager: undoTarget, showing: showing, listDidChange: onOwnButtonsChange
         )
@@ -647,9 +660,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// what Edit › Undo calls it ("Remove Button" when nil; "Change Action" for "Same as
     /// Other Apps").
     func removeOwnBinding(id: UUID, undoName: String? = nil) {
-        let showing = partShowing ?? { [weak self] entry in
-            self?.application === entry ? self : nil
-        }
+        let showing = undoShowing
         // A name still typed in the row's popover goes into the binding first, so that Undo
         // brings it back with the row.
         withoutUndoRegistration { row(for: id)?.pullDown.cancelShortcutRecording() }
@@ -731,9 +742,7 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     /// go; every button does what Buttons says again. Edit › Undo brings them all back.
     private func resetOwnButtons(undoManager undo: UndoManager?) {
         guard hasSettingsToReset else { return }
-        let showing = partShowing ?? { [weak self] entry in
-            self?.application === entry ? self : nil
-        }
+        let showing = undoShowing
         Self.resetOwnButtons(of: application, undoManager: undo, showing: showing, listDidChange: onOwnButtonsChange)
     }
 
