@@ -18,6 +18,12 @@
 //  - setPaused(_:): "Pause Scrollio" in the status-bar menu. Pausing is stop(); resuming is
 //    start(). While paused nothing starts the cores again, also not waking up. The pause is
 //    never stored: a relaunch starts unpaused.
+//  - pause(for:): the same pause with an end ("Pause For" › "15 Minutes", "1 Hour"). The end
+//    is a moment (`pauseEnd`, a whole minute, never later than chosen), not a countdown: a
+//    one-shot timer only wakes the check `endPauseIfDue()`, which also runs after a wake,
+//    when this user is back and after a change of the clock (`clockDidChange()`), because a
+//    timer does not count the time asleep. At its end the pause is over as after "Resume
+//    Scrollio", but quietly: no window opens. The end, like the pause, is only in memory.
 //  - tryAgainNow(): "Try Again Now" in the status-bar menu: a failed start's next try, now.
 //
 //  Starting: the event taps first, then the Logitech sessions, and only when every tap runs.
@@ -61,6 +67,8 @@ final class AppRunController {
         var stopCores: () -> Void
         var showWelcomeGuide: () -> Void
         var showAccessLostToast: () -> Void
+        /// The time, for a pause that ends by itself. A test hands in its own clock.
+        var now: () -> Date = { Date() }
 
         /// One part of the cores, as starting and stopping sees it.
         struct Part {
@@ -144,6 +152,14 @@ final class AppRunController {
     private(set) var coresActive = false
     /// Paused from the status-bar menu. Only in memory.
     private(set) var isPaused = false
+    /// When the pause ends by itself; nil while not paused, or paused until resumed. Only
+    /// in memory, like the pause.
+    private(set) var pauseEnd: Date?
+    /// Wakes `endPauseIfDue()` at `pauseEnd`. The end is the truth, not this timer: it does
+    /// not count the time the Mac was asleep.
+    private(set) var pauseTimer: Timer?
+    /// The length chosen for the pause that runs, for a change of the clock.
+    private var pauseLength: TimeInterval?
     /// This user's session has the Mac (fast user switching). A launch happens in an active session.
     private(set) var isSessionActive = true
     /// Waits for the Accessibility access (at launch, or after it was lost).
@@ -160,6 +176,7 @@ final class AppRunController {
 
     deinit {
         recoveryTimer?.invalidate()
+        pauseTimer?.invalidate()
     }
 
     /// The cores do not run because the access is missing (not paused, not merely asleep,
@@ -177,6 +194,24 @@ final class AppRunController {
         case accessAllowed = "Accessibility access allowed"
         case accessBack = "Accessibility access is back"
         case retry = "retry"
+        case pauseEnded = "the pause ended"
+    }
+
+    /// How long a pause lasts.
+    enum PauseLength: Equatable {
+        case fifteenMinutes
+        case oneHour
+        /// "Pause Scrollio": until "Resume Scrollio".
+        case untilResumed
+
+        /// nil: no end.
+        var seconds: TimeInterval? {
+            switch self {
+            case .fifteenMinutes: return 15 * 60
+            case .oneHour: return 60 * 60
+            case .untilResumed: return nil
+            }
+        }
     }
 
     /// What stopped them, for the log.
@@ -199,6 +234,8 @@ final class AppRunController {
     /// The Mac woke up. Like `start()`, but without the access only the timer is armed again:
     /// every wake opened the Welcome Guide again while the access was missing.
     func wake() {
+        // A pause whose end passed while the Mac slept is over: this wake starts the cores.
+        _ = clearPauseIfDue()
         start(.wake, showingWelcomeGuide: false)
     }
 
@@ -248,6 +285,7 @@ final class AppRunController {
     /// This user is back. Like a wake: without the access only the timer is armed again.
     func sessionDidBecomeActive() {
         isSessionActive = true
+        _ = clearPauseIfDue()
         start(.userBack, showingWelcomeGuide: false)
     }
 
@@ -263,14 +301,71 @@ final class AppRunController {
         postChange()
     }
 
-    /// Pause or resume from the status-bar menu.
+    /// Pause or resume from the status-bar menu. A pause made here has no end ("Pause
+    /// Scrollio"); resuming ends any pause, and its timer with it.
     func setPaused(_ paused: Bool) {
-        guard paused != isPaused else { return }
-        isPaused = paused
-        if paused {
-            stop(because: .paused)
-        } else {
+        guard paused else {
+            guard isPaused else { return }
+            isPaused = false
+            clearPauseEnd()
             start(.resume, showingWelcomeGuide: true)
+            return
+        }
+        pause(for: .untilResumed)
+    }
+
+    /// Pauses for `length`. Chosen again while paused, the last choice wins: the end is
+    /// counted from now (or goes, for `.untilResumed`), and nothing is stopped a second time.
+    func pause(for length: PauseLength) {
+        let endBefore = pauseEnd
+        clearPauseEnd()
+        if let seconds = length.seconds {
+            let end = Self.pauseEnd(from: environment.now(), after: seconds)
+            pauseEnd = end
+            pauseLength = seconds
+            armPauseTimer(until: end)
+            AppSystemLog.note("Pausing for at most \(Int(seconds / 60)) min: the pause ends by itself")
+        } else if endBefore != nil {
+            AppSystemLog.note("The pause no longer ends by itself: paused until resumed")
+        }
+        if !isPaused {
+            isPaused = true
+            stop(because: .paused)
+        } else if pauseEnd != endBefore {
+            postChange()
+        }
+    }
+
+    /// The end of a pause of `length` seconds made at `now`: the whole minute it falls in,
+    /// so the minute the menu shows is the moment it ends, never later than chosen and up
+    /// to 59 s sooner. Pure.
+    static func pauseEnd(from now: Date, after length: TimeInterval) -> Date {
+        let end = now.timeIntervalSince1970 + length
+        return Date(timeIntervalSince1970: (end / 60).rounded(.down) * 60)
+    }
+
+    /// A timed pause whose end has come is over, as after "Resume Scrollio", but quietly:
+    /// the Welcome Guide does not open (without the access only the timer waits for it),
+    /// and while another user has the Mac nothing starts until this one is back. Before
+    /// the end (the timer fired early, the Mac woke up, the clock changed) the timer is
+    /// armed again for what is left. Nothing while not paused, or paused until resumed.
+    func endPauseIfDue() {
+        if clearPauseIfDue() {
+            start(.pauseEnded, showingWelcomeGuide: false)
+        }
+    }
+
+    /// The clock or the time zone of the Mac changed. The end is never later than the
+    /// chosen length counted from now, so a clock set back does not make a pause longer
+    /// than chosen; set past the end, the pause ends now. A new time zone keeps the moment
+    /// and changes how it reads: the status item and General read it again.
+    func clockDidChange() {
+        guard isPaused, let end = pauseEnd, let length = pauseLength else { return }
+        pauseEnd = min(end, Self.pauseEnd(from: environment.now(), after: length))
+        if clearPauseIfDue() {
+            start(.pauseEnded, showingWelcomeGuide: false)
+        } else {
+            postChange()
         }
     }
 
@@ -373,6 +468,36 @@ final class AppRunController {
         cancelRecovery()
         startCoresOrRetry(trigger)
         postChange()
+    }
+
+    /// True when a timed pause was due and is over now (the caller starts the cores).
+    /// Before its end the timer is armed again for what is left.
+    private func clearPauseIfDue() -> Bool {
+        guard isPaused, let end = pauseEnd else { return false }
+        guard environment.now() >= end else {
+            armPauseTimer(until: end)
+            return false
+        }
+        AppSystemLog.note("The pause's time is up: Scrollio is no longer paused")
+        isPaused = false
+        clearPauseEnd()
+        return true
+    }
+
+    private func clearPauseEnd() {
+        pauseTimer?.invalidate()
+        pauseTimer = nil
+        pauseEnd = nil
+        pauseLength = nil
+    }
+
+    private func armPauseTimer(until end: Date) {
+        pauseTimer?.invalidate()
+        // One shot, also while a menu is open (CommonModesTimer).
+        let interval = max(0, end.timeIntervalSince(environment.now()))
+        pauseTimer = CommonModesTimer.scheduled(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            self?.endPauseIfDue()
+        }
     }
 
     private func postChange() {

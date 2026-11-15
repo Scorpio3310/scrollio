@@ -193,6 +193,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-login-approval", "general-open-login-items",
         "general-show-in-menu-bar", "general-show-in-menu-bar-hint",
         "general-paused-hint", "general-resume",
+        // Round 4 D5: under "Scrollio is paused until 14:30"
+        "general-paused-until-hint",
         "general-permissions-header", "general-accessibility", "general-accessibility-hint",
         "general-accessibility-hint-not-allowed",
         "general-accessibility-allowed", "general-accessibility-not-allowed", "general-accessibility-open-settings",
@@ -270,6 +272,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "main-menu-welcome-guide", "main-menu-check-for-updates", "status-menu-update-waiting",
         // Round 3 C4
         "status-menu-app-settings",
+        // Round 4 D5: "Pause For" with its lengths, and a pause that says until when
+        "status-menu-pause-for", "status-menu-pause-15-minutes", "status-menu-pause-1-hour",
+        "status-menu-title-paused-until", "status-item-paused-until",
     ]
 
     /// The Welcome Guide (Introduction window): its bar, the four steps and their pictures.
@@ -446,6 +451,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "status-menu-battery-charging": "@@",
         "status-menu-app-smoothing": "@",
         "status-menu-update-waiting": "@",
+        // Round 4 D5: the time a pause ends at
+        "status-menu-title-paused-until": "@",
+        "status-item-paused-until": "@",
         "status-item-accessibility-battery": "@",
         "toast-battery-low": "@@",
         "toast-battery-low-plain": "@",

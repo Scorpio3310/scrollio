@@ -7,18 +7,23 @@
 //  ("MX Master 4: 75%"; a click opens Settings › Mouse) | "Smooth Scrolling in Safari" for
 //  the app in front (while the event handling runs; `AppSmoothing`), "Settings for
 //  Safari…" under it (for any app in front but Scrollio, also while paused; Settings ›
-//  Apps on its page, or offering to add it there) and "Pause Scrollio" |
+//  Apps on its page, or offering to add it there), "Pause Scrollio" (until "Resume
+//  Scrollio") and under it "Pause For" with "15 Minutes" and "1 Hour" (a pause that ends by
+//  itself, `AppRunController.pause(for:)`) |
 //  "Settings…" (and "Check for Updates…") | "Quit Scrollio". While Option is held (always in
 //  the debug build) the diagnostic windows are added above Quit: Logitech Diagnostics in
 //  every build, Scroll Monitor and Test Toasts only in the debug build.
 //
 //  While Scrollio does not work, and only then, the menu starts with a title that says so and
-//  the action for it under the title: "Scrollio is paused" with "Resume Scrollio";
+//  the action for it under the title: "Scrollio is paused" (for a pause that ends by itself
+//  "Scrollio is paused until 14:30", the local time alone) with "Resume Scrollio";
 //  "Scrollio needs Accessibility access" with "Allow Accessibility Access…" (the Welcome
 //  Guide; the menu then has only the updater and Quit besides); "Scrollio couldn't start and
 //  is trying again" with "Try Again Now" (a start that failed, `AppRunController`) and
-//  "Pause Scrollio", or with "Pause Scrollio" alone (an event tap whose restarts are refused
-//  for a while comes back by itself, `Interceptor`). The menu is built when it opens.
+//  the two pause items, or with the pause items alone (an event tap whose restarts are refused
+//  for a while comes back by itself, `Interceptor`). The menu is built when it opens. Each
+//  item says what it does: Pause pauses and Resume resumes, so "Resume Scrollio" in a menu
+//  left open across the end of a pause does not pause again.
 //
 //  In a copy that updates itself (UpdateCenter) "Check for Updates…" follows "Settings…";
 //  while a found update waits for an answer, "Update to Scrollio 1.1.0…" stands at the top
@@ -127,7 +132,8 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             coresActive: controller.coresActive,
             isPaused: controller.isPaused,
             startFailed: controller.isRetryingStart,
-            tapRestartsThrottled: Interceptor.hasThrottledTap
+            tapRestartsThrottled: Interceptor.hasThrottledTap,
+            pauseEnd: controller.pauseEnd
         )
         item.button?.appearsDisabled = look.appearsDisabled
         item.button?.toolTip = look.toolTip
@@ -164,7 +170,8 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
                 coresActive: controller.coresActive,
                 startFailed: controller.isRetryingStart,
                 tapRestartsThrottled: Interceptor.hasThrottledTap
-            )
+            ),
+            pauseEnd: controller.pauseEnd
         )
     }
 
@@ -270,6 +277,9 @@ enum StatusMenu {
         /// The access is there and Scrollio is not paused, but it does not work; nil while it
         /// works (or for another reason it does not).
         var startProblem: StartProblem? = nil
+        /// When a pause ends by itself (`AppRunController.pauseEnd`); nil for a pause until
+        /// "Resume Scrollio", and while not paused.
+        var pauseEnd: Date? = nil
         /// The developer tools (Scroll Monitor, Test Toasts) are offered only in the debug build.
         var isDebugBuild: Bool = StatusMenu.isDebugBuild
     }
@@ -320,6 +330,34 @@ enum StatusMenu {
         if startProblem != nil { return .couldNotStart }
         return nil
     }
+
+    /// What a title says. A pause that ends by itself says when: "Scrollio is paused until
+    /// 14:30". The other titles, and a pause until "Resume Scrollio", are their key's text.
+    static func titleText(_ title: Title, pauseEnd: Date?) -> String {
+        if title == .paused, let pauseEnd {
+            return String(format: NSLocalizedString("status-menu-title-paused-until", comment: ""), pauseEndText(pauseEnd))
+        }
+        return NSLocalizedString(title.key, comment: "")
+    }
+
+    /// The end of a pause as the menu, the tooltip and General show it: the time alone, as
+    /// the Mac writes it ("14:30", "2:30 PM"). No date: the longest pause is an hour. Pure.
+    static func pauseEndText(
+        _ end: Date, locale: Locale = .autoupdatingCurrent, timeZone: TimeZone = .autoupdatingCurrent
+    ) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter.string(from: end)
+    }
+
+    /// The lengths "Pause For" offers, with the keys of their items.
+    static let pauseLengths: [(length: AppRunController.PauseLength, key: String)] = [
+        (.fifteenMinutes, "status-menu-pause-15-minutes"),
+        (.oneHour, "status-menu-pause-1-hour"),
+    ]
 
     /// This build is the debug build.
     static let isDebugBuild: Bool = {
@@ -416,7 +454,10 @@ enum StatusMenu {
         case appSmoothing(AppSmoothingItem)
         case appSettings(AppSettingsItem)
         case separator
+        /// "Pause Scrollio": until "Resume Scrollio".
         case pause
+        /// "Pause For", with the lengths under it.
+        case pauseFor
         case resume
         case tryAgain
         case settings
@@ -436,7 +477,7 @@ enum StatusMenu {
     /// work) | a waiting update | the batteries | the app in front and Pause | Settings and
     /// the check for updates | the diagnostics | Quit. While there is a title, Pause stands
     /// under it, in the title's group, and the app in front's group holds only "Settings
-    /// for …" (smoothing is in effect nowhere then).
+    /// for …" (smoothing is in effect nowhere then). "Pause For" always follows Pause.
     static func items(for state: State) -> [Item] {
         var waiting: [Item] = []
         var check: [Item] = []
@@ -457,7 +498,7 @@ enum StatusMenu {
             items = [.title(.paused), .resume, .separator]
         case .couldNotStart?:
             let tryAgain: [Item] = state.startProblem == .retrying ? [.tryAgain] : []
-            items = [.title(.couldNotStart)] + tryAgain + [.pause, .separator]
+            items = [.title(.couldNotStart)] + tryAgain + [.pause, .pauseFor, .separator]
         case .needsAccess?, nil:
             break
         }
@@ -475,7 +516,7 @@ enum StatusMenu {
             front.append(.appSettings(settings))
         }
         if heading == nil {
-            front.append(.pause)
+            front += [.pause, .pauseFor]
         }
         if !front.isEmpty {
             items += front + [.separator]
@@ -502,7 +543,7 @@ enum StatusMenu {
     static func build(into menu: NSMenu, state: State, actions: StatusMenuActions) {
         menu.removeAllItems()
         for item in items(for: state) {
-            menu.addItem(makeItem(item, actions: actions))
+            menu.addItem(makeItem(item, actions: actions, pauseEnd: state.pauseEnd))
         }
         // macOS 27 hides menu item images unless asked: the battery lines keep their symbol.
         menu.keepItemImagesVisible()
@@ -519,7 +560,8 @@ enum StatusMenu {
         }
     }
 
-    static func makeItem(_ item: Item, actions: StatusMenuActions) -> NSMenuItem {
+    /// - Parameter pauseEnd: when the pause ends by itself, for the title of a paused menu.
+    static func makeItem(_ item: Item, actions: StatusMenuActions, pauseEnd: Date? = nil) -> NSMenuItem {
         func action(_ key: String, _ selector: Selector, shortcut: String = "") -> NSMenuItem {
             let menuItem = NSMenuItem(title: NSLocalizedString(key, comment: ""), action: selector, keyEquivalent: shortcut)
             menuItem.target = actions
@@ -528,7 +570,7 @@ enum StatusMenu {
         switch item {
         case .title(let title):
             // A section header (macOS 14): the title of the group under it, read as a heading.
-            return NSMenuItem.sectionHeader(title: NSLocalizedString(title.key, comment: ""))
+            return NSMenuItem.sectionHeader(title: titleText(title, pauseEnd: pauseEnd))
         case .battery(let battery):
             // A click opens Settings › Mouse, where the mouse is.
             let line = NSMenuItem(title: battery.title, action: #selector(StatusMenuActions.batteryClicked(_:)), keyEquivalent: "")
@@ -556,9 +598,21 @@ enum StatusMenu {
         case .separator:
             return .separator()
         case .pause:
-            return action("status-menu-pause", #selector(StatusMenuActions.togglePauseClicked(_:)))
+            return action("status-menu-pause", #selector(StatusMenuActions.pauseClicked(_:)))
+        case .pauseFor:
+            // A submenu with no action of its own; each length is its item's tag (its place
+            // in `pauseLengths`).
+            let parent = NSMenuItem(title: NSLocalizedString("status-menu-pause-for", comment: ""), action: nil, keyEquivalent: "")
+            let lengths = NSMenu(title: parent.title)
+            for (index, entry) in pauseLengths.enumerated() {
+                let length = action(entry.key, #selector(StatusMenuActions.pauseForClicked(_:)))
+                length.tag = index
+                lengths.addItem(length)
+            }
+            parent.submenu = lengths
+            return parent
         case .resume:
-            return action("status-menu-resume", #selector(StatusMenuActions.togglePauseClicked(_:)))
+            return action("status-menu-resume", #selector(StatusMenuActions.resumeClicked(_:)))
         case .tryAgain:
             return action("status-menu-try-again", #selector(StatusMenuActions.tryAgainClicked(_:)))
         case .settings:
@@ -649,7 +703,11 @@ enum StatusMenu {
         ///     tries again (AppRunController.isRetryingStart).
         ///   - tapRestartsThrottled: an event tap is off and its restarts are refused for a
         ///     while (Interceptor.hasThrottledTap); the cores count as running meanwhile.
-        init(hasAccess: Bool, coresActive: Bool, isPaused: Bool, startFailed: Bool = false, tapRestartsThrottled: Bool = false) {
+        ///   - pauseEnd: when the pause ends by itself; the tooltip then says until when.
+        init(
+            hasAccess: Bool, coresActive: Bool, isPaused: Bool, startFailed: Bool = false,
+            tapRestartsThrottled: Bool = false, pauseEnd: Date? = nil
+        ) {
             let problem = StatusMenu.startProblem(
                 coresActive: coresActive, startFailed: startFailed, tapRestartsThrottled: tapRestartsThrottled
             )
@@ -659,7 +717,11 @@ enum StatusMenu {
                 toolTip = NSLocalizedString("status-item-needs-access", comment: "")
             case .paused?:
                 appearsDisabled = !coresActive
-                toolTip = NSLocalizedString("status-item-paused", comment: "")
+                if let pauseEnd {
+                    toolTip = String(format: NSLocalizedString("status-item-paused-until", comment: ""), StatusMenu.pauseEndText(pauseEnd))
+                } else {
+                    toolTip = NSLocalizedString("status-item-paused", comment: "")
+                }
             case .couldNotStart?:
                 appearsDisabled = true
                 toolTip = NSLocalizedString("status-item-could-not-start", comment: "")
@@ -684,9 +746,12 @@ final class StatusMenuActions: NSObject {
     /// The Welcome Guide, as the app opens it (the Accessibility step alone once the guide
     /// was finished).
     var showWelcomeGuide: () -> Void = { IntroductionWindowController.showAutomatically() }
-    var togglePause: () -> Void = {
-        AppRunController.shared.setPaused(!AppRunController.shared.isPaused)
-    }
+    /// "Pause Scrollio" (until resumed) and the lengths of "Pause For". Each item says what
+    /// it does: there is no toggle, so "Resume Scrollio" in a menu left open across the end
+    /// of a pause cannot pause again.
+    var pause: (AppRunController.PauseLength) -> Void = { AppRunController.shared.pause(for: $0) }
+    /// "Resume Scrollio". Nothing when the pause is over already.
+    var resume: () -> Void = { AppRunController.shared.setPaused(false) }
     /// "Try Again Now": the start that failed, tried at once.
     var tryAgain: () -> Void = { AppRunController.shared.tryAgainNow() }
     var showScrollMonitor: () -> Void = {
@@ -710,7 +775,12 @@ final class StatusMenuActions: NSObject {
 
     @objc func settingsClicked(_ sender: Any?) { showSettings() }
     @objc func allowAccessClicked(_ sender: Any?) { showWelcomeGuide() }
-    @objc func togglePauseClicked(_ sender: Any?) { togglePause() }
+    @objc func pauseClicked(_ sender: Any?) { pause(.untilResumed) }
+    @objc func pauseForClicked(_ sender: Any?) {
+        guard let index = (sender as? NSMenuItem)?.tag, StatusMenu.pauseLengths.indices.contains(index) else { return }
+        pause(StatusMenu.pauseLengths[index].length)
+    }
+    @objc func resumeClicked(_ sender: Any?) { resume() }
     @objc func tryAgainClicked(_ sender: Any?) { tryAgain() }
     @objc func batteryClicked(_ sender: Any?) { showMouseSettings() }
     @objc func appSmoothingClicked(_ sender: Any?) {

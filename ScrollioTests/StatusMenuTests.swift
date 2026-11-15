@@ -3,7 +3,8 @@
 //  MosTests
 //
 //  The menu of the status-bar item (what it lists with and without Accessibility access,
-//  with Option held, paused, with batteries, with "Smooth Scrolling in …" for the app in
+//  with Option held, paused (until resumed, or until a time), with batteries, with
+//  "Smooth Scrolling in …" for the app in
 //  front and how that item decides and changes the app's rule, and what its items do), the
 //  run state behind "Pause Scrollio" (AppRunController), the low-battery warnings
 //  (BatteryWatcher) and the low battery next to the icon, the names of the windows the menu
@@ -49,8 +50,10 @@ final class StatusMenuTests: XCTestCase {
             if !item.keyEquivalent.isEmpty {
                 shortcut = "⌘" + item.keyEquivalent.uppercased()
             }
-            // AppKit enables an item whose target implements its action (autoenablesItems).
-            let enabled = item.action.map { action in (item.target as? NSObject)?.responds(to: action) ?? false } ?? false
+            // AppKit enables an item whose target implements its action (autoenablesItems),
+            // and one that opens a submenu.
+            let enabled = item.hasSubmenu
+                || item.action.map { action in (item.target as? NSObject)?.responds(to: action) ?? false } ?? false
             self.init(title: item.title, shortcut: shortcut, enabled: enabled, checked: item.state == .on,
                       header: item.isSectionHeader)
         }
@@ -75,7 +78,8 @@ final class StatusMenuTests: XCTestCase {
         let actions = StatusMenuActions()
         actions.showSettings = { calls.log.append("settings") }
         actions.showWelcomeGuide = { calls.log.append("guide") }
-        actions.togglePause = { calls.log.append("pause") }
+        actions.pause = { calls.log.append("pause \($0)") }
+        actions.resume = { calls.log.append("resume") }
         actions.tryAgain = { calls.log.append("try again") }
         actions.showMouseSettings = { calls.log.append("mouse") }
         actions.toggleAppSmoothing = { calls.log.append("smoothing \($0.name)") }
@@ -108,12 +112,22 @@ final class StatusMenuTests: XCTestCase {
         access: Bool = true, paused: Bool = false, diagnostics: Bool = false,
         batteries: [StatusMenu.Battery] = [], appSmoothing: StatusMenu.AppSmoothingItem? = nil,
         appSettings: StatusMenu.AppSettingsItem? = nil,
-        updates: StatusMenu.Updates = .none, startProblem: StatusMenu.StartProblem? = nil
+        updates: StatusMenu.Updates = .none, startProblem: StatusMenu.StartProblem? = nil,
+        pauseEnd: Date? = nil
     ) -> StatusMenu.State {
         return StatusMenu.State(
             hasAccess: access, isPaused: paused, showsDiagnostics: diagnostics, batteries: batteries,
-            appSmoothing: appSmoothing, appSettings: appSettings, updates: updates, startProblem: startProblem
+            appSmoothing: appSmoothing, appSettings: appSettings, updates: updates, startProblem: startProblem,
+            pauseEnd: pauseEnd
         )
+    }
+
+    /// 14:30 on 12 November 2026 in Ljubljana (13:30 UTC): the end of a pause in the tests.
+    private static let pauseEnd = Date(timeIntervalSince1970: 1_794_490_200)
+
+    /// The title of a pause that ends at `end`, as the Mac of this run writes the time.
+    private static func pausedUntilTitle(_ end: Date) -> String {
+        return String(format: NSLocalizedString("status-menu-title-paused-until", comment: ""), StatusMenu.pauseEndText(end))
     }
 
     private static let pausedTitle = Row.title("Scrollio is paused")
@@ -151,6 +165,7 @@ final class StatusMenuTests: XCTestCase {
     func testWithAccess() {
         XCTAssertEqual(rows(state()), [
             Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
             .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
@@ -168,6 +183,7 @@ final class StatusMenuTests: XCTestCase {
             .separator,
             Row(title: "Smooth Scrolling in Safari", checked: true),
             Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
             .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             Row(title: "Check for Updates…"),
@@ -182,6 +198,7 @@ final class StatusMenuTests: XCTestCase {
     func testCheckForUpdatesFollowsSettings() throws {
         XCTAssertEqual(rows(state(updates: .check(enabled: true))), [
             Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
             .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             Row(title: "Check for Updates…"),
@@ -196,6 +213,7 @@ final class StatusMenuTests: XCTestCase {
     func testCheckForUpdatesIsDimmedWhileACheckRuns() {
         XCTAssertEqual(rows(state(updates: .check(enabled: false))), [
             Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
             .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             Row(title: "Check for Updates…", enabled: false),
@@ -215,6 +233,7 @@ final class StatusMenuTests: XCTestCase {
             Row(title: "MX Master 4: 75%"),
             .separator,
             Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
             .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
@@ -283,12 +302,112 @@ final class StatusMenuTests: XCTestCase {
         ])
     }
 
+    /// A pause that ends by itself says until when, in the title and in the icon's tooltip
+    /// (the title and a full stop); the rest of the menu is a paused menu's.
+    func testPausedForATimeSaysUntilWhen() {
+        let end = Self.pauseEnd
+        XCTAssertEqual(rows(state(paused: true, pauseEnd: end)), [
+            Row.title(Self.pausedUntilTitle(end)),
+            Row(title: "Resume Scrollio"),
+            .separator,
+            Row(title: "Settings…", shortcut: "⌘,"),
+            .separator,
+            Row(title: "Quit Scrollio", shortcut: "⌘Q"),
+        ])
+        XCTAssertEqual(
+            StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: true, pauseEnd: end).toolTip,
+            Self.pausedUntilTitle(end) + "."
+        )
+        XCTAssertEqual(StatusMenu.titleText(.paused, pauseEnd: end), Self.pausedUntilTitle(end))
+        XCTAssertEqual(StatusMenu.titleText(.paused, pauseEnd: nil), "Scrollio is paused")
+        // Only the pause has a time; without the access the menu says only that.
+        XCTAssertEqual(StatusMenu.titleText(.needsAccess, pauseEnd: end), "Scrollio needs Accessibility access")
+        XCTAssertEqual(StatusMenu.titleText(.couldNotStart, pauseEnd: end), "Scrollio couldn't start and is trying again")
+        XCTAssertEqual(rows(state(access: false, paused: true, pauseEnd: end)).first, Self.needsAccessTitle)
+        XCTAssertEqual(
+            StatusMenu.IconLook(hasAccess: false, coresActive: false, isPaused: true, pauseEnd: end).toolTip,
+            "Scrollio needs Accessibility access."
+        )
+
+        // The time alone, as the Mac writes it: 24 hours, or 12 with AM and PM (macOS puts
+        // a narrow no-break space between them, so the two halves are looked at apart).
+        let ljubljana = TimeZone(identifier: "Europe/Ljubljana")!
+        XCTAssertEqual(StatusMenu.pauseEndText(end, locale: Locale(identifier: "en_GB"), timeZone: ljubljana), "14:30")
+        let american = StatusMenu.pauseEndText(end, locale: Locale(identifier: "en_US"), timeZone: ljubljana)
+        XCTAssertTrue(american.hasPrefix("2:30"), american)
+        XCTAssertTrue(american.hasSuffix("PM"), american)
+        // Another time zone: the same moment, read there.
+        XCTAssertEqual(
+            StatusMenu.pauseEndText(end, locale: Locale(identifier: "en_GB"), timeZone: TimeZone(identifier: "UTC")!), "13:30"
+        )
+    }
+
+    /// "Pause Scrollio" pauses at one click, until "Resume Scrollio". Right under it "Pause
+    /// For" opens the lengths of a pause that ends by itself; it has no action of its own,
+    /// no separator and no key equivalents. Both wherever Pause is offered: while Scrollio
+    /// works and under both start problems; never while paused or without the access.
+    func testPauseForOffersTwoLengthsUnderPause() throws {
+        for (name, shown) in [
+            ("on", state()), ("retrying", state(startProblem: .retrying)), ("tap off", state(startProblem: .tapOff)),
+        ] {
+            let built = menu(shown)
+            let index = try XCTUnwrap(built.items.firstIndex { $0.title == "Pause Scrollio" }, name)
+            let pause = built.items[index]
+            XCTAssertNil(pause.submenu, name)
+            XCTAssertEqual(pause.action, #selector(StatusMenuActions.pauseClicked(_:)), name)
+            let parent = built.items[index + 1]
+            XCTAssertEqual(parent.title, "Pause For", name)
+            // Only AppKit's own action of an item that opens a submenu: nothing of ours.
+            XCTAssertEqual(parent.action, #selector(NSMenu.submenuAction(_:)), name)
+            XCTAssertFalse(parent.target === actions, name)
+            let lengths = try XCTUnwrap(parent.submenu, name)
+            XCTAssertEqual(lengths.items.map(\.title), ["15 Minutes", "1 Hour"], name)
+            XCTAssertEqual(lengths.items.map(\.keyEquivalent), ["", ""], name)
+            XCTAssertEqual(lengths.items.map(Row.init), [Row(title: "15 Minutes"), Row(title: "1 Hour")], name)
+
+            calls.log = []
+            try choose("Pause Scrollio", in: built)
+            try choose("15 Minutes", in: lengths)
+            try choose("1 Hour", in: lengths)
+            XCTAssertEqual(calls.log, ["pause untilResumed", "pause fifteenMinutes", "pause oneHour"], name)
+        }
+        for shown in [state(paused: true), state(paused: true, pauseEnd: Self.pauseEnd), state(access: false)] {
+            XCTAssertFalse(menu(shown).items.contains { $0.title == "Pause Scrollio" || $0.hasSubmenu })
+        }
+        XCTAssertEqual(StatusMenu.pauseLengths.map(\.length), [.fifteenMinutes, .oneHour])
+        XCTAssertEqual(AppRunController.PauseLength.fifteenMinutes.seconds, 900)
+        XCTAssertEqual(AppRunController.PauseLength.oneHour.seconds, 3600)
+        XCTAssertNil(AppRunController.PauseLength.untilResumed.seconds)
+    }
+
+    /// Each item says what it does. Regression in the making: one "toggle" behind both
+    /// items would pause again from "Resume Scrollio" in a menu left open across the end of
+    /// a pause that ends by itself.
+    func testResumeNeverPauses() throws {
+        for shown in [state(paused: true), state(paused: true, pauseEnd: Self.pauseEnd)] {
+            let built = menu(shown)
+            let resume = try XCTUnwrap(built.items.first { $0.title == "Resume Scrollio" })
+            XCTAssertEqual(resume.action, #selector(StatusMenuActions.resumeClicked(_:)))
+            calls.log = []
+            try choose("Resume Scrollio", in: built)
+            XCTAssertEqual(calls.log, ["resume"])
+        }
+        XCTAssertFalse(actions.responds(to: NSSelectorFromString("togglePauseClicked:")))
+        // The app's own actions: Resume on a controller that is not paused changes nothing
+        // (the shared one is idle under tests and stays so).
+        XCTAssertFalse(AppRunController.shared.isPaused)
+        StatusMenuActions().resume()
+        XCTAssertFalse(AppRunController.shared.isPaused)
+        XCTAssertFalse(AppRunController.shared.coresActive)
+    }
+
     /// A start that failed: the title, "Try Again Now", and Pause (which stops the tries).
     func testCouldNotStartOffersToTryAgainNow() throws {
         XCTAssertEqual(rows(state(startProblem: .retrying)), [
             Self.couldNotStartTitle,
             Row(title: "Try Again Now"),
             Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
             .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
@@ -305,6 +424,7 @@ final class StatusMenuTests: XCTestCase {
         XCTAssertEqual(rows(state(batteries: [battery], startProblem: .tapOff)), [
             Self.couldNotStartTitle,
             Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
             .separator,
             Row(title: "MX Master 4: 75%"),
             .separator,
@@ -319,16 +439,18 @@ final class StatusMenuTests: XCTestCase {
     /// without the access, the menu said "needs access" and the tooltip "paused").
     func testTheTitleOnlyWhileScrollioDoesNotWork() {
         let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
+        // A pause until resumed, and one that ends by itself.
+        let pauses: [(paused: Bool, end: Date?)] = [(false, nil), (true, nil), (true, Self.pauseEnd)]
         for access in [true, false] {
-            for paused in [false, true] {
+            for (paused, end) in pauses {
                 for problem in [nil, .retrying, .tapOff] as [StatusMenu.StartProblem?] {
                     for updates in [StatusMenu.Updates.none, .check(enabled: true), .waiting(version: "1.1.0")] {
                         let shown = state(access: access, paused: paused, diagnostics: true, batteries: [battery],
-                                          updates: updates, startProblem: problem)
+                                          updates: updates, startProblem: problem, pauseEnd: end)
                         let built = menu(shown)
                         let headers = built.items.filter(\.isSectionHeader)
                         let works = access && !paused && problem == nil
-                        let label = "access \(access), paused \(paused), \(String(describing: problem)), \(updates)"
+                        let label = "access \(access), paused \(paused) \(String(describing: end)), \(String(describing: problem)), \(updates)"
                         XCTAssertEqual(headers.count, works ? 0 : 1, label)
                         XCTAssertEqual(StatusMenu.title(for: shown) == nil, works, label)
                         guard !works else { continue }
@@ -336,7 +458,7 @@ final class StatusMenuTests: XCTestCase {
                         XCTAssertFalse(built.items[1].isSeparatorItem, "an action under the title: \(label)")
                         let tooltip = StatusMenu.IconLook(
                             hasAccess: access, coresActive: access && problem != .retrying && !paused, isPaused: paused,
-                            startFailed: problem == .retrying, tapRestartsThrottled: problem == .tapOff
+                            startFailed: problem == .retrying, tapRestartsThrottled: problem == .tapOff, pauseEnd: end
                         ).toolTip
                         XCTAssertEqual(built.items[0].title + ".", tooltip, label)
                         // Without the access the menu offers only the way to it, and says so.
@@ -382,6 +504,7 @@ final class StatusMenuTests: XCTestCase {
     func testOptionAddsTheDiagnosticsAboveQuit() {
         XCTAssertEqual(rows(state(diagnostics: true)), [
             Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
             .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
@@ -400,6 +523,7 @@ final class StatusMenuTests: XCTestCase {
         release.isDebugBuild = false
         XCTAssertEqual(rows(release), [
             Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
             .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
@@ -434,6 +558,7 @@ final class StatusMenuTests: XCTestCase {
             Row(title: "MX Master 3S: 40%, charging"),
             .separator,
             Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
             .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
@@ -449,7 +574,7 @@ final class StatusMenuTests: XCTestCase {
         // Under the title's group: an event tap kept off is the one title while the Logitech
         // sessions run (paused and a failed start stop them, and the mice with them).
         XCTAssertEqual(rows(state(batteries: batteries, startProblem: .tapOff)).map(\.title), [
-            "Scrollio couldn't start and is trying again", "Pause Scrollio", "—",
+            "Scrollio couldn't start and is trying again", "Pause Scrollio", "Pause For", "—",
             "MX Master 4: 75%", "MX Master 3S: 40%, charging", "—",
             "Settings…", "—", "Quit Scrollio",
         ])
@@ -488,7 +613,7 @@ final class StatusMenuTests: XCTestCase {
         let after = StatusMenu.batteries(from: [MouseDeviceFixtures.mxMaster4(battery: MouseDeviceFixtures.battery(74))])
         StatusMenu.updateBatteryItems(in: built, with: after)
         XCTAssertEqual(built.items[0].title, "MX Master 4: 74%")
-        XCTAssertEqual(built.items.count, 7)
+        XCTAssertEqual(built.items.count, 8)
 
         // A mouse that came or went waits for the next opening.
         StatusMenu.updateBatteryItems(in: built, with: [])
@@ -537,6 +662,7 @@ final class StatusMenuTests: XCTestCase {
         XCTAssertEqual(rows(state(appSmoothing: checked)), [
             Row(title: "Smooth Scrolling in Safari", checked: true),
             Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
             .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
@@ -550,6 +676,7 @@ final class StatusMenuTests: XCTestCase {
             .separator,
             Row(title: "Smooth Scrolling in Safari"),
             Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
             .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
@@ -624,13 +751,15 @@ final class StatusMenuTests: XCTestCase {
             Row(title: "Smooth Scrolling in Safari", checked: true),
             Row(title: "Settings for Safari…"),
             Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
             .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
             Row(title: "Quit Scrollio", shortcut: "⌘Q"),
         ])
         // Without the smoothing item (smoothing is off everywhere, say) it is still there.
-        XCTAssertEqual(rows(state(appSettings: settings)).prefix(2), [Row(title: "Settings for Safari…"), Row(title: "Pause Scrollio")])
+        XCTAssertEqual(rows(state(appSettings: settings)).prefix(3),
+                       [Row(title: "Settings for Safari…"), Row(title: "Pause Scrollio"), Row(title: "Pause For")])
     }
 
     /// Paused, or unable to start, the app's settings can still be changed: the item stands
@@ -653,6 +782,7 @@ final class StatusMenuTests: XCTestCase {
             Self.couldNotStartTitle,
             Row(title: "Try Again Now"),
             Row(title: "Pause Scrollio"),
+            Row(title: "Pause For"),
             .separator,
             Row(title: "MX Master 4: 75%"),
             .separator,
@@ -708,7 +838,7 @@ final class StatusMenuTests: XCTestCase {
     func testWhatTheItemsDo() throws {
         let full = menu(state(diagnostics: true))
         for (title, call) in [
-            ("Pause Scrollio", "pause"), ("Settings…", "settings"), ("Scroll Monitor", "monitor"),
+("Pause Scrollio", "pause untilResumed"), ("Settings…", "settings"), ("Scroll Monitor", "monitor"),
             ("Logitech Diagnostics", "diagnostics"), ("Test Toasts", "toasts"), ("Quit Scrollio", "quit"),
         ] {
             calls.log = []
@@ -717,7 +847,7 @@ final class StatusMenuTests: XCTestCase {
         }
         calls.log = []
         try choose("Resume Scrollio", in: menu(state(paused: true)))
-        XCTAssertEqual(calls.log, ["pause"])
+        XCTAssertEqual(calls.log, ["resume"])
         calls.log = []
         try choose("Allow Accessibility Access…", in: menu(state(access: false)))
         XCTAssertEqual(calls.log, ["guide"], "the Welcome Guide, not the system prompt")
@@ -734,6 +864,7 @@ final class StatusMenuTests: XCTestCase {
                        appSmoothing: safariItem(.usesScrollingSettings)))
         _ = menu(state(access: false))
         _ = menu(state(paused: true))
+        _ = menu(state(paused: true, pauseEnd: Self.pauseEnd))
         _ = menu(state(startProblem: .retrying))
         _ = menu(state(startProblem: .tapOff))
         XCTAssertEqual(calls.log, [])
@@ -809,14 +940,22 @@ final class AppRunControllerTests: XCTestCase {
         /// Whether every event tap can be created.
         var tapsStart = true
         var log: [String] = []
+        /// The clock: 14:00:40 on 12 November 2026 in Ljubljana.
+        var now = Date(timeIntervalSince1970: 1_794_488_440)
+
+        /// 14:00:00, the whole minute the clock starts in.
+        static let minute = Date(timeIntervalSince1970: 1_794_488_400)
     }
 
     private var controllers: [AppRunController] = []
 
     override func tearDown() {
-        // No timer may outlive a test.
+        // No timer may outlive a test: the wait for the access, and a pause's end.
         for controller in controllers {
+            controller.setPaused(false)
             controller.stop()
+            XCTAssertNil(controller.recoveryTimer)
+            XCTAssertNil(controller.pauseTimer)
         }
         controllers = []
         super.tearDown()
@@ -828,7 +967,8 @@ final class AppRunControllerTests: XCTestCase {
             startCores: { world.log.append("start"); return world.tapsStart },
             stopCores: { world.log.append("stop") },
             showWelcomeGuide: { world.log.append("guide") },
-            showAccessLostToast: { world.log.append("toast") }
+            showAccessLostToast: { world.log.append("toast") },
+            now: { world.now }
         ))
         controllers.append(controller)
         return controller
@@ -849,6 +989,8 @@ final class AppRunControllerTests: XCTestCase {
         XCTAssertFalse(AppRunController.shared.coresActive)
         XCTAssertFalse(AppRunController.shared.isPaused)
         XCTAssertNil(AppRunController.shared.recoveryTimer)
+        XCTAssertNil(AppRunController.shared.pauseEnd)
+        XCTAssertNil(AppRunController.shared.pauseTimer)
     }
 
     func testStartsWithAccess() {
@@ -953,10 +1095,305 @@ final class AppRunControllerTests: XCTestCase {
         let controller = make(world)
         controller.start()
         controller.setPaused(true)
+        // Nor a pause that ends by itself, nor its end.
+        controller.pause(for: .oneHour)
+        XCTAssertNotNil(controller.pauseEnd)
         let after = Set(UserDefaults.standard.dictionaryRepresentation().keys)
         XCTAssertEqual(after.subtracting(before), [])
-        // A new run starts unpaused.
-        XCTAssertFalse(make(world).isPaused)
+        // A new run starts unpaused, with no end waiting.
+        let next = make(world)
+        XCTAssertFalse(next.isPaused)
+        XCTAssertNil(next.pauseEnd)
+        XCTAssertNil(next.pauseTimer)
+    }
+
+    // MARK: - A pause that ends by itself
+
+    /// "Pause For" › "15 Minutes": the stop path of a pause, with an end. The timer only
+    /// wakes the check: fired before the end the pause stays and the timer is armed again;
+    /// at the end Scrollio starts as after "Resume Scrollio", but no window opens.
+    func testATimedPauseEndsByItselfAtItsTime() throws {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        world.log = []
+
+        XCTAssertGreaterThan(changes(of: controller) { controller.pause(for: .fifteenMinutes) }, 0)
+        XCTAssertTrue(controller.isPaused)
+        XCTAssertFalse(controller.coresActive)
+        XCTAssertEqual(world.log, ["stop"])
+        let end = try XCTUnwrap(controller.pauseEnd)
+        XCTAssertEqual(end, World.minute.addingTimeInterval(15 * 60), "14:15:00")
+        let timer = try XCTUnwrap(controller.pauseTimer)
+        XCTAssertEqual(timer.fireDate.timeIntervalSinceNow, end.timeIntervalSince(world.now), accuracy: 5)
+        XCTAssertEqual(timer.timeInterval, 0, "one shot")
+        // Also while a menu is open (the status-bar menu, say).
+        for mode in [RunLoop.Mode.default, .eventTracking, .modalPanel] {
+            XCTAssertTrue(CFRunLoopContainsTimer(
+                CFRunLoopGetMain(), unsafeBitCast(timer, to: CFRunLoopTimer.self), CFRunLoopMode(mode.rawValue as CFString)
+            ), mode.rawValue)
+        }
+
+        // Fired a second early: still paused, and armed again for what is left.
+        world.now = end.addingTimeInterval(-1)
+        XCTAssertEqual(changes(of: controller) { timer.fire() }, 0)
+        XCTAssertTrue(controller.isPaused)
+        XCTAssertEqual(controller.pauseEnd, end)
+        let again = try XCTUnwrap(controller.pauseTimer)
+        XCTAssertFalse(again === timer)
+        XCTAssertTrue(again.isValid)
+        XCTAssertEqual(world.log, ["stop"])
+
+        // At the end.
+        world.now = end
+        XCTAssertGreaterThan(changes(of: controller) { again.fire() }, 0)
+        XCTAssertFalse(controller.isPaused)
+        XCTAssertTrue(controller.coresActive)
+        XCTAssertNil(controller.pauseEnd)
+        XCTAssertNil(controller.pauseTimer)
+        XCTAssertEqual(world.log, ["stop", "start"], "started, and no Welcome Guide")
+
+        // Looked at again later: nothing.
+        XCTAssertEqual(changes(of: controller) { controller.endPauseIfDue() }, 0)
+        XCTAssertEqual(world.log, ["stop", "start"])
+    }
+
+    /// The end is a moment, the whole minute the chosen length ends in: what the menu
+    /// shows ("until 14:15") is when it ends, never later than chosen, up to 59 s sooner.
+    func testThePauseEndIsAWholeMinuteNeverLaterThanChosen() {
+        let minute = World.minute
+        for (seconds, length) in [(0.0, 900.0), (0.4, 900), (1, 900), (40, 900), (59.9, 900), (40, 3600)] {
+            let now = minute.addingTimeInterval(seconds)
+            let end = AppRunController.pauseEnd(from: now, after: length)
+            XCTAssertEqual(end, minute.addingTimeInterval(length), "\(seconds) s past the minute")
+            XCTAssertLessThanOrEqual(end.timeIntervalSince(now), length)
+            XCTAssertGreaterThan(end.timeIntervalSince(now), length - 60)
+        }
+    }
+
+    /// The timer does not count the time asleep. A pause whose end passed while the Mac
+    /// slept is over at the wake, which starts the cores (once, and without the guide).
+    func testATimedPauseThatEndedDuringSleepEndsAtWake() throws {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        controller.pause(for: .fifteenMinutes)
+        let end = try XCTUnwrap(controller.pauseEnd)
+        world.log = []
+
+        controller.stop(because: .sleep)
+        XCTAssertEqual(controller.pauseEnd, end, "sleep leaves the end alone")
+        XCTAssertNotNil(controller.pauseTimer)
+        world.now = end.addingTimeInterval(3 * 3600)
+        controller.wake()
+        XCTAssertFalse(controller.isPaused)
+        XCTAssertNil(controller.pauseEnd)
+        XCTAssertNil(controller.pauseTimer)
+        XCTAssertTrue(controller.coresActive)
+        XCTAssertEqual(world.log, ["stop", "start"])
+    }
+
+    /// Woken before the end: still paused, and the timer is armed again for what is left
+    /// of the clock's time.
+    func testAnEarlyWakeKeepsTheTimedPause() throws {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        controller.pause(for: .oneHour)
+        let end = try XCTUnwrap(controller.pauseEnd)
+        let first = try XCTUnwrap(controller.pauseTimer)
+        world.log = []
+
+        controller.stop(because: .sleep)
+        world.now = end.addingTimeInterval(-600)
+        controller.wake()
+        XCTAssertTrue(controller.isPaused)
+        XCTAssertFalse(controller.coresActive)
+        XCTAssertEqual(controller.pauseEnd, end)
+        let armed = try XCTUnwrap(controller.pauseTimer)
+        XCTAssertFalse(armed === first)
+        XCTAssertFalse(first.isValid)
+        XCTAssertEqual(armed.fireDate.timeIntervalSinceNow, 600, accuracy: 5)
+        XCTAssertEqual(world.log, ["stop"], "nothing started")
+
+        world.now = end
+        armed.fire()
+        XCTAssertFalse(controller.isPaused)
+        XCTAssertTrue(controller.coresActive)
+    }
+
+    /// A change of the clock: set past the end, the pause ends now; set back, the end comes
+    /// no later than the chosen length counted from the new time, so the pause never gets
+    /// longer than chosen. A new time zone alone keeps the moment and says so to the icon
+    /// and to General, which read the time again.
+    func testTheClockSetForwardEndsThePauseAndSetBackNeverMakesItLonger() throws {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        controller.pause(for: .fifteenMinutes)
+        let end = try XCTUnwrap(controller.pauseEnd)
+
+        // Nothing but the time zone changed: the same moment, and a change is posted.
+        world.now = world.now.addingTimeInterval(60)
+        XCTAssertEqual(changes(of: controller) { controller.clockDidChange() }, 1)
+        XCTAssertEqual(controller.pauseEnd, end)
+        XCTAssertTrue(controller.isPaused)
+
+        // Set back by two hours: fifteen minutes from the new time, not two hours more.
+        world.now = World.minute.addingTimeInterval(-2 * 3600 + 20)
+        XCTAssertEqual(changes(of: controller) { controller.clockDidChange() }, 1)
+        let earlier = try XCTUnwrap(controller.pauseEnd)
+        XCTAssertEqual(earlier, World.minute.addingTimeInterval(-2 * 3600 + 15 * 60))
+        XCTAssertTrue(controller.isPaused)
+        let timer = try XCTUnwrap(controller.pauseTimer)
+        XCTAssertEqual(timer.fireDate.timeIntervalSinceNow, earlier.timeIntervalSince(world.now), accuracy: 5)
+
+        // Set forward past the end: over, and started.
+        world.log = []
+        world.now = earlier.addingTimeInterval(1)
+        XCTAssertGreaterThan(changes(of: controller) { controller.clockDidChange() }, 0)
+        XCTAssertFalse(controller.isPaused)
+        XCTAssertNil(controller.pauseEnd)
+        XCTAssertNil(controller.pauseTimer)
+        XCTAssertEqual(world.log, ["start"])
+
+        // Not paused, or paused until resumed: a change of the clock is nothing to it.
+        XCTAssertEqual(changes(of: controller) { controller.clockDidChange() }, 0)
+        controller.setPaused(true)
+        XCTAssertEqual(changes(of: controller) { controller.clockDidChange() }, 0)
+        XCTAssertTrue(controller.isPaused)
+        XCTAssertNil(controller.pauseTimer)
+    }
+
+    /// The end comes while another user has the Mac: the pause is over, and nothing starts
+    /// (a Logitech mouse would lose its buttons for the other user) until this one is back.
+    func testATimedPauseEndingWhileAnotherUserHasTheMacStartsWhenTheyAreBack() throws {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        controller.pause(for: .fifteenMinutes)
+        let end = try XCTUnwrap(controller.pauseEnd)
+        controller.sessionDidResign()
+        XCTAssertEqual(controller.pauseEnd, end)
+        world.log = []
+
+        world.now = end
+        try XCTUnwrap(controller.pauseTimer).fire()
+        XCTAssertFalse(controller.isPaused)
+        XCTAssertNil(controller.pauseEnd)
+        XCTAssertFalse(controller.coresActive)
+        XCTAssertEqual(world.log, [])
+
+        controller.sessionDidBecomeActive()
+        XCTAssertTrue(controller.coresActive)
+        XCTAssertEqual(world.log, ["start"])
+
+        // And one whose end passes unseen (the timer late): over when this user is back.
+        controller.pause(for: .fifteenMinutes)
+        let second = try XCTUnwrap(controller.pauseEnd)
+        controller.sessionDidResign()
+        world.log = []
+        world.now = second.addingTimeInterval(30)
+        controller.sessionDidBecomeActive()
+        XCTAssertFalse(controller.isPaused)
+        XCTAssertTrue(controller.coresActive)
+        XCTAssertEqual(world.log, ["start"])
+    }
+
+    /// The access taken away during the pause: at the end nothing can start and no window
+    /// opens (the Welcome Guide opens at launch and when the app is reopened); the timer
+    /// waits for the access, as after a wake.
+    func testATimedPauseEndingWithoutAccessOpensNoWindow() throws {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        controller.pause(for: .fifteenMinutes)
+        let end = try XCTUnwrap(controller.pauseEnd)
+        world.log = []
+        world.access = false
+
+        world.now = end
+        try XCTUnwrap(controller.pauseTimer).fire()
+        XCTAssertFalse(controller.isPaused)
+        XCTAssertFalse(controller.coresActive)
+        XCTAssertEqual(world.log, [], "no guide, no toast")
+        XCTAssertTrue(controller.isWaitingForAccess)
+        XCTAssertEqual(controller.recoveryTimer?.timeInterval, AppRunController.launchRecoveryInterval)
+
+        world.access = true
+        controller.accessibilityPermissionWasGranted()
+        XCTAssertTrue(controller.coresActive)
+        XCTAssertEqual(world.log, ["start"])
+    }
+
+    /// "Resume Scrollio" ends a pause of either kind, and the wait for its end with it:
+    /// the timer of a pause that was resumed must not end a later one.
+    func testResumeEndsATimedPauseAndItsTimer() throws {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        controller.pause(for: .oneHour)
+        let timer = try XCTUnwrap(controller.pauseTimer)
+        world.log = []
+
+        controller.setPaused(false)
+        XCTAssertFalse(controller.isPaused)
+        XCTAssertNil(controller.pauseEnd)
+        XCTAssertNil(controller.pauseTimer)
+        XCTAssertFalse(timer.isValid)
+        XCTAssertTrue(controller.coresActive)
+        XCTAssertEqual(world.log, ["start"])
+
+        // Resume again (a menu left open across the end of a pause): nothing.
+        XCTAssertEqual(changes(of: controller) { controller.setPaused(false) }, 0)
+        XCTAssertEqual(world.log, ["start"])
+
+        // Paused until resumed afterwards: nothing ends it but Resume.
+        controller.setPaused(true)
+        world.now = world.now.addingTimeInterval(2 * 3600)
+        controller.endPauseIfDue()
+        controller.wake()
+        XCTAssertTrue(controller.isPaused)
+        XCTAssertFalse(controller.coresActive)
+    }
+
+    /// Chosen again while paused, the last choice wins: the end is counted from now, or
+    /// goes for "Pause Scrollio"; nothing is stopped a second time.
+    func testChoosingAgainWhilePausedReplacesTheEnd() throws {
+        let world = World()
+        let controller = make(world)
+        controller.start()
+        world.log = []
+
+        controller.pause(for: .fifteenMinutes)
+        let first = try XCTUnwrap(controller.pauseEnd)
+        let firstTimer = try XCTUnwrap(controller.pauseTimer)
+        world.now = world.now.addingTimeInterval(5 * 60)
+        XCTAssertEqual(changes(of: controller) { controller.pause(for: .oneHour) }, 1)
+        XCTAssertEqual(controller.pauseEnd, first.addingTimeInterval(50 * 60), "an hour from now: 15:05")
+        XCTAssertFalse(firstTimer.isValid)
+        XCTAssertTrue(controller.isPaused)
+        XCTAssertEqual(world.log, ["stop"], "stopped once")
+
+        // The first end passes: the pause goes on until the second.
+        world.now = first.addingTimeInterval(1)
+        controller.endPauseIfDue()
+        XCTAssertTrue(controller.isPaused)
+
+        // "Pause Scrollio" while paused for a time: until resumed, and no timer waits.
+        XCTAssertEqual(changes(of: controller) { controller.setPaused(true) }, 1)
+        XCTAssertTrue(controller.isPaused)
+        XCTAssertNil(controller.pauseEnd)
+        XCTAssertNil(controller.pauseTimer)
+        XCTAssertEqual(world.log, ["stop"])
+        // The same once more changes nothing.
+        XCTAssertEqual(changes(of: controller) { controller.pause(for: .untilResumed) }, 0)
+
+        // And a time after "Pause Scrollio".
+        XCTAssertEqual(changes(of: controller) { controller.pause(for: .fifteenMinutes) }, 1)
+        XCTAssertNotNil(controller.pauseEnd)
+        XCTAssertNotNil(controller.pauseTimer)
+        XCTAssertEqual(world.log, ["stop"])
     }
 
     func testLostAccessStopsOnceShowsTheToastAndWaits() {
@@ -1981,6 +2418,7 @@ final class AppDelegateObserverTests: XCTestCase {
     private final class World {
         var access = true
         var log: [String] = []
+        var now = Date(timeIntervalSince1970: 1_794_488_440)
     }
 
     private var world: World!
@@ -1999,7 +2437,8 @@ final class AppDelegateObserverTests: XCTestCase {
             startCores: { world.log.append("start"); return true },
             stopCores: { world.log.append("stop") },
             showWelcomeGuide: { world.log.append("guide") },
-            showAccessLostToast: { world.log.append("toast") }
+            showAccessLostToast: { world.log.append("toast") },
+            now: { world.now }
         ))
         delegate = AppDelegate()
         delegate.runController = controller
@@ -2012,6 +2451,7 @@ final class AppDelegateObserverTests: XCTestCase {
 
     override func tearDown() {
         // No timer of the controller may outlive a test.
+        controller.setPaused(false)
         controller.stop()
         for center in [workspace, app, distributed] {
             center.removeObserver(delegate as Any)
@@ -2067,6 +2507,33 @@ final class AppDelegateObserverTests: XCTestCase {
         wait(for: [looked], timeout: 5)
         XCTAssertEqual(world.log.first, "stop")
         XCTAssertFalse(controller.coresActive)
+    }
+
+    /// The clock or the time zone of the Mac changed: a pause that ends by itself is
+    /// looked at again (over when its time has passed), and the icon and General are told
+    /// to read the time again.
+    func testAClockOrTimeZoneChangeReachesTheController() throws {
+        for name in [Notification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
+            controller.pause(for: .fifteenMinutes)
+            let end = try XCTUnwrap(controller.pauseEnd, name.rawValue)
+            world.log = []
+
+            var changes = 0
+            let token = NotificationCenter.default.addObserver(
+                forName: AppRunController.didChangeNotification, object: controller, queue: nil
+            ) { _ in changes += 1 }
+            defer { NotificationCenter.default.removeObserver(token) }
+            app.post(name: name, object: nil)
+            XCTAssertEqual(changes, 1, name.rawValue)
+            XCTAssertTrue(controller.isPaused, name.rawValue)
+            XCTAssertEqual(controller.pauseEnd, end, name.rawValue)
+
+            world.now = end.addingTimeInterval(1)
+            app.post(name: name, object: nil)
+            XCTAssertFalse(controller.isPaused, name.rawValue)
+            XCTAssertTrue(controller.coresActive, name.rawValue)
+            XCTAssertEqual(world.log, ["start"], name.rawValue)
+        }
     }
 
     /// The Welcome Guide reports the grant through the delegate.
