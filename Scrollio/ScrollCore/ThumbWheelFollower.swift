@@ -17,7 +17,9 @@
 //    travel past that point reaches `followChainOverflowUnits`, it ends at once, at the full
 //    Space with no speed ("chained"), so the next desktop can come in this stroke.
 //  - At a full Space with the wheel still for `followFullStopRest`: it ends then ("full
-//    stop"), not only at the rest.
+//    stop"), not only at the rest. A swipe begun after the wheel stopped (with travel kept
+//    at the gate) counts that time from its begin, and the rest does not end it sooner
+//    either: it is shown sliding before it ends, never begun and ended at once.
 //  - At the rest, by the rule of "Follow the hand" (`InteractiveGestureSession.release`):
 //    back at the start it is cancelled, else ended, and macOS settles it on the next
 //    desktop or back by where it stands (the hand's speed is nothing then: a wheel has no
@@ -29,7 +31,8 @@
 //  passed (`followSpaceChangeTimeout`; `followSettleSpaceChangeTimeout` after an end at the
 //  rest, which macOS settles more slowly): a swipe begun while the last one settles can
 //  catch it and take it back. Travel meanwhile is kept (`followGatePendingCap` at most)
-//  and begins the next swipe when the Space changed. When no change came in time, the
+//  and begins the next swipe when the Space changed, unless the wheel stopped
+//  `followFullStopRest` before short of half a Space. When no change came in time, the
 //  desktop was the first or the last that way (the Dock let the swipe bounce back): no
 //  swipe begins that way (travel the other way does) until the stroke ends or the Space
 //  changes after all, so the wheel never sends the Dock into a loop of bounces; the next
@@ -142,6 +145,8 @@ final class ThumbWheelFollower {
     private var shown = 0.0
     private var progressPerSpace = 1.0
     private var furthest = 0.0
+    /// When the swipe under way began, on `clock`.
+    private var swipeBeganAt = -TimeInterval.infinity
     /// Travel the same way since the swipe reached a full Space (units).
     private var overflow = 0.0
     private var frameDuration = InteractiveGestureEnvironment.fallbackScreen.frameDuration
@@ -404,6 +409,7 @@ final class ThumbWheelFollower {
             case .begin(let axis):
                 synthesizer.begin(axis: axis)
                 swipeNumber = synthesizer.swipeNumber
+                swipeBeganAt = clock()
                 onSwipeBegin?(swipeTag)
             case .update(let progress):
                 target = progress
@@ -447,11 +453,17 @@ final class ThumbWheelFollower {
         return lastEventAt + max(0, clock() - lastSeenAt)
     }
 
+    /// The wheel still at a full Space since this (on `clock`) ends the swipe: its last
+    /// event, or the swipe's begin when it began after it (travel kept at the gate).
+    private var stillSince: TimeInterval {
+        return max(lastSeenAt, swipeBeganAt)
+    }
+
     private func scheduleFullStopLook() {
         guard !fullStopScheduled else { return }
         fullStopScheduled = true
         let generation = self.generation
-        schedule(max(0, lastSeenAt + ThumbWheelTuning.followFullStopRest - clock())) { [weak self] in
+        schedule(max(0, stillSince + ThumbWheelTuning.followFullStopRest - clock())) { [weak self] in
             guard let self, self.generation == generation else { return }
             self.fullStopScheduled = false
             self.lookForFullStop()
@@ -461,7 +473,7 @@ final class ThumbWheelFollower {
     /// A swipe at a full Space and the wheel still since `followFullStopRest`: it ends now.
     private func lookForFullStop() {
         guard state == .following, swipeNumber != 0, isAtFullSpace else { return }
-        guard clock() + 1e-9 >= lastSeenAt + ThumbWheelTuning.followFullStopRest else {
+        guard clock() + 1e-9 >= stillSince + ThumbWheelTuning.followFullStopRest else {
             scheduleFullStopLook()
             return
         }
@@ -558,6 +570,13 @@ final class ThumbWheelFollower {
             return
         }
         state = .following
+        if pendingTravel != 0, clock() + 1e-9 >= lastSeenAt + ThumbWheelTuning.followFullStopRest,
+           abs(pendingTravel) + ThumbWheelTuning.thresholdSlack
+            < InteractiveGestureSession.switchProgressShare * ThumbWheelTuning.followUnitsPerSpace {
+            // The wheel stopped before the gate opened, short of half a Space: a swipe begun
+            // now could not switch, only slide out and back.
+            pendingTravel = 0
+        }
         if pendingTravel != 0 { scheduleFrame() }
     }
 
@@ -565,17 +584,29 @@ final class ThumbWheelFollower {
         guard !restScheduled else { return }
         restScheduled = true
         let generation = self.generation
-        schedule(max(0, lastSeenAt + ThumbWheelTuning.followRest - clock())) { [weak self] in
+        schedule(max(0, restDueAt - clock())) { [weak self] in
             guard let self, self.generation == generation else { return }
             self.restScheduled = false
             self.lookForRest()
         }
     }
 
+    /// When the rest ends the stroke, on `clock`: the wheel still for `followRest`, and a
+    /// swipe under way shown sliding for `followFullStopRest` at least (one begun with travel
+    /// kept at the gate may begin just before the rest).
+    private var restDueAt: TimeInterval {
+        let rest = lastSeenAt + ThumbWheelTuning.followRest
+        guard swipeNumber != 0 else { return rest }
+        return max(rest, swipeBeganAt + ThumbWheelTuning.followFullStopRest)
+    }
+
     /// The wheel has rested since its last event: the stroke ends; else look again then.
     private func lookForRest() {
         guard state != .idle else { return }
-        if clock() + 1e-9 >= lastSeenAt + ThumbWheelTuning.followRest {
+        if clock() + 1e-9 >= restDueAt {
+            // A swipe at a full Space ends as a full stop (due by then), whichever of the two
+            // looks comes first.
+            if state == .following, swipeNumber != 0, isAtFullSpace { lookForFullStop() }
             finishStroke(at: lastEventAt + ThumbWheelTuning.followRest)
         } else {
             scheduleRestLook()
@@ -589,6 +620,10 @@ final class ThumbWheelFollower {
         guard state == .following else {
             endStroke()
             return
+        }
+        if session == nil {
+            // The stroke is over: a swipe begun now would end in the same turn.
+            pendingTravel = 0
         }
         guard takeTravel(), var session, swipeNumber != 0 else {
             // No swipe runs: the last one ended (at a full Space, or taken over), another
@@ -654,6 +689,7 @@ final class ThumbWheelFollower {
         target = 0
         shown = 0
         furthest = 0
+        swipeBeganAt = -TimeInterval.infinity
         overflow = 0
     }
 

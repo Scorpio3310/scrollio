@@ -247,10 +247,15 @@ final class ThumbWheelFollowTests: XCTestCase {
 
     /// A sideways event of `lines` (negative: toward "next") that happened `time` seconds
     /// after the rig's start, through the tap's callback; the event as it went on, or nil
-    /// when it was swallowed.
+    /// when it was swallowed. `busy`: the main queue has been busy, the work due meanwhile
+    /// has not run.
     @discardableResult
-    private func turn(at time: Double, lines: Int64 = -2, fixed: Double? = nil) throws -> CGEvent? {
-        rig.advance(to: 500 + time)
+    private func turn(at time: Double, lines: Int64 = -2, fixed: Double? = nil, busy: Bool = false) throws -> CGEvent? {
+        if busy {
+            rig.now = max(rig.now, 500 + time)
+        } else {
+            rig.advance(to: 500 + time)
+        }
         let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 0, wheel2: 0, wheel3: 0))
         event.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: lines)
         event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: fixed ?? Double(lines))
@@ -591,6 +596,59 @@ final class ThumbWheelFollowTests: XCTestCase {
             return .nan
         }
         return progress
+    }
+
+    /// Two events at the gate after a chained end, then the wheel stops; the Space changes
+    /// 200 ms later: a third of a Space could not switch a desktop, nothing begins.
+    func testLittleTravelKeptAtTheGate_theWheelStopped_beginsNothing() throws {
+        for index in 0..<8 { try turn(at: Double(index) * 0.05) }
+        rig.advance(to: 500.38)
+        let end = try XCTUnwrap(endTimes.first, "chained in the frame of the eighth event")
+        try turn(at: end + 0.02)
+        try turn(at: end + 0.04)
+        rig.advance(to: 500 + end + 0.24)
+        rig.engine.follower.spaceDidChange()
+        rig.advance(to: 503)
+        XCTAssertEqual(beginCount, 1, "\(dock.calls)")
+        XCTAssertFalse(rig.hasPendingWork)
+    }
+
+    /// A Space of travel kept at the gate, the wheel stopped, the Space changes 400 ms later
+    /// (just before the stroke's rest): the swipe begins and is shown sliding, several
+    /// frames, and ends at the full Space 150 ms after its begin, not in the same turn.
+    func testAFullSpaceKeptAtTheGate_theWheelStopped_slidesBeforeItEnds() throws {
+        for index in 0..<8 { try turn(at: Double(index) * 0.05) }
+        rig.advance(to: 500.38)
+        let end = try XCTUnwrap(endTimes.first, "chained in the frame of the eighth event")
+        for offset in [0.01, 0.02, 0.03] { try turn(at: end + offset, lines: -12) }
+        rig.advance(to: 500 + end + 0.43)
+        rig.engine.follower.spaceDidChange()
+        rig.advance(to: 505)
+        let begins = dock.calls.indices.filter { dock.calls[$0] == .begin }
+        XCTAssertEqual(begins.count, 2, "\(dock.calls)")
+        let secondEnd = try XCTUnwrap(dock.calls.indices.first { $0 > begins[1] && dock.calls[$0] == .end(0) })
+        let began = dock.times[begins[1]]
+        XCTAssertEqual(began, end + 0.43, accuracy: 1e-6)
+        XCTAssertGreaterThanOrEqual(dock.times[secondEnd] - began, 0.15 - 1e-6)
+        let slide = dock.calls[(begins[1] + 1)..<secondEnd].compactMap { call -> Double? in
+            if case .update(let progress) = call { return progress } else { return nil }
+        }
+        XCTAssertGreaterThanOrEqual(slide.count, 4, "several frames: \(slide)")
+        XCTAssertEqual(slide, slide.sorted())
+        XCTAssertEqual(try XCTUnwrap(slide.last), Self.space, accuracy: 1e-9)
+        XCTAssertEqual(rig.lines.first?.swipes.map(\.ending).prefix(2), [.chained, .fullStop])
+    }
+
+    /// The main queue was busy all through a short stroke (its first frame never ran) and the
+    /// next event comes after the rest: the stroke is over, and no swipe begins and ends at
+    /// once inside the tap callback; the new stroke begins its own.
+    func testAStrokeWhoseFrameNeverRanBeforeItsRest_beginsNoSwipe() throws {
+        try turn(at: 0, busy: true)
+        try turn(at: 0.6, busy: true)
+        XCTAssertTrue(dock.calls.isEmpty, "\(dock.calls)")
+        rig.advance(to: 502)
+        XCTAssertEqual(beginCount, 1)
+        XCTAssertEqual(try XCTUnwrap(dock.updates.last), Self.space / 6, accuracy: 1e-9, "the new stroke's one event")
     }
 
     /// The Space changes 0.55 s after a chained end, after the gate's timeout, while the
