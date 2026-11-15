@@ -662,7 +662,7 @@ final class ThumbWheelStepperTests: XCTestCase {
         XCTAssertEqual(ThumbWheelFunction.volume.stepping, ThumbWheelStepping(first: 2, next: 3, accelerates: true, rest: 0.6))
         XCTAssertEqual(ThumbWheelFunction.zoom.stepping, ThumbWheelStepping(first: 3, next: 5, accelerates: true, rest: 0.6))
         XCTAssertEqual(ThumbWheelFunction.tabs.stepping, ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.6))
-        XCTAssertEqual(ThumbWheelFunction.desktops.stepping, ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3))
+        XCTAssertEqual(ThumbWheelFunction.desktops.stepping, ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.3))
         XCTAssertEqual(ThumbWheelFunction.backForward.stepping, ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3))
         XCTAssertNil(ThumbWheelFunction.scroll.stepping)
         XCTAssertEqual(ThumbWheelTuning.maxStepsPerEvent, 2)
@@ -716,7 +716,9 @@ final class ThumbWheelStepperTests: XCTestCase {
         var volume = ThumbWheelStepper()
         XCTAssertEqual(stepAt(run(&volume, Array(repeating: -1, count: 8), .volume)), [2, 5, 8], "first 2, then every 3")
         var desktops = ThumbWheelStepper()
-        XCTAssertEqual(stepAt(run(&desktops, Array(repeating: -1, count: 27), .desktops)), [3, 15, 27], "first 3, then every 12")
+        XCTAssertEqual(stepAt(run(&desktops, Array(repeating: -1, count: 13), .desktops)), [3, 8, 13], "first 3, then every 5")
+        var back = ThumbWheelStepper()
+        XCTAssertEqual(stepAt(run(&back, Array(repeating: -1, count: 27), .backForward)), [3, 15, 27], "first 3, then every 12")
         var previous = ThumbWheelStepper()
         XCTAssertEqual(run(&previous, [1, 1, 1], .tabs), [0, 0, -1], "toward previous")
     }
@@ -848,13 +850,15 @@ final class ThumbWheelStepperTests: XCTestCase {
         XCTAssertEqual(total(run(&flick, Array(repeating: -12, count: 10), .tabs, gaps: [0.015])), 2)
     }
 
-    func testDesktops_oneStrokeOneDesktop_fifteenEventsTwo() {
-        for count in [3, 8, 14] {
+    /// One long roll moves several desktops: the first after 3 events, each further one after
+    /// 5 more (the second no longer needs four times the first).
+    func testDesktops_firstAfterThreeEventsEachFurtherAfterFive() {
+        for (count, desktops) in [(3, 1), (7, 1), (8, 2), (12, 2), (13, 3)] {
             var stroke = ThumbWheelStepper()
-            XCTAssertEqual(total(run(&stroke, Array(repeating: -10, count: count), .desktops, gaps: [0.02])), 1, "\(count) events")
+            XCTAssertEqual(total(run(&stroke, Array(repeating: -10, count: count), .desktops, gaps: [0.02])), desktops, "\(count) events")
         }
-        var fifteen = ThumbWheelStepper()
-        XCTAssertEqual(total(run(&fifteen, Array(repeating: -10, count: 15), .desktops, gaps: [0.02])), 2)
+        var back = ThumbWheelStepper()
+        XCTAssertEqual(total(run(&back, Array(repeating: -10, count: 14), .backForward, gaps: [0.02])), 1, "back / forward as before")
         var two = ThumbWheelStepper()
         XCTAssertEqual(total(run(&two, Array(repeating: -0.5, count: 2), .desktops)), 0, "less than a stroke")
     }
@@ -870,10 +874,12 @@ final class ThumbWheelPacerTests: XCTestCase {
         return ThumbWheelPacer.Added(runNow: runNow, dropped: dropped)
     }
 
-    func testNumbers_onlyVolumeIsPaced() {
+    func testNumbers_volumeAndDesktopsArePaced() {
         XCTAssertEqual(volume, ThumbWheelPacing(interval: 0.05, maxWaiting: 3))
         XCTAssertEqual(ThumbWheelFunction.volume.pacing, volume)
-        for function in [ThumbWheelFunction.scroll, .zoom, .tabs, .desktops, .backForward] {
+        XCTAssertEqual(ThumbWheelTuning.desktopsPacing, ThumbWheelPacing(interval: 0.25, maxWaiting: 1))
+        XCTAssertEqual(ThumbWheelFunction.desktops.pacing, ThumbWheelTuning.desktopsPacing)
+        for function in [ThumbWheelFunction.scroll, .zoom, .tabs, .backForward] {
             XCTAssertNil(function.pacing, "\(function)")
         }
     }
@@ -1141,7 +1147,7 @@ final class ThumbWheelEngineTests: XCTestCase {
         XCTAssertEqual(rig.performed.last, Performed(action: .keys(ThumbWheelAction.previousTab), times: 1))
     }
 
-    /// A function without pacing (zoom, tabs, desktops, back / forward) runs its steps at once,
+    /// A function without pacing (zoom, tabs, back / forward) runs its steps at once,
     /// in the main-queue turn right after the callback, as before the pacer: two steps of one
     /// event in one go.
     func testAFunctionWithoutPacing_runsItsStepsAtOnce() {
@@ -1157,7 +1163,7 @@ final class ThumbWheelEngineTests: XCTestCase {
         XCTAssertEqual(rig.performedAt.map { ($0 * 1000).rounded() }, [0, 10, 20], "each right after its event")
         XCTAssertNil(rig.engine.pacer.nextRunAt(pacing: ThumbWheelTuning.volumePacing))
 
-        for function in [ThumbWheelFunction.tabs, .desktops, .backForward] {
+        for function in [ThumbWheelFunction.tabs, .backForward] {
             let other = Rig()
             let settings = ThumbWheelSettings(function: function, speed: 3)
             XCTAssertEqual(other.turn(lines: -1, at: 0, settings: settings), 1, "\(function)")
@@ -1228,6 +1234,61 @@ final class ThumbWheelEngineTests: XCTestCase {
         XCTAssertEqual(roll.stepsNext, 10, "about 30 units: as his 22 events in 1797 ms")
         XCTAssertEqual(roll.droppedSteps, 0)
         XCTAssertEqual(rig.performedAt.map { ($0 * 1000).rounded() }, decidedAt.map { ($0 * 1000).rounded() })
+    }
+
+    // MARK: Switch Desktops in steps
+
+    /// Lines of a slow roll as the owner's log has them: 0.1 to 1 line an event.
+    private static let slowLines: [Double] = [-0.1, -0.35, -0.6, -1, -0.8, -0.2, -0.45, -0.9, -0.15, -0.7, -1, -0.3]
+
+    /// At 0.7× a one-way roll at 94 ms an event steps at events 5, 12 and 19 (3, then 5 more
+    /// each); 17 events are two desktops, not one.
+    func testDesktops_atPoint7_aOneWayRollStepsAtEvents5_12_19() throws {
+        for (count, expected) in [(22, [5, 12, 19]), (17, [5, 12])] {
+            let rig = Rig()
+            let settings = ThumbWheelSettings(function: .desktops, speed: 0.7)
+            var steppedAt: [Int] = []
+            for index in 0..<count {
+                let lines = Self.slowLines[index % Self.slowLines.count]
+                if rig.turn(lines: lines, at: Double(index) * 0.094, settings: settings) != 0 { steppedAt.append(index + 1) }
+            }
+            rig.advance(to: 510)
+            XCTAssertEqual(steppedAt, expected, "\(count) events")
+            XCTAssertEqual(rig.performed.count, expected.count, "\(count) events: every one ran, none dropped")
+            XCTAssertEqual(rig.lines.first?.droppedSteps, 0)
+        }
+    }
+
+    /// Desktops are paced: at most one each 250 ms, one waiting at most. A flick of 12 events
+    /// (8.6 lines each, 20 ms apart) at 0.7× is two desktops, the second 250 ms after the
+    /// first; a fast roll of 40 events never has more than one waiting, nothing runs later
+    /// than 250 ms after the last event, and what is dropped is counted.
+    func testDesktops_pacedOneEach250Milliseconds_oneWaitingAtMost() throws {
+        let settings = ThumbWheelSettings(function: .desktops, speed: 0.7)
+        let flick = Rig()
+        for index in 0..<12 { flick.turn(lines: -8.6, at: Double(index) * 0.02, settings: settings) }
+        flick.advance(to: 510)
+        XCTAssertEqual(flick.performed, Array(repeating: Performed(action: .named("moveSpaceRight"), times: 1), count: 2))
+        XCTAssertGreaterThanOrEqual(flick.performedAt[1] - flick.performedAt[0], 0.25 - 1e-9, "\(flick.performedAt)")
+
+        let roll = Rig()
+        var decided = 0
+        for index in 0..<40 {
+            decided += roll.turn(lines: -8.6, at: Double(index) * 0.02, settings: settings)
+            XCTAssertLessThanOrEqual(abs(roll.engine.pacer.waiting), 1, "event \(index + 1)")
+        }
+        roll.advance(to: 510)
+        let lastEvent = 39 * 0.02
+        XCTAssertLessThanOrEqual(try XCTUnwrap(roll.performedAt.last) - lastEvent, 0.25 + 1e-9, "\(roll.performedAt)")
+        for (earlier, later) in zip(roll.performedAt, roll.performedAt.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(later - earlier, 0.25 - 1e-9, "\(roll.performedAt)")
+        }
+        let line = try XCTUnwrap(roll.lines.first)
+        XCTAssertEqual(roll.lines.count, 1)
+        XCTAssertEqual(line.stepsNext, roll.performed.count)
+        XCTAssertGreaterThan(line.droppedSteps, 0)
+        XCTAssertEqual(line.stepsNext + line.droppedSteps, decided, "every step ran or was counted as dropped")
+        XCTAssertFalse(roll.hasPendingWork)
     }
 
     /// A stop (Pause, sleep, lost access) with volume steps waiting: none of them runs, then or

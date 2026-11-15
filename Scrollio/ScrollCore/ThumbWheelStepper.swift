@@ -55,18 +55,26 @@ enum ThumbWheelTuning {
     static let zoom = ThumbWheelStepping(first: 3, next: 5, accelerates: true, rest: 0.6)
     /// Tabs: a slow roll of 5 to 9 events gives 1 to 2 tabs, a flick of 10 events 2.
     static let tabs = ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.6)
-    /// Desktops and back / forward: one stroke of 3 to 14 events gives one step, 15 events two;
-    /// a second quick stroke after 0.3 s of rest steps again after 3 events.
-    static let desktops = ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3)
+    /// Desktops: the first desktop after 3 events, each further one after 5 more, so one long
+    /// roll moves several (at 0.7× steps at events 5, 12, 19; with "next" 12 the second
+    /// needed four times the first, and the owner's rolls of 16 to 18 events gave one). Their
+    /// pacing (`desktopsPacing`) keeps the Dock from stacking switches. A second quick stroke
+    /// after 0.3 s of rest steps again after 3 events.
+    static let desktops = ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.3)
+    /// Back / forward: one stroke of 3 to 14 events gives one step, 15 events two.
     static let backForward = ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3)
 
     /// Volume's pacing (`ThumbWheelPacer`): at most one step each 50 ms, at most 3 waiting.
     /// From the owner's second log (2026-11-11): at speed 3 two volume key presses per event,
     /// about 100 a second, queued up in the system, and the volume display moved on for seconds
     /// after the hand stopped. 20 steps a second sweep the whole range (16 steps) in under a
-    /// second; with 3 waiting the volume stops within 150 ms of the hand. The other functions
-    /// have no pacing: their steps feel right at once.
+    /// second; with 3 waiting the volume stops within 150 ms of the hand. Zoom, tabs and back /
+    /// forward have no pacing: their steps feel right at once.
     static let volumePacing = ThumbWheelPacing(interval: 0.05, maxWaiting: 3)
+    /// Switch Desktops in steps: at most one desktop each 250 ms (the Dock's slide; ⌃→ sent
+    /// faster than it slides is stacked or dropped), one waiting at most, so after the hand
+    /// stops at most one more desktop comes, within 250 ms.
+    static let desktopsPacing = ThumbWheelPacing(interval: 0.25, maxWaiting: 1)
 
     /// A pause this long (s) ends a roll for the log: its line is written.
     static let logRollRest: TimeInterval = 0.6

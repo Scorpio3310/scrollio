@@ -5,9 +5,10 @@
 //  The sideways wheel's own settings (Options.thumbWheel) in the scroll tap. ScrollCore hands
 //  over every sideways wheel event (`ScrollCore.isSidewaysWheelEvent`); while the wheel runs a
 //  function, the event feeds the stepper, and the steps it decides run their actions on the
-//  main queue, never inside the tap callback. A function with a pacing (volume) runs them
-//  through `ThumbWheelPacer`: one at once, the others one per interval, a few waiting at most
-//  (the system does not keep up with volume keys); the others run at once. Switch Desktops
+//  main queue, never inside the tap callback. A function with a pacing (volume, desktops in
+//  steps) runs them through `ThumbWheelPacer`: one at once, the others one per interval, a few
+//  waiting at most (the system does not keep up with volume keys, the Dock with ⌃→); the others
+//  run at once. Switch Desktops
 //  with "Follow the wheel" drives a swipe of the desktops instead (`ThumbWheelFollower`).
 //  Every sideways event, at the defaults as well, goes into the roll's one log line.
 //
