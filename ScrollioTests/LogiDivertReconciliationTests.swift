@@ -561,6 +561,41 @@ final class LogiDivertReconciliationTests: XCTestCase {
         XCTAssertEqual(slot.writes, [.divert(gesture)])
     }
 
+    /// Divert, give back and divert again within the answer time (Undo and Redo of a binding,
+    /// a recording started, cancelled and started again), and the mouse refuses only the last
+    /// divert. The echo of the first divert came while the give-back was still on its way: it
+    /// tells the state before the give-back, not that the last divert was taken. It used to
+    /// count for the last one, and the next re-read took the refused divert for another app's
+    /// clear (two of those within 30 s: "Logi Options+ keeps taking this button over").
+    func testAnEchoOfAnEarlierDivertDoesNotVouchForALaterOne() {
+        let gesture: UInt16 = 0x00C3
+        var slot = ModelledSlot()
+        slot.pass(bindings: [gesture])
+        slot.pass(bindings: [])
+        slot.pass(bindings: [gesture])          // refused: no echo
+        slot.echo(gesture, divert: true)
+        XCTAssertEqual(slot.ledger.unacknowledged, [gesture], "the give-back is still on its way")
+        slot.echo(gesture, divert: false)
+        XCTAssertEqual(slot.ledger.unacknowledged, [gesture])
+
+        slot.now += 15
+        slot.ledger.noteQuerySent(cid: gesture)
+        XCTAssertEqual(slot.ledger.heldBack, [gesture])
+        var copy = slot.ledger
+        XCTAssertEqual(copy.dropLost(queriedControls: [queried(gesture, diverted: false)]), [], "the mouse's refusal, not another app's doing")
+
+        // All three taken: the echo of the last divert counts.
+        var taken = ModelledSlot()
+        taken.pass(bindings: [gesture])
+        taken.pass(bindings: [])
+        taken.pass(bindings: [gesture])
+        taken.echo(gesture, divert: true)
+        taken.echo(gesture, divert: false)
+        taken.echo(gesture, divert: true)
+        XCTAssertEqual(taken.ledger.unacknowledged, [])
+        XCTAssertTrue(taken.ledger.pendingAcks.isEmpty)
+    }
+
     /// Only an echo of Scrollio's own write counts: another app's divert of the button, or an
     /// echo after the slot was forgotten, does not make Scrollio believe it diverted it.
     func testOnlyScrolliosOwnEchoCountsADivertAsTaken() {

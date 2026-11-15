@@ -170,11 +170,17 @@ struct LogiDivertLedger: Equatable {
     /// write off the list). An echo that is not is another app's write. The echo of a divert
     /// of Scrollio's shows that the mouse took it: a control held back goes back into
     /// `lastApplied`. Another app's echo never does.
+    ///
+    /// Nor does the echo of a divert while a "give back" of Scrollio's for the control is
+    /// still on its way: the mouse answers in order, so that echo may be of a divert written
+    /// before the give-back (divert, give back, divert again within the answer time), and it
+    /// tells nothing of the divert written after it. The echo of that last divert counts.
     mutating func consumeAck(cid: UInt16, flags: UInt8, targetCID: UInt16, now: Date) -> Bool {
         guard pendingAcks.consume(cid: cid, flags: flags, targetCID: targetCID, now: now) else {
             return false
         }
-        if Self.divert(statedBy: flags) == true, unacknowledged.remove(cid) != nil,
+        let givenBackSince = pendingAcks.entries[cid]?.contains { Self.divert(statedBy: $0.flags) == false } ?? false
+        if Self.divert(statedBy: flags) == true, !givenBackSince, unacknowledged.remove(cid) != nil,
            heldBack.remove(cid) != nil {
             lastApplied.insert(cid)
         }
