@@ -298,11 +298,18 @@ final class GesturesPreferencesViewController: NSViewController {
         let gesture = Options.shared.gesture
         let presentation = controls.modePresentation
 
-        gestureButtonRow.explanation = summary.gestureButtonExplanation
+        // One button: the pull-down names it, the line says what to do with it. Two or more
+        // (the pull-down says "Multiple"), only an app's own, none: the line says which.
+        gestureButtonRow.explanation = summary.hasGestureButton && summary.buttonTitles.count == 1
+            ? text("gestures-gesture-button-one") : summary.gestureButtonExplanation
         // The preview's mouse holds the first button the row names.
         previewView.picture = summary.picture
-        // The pull-down names what the row names first, and offers the mouse's buttons.
-        triggerChooser.update(triggerTitles: summary.buttonTitles)
+        // The pull-down names what the row names first, and offers the mouse's buttons;
+        // "Show in Buttons" says where it goes (`showInButtons`).
+        triggerChooser.update(
+            triggerTitles: summary.buttonTitles,
+            showsInApplication: summary.hasGestureButton ? nil : summary.onlyInApps?.applicationNames.first
+        )
         modeRow.explanation = text(presentation.descriptionKey)
         // No button runs these gestures (none at all, or only in apps that run their own):
         // what is under the first box waits, folded.
@@ -487,7 +494,7 @@ final class GesturesPreferencesViewController: NSViewController {
 
     /// "Show in Buttons": the Buttons pane with the row of the button that runs the
     /// gestures selected (and lit on its card); while only an app's own button runs them,
-    /// that app's Buttons part.
+    /// that app's Buttons part (the item then says "Show in Notes").
     func showInButtons() {
         // (What the row says, which an Undo keeps up to date.)
         let summary = shownSummary ?? bindingSummary()

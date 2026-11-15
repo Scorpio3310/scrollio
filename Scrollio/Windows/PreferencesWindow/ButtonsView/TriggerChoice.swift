@@ -13,8 +13,10 @@
 //  Buttons pane), each with what it does now in grey ("Back button — Back, will be
 //  replaced"; "Default" while it has no action; the one that does it is ticked); then
 //  "Record a Button…" (the ring: "Record a Button or Key…"), the recorder's popover at the
-//  pull-down; then "Show in Buttons". While two or more of Buttons' buttons or keys do it,
-//  the menu offers "Show in Buttons" only: which one to keep is decided there.
+//  pull-down; then "Show in Buttons", which says where it goes: "Show in Notes" while only
+//  an app's own button or key does it, since it then shows that app's Buttons part. While
+//  two or more of Buttons' buttons or keys do it, the menu offers "Show in Buttons" only:
+//  which one to keep is decided there.
 //
 //  Buttons stays the one place a button's action is stored: a choice writes the binding
 //  that pane writes for that row (an action for a button of the mouse that has none, the
@@ -283,6 +285,9 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
 
     /// What the pane's row names as doing it.
     private(set) var triggerTitles: [String] = []
+    /// The app whose Buttons part "Show in Buttons" shows (only its own button or key does
+    /// it): the item says "Show in <app>". nil: the Buttons pane.
+    private(set) var showsInApplication: String?
     /// What the menu shows, as last built.
     private(set) var menuModel = TriggerChoiceMenu(title: .choose, items: [])
     /// The recorder of "Record a Button…" is open.
@@ -304,8 +309,10 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
     }
 
     /// The pane's row now names `titles` as doing it: the title and the menu follow.
-    func update(triggerTitles titles: [String]) {
+    /// `application`: "Show in Buttons" shows that app's Buttons part (`showsInApplication`).
+    func update(triggerTitles titles: [String], showsInApplication application: String? = nil) {
         triggerTitles = titles
+        showsInApplication = application
         rebuildMenu()
     }
 
@@ -372,7 +379,9 @@ final class TriggerChooser: NSObject, NSMenuDelegate, KeyRecorderDelegate {
             menu.addItem(record)
             menu.addItem(.separator())
         }
-        let show = NSMenuItem(title: text("buttons-trigger-choice-show"), action: #selector(showChosen(_:)), keyEquivalent: "")
+        let showTitle = showsInApplication.map { String(format: text("buttons-trigger-choice-show-in-app"), $0) }
+            ?? text("buttons-trigger-choice-show")
+        let show = NSMenuItem(title: showTitle, action: #selector(showChosen(_:)), keyEquivalent: "")
         show.target = self
         show.identifier = Identifier.showInButtons
         menu.addItem(show)

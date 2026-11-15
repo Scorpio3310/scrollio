@@ -20,8 +20,10 @@
 //  with what each does now, "Record a Button or Key…" and "Show in Buttons" (the Buttons
 //  pane with its row selected), and a choice writes the binding Buttons would, with Undo;
 //  while only an app's own button or key opens it, the row says where ("Only in Figma:
-//  Thumb panel.") and "Show in Buttons" shows that app's Buttons part
-//  (`ApplicationTriggerRule`); its explanation also says that a key combination works.
+//  Thumb panel.") and "Show in Figma" shows that app's Buttons part
+//  (`ApplicationTriggerRule`). With one button or key chosen the row says what to do with
+//  it ("Hold it, move towards a shortcut and let go."); its explanation also says that a
+//  key combination works, where that adds something (not when a key opens it).
 //  Then the eight places, clockwise from the top, each with the pull-down a row of the
 //  Buttons pane has
 //  (`ButtonActionPullDown`, with the menu of what a place can hold): a listed action, a
@@ -93,11 +95,16 @@ struct ShortcutRingBindingSummary: Equatable {
         picture = TriggerPictureSource.make(rule: rule, general: bindings, onlyInApps: onlyInApps)
     }
 
-    /// The explanation of the pane's first row: the buttons and keys, joined as a list; or
+    /// The explanation of the pane's first row: with one button or key (which the pull-down
+    /// names), what to do with it; with more, the buttons and keys, joined as a list; or
     /// in which apps only and with what ("Only in Figma: Thumb panel."); or that there is
-    /// none yet; and, either way, that a key combination works too (but for the apps' line,
-    /// also one that Logi Options+ sends for a button).
+    /// none yet; and that a key combination works too (but for the apps' line, also one
+    /// that Logi Options+ sends for a button), except while a key opens it.
     var explanation: String {
+        if triggerTitles.count == 1 {
+            let isKey = picture.onlyInAppPath == nil && picture.event?.type == .keyboard
+            return NSLocalizedString(isKey ? "ring-trigger-one-key" : "ring-trigger-one", comment: "")
+        }
         if hasTrigger {
             let triggers = ListFormatter.localizedString(byJoining: triggerTitles)
             return String(format: NSLocalizedString("ring-trigger-bound", comment: ""), triggers)
@@ -474,8 +481,12 @@ final class RingPreferencesViewController: NSViewController {
             shownSummary = summary
             triggerRow.explanation = summary.explanation
             triggerCard?.source = summary.picture
-            // The pull-down names what the row names first, and offers the mouse's buttons.
-            triggerChooser?.update(triggerTitles: summary.triggerTitles)
+            // The pull-down names what the row names first, and offers the mouse's buttons;
+            // "Show in Buttons" says where it goes (`showInButtons`).
+            triggerChooser?.update(
+                triggerTitles: summary.triggerTitles,
+                showsInApplication: summary.hasTrigger ? nil : summary.onlyInApps?.applicationNames.first
+            )
             // Nothing opens this ring (nothing at all, or only apps that open their own):
             // its places wait, folded, a click away.
             let opensThisRing = summary.hasTrigger || summary.onlyInApps?.usesGeneralSettings == true
@@ -562,7 +573,8 @@ final class RingPreferencesViewController: NSViewController {
     // MARK: - Actions
 
     /// "Show in Buttons": the Buttons pane with the row of what opens the ring selected;
-    /// while only an app's own button or key opens it, that app's Buttons part.
+    /// while only an app's own button or key opens it, that app's Buttons part (the item
+    /// then says "Show in Figma").
     func showInButtons() {
         // (What the row says, which an Undo keeps up to date.)
         let summary = shownSummary ?? bindingSummary()

@@ -749,7 +749,7 @@ final class PreferencesGesturesTests: XCTestCase {
     /// "Show in Buttons" in the window: the Buttons pane opens with the row of the button
     /// that runs Gesture Navigation selected and lit on the card, and nothing is recorded or
     /// changed.
-    func testChangeInTheWindowSelectsTheGestureButtonsRowInButtons() throws {
+    func testShowInButtonsInTheWindowSelectsTheGestureButtonsRowInButtons() throws {
         let savedBindings = Options.shared.buttons.binding
         defer { Options.shared.buttons.binding = savedBindings }
         func binding(_ code: UInt16, _ shortcut: String) -> ButtonBinding {
@@ -851,7 +851,7 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(added.systemShortcutName, SystemShortcut.mouseGestureNavigation.identifier)
         XCTAssertTrue(added.isEnabled)
         XCTAssertEqual(added.triggerEvent, RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil))
-        XCTAssertEqual(gestures.gestureButtonRow.explanation, "Back button.", "shown at once")
+        XCTAssertEqual(gestures.gestureButtonRow.explanation, "Hold it and move the mouse.", "shown at once")
         XCTAssertEqual(gestures.gestureButtonButton.shownTitle, "Back button")
         XCTAssertTrue(gestures.foldingSections.allSatisfy { $0.showsBody }, "the sections open")
         XCTAssertEqual(undo.undoActionName, "Change Button to Hold")

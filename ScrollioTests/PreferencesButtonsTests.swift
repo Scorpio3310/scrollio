@@ -478,6 +478,36 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertNil(pane.storedBinding(ofRow: ButtonsListLayout.thumbWheelRowID))
     }
 
+    /// Edit › Undo of a function chosen on the thumb wheel's row ("Undo Change Action", as
+    /// a button row's) puts back the one it had, and Redo chooses it again; the bindings
+    /// stay. Regression: the change had no Undo, so ⌘Z undid an older, other change.
+    func testUndoPutsBackTheThumbWheelsFunction() throws {
+        let bindings = [binding(3, "copy")]
+        let pane = makePane(bindings)
+        let row = try XCTUnwrap(pane.thumbWheelRow)
+        let undo = try XCTUnwrap(pane.paneUndoManager)
+        undo.groupsByEvent = false
+        XCTAssertEqual(Options.shared.thumbWheel.function, .scroll)
+        XCTAssertFalse(undo.canUndo)
+
+        let tabs = try XCTUnwrap(row.pullDown.functionItems.first { ThumbWheelPresentation.function(of: $0) == .tabs })
+        undo.beginUndoGrouping()
+        row.pullDown.functionChosen(tabs)
+        undo.endUndoGrouping()
+        XCTAssertEqual(Options.shared.thumbWheel.function, .tabs)
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+
+        undo.undo()
+        XCTAssertEqual(Options.shared.thumbWheel.function, .scroll)
+        XCTAssertEqual(shown(row.pullDown), "Default", "the row follows")
+        XCTAssertEqual(undo.redoMenuItemTitle, "Redo Change Action")
+        undo.redo()
+        XCTAssertEqual(Options.shared.thumbWheel.function, .tabs)
+        XCTAssertEqual(shown(row.pullDown), "Switch Tabs")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        XCTAssertEqual(Options.shared.buttons.binding, bindings, "no binding is touched")
+    }
+
     /// The row's menu ends with "Thumb Wheel Settings…" (after a separator, with its
     /// symbol, never ticked): it opens the Scrolling pane and changes nothing.
     func testTheThumbWheelRowsMenuOpensItsSettings() throws {
@@ -1468,6 +1498,48 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertTrue(pane.row(for: old.id) === row)
         XCTAssertEqual(row.picture, .mouse(part: .forward, number: nil))
         XCTAssertNil(row.explanation)
+    }
+
+    /// "Use Standard Button" has its own Undo ("Undo Which Button"): ⌘Z takes the
+    /// conversion back first, the merged row with it, and the row's older change of action
+    /// afterwards. Regression: it had none, and the older Undo, which puts back the row's
+    /// whole binding, took the standard button back to the Logitech one unseen.
+    func testUseStandardButtonHasItsOwnUndoBeforeTheRowsOlderChange() throws {
+        deviceName = nil
+        let logiBack = binding(1006, "copy")
+        let nativeBack = binding(3)
+        let other = binding(5, "paste")
+        let pane = makePane([nativeBack, logiBack, other])
+        let undo = try XCTUnwrap(pane.paneUndoManager)
+        undo.groupsByEvent = false
+        let missionControl = SystemShortcut.missionControl.identifier
+
+        undo.beginUndoGrouping()
+        pane.setAction(of: logiBack.id, to: SystemShortcut.missionControl)
+        undo.endUndoGrouping()
+        undo.beginUndoGrouping()
+        pane.useStandardButton(for: logiBack.id)
+        undo.endUndoGrouping()
+        let converted = try XCTUnwrap(pane.binding(for: logiBack.id))
+        XCTAssertEqual(converted.triggerEvent.code, 3, "the standard Back button")
+        XCTAssertEqual(converted.systemShortcutName, missionControl)
+        XCTAssertNil(pane.binding(for: nativeBack.id), "the Back button's own binding merged into it")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Which Button")
+
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.id), [nativeBack.id, logiBack.id, other.id], "the merged row is back")
+        let back = try XCTUnwrap(pane.binding(for: logiBack.id))
+        XCTAssertEqual(back.triggerEvent.code, 1006, "the conversion is taken back first")
+        XCTAssertEqual(back.systemShortcutName, missionControl, "the newer action stays")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        undo.undo()
+        XCTAssertEqual(Options.shared.buttons.binding, [nativeBack, logiBack, other])
+
+        undo.redo()
+        undo.redo()
+        XCTAssertEqual(Options.shared.buttons.binding.map(\.id), [logiBack.id, other.id])
+        XCTAssertEqual(pane.binding(for: logiBack.id)?.triggerEvent.code, 3)
+        XCTAssertEqual(pane.binding(for: logiBack.id)?.systemShortcutName, missionControl)
     }
 
     /// A numbered button's row says it is an extra one only when nothing more pressing

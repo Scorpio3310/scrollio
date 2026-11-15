@@ -3806,18 +3806,6 @@
         }
       }
     },
-    "gestures-gesture-button-change": {
-      "comment": "Gestures pane: push button",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Change"
-          }
-        }
-      }
-    },
     "scrolling-smooth": {
       "extractionState": "manual",
       "localizations": {
@@ -7512,18 +7500,6 @@
         }
       }
     },
-    "ring-trigger-change": {
-      "comment": "Shortcut Ring pane: push button",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Change"
-          }
-        }
-      }
-    },
     "ring-places-header": {
       "comment": "Shortcut Ring pane: title of the eight places",
       "extractionState": "manual",
@@ -10357,13 +10333,13 @@
       }
     },
     "apps-summary-own": {
-      "comment": "Apps: an app's row and its page's header, what it has of its own; %@ the list of kinds (“scrolling, 2 buttons and ring”), as System Settings › Notifications says it",
+      "comment": "Apps: an app's row and its page's header, what it has of its own; %@ the list of kinds joined by ListFormatter (“Own: scrolling, 2 buttons and ring”)",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Own %@"
+            "value": "Own: %@"
           }
         }
       }
@@ -10676,6 +10652,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Suggested ring"
+          }
+        }
+      }
+    },
+    "buttons-trigger-choice-show-in-app": {
+      "comment": "Gestures and Shortcut Ring panes: last item of the trigger pull-down while only an app's own button or key does it; it shows that app's Buttons part. %@ is the app's name (“Show in Notes”). The app's page can use it for the same place",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in %@"
+          }
+        }
+      }
+    },
+    "gestures-gesture-button-one": {
+      "comment": "Gestures pane: under Button to hold while one button runs the gestures (the pull-down names it)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold it and move the mouse."
+          }
+        }
+      }
+    },
+    "ring-trigger-one": {
+      "comment": "Shortcut Ring pane: under Button or key while one button opens the ring (the pull-down names it)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold it, move towards a shortcut and let go. A key combination works too, even one from Logi Options+."
+          }
+        }
+      }
+    },
+    "ring-trigger-one-key": {
+      "comment": "Shortcut Ring pane: under Button or key while one key combination opens the ring (the pull-down names it)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold it, move towards a shortcut and let go."
           }
         }
       }

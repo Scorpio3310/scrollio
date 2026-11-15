@@ -267,15 +267,13 @@ final class StatusMenuTests: XCTestCase {
             .separator,
             Row(title: "Quit Scrollio", shortcut: "⌘Q"),
         ])
-        // A waiting update and the batteries under the title's group.
-        let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
-        XCTAssertEqual(rows(state(paused: true, batteries: [battery], updates: .waiting(version: "1.1.0"))), [
+        // A waiting update under the title's group. No battery lines: a pause stops the
+        // Logitech sessions (LogiCenter.stop), so no mouse reports one.
+        XCTAssertEqual(rows(state(paused: true, updates: .waiting(version: "1.1.0"))), [
             Self.pausedTitle,
             Row(title: "Resume Scrollio"),
             .separator,
             Row(title: "Update to Scrollio 1.1.0…"),
-            .separator,
-            Row(title: "MX Master 4: 75%"),
             .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
@@ -315,7 +313,8 @@ final class StatusMenuTests: XCTestCase {
     }
 
     /// The title is there only while Scrollio does not work, always first, a section
-    /// header; and it says what the icon's tooltip says.
+    /// header; and it says what the icon's tooltip says, in every state (regression: paused
+    /// without the access, the menu said "needs access" and the tooltip "paused").
     func testTheTitleOnlyWhileScrollioDoesNotWork() {
         let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
         for access in [true, false] {
@@ -333,16 +332,15 @@ final class StatusMenuTests: XCTestCase {
                         guard !works else { continue }
                         XCTAssertTrue(built.items[0].isSectionHeader, label)
                         XCTAssertFalse(built.items[1].isSeparatorItem, "an action under the title: \(label)")
-                        // Without the access the menu offers only the way to it, and says so.
-                        guard access else {
-                            XCTAssertEqual(built.items[0].title, "Scrollio needs Accessibility access", label)
-                            continue
-                        }
                         let tooltip = StatusMenu.IconLook(
-                            coresActive: problem != .retrying && !paused, isPaused: paused,
+                            hasAccess: access, coresActive: access && problem != .retrying && !paused, isPaused: paused,
                             startFailed: problem == .retrying, tapRestartsThrottled: problem == .tapOff
                         ).toolTip
                         XCTAssertEqual(built.items[0].title + ".", tooltip, label)
+                        // Without the access the menu offers only the way to it, and says so.
+                        if !access {
+                            XCTAssertEqual(built.items[0].title, "Scrollio needs Accessibility access", label)
+                        }
                     }
                 }
             }
@@ -446,9 +444,11 @@ final class StatusMenuTests: XCTestCase {
             try choose(title, in: built)
             XCTAssertEqual(calls.log, ["mouse"], title)
         }
-        // Paused: under the title's group.
-        XCTAssertEqual(rows(state(paused: true, batteries: batteries)).map(\.title), [
-            "Scrollio is paused", "Resume Scrollio", "—", "MX Master 4: 75%", "MX Master 3S: 40%, charging", "—",
+        // Under the title's group: an event tap kept off is the one title while the Logitech
+        // sessions run (paused and a failed start stop them, and the mice with them).
+        XCTAssertEqual(rows(state(batteries: batteries, startProblem: .tapOff)).map(\.title), [
+            "Scrollio couldn't start and is trying again", "Pause Scrollio", "—",
+            "MX Master 4: 75%", "MX Master 3S: 40%, charging", "—",
             "Settings…", "—", "Quit Scrollio",
         ])
     }
@@ -648,17 +648,29 @@ final class StatusMenuTests: XCTestCase {
     // MARK: - Icon
 
     func testTheIconDimsWhilePausedOrWithoutAccess() {
-        let running = StatusMenu.IconLook(coresActive: true, isPaused: false)
+        let running = StatusMenu.IconLook(hasAccess: true, coresActive: true, isPaused: false)
         XCTAssertFalse(running.appearsDisabled)
         XCTAssertNil(running.toolTip)
 
-        let paused = StatusMenu.IconLook(coresActive: false, isPaused: true)
+        let paused = StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: true)
         XCTAssertTrue(paused.appearsDisabled)
         XCTAssertEqual(paused.toolTip, "Scrollio is paused.")
 
-        let noAccess = StatusMenu.IconLook(coresActive: false, isPaused: false)
+        let noAccess = StatusMenu.IconLook(hasAccess: false, coresActive: false, isPaused: false)
         XCTAssertTrue(noAccess.appearsDisabled)
         XCTAssertEqual(noAccess.toolTip, "Scrollio needs Accessibility access.")
+
+        // Regression: paused, then the access taken away: the menu's title says the access
+        // is needed, and so does the tooltip (it said "paused").
+        let pausedWithoutAccess = StatusMenu.IconLook(hasAccess: false, coresActive: false, isPaused: true)
+        XCTAssertTrue(pausedWithoutAccess.appearsDisabled)
+        XCTAssertEqual(pausedWithoutAccess.toolTip, "Scrollio needs Accessibility access.")
+
+        // The access back, the cores not started yet: the menu has no title, and the
+        // tooltip no longer says the access is needed (it did).
+        let accessBack = StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: false)
+        XCTAssertTrue(accessBack.appearsDisabled)
+        XCTAssertNil(accessBack.toolTip)
     }
 
     /// Regression: with the access allowed but an event tap that could not be created, the
@@ -667,23 +679,23 @@ final class StatusMenuTests: XCTestCase {
     func testTheIconSaysWhenScrollioCouldNotStart() {
         let couldNotStart = "Scrollio couldn't start and is trying again."
 
-        let failedStart = StatusMenu.IconLook(coresActive: false, isPaused: false, startFailed: true)
+        let failedStart = StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: false, startFailed: true)
         XCTAssertTrue(failedStart.appearsDisabled)
         XCTAssertEqual(failedStart.toolTip, couldNotStart)
 
-        let throttled = StatusMenu.IconLook(coresActive: true, isPaused: false, tapRestartsThrottled: true)
+        let throttled = StatusMenu.IconLook(hasAccess: true, coresActive: true, isPaused: false, tapRestartsThrottled: true)
         XCTAssertTrue(throttled.appearsDisabled, "the not-active look while a tap stays off")
         XCTAssertEqual(throttled.toolTip, couldNotStart)
 
         // Back to normal by itself once the taps run.
-        XCTAssertEqual(StatusMenu.IconLook(coresActive: true, isPaused: false, startFailed: false, tapRestartsThrottled: false),
-                       StatusMenu.IconLook(coresActive: true, isPaused: false))
+        XCTAssertEqual(StatusMenu.IconLook(hasAccess: true, coresActive: true, isPaused: false, startFailed: false, tapRestartsThrottled: false),
+                       StatusMenu.IconLook(hasAccess: true, coresActive: true, isPaused: false))
 
-        // A pause says "paused" whatever else is true.
-        XCTAssertEqual(StatusMenu.IconLook(coresActive: false, isPaused: true, startFailed: true, tapRestartsThrottled: true).toolTip,
+        // With the access, a pause says "paused" whatever else is true.
+        XCTAssertEqual(StatusMenu.IconLook(hasAccess: true, coresActive: false, isPaused: true, startFailed: true, tapRestartsThrottled: true).toolTip,
                        "Scrollio is paused.")
         // Without the access the start did not fail: it waits.
-        XCTAssertEqual(StatusMenu.IconLook(coresActive: false, isPaused: false, startFailed: false, tapRestartsThrottled: true).toolTip,
+        XCTAssertEqual(StatusMenu.IconLook(hasAccess: false, coresActive: false, isPaused: false, startFailed: false, tapRestartsThrottled: true).toolTip,
                        "Scrollio needs Accessibility access.")
     }
 
