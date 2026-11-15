@@ -800,6 +800,36 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertFalse(Application(path: Self.textEdit).adoptScrollOptionsIfUnedited(from: OPTIONS_SCROLL_DEFAULT()))
     }
 
+    /// On a Mac with Natural scrolling off a new entry starts with that Mac's defaults
+    /// (Reverse wheel direction off) and counts as unedited; an app whose own direction was
+    /// turned on keeps it through "Use settings from Scrolling" on and off, although its
+    /// options are then the plain defaults. Regression: they were taken for unedited and
+    /// the Scrolling settings' direction was copied over them without a word.
+    func testAnAppsOwnDirectionStaysOnAMacWithoutNaturalScrolling() {
+        let originalNaturalScrolling = Options.naturalScrollingIsOn
+        defer { Options.naturalScrollingIsOn = originalNaturalScrolling }
+        Options.naturalScrollingIsOn = { false }
+        // The Scrolling settings of a new installation on that Mac.
+        let scrolling = OPTIONS_SCROLL_DEFAULT(reverse: false)
+
+        let app = Application(path: Self.calculator)
+        XCTAssertEqual(app.scroll, scrolling, "a new entry: this Mac's defaults")
+        app.setUsesScrollingSettings(false, scrolling: scrolling)
+        XCTAssertFalse(app.scroll.reversesWheel)
+        app.scroll.reversesWheel = true
+        XCTAssertEqual(app.scroll, OPTIONS_SCROLL_DEFAULT())
+        app.setUsesScrollingSettings(true, scrolling: scrolling)
+        app.setUsesScrollingSettings(false, scrolling: scrolling)
+        XCTAssertTrue(app.scroll.reversesWheel, "the app's own direction")
+
+        // A new entry is unedited: it takes the Scrolling settings.
+        scrolling.speed = 8.5
+        let fresh = Application(path: Self.textEdit)
+        XCTAssertTrue(fresh.adoptScrollOptionsIfUnedited(from: scrolling))
+        XCTAssertEqual(fresh.scroll, scrolling)
+        XCTAssertFalse(fresh.scroll.reversesWheel)
+    }
+
     func testThePageFollowsAdvancedAndTheSettingsEditOnlyTheApp() throws {
         let calculator = application(Self.calculator, inherit: false)
         Options.shared.application.applications = Self.makeStore([calculator])
