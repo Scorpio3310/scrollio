@@ -290,7 +290,7 @@ final class ThumbWheelFollowTests: XCTestCase {
         XCTAssertTrue(line.follows)
         XCTAssertEqual(line.swipeTally.ended, 1)
         XCTAssertEqual(line.furthestSwipe, 4.0 / 6, accuracy: 1e-9)
-        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: line).hasSuffix("switch desktops, following x1.00, travel 4.0: 1 swipe ended (furthest 0.67 of a desktop)"),
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: line).hasSuffix("switch desktops, following x1.00, travel 4.0: swipes 0.67 ended no change; ticks held 0, dropped 0"),
                       ScrollSystemLog.thumbWheelMessage(for: line))
     }
 

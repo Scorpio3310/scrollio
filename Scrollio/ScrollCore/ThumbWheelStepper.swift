@@ -92,6 +92,9 @@ enum ThumbWheelTuning {
     /// During a long roll a log line is written at least this often (s), and at most this
     /// often apart from the line at its end.
     static let logInterval: TimeInterval = 2.0
+    /// A function roll's trace line (`ScrollSystemLog.thumbWheelTraceMessage`) lists this many
+    /// events at most (the engine's buffers are reserved once for them).
+    static let traceEntries = 128
     /// A roll's line is due but steps still wait to run: the look comes again after at least
     /// this long (s), so it never spins on the main queue.
     static let pendingRecheck: TimeInterval = 0.01

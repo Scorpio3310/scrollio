@@ -195,6 +195,8 @@ final class ThumbWheelEngine {
     }
     /// Writes a roll's log line.
     var writeLog: (Roll) -> Void = ScrollSystemLog.noteThumbWheelRoll
+    /// Writes a function roll's trace line (`ScrollSystemLog.thumbWheelTraceMessage`).
+    var writeTrace: (String) -> Void = ScrollSystemLog.noteThumbWheelTrace
     /// Seconds on a monotonic clock: when the callback saw an event (the look at the open roll
     /// uses only these), and the time of an event without a timestamp.
     var clock: () -> TimeInterval = { CACurrentMediaTime() } {
@@ -208,8 +210,15 @@ final class ThumbWheelEngine {
     /// Moves on with `reset()`: steps decided before it do not run.
     private var generation = 0
     private var nextRollID = 0
+    /// The trace of the open roll and of the ended one (each event's gap and fixed-point
+    /// lines, the first `ThumbWheelTuning.traceEntries`): reserved once, swapped and emptied,
+    /// never grown, so the tap callback allocates nothing for it.
+    private var traceOpen = ContiguousArray<ScrollSystemLog.ThumbWheelTraceEntry>()
+    private var traceEnded = ContiguousArray<ScrollSystemLog.ThumbWheelTraceEntry>()
 
     init() {
+        traceOpen.reserveCapacity(ThumbWheelTuning.traceEntries)
+        traceEnded.reserveCapacity(ThumbWheelTuning.traceEntries)
         // A roll's line waits for its strokes and swipes (by its id, the tag of their events).
         follower.onStrokeEnd = { [weak self] tag, waited in
             self?.changeRoll(tag) { $0.strokeEnded(waited: waited) }
@@ -311,6 +320,10 @@ final class ThumbWheelEngine {
                 }
             }
         }
+        if settings.function != .scroll, traceOpen.count < ThumbWheelTuning.traceEntries, let open = roll {
+            let gap = open.events > 0 ? time - open.lastEventAt : 0
+            traceOpen.append(ScrollSystemLog.ThumbWheelTraceEntry(gap: gap, fixed: event.fixedDelta))
+        }
         roll?.add(event, travel: travel, at: time, seenAt: seenAt)
         roll?.ticksFiltered(tick)
         scheduleRollLook()
@@ -379,7 +392,7 @@ final class ThumbWheelEngine {
         if step != 0, let action = ThumbWheelAction.action(for: function, towardNext: step > 0) {
             perform(action, 1)
             // Waiting steps belong to the open roll: a roll that ends drops them.
-            stepsRan(step, rollID: roll?.id)
+            stepsRan(step, rollID: roll?.id, waited: true)
         }
         schedulePaceLook(pacing)
     }
@@ -413,6 +426,7 @@ final class ThumbWheelEngine {
             roll = Roll(id: nextRollID, settings: settings, at: time, seenAt: seenAt)
             // (The log says when the settings were an app's own, never which app.)
             roll?.isAppsOwn = turn?.own != nil
+            traceOpen.removeAll(keepingCapacity: true)
         }
     }
 
@@ -427,10 +441,12 @@ final class ThumbWheelEngine {
         guard let open = roll else { return }
         roll = nil
         if let previous = ended {
-            // Two settings changes before the main queue ran: rare; written as it stands.
-            writeLog(previous)
+            // Two settings changes before the main queue ran (or an ended roll of Follow the
+            // wheel still waits for its last swipe's Space change): rare; written as it stands.
+            write(previous, trace: &traceEnded)
         }
         ended = open
+        swap(&traceOpen, &traceEnded)
         // Queued after the steps of its events: they have run when it is written.
         let id = open.id
         schedule(0) { [weak self] in self?.writeEndedRoll(id: id) }
@@ -442,7 +458,19 @@ final class ThumbWheelEngine {
         guard let done = ended, id == nil || done.id == id else { return }
         if id != nil, done.pendingSwipes > 0 { return }
         ended = nil
+        write(done, trace: &traceEnded)
+    }
+
+    /// Writes a roll's line and, for a roll that ran a function, its trace line right after
+    /// it; the trace is emptied (its room kept). The trace line is written in every build for
+    /// now, the owner runs Release builds to tune the wheel: cut it, or keep it to DEBUG,
+    /// before the next release.
+    private func write(_ done: Roll, trace: inout ContiguousArray<ScrollSystemLog.ThumbWheelTraceEntry>) {
         writeLog(done)
+        if done.function != .scroll, done.events > 0 {
+            writeTrace(ScrollSystemLog.thumbWheelTraceMessage(entries: trace, events: done.events))
+        }
+        trace.removeAll(keepingCapacity: true)
     }
 
     /// What Follow the wheel did goes to the roll whose id its events carried, open or
@@ -459,11 +487,11 @@ final class ThumbWheelEngine {
         }
     }
 
-    private func stepsRan(_ steps: Int, rollID: Int?) {
+    private func stepsRan(_ steps: Int, rollID: Int?, waited: Bool = false) {
         if roll?.id == rollID {
-            roll?.stepsRan(steps)
+            roll?.stepsRan(steps, waited: waited)
         } else if ended?.id == rollID {
-            ended?.stepsRan(steps)
+            ended?.stepsRan(steps, waited: waited)
         }
     }
 
@@ -481,7 +509,7 @@ final class ThumbWheelEngine {
                 open.ticksDropped += tickFilter.dropHeld()
             }
             roll = nil
-            writeLog(open)
+            write(open, trace: &traceOpen)
             return
         }
         checkScheduled = true
@@ -518,7 +546,7 @@ final class ThumbWheelEngine {
         writeEndedRoll()
         if let open = roll {
             roll = nil
-            writeLog(open)
+            write(open, trace: &traceOpen)
         }
     }
 }

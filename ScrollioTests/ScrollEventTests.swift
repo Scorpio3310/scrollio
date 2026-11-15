@@ -1041,6 +1041,8 @@ final class ThumbWheelEngineTests: XCTestCase {
         /// When each action ran (seconds after the rig's start).
         private(set) var performedAt: [Double] = []
         private(set) var lines: [ScrollSystemLog.ThumbWheelRoll] = []
+        /// The trace lines, as written.
+        private(set) var traces: [String] = []
 
         init() {
             engine.secondsPerTimestampUnit = 1e-9
@@ -1054,6 +1056,7 @@ final class ThumbWheelEngineTests: XCTestCase {
                 self.performedAt.append(self.now - 500)
             }
             engine.writeLog = { [unowned self] roll in self.lines.append(roll) }
+            engine.writeTrace = { [unowned self] line in self.traces.append(line) }
         }
 
         var hasPendingWork: Bool { return !queue.isEmpty }
@@ -1277,7 +1280,7 @@ final class ThumbWheelEngineTests: XCTestCase {
         let roll = try XCTUnwrap(rig.lines.first)
         XCTAssertEqual(roll.stepsNext, 7)
         XCTAssertEqual(roll.droppedSteps, 15)
-        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: roll).hasSuffix("volume x3.00, travel 66.0: 7 steps next, 15 dropped"),
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: roll).hasSuffix("volume x3.00, travel 66.0: 7 steps next, 6 waited, 15 dropped; ticks held 0, dropped 0"),
                       ScrollSystemLog.thumbWheelMessage(for: roll))
         XCTAssertFalse(rig.hasPendingWork, "nothing scheduled once none wait")
     }
@@ -1368,6 +1371,9 @@ final class ThumbWheelEngineTests: XCTestCase {
         XCTAssertEqual(line.stepsNext, roll.performed.count)
         XCTAssertGreaterThan(line.droppedSteps, 0)
         XCTAssertEqual(line.stepsNext + line.droppedSteps, decided, "every step ran or was counted as dropped")
+        XCTAssertGreaterThan(line.stepsWaited, 0)
+        let message = ScrollSystemLog.thumbWheelMessage(for: line)
+        XCTAssertTrue(message.hasSuffix("steps next, \(line.stepsWaited) waited, \(line.droppedSteps) dropped; ticks held 0, dropped 0"), message)
         XCTAssertFalse(roll.hasPendingWork)
     }
 
@@ -1498,7 +1504,7 @@ final class ThumbWheelEngineTests: XCTestCase {
         rig.engine.reset()
         XCTAssertEqual(rig.lines.count, 1, "the roll so far")
         XCTAssertEqual(rig.lines.first?.stepsNext, 0, "decided, but none ran")
-        XCTAssertEqual(rig.lines.first.map(ScrollSystemLog.thumbWheelMessage)?.hasSuffix("volume x1.00, travel 2.0: 0 steps"), true)
+        XCTAssertEqual(rig.lines.first.map(ScrollSystemLog.thumbWheelMessage)?.hasSuffix("volume x1.00, travel 2.0: 0 steps; ticks held 0, dropped 0"), true)
         rig.advance(to: 510)
         XCTAssertEqual(rig.performed, [])
         XCTAssertEqual(rig.engine.stepper, ThumbWheelStepper())
@@ -1542,10 +1548,78 @@ final class ThumbWheelEngineTests: XCTestCase {
         XCTAssertEqual(roll.longestGap, 0.05, accuracy: 1e-6)
         XCTAssertEqual(
             ScrollSystemLog.thumbWheelMessage(for: roll),
-            "thumb wheel: 5 events in 200 ms (longest gap 50 ms), lines -5, fixed -5.00 (largest 1.00), points -50 (largest 10), 0 direction changes, partly continuous (1 of 5), switch tabs x1.00, travel 5.0: 1 step next"
+            "thumb wheel: 5 events in 200 ms (longest gap 50 ms), lines -5, fixed -5.00 (largest 1.00), points -50 (largest 10), 0 direction changes, partly continuous (1 of 5), switch tabs x1.00, travel 5.0: 1 step next; ticks held 0, dropped 0"
         )
         XCTAssertFalse(rig.hasPendingWork, "no timer while the wheel is still")
         XCTAssertNil(rig.engine.roll)
+    }
+
+    /// Follow the wheel's line lists each swipe: how far it went, how it ended, and after an
+    /// end where a switch was expected the time to the Space change or "no change"; past 8
+    /// they are summed. Every function's line says what the stray-tick filter held and dropped.
+    func testLog_theFollowLineListsEachSwipe_andEveryFunctionLineTheTicks() {
+        typealias Swipe = ThumbWheelFollower.Swipe
+        var roll = ScrollSystemLog.ThumbWheelRoll(id: 1, settings: ThumbWheelSettings(function: .desktops, speed: 0.7, followsWheel: true), at: 0)
+        roll.add(ThumbWheelEvent(lineDelta: -1, fixedDelta: -1.5, pointDelta: -15, isContinuous: false), travel: 0.7, at: 0)
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: roll).hasSuffix("switch desktops, following x0.70, travel 0.7: no swipe; ticks held 0, dropped 0"),
+                      ScrollSystemLog.thumbWheelMessage(for: roll))
+        roll.pendingSwipes = 2
+        roll.swipeEnded(Swipe(furthest: 1, ending: .chained, expectsSwitch: true, spaceChangedAfter: 0.24))
+        roll.swipeEnded(Swipe(furthest: 0.62, ending: .ended, expectsSwitch: true, spaceChangedAfter: nil))
+        XCTAssertEqual(roll.pendingSwipes, 0)
+        roll.ticksFiltered(ThumbWheelTickFilter.Result(travel: 0, held: true, dropped: 0))
+        roll.ticksFiltered(ThumbWheelTickFilter.Result(travel: 0.7, held: false, dropped: 1))
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: roll).hasSuffix(
+            "switch desktops, following x0.70, travel 0.7: swipes 1.00 chained +240 ms, 0.62 ended no change; ticks held 1, dropped 1"
+        ), ScrollSystemLog.thumbWheelMessage(for: roll))
+
+        let more = [
+            Swipe(furthest: 1, ending: .fullStop, expectsSwitch: true, spaceChangedAfter: 0.18),
+            Swipe(furthest: 0.12, ending: .back), Swipe(furthest: 0.4, ending: .interrupted),
+            Swipe(furthest: 1, ending: .chained, expectsSwitch: true, spaceChangedAfter: 0.3),
+            Swipe(furthest: 1, ending: .chained, expectsSwitch: true, spaceChangedAfter: 0.31),
+            Swipe(furthest: 0.35, ending: .ended),
+            Swipe(furthest: 1, ending: .chained, expectsSwitch: true), Swipe(furthest: 1, ending: .chained, expectsSwitch: true),
+            Swipe(furthest: 0.99, ending: .fullStop, expectsSwitch: true),
+        ]
+        more.forEach { roll.swipeEnded($0) }
+        roll.strokesWaited = 1
+        XCTAssertEqual(roll.swipeTally.total, 11)
+        XCTAssertEqual(ScrollSystemLog.followMessage(for: roll), [
+            "swipes 1.00 chained +240 ms", "0.62 ended no change", "1.00 full stop +180 ms", "0.12 back", "0.40 interrupted",
+            "1.00 chained +300 ms", "1.00 chained +310 ms", "0.35 ended", "+3 more (2 chained, 1 full stop)",
+            "1 stroke waited for another swipe",
+        ].joined(separator: ", "))
+
+        let sideways = ScrollSystemLog.ThumbWheelRoll(id: 2, settings: .default, at: 0)
+        XCTAssertFalse(ScrollSystemLog.thumbWheelMessage(for: sideways).contains("ticks"), "Scroll Sideways filters nothing")
+    }
+
+    /// One trace line per roll that runs a function, right after its line: each event's gap
+    /// (ms) and fixed-point lines, 128 at most; none for Scroll Sideways.
+    func testLog_aTraceLinePerFunctionRoll_atMost128Events() throws {
+        let rig = Rig()
+        let tabs = ThumbWheelSettings(function: .tabs)
+        rig.turn(lines: 0, at: 0, settings: tabs, fixed: -0.1)
+        rig.turn(lines: 0, at: 0.094, settings: tabs, fixed: -0.35)
+        rig.turn(lines: -1, at: 0.195, settings: tabs, fixed: -1)
+        rig.advance(to: 501)
+        XCTAssertEqual(rig.traces, ["thumb wheel trace: 3 events, ms/fixed 0/-0.10 94/-0.35 101/-1.00"])
+        XCTAssertEqual(rig.lines.count, 1)
+
+        rig.turn(lines: -1, at: 2, settings: .default)
+        rig.advance(to: 503)
+        XCTAssertEqual(rig.lines.count, 2)
+        XCTAssertEqual(rig.traces.count, 1, "none for Scroll Sideways")
+
+        let zoom = ThumbWheelSettings(function: .zoom)
+        for index in 0..<150 { rig.turn(lines: -1, at: 4 + Double(index) * 0.01, settings: zoom) }
+        rig.advance(to: 510)
+        XCTAssertEqual(rig.lines.map(\.events), [3, 1, 150])
+        let trace = try XCTUnwrap(rig.traces.last)
+        XCTAssertTrue(trace.hasPrefix("thumb wheel trace: 150 events (the first 128), ms/fixed 0/-1.00 10/-1.00 "), trace)
+        XCTAssertEqual(trace.components(separatedBy: "ms/fixed ").last?.split(separator: " ").count, 128)
+        XCTAssertFalse(rig.hasPendingWork)
     }
 
     /// The defaults log as well: it is how we learn what a wheel sends.
@@ -1613,7 +1687,7 @@ final class ThumbWheelEngineTests: XCTestCase {
         XCTAssertEqual(rig.performed.map(\.action), [.volume(.up), .volume(.down)])
         XCTAssertEqual(
             ScrollSystemLog.thumbWheelMessage(for: roll),
-            "thumb wheel: 5 events in 250 ms (longest gap 120 ms), lines -2, fixed -0.75 (largest 2.50), points -20 (largest 20), 2 direction changes, not continuous, volume x1.00, travel 5.1: 1 step next, 1 previous"
+            "thumb wheel: 5 events in 250 ms (longest gap 120 ms), lines -2, fixed -0.75 (largest 2.50), points -20 (largest 20), 2 direction changes, not continuous, volume x1.00, travel 5.1: 1 step next, 1 previous; ticks held 0, dropped 0"
         )
     }
 

@@ -8,8 +8,10 @@
 //
 //  One line per finished scroll (never per event), and one line now and then when wheel
 //  events are let through unsmoothed, with the reason; one line per roll of the sideways
-//  (thumb) wheel, with what it sent and what it ran. Tests pass on a simulated wheel; this
-//  is how to see what happened on the real one.
+//  (thumb) wheel, with what it sent and what it ran, and for now a trace line next to it
+//  for a roll that runs a function (each event's gap and lines; in every build until the
+//  wheel is tuned: cut it, or keep it to DEBUG, before the next release). Tests pass on a
+//  simulated wheel; this is how to see what happened on the real one.
 //
 
 import Foundation
@@ -285,9 +287,11 @@ enum ScrollSystemLog {
         var directionChanges = 0
         /// The sign of the last event that moved (−1, 0 before any, +1).
         var lastDirection = 0
-        /// Steps that ran, toward "next" and toward "previous".
+        /// Steps that ran, toward "next" and toward "previous", and how many of them waited
+        /// in the pacer first.
         var stepsNext = 0
         var stepsPrevious = 0
+        var stepsWaited = 0
         /// Steps the pacer dropped (too many waiting, or waiting in the old direction when the
         /// wheel turned back, or when the roll or the function ended).
         var droppedSteps = 0
@@ -379,9 +383,10 @@ enum ScrollSystemLog {
             ticksDropped += tick.dropped
         }
 
-        /// Steps ran (positive toward "next").
-        mutating func stepsRan(_ steps: Int) {
+        /// Steps ran (positive toward "next"); `waited`: in the pacer.
+        mutating func stepsRan(_ steps: Int, waited: Bool = false) {
             pendingSteps = max(0, pendingSteps - abs(steps))
+            if waited { stepsWaited += abs(steps) }
             if steps > 0 { stepsNext += steps } else { stepsPrevious -= steps }
         }
 
@@ -434,11 +439,13 @@ enum ScrollSystemLog {
     }
 
     /// One line per roll, for example
-    /// `thumb wheel: 14 events in 620 ms (longest gap 85 ms), lines -9, fixed -9.40 (largest 1.25), points -212 (largest 31), 1 direction change, not continuous, volume x3.00, travel 56.8: 7 steps next, 15 dropped`
-    /// ("dropped": steps the pacer did not run; only when there are any; "volume (the app's
-    /// own) x3.00" when the function was the app in front's own). While Switch Desktops
-    /// follows the wheel the end says what the swipes did instead of steps, for example
-    /// `switch desktops, following x1.00, travel 7.0: 1 swipe ended (furthest 0.83 of a desktop)`.
+    /// `thumb wheel: 14 events in 620 ms (longest gap 85 ms), lines -9, fixed -9.40 (largest 1.25), points -212 (largest 31), 1 direction change, not continuous, volume x3.00, travel 56.8: 7 steps next, 6 waited, 15 dropped; ticks held 1, dropped 1`
+    /// ("waited": steps the pacer held back, then ran; "dropped": steps it did not run; each
+    /// only when there are any; "volume (the app's own) x3.00" when the function was the app
+    /// in front's own; "ticks": what the stray-tick filter held, and dropped, of a roll that
+    /// runs a function). While Switch Desktops follows the wheel the end lists the swipes
+    /// instead of steps (`followMessage`), for example
+    /// `switch desktops, following x0.70, travel 29.4: swipes 1.00 chained +240 ms, 0.62 ended no change; ticks held 0, dropped 0`.
     static func thumbWheelMessage(for roll: ThumbWheelRoll) -> String {
         let continuity: String
         if roll.continuousEvents == 0 {
@@ -459,8 +466,10 @@ enum ScrollSystemLog {
         case (let next, let previous):
             steps = "\(next) \(next == 1 ? "step" : "steps") next, \(previous) previous"
         }
+        let waited = roll.stepsWaited > 0 ? ", \(roll.stepsWaited) waited" : ""
         let dropped = roll.droppedSteps > 0 ? ", \(roll.droppedSteps) dropped" : ""
-        let outcome = roll.follows ? followMessage(for: roll) : steps + dropped
+        let ticks = roll.function == .scroll ? "" : "; ticks held \(roll.ticksHeld), dropped \(roll.ticksDropped)"
+        let outcome = (roll.follows ? followMessage(for: roll) : steps + waited + dropped) + ticks
         return String(
             format: "thumb wheel: %ld %@ in %.0f ms (longest gap %.0f ms), lines %lld, fixed %.2f (largest %.2f), points %.0f (largest %.0f), %ld %@, %@, %@ x%.2f%@, travel %.1f: %@",
             roll.events, roll.events == 1 ? "event" : "events",
@@ -477,21 +486,73 @@ enum ScrollSystemLog {
         )
     }
 
-    /// What the swipes of a roll that followed the wheel did: "1 swipe ended", "1 swipe went
-    /// back", "1 interrupted", "1 stroke waited for another swipe", with the furthest one.
+    /// What the swipes of a roll that followed the wheel did, each in order: how far it went
+    /// (a share of one desktop), how it ended, and for an end where a switch was expected the
+    /// time to the Space change, or "no change"; past `ThumbWheelRoll.listedSwipes` they are
+    /// summed. For example `swipes 1.00 chained +240 ms, 0.62 ended no change`, `swipes 0.12
+    /// back`, `+3 more (2 chained, 1 full stop)`, `1 stroke waited for another swipe`.
     static func followMessage(for roll: ThumbWheelRoll) -> String {
         var parts: [String] = []
-        let tally = roll.swipeTally
-        if tally.ended > 0 { parts.append("\(tally.ended) \(tally.ended == 1 ? "swipe" : "swipes") ended") }
-        if tally.chained > 0 { parts.append("\(tally.chained) chained") }
-        if tally.fullStop > 0 { parts.append("\(tally.fullStop) at a full stop") }
-        if tally.back > 0 { parts.append("\(tally.back) went back") }
-        if tally.interrupted > 0 { parts.append("\(tally.interrupted) interrupted") }
+        if !roll.swipes.isEmpty {
+            parts.append("swipes " + roll.swipes.map(swipeMessage).joined(separator: ", "))
+        }
+        if roll.unlistedSwipes.total > 0 {
+            parts.append("+\(roll.unlistedSwipes.total) more (\(tallyMessage(roll.unlistedSwipes)))")
+        }
         if roll.strokesWaited > 0 {
             parts.append("\(roll.strokesWaited) \(roll.strokesWaited == 1 ? "stroke" : "strokes") waited for another swipe")
         }
         if parts.isEmpty { parts.append("no swipe") }
-        return parts.joined(separator: ", ") + String(format: " (furthest %.2f of a desktop)", roll.furthestSwipe)
+        return parts.joined(separator: ", ")
+    }
+
+    static func swipeMessage(_ swipe: ThumbWheelFollower.Swipe) -> String {
+        var text = String(format: "%.2f ", swipe.furthest) + swipe.ending.logName
+        if swipe.expectsSwitch {
+            if let after = swipe.spaceChangedAfter {
+                text += String(format: " +%.0f ms", after * 1000)
+            } else {
+                text += " no change"
+            }
+        }
+        return text
+    }
+
+    private static func tallyMessage(_ tally: ThumbWheelRoll.SwipeTally) -> String {
+        let kinds: [(Int, ThumbWheelFollower.Ending)] = [
+            (tally.chained, .chained), (tally.fullStop, .fullStop), (tally.ended, .ended),
+            (tally.back, .back), (tally.interrupted, .interrupted),
+        ]
+        return kinds.filter { $0.0 > 0 }.map { "\($0.0) \($0.1.logName)" }.joined(separator: ", ")
+    }
+
+    /// One event of a roll's trace: the time since the roll's event before it (s; 0 for the
+    /// first) and its fixed-point line delta as it arrived.
+    struct ThumbWheelTraceEntry: Equatable {
+        var gap: TimeInterval
+        var fixed: Double
+    }
+
+    /// A function roll's trace, one line next to its roll line, to tune the wheel from: each
+    /// event as `ms since the one before/fixed-point lines`, the first
+    /// `ThumbWheelTuning.traceEntries` of them, for example
+    /// `thumb wheel trace: 3 events, ms/fixed 0/-0.10 94/-0.35 101/-1.00`, or
+    /// `thumb wheel trace: 150 events (the first 128), ms/fixed ...`. Never names an app.
+    static func thumbWheelTraceMessage<Entries: Collection>(entries: Entries, events: Int) -> String
+    where Entries.Element == ThumbWheelTraceEntry {
+        let shown = entries.prefix(ThumbWheelTuning.traceEntries)
+        let count = events > shown.count ? " (the first \(shown.count))" : ""
+        let list = shown.map { entry in
+            let gap = entry.gap.isFinite ? max(0, entry.gap) * 1000 : 0
+            let fixed = entry.fixed.isFinite ? entry.fixed : 0
+            return String(format: "%.0f/%.2f", gap, fixed)
+        }
+        return "thumb wheel trace: \(events) \(events == 1 ? "event" : "events")\(count), ms/fixed " + list.joined(separator: " ")
+    }
+
+    /// Main queue, never inside the tap callback.
+    static func noteThumbWheelTrace(_ line: String) {
+        logger.notice("\(line, privacy: .public)")
     }
 
     /// Main queue, never inside the tap callback.

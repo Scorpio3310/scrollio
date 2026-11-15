@@ -619,3 +619,16 @@ final class ThumbWheelFollower {
         }
     }
 }
+
+extension ThumbWheelFollower.Ending {
+    /// How the roll's log line says it.
+    var logName: String {
+        switch self {
+        case .chained: return "chained"
+        case .fullStop: return "full stop"
+        case .ended: return "ended"
+        case .back: return "back"
+        case .interrupted: return "interrupted"
+        }
+    }
+}
