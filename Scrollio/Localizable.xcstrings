@@ -11055,6 +11055,42 @@
           }
         }
       }
+    },
+    "apps-different-in": {
+      "comment": "Scrolling, Buttons, Gestures and Shortcut Ring: the pane's last line, the apps that have settings of that kind of their own; %@ the list of app names joined by ListFormatter, each name a link (“Different in Safari and Figma”, “Different in Safari, Figma and 3 more”). No full stop",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Different in %@"
+          }
+        }
+      }
+    },
+    "apps-different-more": {
+      "comment": "That line's last item when four or more apps differ: the apps that are not named, a link to Apps; %d is 2 or more (“3 more”)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d more"
+          }
+        }
+      }
+    },
+    "apps-different-show-apps": {
+      "comment": "Tooltip and VoiceOver label of “3 more” in that line: it shows the Apps list",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in Apps"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

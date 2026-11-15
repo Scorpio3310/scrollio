@@ -215,6 +215,7 @@ class PreferencesButtonsViewController: NSViewController {
         view = root
         recorder.delegate = self
         reload()
+        DifferentInAppsLine.add(to: content, part: .buttons, pane: self)
         root.setFrameSize(root.fittingSize)
     }
 

@@ -3126,3 +3126,660 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertFalse(fold.isExpanded)
     }
 }
+
+// MARK: - "Different in Safari and Figma"
+
+/// The last line of the Scrolling, Buttons, Gestures and Shortcut Ring panes
+/// (`DifferentInAppsLine`): who counts (exactly the apps the Apps list marks for that
+/// kind), the cut at three, the sentence and its pieces, the rows; the line in each pane,
+/// no room without an app, none on an app's page; what a click on a name and on "N more"
+/// does; when it follows; what VoiceOver says. Nothing is shown on screen: the window is
+/// never ordered in.
+final class DifferentInAppsTests: XCTestCase {
+
+    private static let calculator = "/System/Applications/Calculator.app"
+
+    private var snapshot: OptionsSnapshot!
+    private var savedScroll: OPTIONS_SCROLL_DEFAULT!
+    private var savedMacLocale: (() -> Locale)!
+    private var uiDefaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        snapshot = OptionsSnapshot()
+        savedScroll = Options.shared.scroll
+        savedMacLocale = InterfaceList.macLocale
+        // A Mac in the United Kingdom: no comma before "and".
+        InterfaceList.macLocale = { Locale(identifier: "en_GB") }
+        Options.shared.application.applications = Self.makeStore([])
+        Options.shared.buttons.binding = []
+        Options.shared.scroll = OPTIONS_SCROLL_DEFAULT()
+        Options.shared.gesture = .default
+        Options.shared.ring = .default
+        ButtonUtils.shared.invalidateCache()
+        uiDefaults = TestDefaults.make(for: self)
+        uiDefaults.set(false, forKey: PreferencesScrollingViewController.advancedExpandedDefaultsKey)
+    }
+
+    override func tearDown() {
+        InterfaceList.macLocale = savedMacLocale
+        Options.shared.scroll = savedScroll
+        snapshot.restore()
+        ShortcutRingController.forgetPreparedFaces()
+        snapshot = nil
+        savedScroll = nil
+        savedMacLocale = nil
+        uiDefaults = nil
+        super.tearDown()
+    }
+
+    // MARK: - Helpers
+
+    private static func makeStore(_ applications: [Application]) -> EnhanceArray<Application> {
+        return EnhanceArray<Application>(
+            withArray: applications, matchKey: "path", forObserver: { Options.shared.markChanged(.application) }
+        )
+    }
+
+    private static func binding(_ code: UInt16, _ action: String) -> ButtonBinding {
+        return ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: action,
+            isEnabled: true
+        )
+    }
+
+    /// An app on the list named `name`, with settings of its own of the kinds `parts`.
+    @discardableResult
+    private func addApp(_ name: String, own parts: [ApplicationPagePart] = [], path: String? = nil) -> Application {
+        let application = Application(path: path ?? "/Applications/Different In Apps Tests/\(name).app")
+        application.displayName = name
+        give(application, own: parts)
+        Options.shared.application.applications.append(application)
+        return application
+    }
+
+    private func give(_ application: Application, own parts: [ApplicationPagePart]) {
+        if parts.contains(.scrolling) {
+            application.inherit = false
+        }
+        if parts.contains(.buttons) {
+            application.setOwnButtonBindings([Self.binding(3, "copy")])
+        }
+        if parts.contains(.gestures) {
+            application.setUsesGeneralGestures(false, general: Options.shared.gesture)
+        }
+        if parts.contains(.ring) {
+            application.setUsesGeneralRing(false, general: Options.shared.ring)
+        }
+    }
+
+    private struct Window {
+        let window: NSWindow
+        let preferences: PreferencesSplitViewController
+        let apps: PreferencesApplicationViewController
+    }
+
+    /// The identifier of the pane that shows the settings of `part`'s kind.
+    private static func paneIdentifier(of part: ApplicationPagePart) -> String {
+        switch part.id {
+        case ApplicationPagePart.buttons.id: return PANEL_IDENTIFIER.buttons
+        case ApplicationPagePart.gestures.id: return GesturesPreferencesViewController.tabIdentifier
+        case ApplicationPagePart.ring.id: return RingPreferencesViewController.tabIdentifier
+        default: return PANEL_IDENTIFIER.scrolling
+        }
+    }
+
+    /// The window's panes (nothing remembered, no mouse) in a window that is never shown.
+    private func makeWindow() throws -> Window {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let preferences = PreferencesSplitViewController(storyboard: storyboard, uiStateDefaults: nil)
+        let scrolling = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.scrolling) as? PreferencesScrollingViewController)
+        scrolling.uiStateDefaults = uiDefaults
+        let buttons = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController)
+        buttons.deviceSource = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        let gestures = try XCTUnwrap(preferences.controller(for: GesturesPreferencesViewController.tabIdentifier) as? GesturesPreferencesViewController)
+        gestures.deviceSource = MouseGestureDeviceSource(support: { .none }, refresh: {})
+        let ring = try XCTUnwrap(preferences.controller(for: RingPreferencesViewController.tabIdentifier) as? RingPreferencesViewController)
+        ring.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: []) }
+        let apps = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)
+        apps.uiStateDefaults = uiDefaults
+        apps.runningApplications = { [] }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = preferences
+        addTeardownBlock { window.close() }
+        return Window(window: window, preferences: preferences, apps: apps)
+    }
+
+    /// The pane of `part` on show, and its line.
+    private func show(_ part: ApplicationPagePart, in window: Window,
+                      file: StaticString = #filePath, line: UInt = #line) throws -> (pane: NSViewController, line: DifferentInAppsLine) {
+        let identifier = Self.paneIdentifier(of: part)
+        XCTAssertTrue(window.preferences.selectPane(withIdentifier: identifier), file: file, line: line)
+        let pane = try XCTUnwrap(window.preferences.controller(for: identifier), file: file, line: line)
+        let found = try self.line(in: pane.view, file: file, line: line)
+        return (pane, found)
+    }
+
+    private func allSubviews(of view: NSView) -> [NSView] {
+        return view.subviews.flatMap { [$0] + allSubviews(of: $0) }
+    }
+
+    private func lines(in view: NSView) -> [DifferentInAppsLine] {
+        return allSubviews(of: view).compactMap { $0 as? DifferentInAppsLine }
+    }
+
+    private func line(in view: NSView, file: StaticString = #filePath, line: UInt = #line) throws -> DifferentInAppsLine {
+        let found = lines(in: view)
+        XCTAssertEqual(found.count, 1, file: file, line: line)
+        return try XCTUnwrap(found.first, file: file, line: line)
+    }
+
+    private func send(_ control: NSControl, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(control.sendAction(control.action, to: control.target), file: file, line: line)
+    }
+
+    /// What is stored for the apps, to see that a click writes nothing.
+    private func storedApplications() throws -> [Data] {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return try ApplicationTriggerRule.storedApplications.map { try encoder.encode($0) }
+    }
+
+    private func names(for part: ApplicationPagePart) -> [String] {
+        return DifferentInApps.applications(for: part, among: ApplicationTriggerRule.storedApplications).map { $0.getName() }
+    }
+
+    // MARK: - Who counts
+
+    /// Per kind, the apps named are exactly those the Apps list marks for it
+    /// (`ApplicationPagePart.ownSettings`), in the list's order.
+    func testCountsExactlyTheAppsTheListMarks() {
+        addApp("Nothing")
+        addApp("Scrolls", own: [.scrolling])
+        addApp("Presses", own: [.buttons])
+        addApp("Swipes", own: [.gestures])
+        addApp("Rings", own: [.ring])
+        addApp("All", own: ApplicationPagePart.all)
+        addApp("Two", own: [.scrolling, .ring])
+        XCTAssertEqual(names(for: .scrolling), ["Scrolls", "All", "Two"])
+        XCTAssertEqual(names(for: .buttons), ["Presses", "All"])
+        XCTAssertEqual(names(for: .gestures), ["Swipes", "All"])
+        XCTAssertEqual(names(for: .ring), ["Rings", "All", "Two"])
+        let stored = ApplicationTriggerRule.storedApplications
+        for part in ApplicationPagePart.all {
+            let marked = stored.filter { ApplicationPagePart.ownSettings(of: $0).contains(part) }
+            let counted = DifferentInApps.applications(for: part, among: stored)
+            XCTAssertEqual(counted.count, marked.count, part.id)
+            XCTAssertTrue(zip(counted, marked).allSatisfy { $0 === $1 }, part.id)
+        }
+    }
+
+    /// Left to macOS is an app's own scrolling, and so is a copy that was never changed
+    /// (values are not compared: the pane's next change does not reach the app). A set
+    /// kept for later is not the app's own now. An app with only a thumb wheel action of
+    /// its own is Buttons', not Scrolling's; a row of its own counts whatever it does.
+    func testLeftToMacOSAndEqualValuesCount() {
+        let macOS = addApp("Left to macOS", own: [.scrolling])
+        macOS.scroll.smooth = false
+        macOS.scroll.reverse = false
+        XCTAssertEqual(macOS.scrollingChoice, .leftToMacOS)
+
+        let copy = addApp("Copy")
+        copy.adoptScrollOptionsIfUnedited(from: Options.shared.scroll)
+        copy.inherit = false
+        copy.setUsesGeneralGestures(false, general: Options.shared.gesture)
+        copy.setUsesGeneralRing(false, general: Options.shared.ring)
+        XCTAssertEqual(copy.ownRingPlaces, Options.shared.ring.places, "an untouched copy of the pane's")
+
+        let later = addApp("Kept for later", own: [.gestures, .ring])
+        later.scroll.step = 99
+        later.setUsesGeneralGestures(true, general: Options.shared.gesture)
+        later.setUsesGeneralRing(true, general: Options.shared.ring)
+        XCTAssertNotNil(later.gestures)
+        XCTAssertNotNil(later.ring)
+
+        let wheel = addApp("Thumb wheel")
+        wheel.setOwnThumbWheelFunction(.tabs)
+
+        var off = Self.binding(4, "copy")
+        off.isEnabled = false
+        addApp("Switched off").setOwnButtonBindings([off])
+        addApp("Default").setOwnButtonBindings([Self.binding(4, "")])
+
+        XCTAssertEqual(names(for: .scrolling), ["Left to macOS", "Copy"])
+        XCTAssertEqual(names(for: .buttons), ["Thumb wheel", "Switched off", "Default"])
+        XCTAssertEqual(names(for: .gestures), ["Copy"])
+        XCTAssertEqual(names(for: .ring), ["Copy"])
+    }
+
+    // MARK: - Order, cut, sentence
+
+    /// The list's stored order, whatever the names. One, two or three apps are all named;
+    /// of four or more the first two, and the rest are counted: never "1 more".
+    func testKeepsTheListsOrderAndCutsAtThree() throws {
+        XCTAssertEqual(DifferentInApps.items(forCount: 0), [])
+        XCTAssertEqual(DifferentInApps.items(forCount: 1), [.app(0)])
+        XCTAssertEqual(DifferentInApps.items(forCount: 2), [.app(0), .app(1)])
+        XCTAssertEqual(DifferentInApps.items(forCount: 3), [.app(0), .app(1), .app(2)])
+        XCTAssertEqual(DifferentInApps.items(forCount: 4), [.app(0), .app(1), .more(2)])
+        XCTAssertEqual(DifferentInApps.items(forCount: 9), [.app(0), .app(1), .more(7)])
+        XCTAssertEqual(DifferentInApps.moreTitle(7), "7 more")
+
+        for name in ["Zed", "Xcode", "Arc"] {
+            addApp(name, own: [.gestures])
+        }
+        let window = try makeWindow()
+        let (_, line) = try show(.gestures, in: window)
+        XCTAssertEqual(line.nameButtons.map(\.title), ["Zed", "Xcode", "Arc"], "the list's order, not the alphabet's")
+        XCTAssertNil(line.moreButton)
+        XCTAssertEqual(line.sentence, "Different in Zed, Xcode and Arc")
+
+        addApp("Mail", own: [.gestures])
+        XCTAssertTrue(line.refresh())
+        XCTAssertEqual(line.nameButtons.map(\.title), ["Zed", "Xcode"])
+        XCTAssertEqual(line.moreButton?.title, "2 more")
+        XCTAssertEqual(line.sentence, "Different in Zed, Xcode and 2 more")
+
+        for name in ["A", "B", "C", "D", "E"] {
+            addApp(name, own: [.gestures])
+        }
+        XCTAssertTrue(line.refresh())
+        XCTAssertEqual(line.nameButtons.map(\.title), ["Zed", "Xcode"])
+        XCTAssertEqual(line.moreButton?.title, "7 more")
+        XCTAssertFalse(line.refresh(), "nothing changed: nothing is made anew")
+    }
+
+    /// The sentence is joined as every list of the window is: in English, with the Mac's
+    /// region deciding on the comma before "and".
+    func testSentenceIsJoinedAsEveryList() {
+        let all = ["Safari", "Figma", "Xcode", "Mail", "Notes"]
+        XCTAssertNil(DifferentInApps.sentence(names: []))
+        XCTAssertEqual(DifferentInApps.sentence(names: Array(all.prefix(1))), "Different in Safari")
+        XCTAssertEqual(DifferentInApps.sentence(names: Array(all.prefix(2))), "Different in Safari and Figma")
+        XCTAssertEqual(DifferentInApps.sentence(names: Array(all.prefix(3))), "Different in Safari, Figma and Xcode")
+        XCTAssertEqual(DifferentInApps.sentence(names: all), "Different in Safari, Figma and 3 more")
+
+        for mac in ["sl_SI", "en_US"] {
+            InterfaceList.macLocale = { Locale(identifier: mac) }
+            XCTAssertEqual(InterfaceList.locale.language.languageCode, .english, mac)
+            XCTAssertEqual(DifferentInApps.sentence(names: Array(all.prefix(1))), "Different in Safari", mac)
+            XCTAssertEqual(DifferentInApps.sentence(names: Array(all.prefix(2))), "Different in Safari and Figma", mac)
+            XCTAssertEqual(DifferentInApps.sentence(names: Array(all.prefix(3))), "Different in Safari, Figma, and Xcode", mac)
+            XCTAssertEqual(DifferentInApps.sentence(names: all), "Different in Safari, Figma, and 3 more", mac)
+        }
+        // The catalog's own words around the list.
+        XCTAssertEqual(
+            DifferentInApps.sentence(names: ["Safari"]),
+            String(format: NSLocalizedString("apps-different-in", comment: ""), "Safari")
+        )
+    }
+
+    /// A name never passes through the joiner or the format: one that holds a comma, "and",
+    /// a per cent sign or the very character the sentence is built with comes out as it is.
+    func testPiecesSurviveAwkwardNames() throws {
+        let names = ["Me, Myself and I", "100% Zoom %@ %d", "Odd\u{E000}\u{E001}Name"]
+        let pieces = DifferentInApps.pieces(forCount: 3)
+        XCTAssertEqual(pieces, [.text("Different in "), .app(0), .text(", "), .app(1), .text(" and "), .app(2)])
+        XCTAssertEqual(
+            DifferentInApps.text(of: pieces, names: names, count: 3),
+            "Different in Me, Myself and I, 100% Zoom %@ %d and Odd\u{E000}\u{E001}Name"
+        )
+        XCTAssertEqual(DifferentInApps.sentence(names: names), DifferentInApps.text(of: pieces, names: names, count: 3))
+        XCTAssertEqual(
+            DifferentInApps.pieces(forCount: 5),
+            [.text("Different in "), .app(0), .text(", "), .app(1), .text(" and "), .more]
+        )
+        XCTAssertEqual(DifferentInApps.pieces(forCount: 0), [])
+
+        for name in names {
+            addApp(name, own: [.buttons])
+        }
+        let window = try makeWindow()
+        let (_, line) = try show(.buttons, in: window)
+        XCTAssertEqual(line.nameButtons.map(\.title), names)
+        XCTAssertEqual(line.textLabels.map(\.stringValue), ["Different in ", ", ", " and "])
+        XCTAssertEqual(line.sentence, "Different in Me, Myself and I, 100% Zoom %@ %d and Odd\u{E000}\u{E001}Name")
+    }
+
+    /// The pieces flow into rows and break only between two of them. A piece that ends in
+    /// a space is as wide as with it (the next piece starts after the space). A name is at
+    /// most 150 pt wide, so three of them with their icons always fit two rows of the
+    /// notes' width, in the pane too.
+    func testRowsFitTwoLines() throws {
+        XCTAssertEqual(DifferentInApps.rows(widths: [], lineWidth: 60), [])
+        XCTAssertEqual(DifferentInApps.rows(widths: [10, 20, 30], lineWidth: 60), [0..<3])
+        XCTAssertEqual(DifferentInApps.rows(widths: [10, 20, 30, 5], lineWidth: 60), [0..<3, 3..<4])
+        XCTAssertEqual(DifferentInApps.rows(widths: [40, 30, 30, 40], lineWidth: 60), [0..<1, 1..<3, 3..<4])
+        XCTAssertEqual(DifferentInApps.rows(widths: [10, 100, 10], lineWidth: 60), [0..<1, 1..<2, 2..<3], "one wider than a row stands alone")
+
+        XCTAssertGreaterThan(DifferentInApps.width(of: "Different in "), DifferentInApps.width(of: "Different in") + 1)
+        XCTAssertEqual(DifferentInApps.name("Safari", cutTo: 150), "Safari")
+        let long = "Microsoft Visual Studio Code Insiders Edition With A Very Long Name"
+        let cut = DifferentInApps.name(long, cutTo: 150)
+        XCTAssertTrue(cut.hasSuffix("…"), cut)
+        XCTAssertTrue(long.hasPrefix(String(cut.dropLast())), cut)
+        XCTAssertLessThanOrEqual(DifferentInApps.width(of: cut), 150)
+        XCTAssertGreaterThan(DifferentInApps.width(of: cut), 130, "the longest beginning that fits")
+
+        // The widest line there can be: names at their limit, each with its icon, joined
+        // with the comma of the United States.
+        XCTAssertEqual(DifferentInAppsLine.lineWidth, 460)
+        let name = DifferentInAppsLine.nameMaxWidth + DifferentInAppsLine.iconSize + DifferentInAppsLine.iconSpacing
+        for count in [3, 4, 12] {
+            let widths = DifferentInApps.pieces(forCount: count, locale: Locale(identifier: "en_US")).map { piece -> CGFloat in
+                switch piece {
+                case .text(let text): return DifferentInApps.width(of: text)
+                case .app: return name
+                case .more: return DifferentInApps.width(of: DifferentInApps.moreTitle(888))
+                }
+            }
+            XCTAssertEqual(DifferentInApps.rows(widths: widths, lineWidth: DifferentInAppsLine.lineWidth).count, 2, "\(count)")
+        }
+
+        for index in 1...3 {
+            addApp("\(index) \(long)", own: [.ring])
+        }
+        let window = try makeWindow()
+        let (pane, line) = try show(.ring, in: window)
+        XCTAssertEqual(line.rowCount, 2)
+        XCTAssertEqual(line.iconViews.count, 3)
+        window.window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(line.frame.height, PreferencesGroupedForm.noteSpacing + 2 * DifferentInAppsLine.rowHeight, accuracy: 0.5)
+        XCTAssertFalse(pane.view.hasAmbiguousLayout)
+        let inset = PreferencesGroupedForm.rowHorizontalInset
+        for view in line.subviews {
+            XCTAssertGreaterThanOrEqual(view.frame.minX, inset - 2.5)
+            XCTAssertLessThanOrEqual(view.frame.maxX, line.bounds.width - inset + 2.5)
+            XCTAssertGreaterThanOrEqual(view.frame.minY, -0.5)
+            XCTAssertLessThanOrEqual(view.frame.maxY, line.bounds.height + 0.5)
+        }
+        for button in line.nameButtons {
+            XCTAssertTrue(button.title.hasSuffix("…"), button.title)
+            XCTAssertLessThanOrEqual(button.frame.width, DifferentInAppsLine.nameMaxWidth + 5)
+        }
+        // Two names stand in the first row, the third under them.
+        XCTAssertEqual(line.nameButtons[0].frame.midY, line.nameButtons[1].frame.midY, accuracy: 0.5)
+        XCTAssertNotEqual(line.nameButtons[0].frame.midY, line.nameButtons[2].frame.midY, accuracy: 5)
+    }
+
+    // MARK: - In the panes
+
+    /// Each of the four panes ends with its line, of its own kind, under everything else
+    /// and 10 pt below it; only the Shortcut Ring's shows the apps' icons.
+    func testEachPaneEndsWithItsLine() throws {
+        addApp("Calculator", own: ApplicationPagePart.all, path: Self.calculator)
+        let window = try makeWindow()
+        for part in ApplicationPagePart.all {
+            let (pane, line) = try show(part, in: window)
+            XCTAssertEqual(line.part, part, part.id)
+            let stack = try XCTUnwrap(line.superview as? NSStackView, part.id)
+            XCTAssertTrue(stack.arrangedSubviews.last === line, part.id)
+            XCTAssertFalse(line.isHidden, part.id)
+            XCTAssertEqual(line.sentence, "Different in Calculator", part.id)
+            XCTAssertEqual(line.nameButtons.map(\.title), ["Calculator"], part.id)
+            XCTAssertEqual(line.showsIcons, part == .ring, part.id)
+            XCTAssertEqual(line.iconViews.count, part == .ring ? 1 : 0, part.id)
+            XCTAssertEqual(line.rowCount, 1, part.id)
+
+            window.window.contentView?.layoutSubtreeIfNeeded()
+            XCTAssertFalse(pane.view.hasAmbiguousLayout, part.id)
+            XCTAssertEqual(line.frame.height, PreferencesGroupedForm.noteSpacing + DifferentInAppsLine.rowHeight, accuracy: 0.5, part.id)
+            let above = try XCTUnwrap(stack.arrangedSubviews.dropLast().last { !$0.isHidden }, part.id)
+            let text = try XCTUnwrap(line.textLabels.first, part.id)
+            let gap = stack.isFlipped
+                ? text.convert(text.bounds, to: stack).minY - above.frame.maxY
+                : above.frame.minY - text.convert(text.bounds, to: stack).maxY
+            XCTAssertEqual(gap, PreferencesGroupedForm.noteSpacing, accuracy: 0.5, part.id)
+            // The muted notes' type and inset; the name as a link.
+            XCTAssertEqual(text.font, PreferencesGroupedForm.explanationFont, part.id)
+            XCTAssertEqual(text.textColor, PreferencesGroupedForm.explanationColor(enabled: true), part.id)
+            XCTAssertEqual(text.frame.minX, PreferencesGroupedForm.rowHorizontalInset - 2, accuracy: 0.5, part.id)
+            let name = line.nameButtons[0]
+            XCTAssertTrue(name is PreferencesLinkButton, part.id)
+            XCTAssertEqual(name.frame.maxY - name.firstBaselineOffsetFromTop, text.frame.maxY - text.firstBaselineOffsetFromTop, accuracy: 0.5, part.id)
+        }
+    }
+
+    /// With no app that differs each pane is exactly as tall as without the line, which is
+    /// there all the same (not hidden: it has to hear that its pane comes on show), 0 pt
+    /// tall, empty and nothing for VoiceOver.
+    func testNoLineTakesNoRoom() throws {
+        addApp("Nothing of its own")
+        let window = try makeWindow()
+        for part in ApplicationPagePart.all {
+            let (pane, line) = try show(part, in: window)
+            XCTAssertNil(line.sentence, part.id)
+            XCTAssertTrue(line.subviews.isEmpty, part.id)
+            XCTAssertFalse(line.isHidden, part.id)
+            XCTAssertFalse(line.isAccessibilityElement(), part.id)
+            XCTAssertEqual(line.rowCount, 0, part.id)
+            window.window.contentView?.layoutSubtreeIfNeeded()
+            XCTAssertEqual(line.frame.height, 0, part.id)
+            XCTAssertFalse(pane.view.hasAmbiguousLayout, part.id)
+            let with = pane.view.fittingSize.height
+            line.removeFromSuperview()
+            XCTAssertEqual(pane.view.fittingSize.height, with, part.id)
+        }
+    }
+
+    /// An app's page has no such line: neither the Scrolling settings of an app nor an
+    /// app's own ring, nor any part of the page.
+    func testAnAppsPageHasNoLine() throws {
+        let calculator = addApp("Calculator", own: ApplicationPagePart.all, path: Self.calculator)
+        addApp("Other", own: ApplicationPagePart.all)
+
+        let scrolling = PreferencesScrollingViewController()
+        scrolling.uiStateDefaults = uiDefaults
+        scrolling.currentTargetApplication = calculator
+        XCTAssertTrue(lines(in: scrolling.view).isEmpty)
+        XCTAssertTrue(lines(in: RingPreferencesViewController(application: calculator).view).isEmpty)
+
+        let window = try makeWindow()
+        XCTAssertTrue(window.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
+        for part in ApplicationPagePart.all {
+            window.apps.openApplication(withID: Self.calculator, part: part)
+            let page = try XCTUnwrap(window.apps.detailController, part.id)
+            XCTAssertEqual(page.shownPart, part, part.id)
+            XCTAssertTrue(lines(in: window.apps.view).isEmpty, part.id)
+        }
+    }
+
+    // MARK: - Clicks
+
+    /// A name does what a click on that app's mark in the Apps list does: Apps comes
+    /// forward with that app's page on the pane's kind, which the page remembers. Nothing
+    /// of the settings is written.
+    func testANameOpensThatAppsPageOnThePart() throws {
+        addApp("First", own: ApplicationPagePart.all)
+        let calculator = addApp("Calculator", own: ApplicationPagePart.all, path: Self.calculator)
+        let window = try makeWindow()
+        let stored = try storedApplications()
+        for part in ApplicationPagePart.all {
+            let (_, line) = try show(part, in: window)
+            XCTAssertEqual(line.nameButtons.map(\.title), ["First", "Calculator"], part.id)
+            send(line.nameButtons[1])
+            XCTAssertEqual(window.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application, part.id)
+            let page = try XCTUnwrap(window.apps.detailController, part.id)
+            XCTAssertTrue(page.application === calculator, part.id)
+            XCTAssertEqual(page.shownPart, part, part.id)
+            XCTAssertEqual(ApplicationPagePart.remembered(in: uiDefaults), part, part.id)
+            XCTAssertEqual(try storedApplications(), stored, part.id)
+        }
+        XCTAssertEqual(Options.shared.buttons.binding, [])
+        XCTAssertEqual(Options.shared.ring, .default)
+        XCTAssertEqual(Options.shared.gesture, .default)
+    }
+
+    /// "N more" shows the Apps list, whose marks say which apps they are.
+    func testMoreOpensTheAppsList() throws {
+        for name in ["One", "Two", "Three", "Four"] {
+            addApp(name, own: [.ring])
+        }
+        let window = try makeWindow()
+        let stored = try storedApplications()
+        let (_, line) = try show(.ring, in: window)
+        let more = try XCTUnwrap(line.moreButton)
+        XCTAssertEqual(more.title, "2 more")
+        send(more)
+        XCTAssertEqual(window.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application)
+        XCTAssertNil(window.apps.detailController, "the list, no app's page")
+        XCTAssertEqual(try storedApplications(), stored)
+    }
+
+    /// The name of an app that left the list meanwhile opens nothing: the line shows what
+    /// is there now and its pane stays. An app whose entry was replaced by another of the
+    /// same path (a settings file was imported) is found again.
+    func testNameOfARemovedAppDoesNothing() throws {
+        let gone = addApp("Gone", own: [.gestures])
+        addApp("Calculator", own: [.gestures], path: Self.calculator)
+        let window = try makeWindow()
+        let (_, line) = try show(.gestures, in: window)
+        XCTAssertEqual(line.nameButtons.map(\.title), ["Gone", "Calculator"])
+        Options.shared.application.applications.remove(from: gone.path)
+        send(line.nameButtons[0])
+        XCTAssertEqual(window.preferences.selectedPaneIdentifier, GesturesPreferencesViewController.tabIdentifier)
+        XCTAssertNil(window.apps.detailController)
+        XCTAssertEqual(line.nameButtons.map(\.title), ["Calculator"])
+        XCTAssertEqual(line.sentence, "Different in Calculator")
+
+        // The same path, another entry.
+        let again = Application(path: Self.calculator)
+        again.displayName = "Calculator"
+        give(again, own: [.gestures])
+        Options.shared.application.applications = Self.makeStore([again])
+        send(line.nameButtons[0])
+        XCTAssertEqual(window.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application)
+        let page = try XCTUnwrap(window.apps.detailController)
+        XCTAssertTrue(page.application === again)
+        XCTAssertEqual(page.shownPart, .gestures)
+    }
+
+    // MARK: - When it follows
+
+    /// The line follows when its pane comes on show (also from empty: an empty line still
+    /// hears it), when its window becomes key again and after an Undo or Redo; the pane's
+    /// height follows it. Nothing is made anew while nothing changed.
+    func testFollowsShowingKeyWindowAndUndo() throws {
+        let first = addApp("First")
+        let second = addApp("Second")
+        let window = try makeWindow()
+        let (pane, line) = try show(.gestures, in: window)
+        XCTAssertNil(line.sentence)
+        let empty = pane.view.fittingSize.height
+        let oneRow = PreferencesGroupedForm.noteSpacing + DifferentInAppsLine.rowHeight
+
+        // Its pane comes on show.
+        XCTAssertTrue(window.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons))
+        XCTAssertNil(line.window)
+        give(first, own: [.gestures])
+        XCTAssertNil(line.sentence, "out of sight it waits")
+        XCTAssertTrue(window.preferences.selectPane(withIdentifier: GesturesPreferencesViewController.tabIdentifier))
+        XCTAssertNotNil(line.window)
+        XCTAssertEqual(line.sentence, "Different in First")
+        XCTAssertEqual(pane.view.fittingSize.height, empty + oneRow, accuracy: 0.5)
+        window.window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(pane.view.frame.height, empty + oneRow, accuracy: 0.5)
+
+        // Its window becomes key again; another window's news is not its own.
+        give(second, own: [.gestures])
+        let name = line.nameButtons[0]
+        let other = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
+        other.isReleasedWhenClosed = false
+        addTeardownBlock { other.close() }
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: other)
+        XCTAssertEqual(line.sentence, "Different in First")
+        XCTAssertTrue(line.nameButtons[0] === name)
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window.window)
+        XCTAssertEqual(line.sentence, "Different in First and Second")
+        let names = line.nameButtons
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window.window)
+        XCTAssertEqual(line.nameButtons, names, "nothing changed: the same views")
+
+        // Undo and Redo.
+        let undo = try XCTUnwrap(window.window.undoManager)
+        undo.groupsByEvent = false
+        let general = Options.shared.gesture
+        func use(_ uses: Bool) {
+            undo.registerUndo(withTarget: second) { _ in use(!uses) }
+            second.setUsesGeneralGestures(uses, general: general)
+        }
+        undo.beginUndoGrouping()
+        use(true)
+        undo.endUndoGrouping()
+        XCTAssertEqual(line.sentence, "Different in First and Second", "a change alone is not heard")
+        undo.undo()
+        XCTAssertEqual(line.sentence, "Different in First and Second")
+        undo.redo()
+        XCTAssertEqual(line.sentence, "Different in First")
+        undo.undo()
+        XCTAssertEqual(line.sentence, "Different in First and Second")
+
+        // Back to none: no room again.
+        first.setUsesGeneralGestures(true, general: general)
+        second.setUsesGeneralGestures(true, general: general)
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window.window)
+        XCTAssertNil(line.sentence)
+        XCTAssertTrue(line.subviews.isEmpty)
+        XCTAssertEqual(pane.view.fittingSize.height, empty, accuracy: 0.5)
+
+        // Out of its window it hears no Undo.
+        XCTAssertTrue(window.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons))
+        give(first, own: [.gestures])
+        undo.redo()
+        XCTAssertNil(line.sentence)
+    }
+
+    // MARK: - VoiceOver
+
+    /// VoiceOver: the line is a group that says the whole sentence; a name says where it
+    /// goes ("Show in Safari › Gestures", as its tooltip does) with the sentence as its
+    /// help, a cut name whole; "N more" says "Show in Apps"; the plain words between them
+    /// and the icons are no elements of their own.
+    func testVoiceOverSaysWhereANameGoes() throws {
+        let long = "Microsoft Visual Studio Code Insiders Edition With A Very Long Name"
+        addApp("Safari", own: [.gestures, .ring])
+        addApp(long, own: [.gestures, .ring])
+        let window = try makeWindow()
+        let (_, line) = try show(.gestures, in: window)
+        let sentence = "Different in Safari and \(long)"
+        XCTAssertTrue(line.isAccessibilityElement())
+        XCTAssertEqual(line.accessibilityRole(), .group)
+        XCTAssertEqual(line.accessibilityLabel(), sentence)
+        XCTAssertEqual(line.sentence, sentence)
+        XCTAssertEqual(line.nameButtons.count, 2)
+        XCTAssertEqual(line.nameButtons[0].title, "Safari")
+        XCTAssertEqual(line.nameButtons[0].accessibilityLabel(), "Show in Safari › Gestures")
+        XCTAssertEqual(line.nameButtons[0].toolTip, "Show in Safari › Gestures")
+        XCTAssertEqual(line.nameButtons[0].accessibilityHelp(), sentence)
+        XCTAssertTrue(line.nameButtons[1].title.hasSuffix("…"), line.nameButtons[1].title)
+        XCTAssertEqual(line.nameButtons[1].accessibilityLabel(), "Show in \(long) › Gestures")
+        XCTAssertEqual(line.nameButtons[1].toolTip, "Show in \(long) › Gestures")
+        XCTAssertEqual(line.nameButtons[1].accessibilityHelp(), sentence)
+        XCTAssertFalse(line.textLabels.isEmpty)
+        for label in line.textLabels {
+            XCTAssertFalse(label.isAccessibilityElement(), label.stringValue)
+        }
+
+        for name in ["Figma", "Xcode"] {
+            addApp(name, own: [.ring])
+        }
+        let (_, ring) = try show(.ring, in: window)
+        XCTAssertEqual(ring.accessibilityLabel(), "Different in Safari, \(long) and 2 more")
+        XCTAssertEqual(ring.nameButtons[0].accessibilityLabel(), "Show in Safari › Shortcut Ring")
+        let more = try XCTUnwrap(ring.moreButton)
+        XCTAssertEqual(more.accessibilityLabel(), "Show in Apps")
+        XCTAssertEqual(more.toolTip, "Show in Apps")
+        XCTAssertEqual(more.accessibilityHelp(), ring.sentence)
+        XCTAssertEqual(ring.iconViews.count, 2)
+        for icon in ring.iconViews {
+            XCTAssertFalse(icon.isAccessibilityElement())
+        }
+    }
+}

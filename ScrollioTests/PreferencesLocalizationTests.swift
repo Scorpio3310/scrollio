@@ -187,6 +187,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-buttons-same-as-other-apps",
         // Round 3 C4: the line that offers to add the app of "Settings for Safari…"
         "apps-not-on-list", "apps-add-named",
+        // Round 4 D4: "Different in Safari and Figma" at the end of four panes
+        "apps-different-in", "apps-different-more", "apps-different-show-apps",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -490,6 +492,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "status-menu-app-settings": "@",
         "apps-not-on-list": "@",
         "apps-add-named": "@",
+        // Round 4 D4: "Different in Safari and Figma", "3 more"
+        "apps-different-in": "@",
+        "apps-different-more": "d",
     ]
 
     /// The arguments `format` reads, in argument order: "%2$d of %1$@" -> "@d"; "@" an
