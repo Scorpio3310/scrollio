@@ -130,7 +130,10 @@ class PreferencesButtonsViewController: NSViewController {
     private(set) var isRecorderOpen = false
     /// The button just recorded: the card shows it for a moment.
     private(set) var recordedFocus: ButtonsHeaderContent.Focus?
-    /// The action a binding added next gets (Gestures › Set Up…), nil: none.
+    /// The action a binding added next gets; nil: none, as "+" adds. Nothing in the app
+    /// passes one any more (Gestures and Shortcut Ring choose their button in place,
+    /// `TriggerChooser`; an app's Buttons part has its own); `beginAddingBinding(action:)`
+    /// keeps the path, and its tests use it.
     private(set) var pendingAction: SystemShortcut.Shortcut?
     /// What the recorder caught, kept until it closes.
     private var pendingRecorded: RecordedEvent?
@@ -252,7 +255,8 @@ class PreferencesButtonsViewController: NSViewController {
     override func viewWillAppear() {
         super.viewWillAppear()
         isAway = false
-        // Bindings may have changed elsewhere (Gestures › Set Up…); then ask the mice again.
+        // Bindings may have changed elsewhere (the Gestures or Shortcut Ring pane's
+        // pull-down); then ask the mice again.
         reload()
         deviceSource.refresh()
         syncBusy()
@@ -908,7 +912,7 @@ class PreferencesButtonsViewController: NSViewController {
     // MARK: - Adding
 
     /// "+": records a button, or a key with a modifier. A new one is added without an
-    /// action, selected, and its menu opens; with `action` (Gestures › Set Up…) it gets
+    /// action, selected, and its menu opens; with `action` (see `pendingAction`) it gets
     /// that action instead, and so does a button the list has without an action.
     ///
     /// The recording lasts as long as the recorder says: it reports its start, and its end
@@ -938,7 +942,7 @@ class PreferencesButtonsViewController: NSViewController {
 
     /// The binding the list has for `trigger`, if any. A button of the connected mouse
     /// pressed without modifiers is its row: the row's stored binding, or for a row without
-    /// one the binding it shows (no action: it takes the one of Gestures › Set Up…).
+    /// one the binding it shows (no action: it takes a waiting `pendingAction`).
     func existingBinding(for trigger: RecordedEvent) -> ButtonBinding? {
         if let part = layout.part(for: trigger), let row = row(for: part) {
             return row.binding
@@ -946,8 +950,8 @@ class PreferencesButtonsViewController: NSViewController {
         return buttonBindings.first { $0.triggerEvent == trigger }
     }
 
-    /// A recorded `trigger` that the list has already, and that takes `action` (Gestures ›
-    /// Set Up…) because it has no action yet.
+    /// A recorded `trigger` that the list has already, and that takes a waiting `action`
+    /// (`pendingAction`) because it has no action yet.
     private func takesPendingAction(_ existing: ButtonBinding, action: SystemShortcut.Shortcut?) -> Bool {
         return action != nil && !CellActionState(binding: existing).hasBoundAction
     }
@@ -1253,10 +1257,10 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
     }
 
     /// A trigger that is already in the list counts as a duplicate (the recorder says so),
-    /// unless it has no action and gets the one waiting (Gestures › Set Up…).
+    /// unless it has no action and gets the one waiting (`pendingAction`).
     func validateRecordedEvent(_ recorder: KeyRecorder, event: InputEvent) -> Bool {
         let trigger = normalizedTrigger(for: event)
-        // A key cannot be the gesture button (Gestures › Set Up…): refused, and the
+        // A key cannot hold Gesture Navigation (a waiting `pendingAction`): refused, and the
         // recorder says why (`refusalHint`).
         if Self.needsMouseButton(pendingAction), trigger.type == .keyboard { return false }
         guard let existing = existingBinding(for: trigger) else { return true }

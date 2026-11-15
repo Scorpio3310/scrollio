@@ -3806,18 +3806,6 @@
         }
       }
     },
-    "gestures-gesture-button-change": {
-      "comment": "Gestures pane: push button",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Change"
-          }
-        }
-      }
-    },
     "scrolling-smooth": {
       "extractionState": "manual",
       "localizations": {
@@ -7508,18 +7496,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Set Up…"
-          }
-        }
-      }
-    },
-    "ring-trigger-change": {
-      "comment": "Shortcut Ring pane: push button",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Change"
           }
         }
       }
