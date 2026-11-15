@@ -3278,6 +3278,39 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
         )
     }
 
+    /// The window's Undo is the one the sheet went up on: an import clears it also when
+    /// General is out of the window by then. Regression: the manager was asked of the
+    /// pane's window at the import; with another pane shown under the sheet there was
+    /// none, and "Remove App" could still be undone into the new settings.
+    func testImportClearsTheUndoOfTheWindowTheSheetWentUpOn() throws {
+        let own = OwnSettings(for: self)
+        own.options.readOptions()
+        let world = World()
+        let pane = try makePane(own, world)
+        let window = NSWindow(
+            contentRect: NSRect(x: -20000, y: -20000, width: 520, height: 300), styleMask: [.titled], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentViewController = pane
+        let undo = try XCTUnwrap(pane.view.window?.undoManager)
+        undo.groupsByEvent = false
+        undo.beginUndoGrouping()
+        undo.registerUndo(withTarget: pane) { _ in }
+        undo.endUndoGrouping()
+
+        world.importAnswer = try write(#""speed":3"#)
+        click(pane.importSettingsButton)
+        let sheet = try XCTUnwrap(world.presented.last)
+        // Another pane takes General's place in the window.
+        window.contentViewController = nil
+        window.contentView = NSView()
+        XCTAssertNil(pane.view.window)
+        XCTAssertTrue(undo.canUndo)
+        click(try XCTUnwrap(sheet.importButton))
+        XCTAssertEqual(own.options.scroll.speed, 3)
+        XCTAssertFalse(undo.canUndo)
+    }
+
     /// "Restore…" lists the kept settings newest first, at most five, each by its local
     /// date and time; two of the same minute show their seconds. A pick goes through the
     /// import's sheet, whose Return is Cancel for a file that binds something.

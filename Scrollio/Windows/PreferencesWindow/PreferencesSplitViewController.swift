@@ -175,6 +175,12 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
     private(set) var history = PreferencesHistory()
     /// Set while a step through the history is being shown: what it shows is no new visit.
     private var isShowingStep = false
+    /// Whether a sheet is on the window: a pane's open or save panel, or "Import these
+    /// settings?". The pane under it stays (`selectPane`, `step`). Tests answer for the
+    /// window: none is opened there.
+    lazy var hasSheet: () -> Bool = { [weak self] in
+        return self?.viewIfLoaded?.window?.attachedSheet != nil
+    }
 
     init(
         panes: [PreferencesPane] = PreferencesPane.all,
@@ -290,10 +296,17 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
 
     /// Shows the pane `identifier` (PANEL_IDENTIFIER, or the `tabIdentifier` of a pane built
     /// in code) and selects its sidebar row. False when there is no such pane.
+    ///
+    /// False too, and nothing changes, while a sheet is on the window: the sheet belongs
+    /// to the pane under it. The menu bar's ways into Settings ("Settings for Safari…", a
+    /// battery line) only bring the window forward then. Swapped under "Import these
+    /// settings?", General had no window left: a file chosen then showed nothing, and an
+    /// import no longer cleared the window's Undo.
     @discardableResult
     func selectPane(withIdentifier identifier: String) -> Bool {
         guard controllers[identifier] != nil else { return false }
         _ = view
+        guard !hasSheet() else { return false }
         show(identifier, remember: true)
         return true
     }
@@ -369,6 +382,8 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
     @discardableResult
     func step(_ direction: PreferencesHistory.Direction) -> Bool {
         _ = view
+        // Not under a sheet (the View menu is dimmed then; `selectPane`).
+        guard !hasSheet() else { return false }
         guard let place = history.step(direction, exists: exists) else { return false }
         isShowingStep = true
         defer { isShowingStep = false }

@@ -1043,6 +1043,42 @@ final class PreferencesNavigationTests: XCTestCase {
         XCTAssertFalse(preferences.canStepBack)
     }
 
+    /// While a sheet is on the window (a pane's open or save panel, "Import these
+    /// settings?") the pane under it stays: "Settings for Calculator…" and a battery line
+    /// of the menu bar, a pane's item of View and Back change nothing. Regression: they
+    /// swapped the pane under the sheet; General then had no window, so a file chosen in
+    /// its open panel showed nothing and an import did not clear the window's Undo.
+    func testASheetOnTheWindowKeepsThePaneUnderIt() throws {
+        try makeWindow()
+        try choose("buttons")
+        try choose("general")
+        let history = preferences.history.places
+        preferences.hasSheet = { true }
+
+        PreferencesApplicationViewController.showSettings(for: Self.calculatorApp, in: preferences)
+        assertShows(pane: "general", title: "General")
+        XCTAssertFalse(preferences.selectPane(withIdentifier: MousePreferencesViewController.tabIdentifier), "a battery line")
+        XCTAssertFalse(preferences.showPaneFromMenu(PANEL_IDENTIFIER.application))
+        XCTAssertFalse(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general), "the pane on show stays where it is scrolled")
+        XCTAssertFalse(step(.back))
+        assertShows(pane: "general", title: "General")
+        XCTAssertEqual(preferences.history.places, history, "no visit")
+        XCTAssertTrue(preferences.canStepBack)
+
+        // The sheet is gone: the ways in work again.
+        preferences.hasSheet = { false }
+        PreferencesApplicationViewController.showSettings(for: Self.calculatorApp, in: preferences)
+        assertShowsPage(of: Self.calculator, title: "Calculator")
+    }
+
+    /// As the app makes it, the window is asked: none has a sheet here.
+    func testTheWindowIsAskedForItsSheet() throws {
+        try makeWindow()
+        XCTAssertNil(window.attachedSheet)
+        XCTAssertFalse(preferences.hasSheet())
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+    }
+
     func testBackAndForwardGoThroughThePanesShown() throws {
         let defaults = TestDefaults.make(for: self)
         let remembered = PreferencesSplitViewController.selectedPaneDefaultsKey

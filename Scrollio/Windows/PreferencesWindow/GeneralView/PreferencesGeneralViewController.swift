@@ -201,6 +201,8 @@ class PreferencesGeneralViewController: NSViewController {
     private(set) var restoreSettingsPullDown: RestorePullDown!
     /// The sheet about a file while it is up.
     private(set) var settingsSheet: SettingsImportSheetViewController?
+    /// The undo manager of the window the sheet went up on (`showSettingsSheet`).
+    private weak var settingsSheetUndoManager: UndoManager?
 
     private(set) var welcomeGuideRow: PreferencesGroupRow!
     private(set) var welcomeGuideButton: NSButton!
@@ -1033,6 +1035,9 @@ class PreferencesGeneralViewController: NSViewController {
             self?.closeSettingsSheet()
         }
         settingsSheet = sheet
+        // The window's Undo as the sheet goes up: an import clears it, also should the
+        // pane be out of the window by then.
+        settingsSheetUndoManager = view.window?.undoManager
         presentSettingsSheet(sheet, self)
         return sheet
     }
@@ -1040,6 +1045,7 @@ class PreferencesGeneralViewController: NSViewController {
     private func closeSettingsSheet() {
         guard let sheet = settingsSheet else { return }
         settingsSheet = nil
+        settingsSheetUndoManager = nil
         dismissSettingsSheet(sheet)
     }
 
@@ -1057,10 +1063,11 @@ class PreferencesGeneralViewController: NSViewController {
                 text: SettingsFileText.explanation(of: problem)
             ))
         case .success:
-            closeSettingsSheet()
             // An Undo of "Remove Button" or "Remove App" would put an entry of the old
             // settings into the new ones.
-            view.window?.undoManager?.removeAllActions()
+            let undoManager = settingsSheetUndoManager ?? view.window?.undoManager
+            closeSettingsSheet()
+            undoManager?.removeAllActions()
             syncViewWithOptions()
             refreshSettingsFileState()
             showNotice(text("general-settings-file-imported"), .success)
