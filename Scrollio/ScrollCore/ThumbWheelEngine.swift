@@ -337,6 +337,9 @@ final class ThumbWheelEngine {
             tick = tickFilter.filter(travel: travel, lines: lines, at: time)
             if tick.travel != 0, case .yes(let begins) = follower.add(tick.travel, at: time, seenAt: seenAt, tag: roll?.id ?? 0) {
                 newStroke = begins
+            } else if tick.held {
+                // But the wheel moves: the stroke under way does not rest meanwhile.
+                follower.touch(at: time, seenAt: seenAt)
             }
         } else {
             // Another function, or Follow the wheel switched off in the middle of a stroke

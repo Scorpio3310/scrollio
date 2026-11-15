@@ -7,15 +7,18 @@
 //  them slide with the hand, and settle when the wheel rests. One long roll moves several
 //  desktops, as quick trackpad swipes chain.
 //
-//  A stroke is the wheel's events until it rests for `ThumbWheelTuning.followRest`. Its
-//  first event begins a dock swipe (`DockSwipeSynthesizer`), each event moves it on in the
-//  turn's direction (one event is one unit, up to two on a fast turn, × the speed;
-//  `followUnitsPerSpace` units are one Space). The swipe itself is the one "Follow the hand"
-//  runs (`InteractiveGestureSession`, fed with the wheel's units in place of points): at
-//  most one Space either way. A swipe ends in one of three ways:
+//  A stroke is the wheel's events until it rests for `ThumbWheelTuning.followRest` (a tick
+//  the stray-tick filter holds is no event of the stroke, but the wheel moved: the rest
+//  counts from it, `touch`). Its first event begins a dock swipe (`DockSwipeSynthesizer`),
+//  each event moves it on in the turn's direction (one event is one unit, up to two on a
+//  fast turn, × the speed; `followUnitsPerSpace` units are one Space). The swipe itself is
+//  the one "Follow the hand" runs (`InteractiveGestureSession`, fed with the wheel's units
+//  in place of points): at most one Space either way. A swipe ends in one of three ways:
 //  - At a full Space (`followFullShare`) with the wheel still turning that way: once the
-//    travel past that point reaches `followChainOverflowUnits`, it ends at once, at the full
-//    Space with no speed ("chained"), so the next desktop can come in this stroke.
+//    travel past that point reaches `followChainOverflowUnits`, it ends, at the full Space
+//    with no speed ("chained"), so the next desktop can come in this stroke; not sooner
+//    than `followFullStopRest` after its begin, so a swipe begun at a full Space (travel
+//    kept at the gate, one hard event) is shown sliding, never begun and ended at once.
 //  - At a full Space with the wheel still for `followFullStopRest`: it ends then ("full
 //    stop"), not only at the rest. A swipe begun after the wheel stopped (with travel kept
 //    at the gate) counts that time from its begin, and the rest does not end it sooner
@@ -30,15 +33,21 @@
 //  (`NSWorkspace.activeSpaceDidChangeNotification`, `spaceDidChange`) or the timeout
 //  passed (`followSpaceChangeTimeout`; `followSettleSpaceChangeTimeout` after an end at the
 //  rest, which macOS settles more slowly): a swipe begun while the last one settles can
-//  catch it and take it back. Travel meanwhile is kept (`followGatePendingCap` at most)
-//  and begins the next swipe when the Space changed, unless the wheel stopped
-//  `followFullStopRest` before short of half a Space. When no change came in time, the
-//  desktop was the first or the last that way (the Dock let the swipe bounce back): no
-//  swipe begins that way (travel the other way does) until the stroke ends or the Space
-//  changes after all, so the wheel never sends the Dock into a loop of bounces; the next
-//  stroke begins as usual. A timed-out gate's swipe waits `followLateSpaceChangeWindow`
-//  more as a late record, so a change that comes late is logged as such. The gate's memory
-//  outlives the stroke.
+//  catch it and take it back. A stroke at the closed gate does not rest: its travel is kept
+//  (`followGatePendingCap` at most) until the gate opens, by the Space change or the
+//  timeout, and begins the next swipe then, whether the wheel still turns or not. Short of
+//  half a Space it begins nothing, and neither does travel that comes once the gate is open
+//  (macOS tells the change some 30 ms after a full end, so the tail of a roll comes then):
+//  if the wheel stopped there, the swipe could only slide out and back, the next desktop
+//  peeking in. After a gate the stroke's travel is kept until it makes half a Space and
+//  begins the swipe then; the rest drops it. When no change came in time, the desktop was
+//  the first or the last that way (the Dock let the swipe bounce back): the stroke the
+//  swipe ended in begins no swipe that way again (travel the other way does) until it ends
+//  or the Space changes after all, so the wheel never sends the Dock into a loop of
+//  bounces; a later stroke is not barred, and the travel it kept at the gate begins its
+//  swipe. A timed-out gate's swipe waits `followLateSpaceChangeWindow` more as a late
+//  record, so a change that comes late is logged as such; a change while a gate is closed
+//  is that gate's. The gate's memory outlives the stroke.
 //
 //  Where the work is done: the tap callback only adds an event's travel up (`add`, a few
 //  sums and at most one closure per display frame; a rest or a timeout whose look has not
@@ -144,6 +153,10 @@ final class ThumbWheelFollower {
     private var lastEventAt: TimeInterval = 0
     /// When the callback saw the last event, on `clock`.
     private var lastSeenAt: TimeInterval = 0
+    /// When the wheel last moved in the stroke, on the same two clocks: its last event, or a
+    /// tick the stray-tick filter has held since (`touch`). The stroke's rest counts from it.
+    private var lastMovedAt: TimeInterval = 0
+    private var lastMovedSeenAt: TimeInterval = 0
     /// Where the wheel has put the desktop, and where the Dock was told it is (progress).
     private var target = 0.0
     private var shown = 0.0
@@ -157,6 +170,9 @@ final class ThumbWheelFollower {
     private var lastFrameAt = -TimeInterval.infinity
     private var frameScheduled = false
     private var restScheduled = false
+    /// Counts the rest's looks: only the one scheduled last looks (the gate's opening
+    /// schedules one anew).
+    private var restLook = 0
     private var fullStopScheduled = false
     /// Moves on with each stroke's end: work scheduled for an earlier stroke does nothing.
     private var generation = 0
@@ -168,6 +184,10 @@ final class ThumbWheelFollower {
     private var strokeWaited = false
     /// No swipe begins this way until the stroke ends or the Space changes (+1, −1; 0: none).
     private var blockedDirection = 0
+    /// The stroke's next swipe comes after a gate (its last swipe ended at a full Space, or
+    /// the stroke began at the closed gate): it begins only once the travel for it makes
+    /// half a Space. Less is kept for the stroke's next events and dropped at the rest.
+    private var nextSwipeNeedsHalfASpace = false
 
     /// The last end where a switch was expected, until the Space changed or the timeout
     /// passed: it outlives the stroke.
@@ -181,13 +201,16 @@ final class ThumbWheelFollower {
         var direction: Int
         var tag: Int
         var swipe: Swipe
+        /// The stroke the swipe ended in (`generation` then): the only one a timeout bars.
+        var stroke: Int
     }
     private var gate: Gate?
     private var gateCount = 0
     /// A gate that timed out, for `followLateSpaceChangeWindow` more: a change meanwhile is
-    /// its swipe's, late (`spaceDidChange` says when a newer gate's instead).
+    /// its swipe's, late, unless a newer gate is closed (then it is that gate's).
     private var lateRecord: Gate?
-    /// Swipe endings told after the late record's, so the roll's line lists them in order.
+    /// Swipe endings of the late record's own roll, told after its, so the roll's line lists
+    /// them in order.
     private var queuedEnds: [(tag: Int, swipe: Swipe)] = []
     /// `add` or `endStroke(at:)` runs (the tap callback): endings are told on the main queue.
     private var inTapCallback = false
@@ -235,13 +258,13 @@ final class ThumbWheelFollower {
     func add(_ travel: Double, at time: TimeInterval, seenAt: TimeInterval, tag: Int = 0) -> Taken {
         inTapCallback = true
         defer { inTapCallback = false }
-        if state != .idle, time >= lastEventAt + ThumbWheelTuning.followRest {
-            // The rest's look has not come yet (the main queue was busy): the stroke ended.
-            finishStroke(at: lastEventAt + ThumbWheelTuning.followRest)
-        }
         if let gate, clock() + 1e-9 >= gate.endedAt + gate.timeout {
             // The gate's look has not come yet (the main queue was busy): it timed out.
             gateTimedOut()
+        }
+        if hasRested(before: time) {
+            // The rest's look has not come yet (the main queue was busy): the stroke ended.
+            finishStroke(at: lastMovedAt + ThumbWheelTuning.followRest)
         }
         var newStroke = false
         if state == .idle {
@@ -252,6 +275,8 @@ final class ThumbWheelFollower {
         eventTag = tag
         lastEventAt = time
         lastSeenAt = seenAt
+        lastMovedAt = time
+        lastMovedSeenAt = seenAt
         if travel.isFinite, travel != 0 {
             switch state {
             case .following:
@@ -268,13 +293,30 @@ final class ThumbWheelFollower {
         return .yes(newStroke: newStroke)
     }
 
+    /// The stroke's rest passed before an event at `time` (its own time). At a closed gate a
+    /// stroke has no rest of its own: it waits for the gate (`restDueAt`).
+    private func hasRested(before time: TimeInterval) -> Bool {
+        guard state != .idle, state != .gated else { return false }
+        return time >= lastMovedAt + ThumbWheelTuning.followRest
+    }
+
+    /// A tick the stray-tick filter holds, in the tap callback (it reaches neither `add` nor
+    /// the swipe): the wheel moves, so a stroke under way does not rest yet. Nothing else:
+    /// no travel, no stroke begins with it, and the full stop of a swipe at a full Space is
+    /// not put off.
+    func touch(at time: TimeInterval, seenAt: TimeInterval) {
+        guard state != .idle, !hasRested(before: time) else { return }
+        lastMovedAt = time
+        lastMovedSeenAt = seenAt
+    }
+
     /// The turn no longer follows the wheel (its settings changed in the middle): the stroke
     /// ends now, by the same rule as at a rest. In the tap callback, as `add`.
     func endStroke(at time: TimeInterval) {
         guard state != .idle else { return }
         inTapCallback = true
         defer { inTapCallback = false }
-        finishStroke(at: max(time, lastEventAt))
+        finishStroke(at: max(time, lastMovedAt))
     }
 
     /// Scrollio stopped handling the wheel: the swipe is cancelled at once (the main queue
@@ -305,12 +347,10 @@ final class ThumbWheelFollower {
         // begin again.
         blockedDirection = 0
         let now = clock()
-        // A change while a late record waits is the late record's when no newer gate is
-        // closed, or when the newer one closed less than `followSpaceChangeTooSoon` ago (too
-        // soon for that end's own change); else the newer gate's, and the late record waits
-        // on.
-        if var record = lateRecord,
-           gate.map({ now - $0.endedAt < ThumbWheelTuning.followSpaceChangeTooSoon }) ?? true {
+        // A change is the closed gate's, however soon after its end (macOS can tell one
+        // within 80 ms), and a late record waits on. Only with no gate closed is it the late
+        // record's.
+        if gate == nil, var record = lateRecord {
             lateRecord = nil
             record.swipe.spaceChangedAfter = max(0, now - record.endedAt)
             record.swipe.late = true
@@ -342,7 +382,7 @@ final class ThumbWheelFollower {
 
     /// One display frame of the stroke: the travel so far goes to the swipe, the desktop
     /// eases toward where it should stand, and a swipe at a full Space with the wheel still
-    /// turning that way ends.
+    /// turning that way ends, once it was shown for `followFullStopRest`.
     private func frame() {
         guard state == .following else { return }
         lastFrameAt = clock()
@@ -354,13 +394,18 @@ final class ThumbWheelFollower {
             synthesizer.update(progress: shown)
         }
         if swipeNumber != 0, isAtFullSpace {
-            if overflow + ThumbWheelTuning.thresholdSlack >= ThumbWheelTuning.followChainOverflowUnits {
+            // Not sooner than `followFullStopRest` after its begin: a swipe begun at or near a
+            // full Space (travel kept at the gate, one hard event) is shown sliding first. A
+            // wheel that stops meanwhile is the full stop's look.
+            if overflow + ThumbWheelTuning.thresholdSlack >= ThumbWheelTuning.followChainOverflowUnits,
+               clock() + 1e-9 >= swipeBeganAt + ThumbWheelTuning.followFullStopRest {
                 endAtFullSpace(.chained)
                 return
             }
             scheduleFullStopLook()
         }
-        if shown != target || pendingTravel != 0 {
+        // (Travel kept for a swipe that has not begun waits for the next event's frame.)
+        if swipeNumber != 0, shown != target || pendingTravel != 0 {
             scheduleFrame()
         }
     }
@@ -387,6 +432,13 @@ final class ThumbWheelFollower {
                 pendingTravel = 0
                 return false
             }
+            if nextSwipeNeedsHalfASpace, abs(pendingTravel) + ThumbWheelTuning.thresholdSlack
+                < InteractiveGestureSession.switchProgressShare * ThumbWheelTuning.followUnitsPerSpace {
+                // After a gate, travel short of half a Space begins nothing: if the wheel
+                // stops there (the tail of a roll), the swipe could only slide out and back.
+                return true
+            }
+            nextSwipeNeedsHalfASpace = false
             let screen = self.screen()
             frameDuration = screen.frameDuration > 0 ? screen.frameDuration : InteractiveGestureEnvironment.fallbackScreen.frameDuration
             progressPerSpace = DockSwipeGeometry.progressPerSpace(spaceCount: screen.spaceCount)
@@ -506,6 +558,7 @@ final class ThumbWheelFollower {
         clearSwipe()
         pendingTravel = 0
         state = .gated
+        nextSwipeNeedsHalfASpace = true
         closeGate(direction: direction, tag: tag, swipe: swipe)
     }
 
@@ -520,21 +573,24 @@ final class ThumbWheelFollower {
         // than a swipe it was handed at a full Space.
         let timeout = swipe.ending == .ended
             ? ThumbWheelTuning.followSettleSpaceChangeTimeout : ThumbWheelTuning.followSpaceChangeTimeout
-        gate = Gate(number: number, endedAt: clock(), timeout: timeout, direction: direction, tag: tag, swipe: swipe)
+        gate = Gate(number: number, endedAt: clock(), timeout: timeout, direction: direction, tag: tag, swipe: swipe,
+                    stroke: generation)
         schedule(timeout) { [weak self] in
             guard let self, self.gate?.number == number else { return }
             self.gateTimedOut()
         }
     }
 
-    /// No Space change came in time: no swipe begins that way until the stroke ends or the
-    /// Space changes after all; the swipe waits as the late record.
+    /// No Space change came in time. The stroke the swipe ended in begins no swipe that way
+    /// again until it ends or the Space changes after all; a later stroke that waits at the
+    /// gate is not barred, the travel it kept begins its swipe. The swipe waits as the late
+    /// record.
     private func gateTimedOut() {
         guard let gate else { return }
         self.gate = nil
         keepLate(gate)
         guard state != .idle else { return }
-        blockedDirection = gate.direction
+        if gate.stroke == generation { blockedDirection = gate.direction }
         if state == .gated { openGateForTheStroke() }
     }
 
@@ -554,9 +610,11 @@ final class ThumbWheelFollower {
         }
     }
 
-    /// Tells the roll's line a swipe's ending; behind a late record, once that one's is told.
+    /// Tells the roll's line a swipe's ending. One of the late record's own roll waits behind
+    /// it, so that roll's line lists its swipes in order; another roll's is told at once (its
+    /// line does not wait for an older roll's late swipe).
     private func tell(_ tag: Int, _ swipe: Swipe) {
-        if lateRecord != nil {
+        if let lateRecord, lateRecord.tag == tag {
             queuedEnds.append((tag, swipe))
         } else {
             deliver(tag, swipe)
@@ -582,32 +640,41 @@ final class ThumbWheelFollower {
         schedule(0) { [weak self] in self?.onSwipeEnd?(tag, swipe) }
     }
 
-    /// The stroke at the gate goes on: it follows again (its kept travel begins a swipe),
-    /// or waits for its rest while another swipe runs.
+    /// The stroke at the gate goes on: it follows again (its kept travel begins a swipe,
+    /// when it is half a Space or more), or waits for its rest while another swipe runs.
     private func openGateForTheStroke() {
-        guard !synthesizer.isActive else {
+        if synthesizer.isActive {
             state = .waiting
             strokeWaited = true
             pendingTravel = 0
+        } else {
+            state = .following
+        }
+        // Travel kept short of half a Space begins nothing (`nextSwipeNeedsHalfASpace`): it
+        // waits for the stroke's next events; the rest drops it.
+        let begins = state == .following && abs(pendingTravel) + ThumbWheelTuning.thresholdSlack
+            >= InteractiveGestureSession.switchProgressShare * ThumbWheelTuning.followUnitsPerSpace
+        guard !inTapCallback else {
+            // An event found the gate timed out: it is the stroke's next, its frame begins
+            // the swipe and its rest is looked for.
+            if begins { scheduleFrame() }
             return
         }
-        state = .following
-        if pendingTravel != 0, clock() + 1e-9 >= lastSeenAt + ThumbWheelTuning.followFullStopRest,
-           abs(pendingTravel) + ThumbWheelTuning.thresholdSlack
-            < InteractiveGestureSession.switchProgressShare * ThumbWheelTuning.followUnitsPerSpace {
-            // The wheel stopped before the gate opened, short of half a Space: a swipe begun
-            // now could not switch, only slide out and back.
-            pendingTravel = 0
-        }
-        if pendingTravel != 0 { scheduleFrame() }
+        // The swipe begins in this turn of the main queue: the look for the rest may come in
+        // the same turn, and would end a stroke it found with no swipe begun. The rest, held
+        // back while the gate was closed, is looked for anew.
+        if begins { frame() }
+        scheduleRestLook(anew: true)
     }
 
-    private func scheduleRestLook() {
-        guard !restScheduled else { return }
+    private func scheduleRestLook(anew: Bool = false) {
+        guard anew || !restScheduled else { return }
         restScheduled = true
+        restLook &+= 1
+        let look = restLook
         let generation = self.generation
         schedule(max(0, restDueAt - clock())) { [weak self] in
-            guard let self, self.generation == generation else { return }
+            guard let self, self.generation == generation, self.restLook == look else { return }
             self.restScheduled = false
             self.lookForRest()
         }
@@ -615,21 +682,29 @@ final class ThumbWheelFollower {
 
     /// When the rest ends the stroke, on `clock`: the wheel still for `followRest`, and a
     /// swipe under way shown sliding for `followFullStopRest` at least (one begun with travel
-    /// kept at the gate may begin just before the rest).
+    /// kept at the gate may begin long after the wheel stopped). At a closed gate the stroke
+    /// does not rest before the gate's timeout: the travel it kept begins the next swipe
+    /// when the gate opens.
     private var restDueAt: TimeInterval {
-        let rest = lastSeenAt + ThumbWheelTuning.followRest
+        let rest = lastMovedSeenAt + ThumbWheelTuning.followRest
+        if state == .gated, let gate { return max(rest, gate.endedAt + gate.timeout) }
         guard swipeNumber != 0 else { return rest }
         return max(rest, swipeBeganAt + ThumbWheelTuning.followFullStopRest)
     }
 
-    /// The wheel has rested since its last event: the stroke ends; else look again then.
+    /// The wheel has rested since it last moved: the stroke ends; else look again then.
     private func lookForRest() {
         guard state != .idle else { return }
+        if let gate, clock() + 1e-9 >= gate.endedAt + gate.timeout {
+            // The gate's own look is due in this turn too and has not come yet: the gate
+            // opens first, so the travel kept is not dropped by a rest.
+            gateTimedOut()
+        }
         if clock() + 1e-9 >= restDueAt {
             // A swipe at a full Space ends as a full stop (due by then), whichever of the two
             // looks comes first.
             if state == .following, swipeNumber != 0, isAtFullSpace { lookForFullStop() }
-            finishStroke(at: lastEventAt + ThumbWheelTuning.followRest)
+            finishStroke(at: lastMovedAt + ThumbWheelTuning.followRest)
         } else {
             scheduleRestLook()
         }
@@ -737,6 +812,7 @@ final class ThumbWheelFollower {
         blockedDirection = 0
         clearSwipe()
         pendingTravel = 0
+        nextSwipeNeedsHalfASpace = gate != nil
         if gate != nil {
             // The last swipe is settling: wait for the Space change (or the timeout).
             state = .gated
