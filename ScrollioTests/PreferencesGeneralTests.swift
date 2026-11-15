@@ -988,8 +988,44 @@ final class PreferencesGeneralTests: XCTestCase {
         )
         world.updates = UpdateStatus(availability: .failed)
         pane = try makePane(world)
-        XCTAssertEqual(pane.updatesUnavailableRow.explanation, "The updater could not start. New versions are on Scrollio's GitHub page.")
+        XCTAssertEqual(shownRows(of: pane.updatesSection).map(\.title), ["Automatic updates"])
+        XCTAssertFalse(isShown(pane.updatesUnavailableRow))
+        XCTAssertEqual(pane.updatesFailedRow.explanation, "The updater could not start. New versions are on Scrollio's GitHub page.")
         XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+    }
+
+    /// Only after a failed start does the line name a place to go: there it has "Open", the
+    /// GitHub row's own button, to that page. The other lines have no control (the
+    /// disk image's line needs its width).
+    func testOnlyAFailedStartOffersTheGitHubPage() throws {
+        install(.notRegistered)
+        for availability in [UpdateAvailability.builtFromSource, .wrongPlace, .failed] {
+            let world = World()
+            world.updates = UpdateStatus(availability: availability)
+            let pane = try makePane(world)
+            let rows = shownRows(of: pane.updatesSection)
+            XCTAssertEqual(rows.count, 1, "\(availability)")
+            let controls = rows.flatMap(\.controls)
+            guard availability == .failed else {
+                XCTAssertEqual(controls, [], "\(availability)")
+                continue
+            }
+            let row = try XCTUnwrap(pane.updatesFailedRow)
+            let button = try XCTUnwrap(pane.updatesFailedGitHubButton)
+            XCTAssertTrue(rows.first === row)
+            XCTAssertEqual(controls, [button])
+            XCTAssertEqual(button.title, "Open")
+            XCTAssertEqual(button.bezelStyle, .push)
+            XCTAssertEqual(button.accessibilityLabel(), "Open Scrollio on GitHub in your web browser")
+            XCTAssertTrue(button.accessibilityTitleUIElement() as? NSTextField === row.titleLabel)
+            XCTAssertEqual(button.toolTip, "https://github.com/Scorpio3310/scrollio")
+            XCTAssertTrue(button.target === pane)
+            XCTAssertEqual(button.action, #selector(PreferencesGeneralViewController.gitHubClicked(_:)))
+            click(button)
+            XCTAssertEqual(world.openedURLs, [PreferencesGeneralViewController.gitHubURL])
+            XCTAssertEqual(world.updateChecks, 0)
+            XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+        }
     }
 
     /// A released copy: the two switches and the check.
@@ -1003,6 +1039,7 @@ final class PreferencesGeneralTests: XCTestCase {
             ["Check for updates automatically", "Install updates automatically", "Check for updates"]
         )
         XCTAssertFalse(isShown(pane.updatesUnavailableRow))
+        XCTAssertFalse(isShown(pane.updatesFailedRow))
         XCTAssertEqual(
             pane.updatesAutomaticRow.explanation,
             "Once a day Scrollio asks GitHub whether there is a newer version. None of your settings or data is sent."

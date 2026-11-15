@@ -190,8 +190,13 @@ class PreferencesGeneralViewController: NSViewController {
     /// "Check for updates" with "Check Now"; "Scrollio 1.1.0 is available" with "Update…".
     private(set) var updatesCheckRow: PreferencesGroupRow!
     private(set) var updatesCheckButton: NSButton!
-    /// Shown alone in a copy that does not update itself: why not.
+    /// Shown alone in a copy that does not update itself: why not (built from source, or
+    /// run from a disk image).
     private(set) var updatesUnavailableRow: PreferencesGroupRow!
+    /// Shown alone instead when the updater did not start: why, with "Open" for the GitHub
+    /// page its line names. A row of its own: the other lines need the button's width.
+    private(set) var updatesFailedRow: PreferencesGroupRow!
+    private(set) var updatesFailedGitHubButton: NSButton!
 
     private(set) var settingsFileSection: PreferencesGroupSection!
     /// "Settings file" with "Export…" and "Import…".
@@ -259,6 +264,7 @@ class PreferencesGeneralViewController: NSViewController {
         let updates = PreferencesGroupSection(
             title: text("general-updates-header"), width: width, rows: [
                 makeUpdatesAutomaticRow(), makeUpdatesInstallRow(), makeUpdatesCheckRow(), makeUpdatesUnavailableRow(),
+                makeUpdatesFailedRow(),
             ]
         )
         updatesSection = updates
@@ -429,6 +435,19 @@ class PreferencesGeneralViewController: NSViewController {
         return row
     }
 
+    /// The line of a copy whose updater did not start, with the GitHub row's "Open".
+    private func makeUpdatesFailedRow() -> PreferencesGroupRow {
+        let button = makeGitHubButton()
+        updatesFailedGitHubButton = button
+        let row = PreferencesGroupRow(
+            title: text("general-updates-unavailable"),
+            explanation: text(Self.unavailableTextKey(for: .failed)),
+            accessory: button
+        )
+        updatesFailedRow = row
+        return row
+    }
+
     /// "Settings file" with "Export…" and "Import…". Both lead to a panel, hence the "…".
     private func makeSettingsFileRow() -> PreferencesGroupRow {
         let export = PreferencesGroupedForm.makePushButton(
@@ -493,22 +512,28 @@ class PreferencesGeneralViewController: NSViewController {
 
     /// "Scrollio on GitHub" with "Open": the repository in the default browser.
     private func makeGitHubRow() -> PreferencesGroupRow {
-        let button = PreferencesGroupedForm.makePushButton(
-            title: text("about-github-open"),
-            target: self,
-            action: #selector(gitHubClicked(_:))
-        )
+        let button = makeGitHubButton()
         gitHubButton = button
         let row = PreferencesGroupRow(
             title: text("about-github"),
             explanation: text("about-github-hint"),
             accessory: button
         )
-        // "Open" alone does not say where it goes; the row's title stays its title element.
-        button.setAccessibilityLabel(text("about-github-open-accessibility"))
-        button.toolTip = Self.gitHubURL.absoluteString
         gitHubRow = row
         return row
+    }
+
+    /// "Open": the repository in the default browser. "Open" alone does not say where it
+    /// goes, so VoiceOver hears it whole; the row's title stays its title element.
+    private func makeGitHubButton() -> NSButton {
+        let button = PreferencesGroupedForm.makePushButton(
+            title: text("about-github-open"),
+            target: self,
+            action: #selector(gitHubClicked(_:))
+        )
+        button.setAccessibilityLabel(text("about-github-open-accessibility"))
+        button.toolTip = Self.gitHubURL.absoluteString
+        return button
     }
 
     /// One muted line, centred under the last box: what Scrollio is based on.
@@ -649,13 +674,24 @@ class PreferencesGeneralViewController: NSViewController {
 
     // MARK: - Updates
 
-    /// Brings the Updates box into view: "Check for Updates…" of the Scrollio menu shows it
-    /// in a copy that does not update itself, where the box says why
-    /// (`MainMenuManager.revealUpdates(in:)`).
+    /// Brings the Updates box to the top of the visible part of the pane, as far under its
+    /// edge as the pane's first box (`PreferencesGroupedForm.margin`), or as near as the
+    /// pane's end lets it; also when the box was in view lower down, so it is where the eye
+    /// goes. "Check for Updates…" of the Scrollio menu shows it in a copy that does not
+    /// update itself, where the box says why (`MainMenuManager.revealUpdates(in:)`).
     func revealUpdates() {
         guard isViewLoaded else { return }
         view.layoutSubtreeIfNeeded()
-        updatesSection.scrollToVisible(updatesSection.bounds)
+        guard let scrollView = updatesSection.enclosingScrollView,
+              let document = scrollView.documentView, document.isFlipped else {
+            updatesSection.scrollToVisible(updatesSection.bounds)
+            return
+        }
+        let clip = scrollView.contentView
+        let top = updatesSection.convert(updatesSection.bounds, to: document).minY - PreferencesGroupedForm.margin
+        let end = max(0, document.bounds.height - clip.bounds.height)
+        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: min(max(0, top), end)))
+        scrollView.reflectScrolledClipView(clip)
     }
 
     /// Shows the updater as it is: the switches, the time of the last check or the update
@@ -667,7 +703,8 @@ class PreferencesGeneralViewController: NSViewController {
         updatesAutomaticRow.isHidden = !available
         updatesInstallRow.isHidden = !available
         updatesCheckRow.isHidden = !available
-        updatesUnavailableRow.isHidden = available
+        updatesUnavailableRow.isHidden = available || status.availability == .failed
+        updatesFailedRow.isHidden = status.availability != .failed
         if available {
             updatesAutomaticRow.isOn = status.checksAutomatically
             updatesInstallRow.isOn = status.installsAutomatically

@@ -749,38 +749,99 @@ final class PreferencesPaneSelectionTests: XCTestCase {
         XCTAssertEqual(preferences.sidebar.selectedIdentifier, PANEL_IDENTIFIER.buttons)
     }
 
+    // MARK: - General at its Updates box
+
+    /// The Updates box in the column as it stands: how far its top is under the top of the
+    /// visible part, whether it is wholly in view, and whether the column shows the pane's end.
+    private func updatesBox(in preferences: PreferencesSplitViewController) throws -> (fromTop: CGFloat, inView: Bool, atEnd: Bool) {
+        let general = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController)
+        let updates = try XCTUnwrap(general.updatesSection)
+        let scrollView = try XCTUnwrap(preferences.host.scrollView)
+        let document = try XCTUnwrap(scrollView.documentView)
+        let visible = scrollView.documentVisibleRect
+        let box = updates.convert(updates.bounds, to: document)
+        return (box.minY - visible.minY, visible.insetBy(dx: -0.5, dy: -0.5).contains(box), abs(visible.maxY - document.bounds.maxY) < 1)
+    }
+
     /// "Check for Updates…" of a copy that does not update itself: General with its Updates
-    /// box in view, in a window too short to show the box at the pane's top. Only General
-    /// on show, and not under a sheet (the sheet keeps the pane under it).
-    func testGeneralIsShownAtItsUpdatesBox() throws {
+    /// box at the top of the column, as far under its edge as the pane's first box, also
+    /// when the box was in view lower down; as near as the pane's end lets it otherwise.
+    /// Only General on show, and not under a sheet (the sheet keeps the pane under it).
+    func testGeneralIsShownWithItsUpdatesBoxAtTheTop() throws {
+        let preferences = try makePreferences()
+        let window = try XCTUnwrap(preferences.view.window)
+        let width = window.contentRect(forFrameRect: window.frame).width
+        // Columns shorter than the window allows, so the box has room to reach the top.
+        window.contentMinSize = NSSize(width: width, height: 100)
+        let scrollView = try XCTUnwrap(preferences.host.scrollView)
+        let clip = scrollView.contentView
+        let general = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController)
+        let margin = PreferencesGroupedForm.margin
+        func setColumnHeight(_ height: CGFloat) {
+            window.contentView?.layoutSubtreeIfNeeded()
+            let chrome = window.contentRect(forFrameRect: window.frame).height - scrollView.frame.height
+            window.setContentSize(NSSize(width: width, height: height + chrome))
+            window.contentView?.layoutSubtreeIfNeeded()
+        }
+
+        // Measured in a column taller than the pane.
+        setColumnHeight(2000)
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
+        let updates = try XCTUnwrap(general.updatesSection)
+        let box = updates.convert(updates.bounds, to: scrollView.documentView)
+        let paneEnd = general.view.frame.maxY
+        XCTAssertGreaterThan(box.minY, margin, "the box is not the pane's first")
+
+        // Another pane on show, scrolled a little: it stays, and so does its place.
+        setColumnHeight(150)
+        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons))
+        clip.scroll(to: NSPoint(x: 0, y: 40))
+        scrollView.reflectScrolledClipView(clip)
+        XCTAssertEqual(clip.bounds.minY, 40, "Buttons scrolls in this column")
+        MainMenuManager.revealUpdates(in: preferences)
+        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.buttons, "the reveal never switches panes")
+        XCTAssertEqual(clip.bounds.minY, 40)
+
+        // Room under the box: its top goes to the top, the margin under the edge.
+        setColumnHeight(paneEnd - box.minY + margin - 30)
+        XCTAssertTrue(preferences.showPaneFromMenu(PANEL_IDENTIFIER.general))
+        XCTAssertEqual(clip.bounds.minY, 0, "General at its top first")
+        XCTAssertFalse(try updatesBox(in: preferences).inView, "below the edge")
+        preferences.hasSheet = { true }
+        MainMenuManager.revealUpdates(in: preferences)
+        XCTAssertEqual(clip.bounds.minY, 0, "a sheet is on the window")
+        preferences.hasSheet = { false }
+        MainMenuManager.revealUpdates(in: preferences)
+        XCTAssertEqual(try updatesBox(in: preferences).fromTop, margin, accuracy: 1)
+        XCTAssertTrue(try updatesBox(in: preferences).inView)
+
+        // In view at the pane's top, lower down: it still goes up, as far as the pane's end lets it.
+        let column = (box.maxY + paneEnd) / 2
+        setColumnHeight(column)
+        XCTAssertTrue(preferences.showPaneFromMenu(PANEL_IDENTIFIER.general))
+        XCTAssertEqual(clip.bounds.minY, 0)
+        XCTAssertTrue(try updatesBox(in: preferences).inView, "in view at the pane's top")
+        MainMenuManager.revealUpdates(in: preferences)
+        XCTAssertEqual(clip.bounds.minY, min(box.minY - margin, paneEnd - column), accuracy: 1)
+        XCTAssertGreaterThan(clip.bounds.minY, 0, "it moved")
+        XCTAssertTrue(try updatesBox(in: preferences).inView)
+    }
+
+    /// A Settings window made for the item: the pane and the box are asked for before the
+    /// window was ever laid out, at the height it opens with.
+    func testAWindowJustMadeShowsTheBoxWithoutALayoutFirst() throws {
         let preferences = try makePreferences()
         let window = try XCTUnwrap(preferences.view.window)
         let width = window.contentRect(forFrameRect: window.frame).width
         window.setContentSize(NSSize(width: width, height: PreferencesWindowLayout.minimumContentHeight))
+        // What the item does in a window just made: the pane, then the box.
+        XCTAssertTrue(preferences.showPaneFromMenu(PANEL_IDENTIFIER.general))
+        MainMenuManager.revealUpdates(in: preferences)
         window.contentView?.layoutSubtreeIfNeeded()
-        let scrollView = try XCTUnwrap(preferences.host.scrollView)
-        let general = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.general) as? PreferencesGeneralViewController)
-        func updatesInView() throws -> Bool {
-            let updates = try XCTUnwrap(general.updatesSection)
-            let frame = updates.convert(updates.bounds, to: scrollView.documentView)
-            return scrollView.documentVisibleRect.insetBy(dx: -0.5, dy: -0.5).contains(frame)
-        }
-
-        // Another pane on show: nothing moves.
-        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.buttons))
-        MainMenuManager.revealUpdates(in: preferences)
-        XCTAssertEqual(scrollView.contentView.bounds.minY, 0)
-
-        XCTAssertTrue(preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
-        XCTAssertFalse(try updatesInView(), "at the pane's top the box is below the window's edge")
-
-        preferences.hasSheet = { true }
-        MainMenuManager.revealUpdates(in: preferences)
-        XCTAssertFalse(try updatesInView(), "a sheet is on the window")
-
-        preferences.hasSheet = { false }
-        MainMenuManager.revealUpdates(in: preferences)
-        XCTAssertTrue(try updatesInView())
+        let shown = try updatesBox(in: preferences)
+        XCTAssertTrue(shown.inView)
+        XCTAssertTrue(abs(shown.fromTop - PreferencesGroupedForm.margin) < 1 || shown.atEnd, "\(shown)")
+        XCTAssertGreaterThan(try XCTUnwrap(preferences.host.scrollView).contentView.bounds.minY, 0, "it moved")
     }
 }
 
