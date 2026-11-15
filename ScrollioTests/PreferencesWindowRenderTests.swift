@@ -1275,7 +1275,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
     /// The menu bar menu (`status-menu-<case>-<appearance>.png`), drawn as a stand-in from
     /// the menu `StatusMenu` builds: working (batteries, the app in front, the updater),
     /// and with its title while Scrollio does not work: paused, waiting for the access, a
-    /// start that failed, an event tap kept off.
+    /// start that failed, an event tap kept off. Batteries only where the Logitech sessions
+    /// run: a pause, a failed start and a missing access stop them (LogiCenter.stop).
     func testRenderStatusMenu() throws {
         let actions = StatusMenuActions()
         let batteries = StatusMenu.batteries(from: [
@@ -1289,7 +1290,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
         func state(access: Bool = true, paused: Bool = false, problem: StatusMenu.StartProblem? = nil,
                    smoothing: StatusMenu.AppSmoothingItem? = nil) -> StatusMenu.State {
             var state = StatusMenu.State(hasAccess: access, isPaused: paused, showsDiagnostics: false,
-                                         batteries: access ? batteries : [], appSmoothing: smoothing,
+                                         batteries: access && !paused && problem != .retrying ? batteries : [],
+                                         appSmoothing: smoothing,
                                          updates: .check(enabled: true), startProblem: problem)
             state.isDebugBuild = false
             return state

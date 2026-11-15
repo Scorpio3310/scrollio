@@ -267,15 +267,13 @@ final class StatusMenuTests: XCTestCase {
             .separator,
             Row(title: "Quit Scrollio", shortcut: "⌘Q"),
         ])
-        // A waiting update and the batteries under the title's group.
-        let battery = StatusMenu.Battery(title: "MX Master 4: 75%", symbolName: "battery.75percent")
-        XCTAssertEqual(rows(state(paused: true, batteries: [battery], updates: .waiting(version: "1.1.0"))), [
+        // A waiting update under the title's group. No battery lines: a pause stops the
+        // Logitech sessions (LogiCenter.stop), so no mouse reports one.
+        XCTAssertEqual(rows(state(paused: true, updates: .waiting(version: "1.1.0"))), [
             Self.pausedTitle,
             Row(title: "Resume Scrollio"),
             .separator,
             Row(title: "Update to Scrollio 1.1.0…"),
-            .separator,
-            Row(title: "MX Master 4: 75%"),
             .separator,
             Row(title: "Settings…", shortcut: "⌘,"),
             .separator,
@@ -446,9 +444,11 @@ final class StatusMenuTests: XCTestCase {
             try choose(title, in: built)
             XCTAssertEqual(calls.log, ["mouse"], title)
         }
-        // Paused: under the title's group.
-        XCTAssertEqual(rows(state(paused: true, batteries: batteries)).map(\.title), [
-            "Scrollio is paused", "Resume Scrollio", "—", "MX Master 4: 75%", "MX Master 3S: 40%, charging", "—",
+        // Under the title's group: an event tap kept off is the one title while the Logitech
+        // sessions run (paused and a failed start stop them, and the mice with them).
+        XCTAssertEqual(rows(state(batteries: batteries, startProblem: .tapOff)).map(\.title), [
+            "Scrollio couldn't start and is trying again", "Pause Scrollio", "—",
+            "MX Master 4: 75%", "MX Master 3S: 40%, charging", "—",
             "Settings…", "—", "Quit Scrollio",
         ])
     }
