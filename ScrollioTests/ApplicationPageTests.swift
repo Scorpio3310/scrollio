@@ -750,8 +750,9 @@ final class ApplicationPageTests: XCTestCase {
 
     /// "Set Up…" of an app's Gestures part, undone from another pane ("Undo Change Button
     /// to Hold"): the step is the Buttons part's (the row it added goes), which brings Apps
-    /// forward with the app's page on its Buttons part; Redo too.
-    func testUndoOfSetUpFromAnotherPaneOpensTheAppsButtonsPart() throws {
+    /// forward with the app's page on the part "Set Up…" was pressed on, where its row
+    /// reads "Set Up…" again; Redo too.
+    func testUndoOfSetUpFromAnotherPaneOpensThePartItWasMadeOn() throws {
         let calculator = addApp(Self.calculator)
         let w = try makePreferences()
         XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.application))
@@ -779,14 +780,14 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application, "Apps comes forward")
         page = try XCTUnwrap(w.apps.detailController)
         XCTAssertTrue(page.application === calculator)
-        XCTAssertEqual(page.shownPart, .buttons, "where the row went")
+        XCTAssertEqual(page.shownPart, .gestures, "the part \"Set Up…\" was pressed on, where its row reads \"Set Up…\" again")
 
         w.apps.showList(focusList: false)
         XCTAssertTrue(w.preferences.selectPane(withIdentifier: PANEL_IDENTIFIER.general))
         w.undo.redo()
         XCTAssertEqual(calculator.ownButtonBindings.count, 1)
         XCTAssertEqual(w.preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application, "Redo too")
-        XCTAssertEqual(w.apps.detailController?.shownPart, .buttons)
+        XCTAssertEqual(w.apps.detailController?.shownPart, .gestures)
     }
 
     /// Smoothing and the direction switched off by hand under Own Settings: what is stored
