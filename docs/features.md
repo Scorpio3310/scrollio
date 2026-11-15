@@ -465,18 +465,25 @@ only when you move those controls.
   "Smooth Scrolling in …" for the app in front, "Settings for …" (the app's page in
   Apps, or a line there that offers to add it: "Safari isn't on the list." with "Add
   Safari", or with "Add" when the name is too long to be read in both; also while
-  paused; never for Scrollio itself) and "Pause Scrollio", then "Settings…"
+  paused; never for Scrollio itself), "Pause Scrollio" and "Pause For" ("15 Minutes",
+  "1 Hour"), then "Settings…"
   (and "Check for Updates…"), then "Quit Scrollio". A pause stops everything and gives
-  the Logitech mice their buttons back; it is not kept after Scrollio quits. With Option
+  the Logitech mice their buttons back; it is not kept after Scrollio quits. "Pause
+  Scrollio" lasts until "Resume Scrollio". A pause from "Pause For" ends by itself at the
+  time the menu shows (a whole minute, never later than chosen; also checked after sleep
+  and after a change of the clock) and then starts Scrollio as Resume does, without a
+  window, a notice or a sound. With Option
   held the menu also lists Logitech Diagnostics, a developer window with the HID++
   details of the connected mice. In the released app it only reads.
 - While Scrollio does not work, and only then, the menu starts with a title that says so
-  and the way out under it: "Scrollio is paused" with "Resume Scrollio"; "Scrollio needs
+  and the way out under it: "Scrollio is paused" (or "Scrollio is paused until 14:30",
+  the local time) with "Resume Scrollio"; "Scrollio needs
   Accessibility access" with "Allow Accessibility Access…"; "Scrollio couldn't start and
   is trying again" with "Try Again Now" (or, while an event tap is kept off for up to a
-  minute and comes back by itself, with "Pause Scrollio" alone).
+  minute and comes back by itself, with the pause items alone).
 - The icon is dimmed in the same three cases; its tooltip says which.
-- General says the same under its card, always: "Scrollio is on" with "Pause", or the
+- General says the same under its card, always: "Scrollio is on" with "Pause" (until
+  you resume), or the
   menu's title with "Resume", "Try Again Now" (with "Pause" while an event tap is kept
   off and comes back by itself, as in the menu) or, for the access, "Open System
   Settings".

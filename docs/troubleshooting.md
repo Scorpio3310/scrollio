@@ -95,7 +95,8 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   [MX Master 3S slot 0x02] Disconnected (the receiver says so)
   ```
 - `app`: Scrollio's own health: each start and stop with its cause (launch, sleep and
-  wake, another user, Pause, Accessibility access lost or back, quit), event taps that
+  wake, another user, Pause and a pause that ended by itself, Accessibility access lost
+  or back, quit), event taps that
   could not be created or that macOS turned off, restarts, settings that could not be
   read or written, an app, a file or a script that could not be opened (never its name
   or path), a held action whose release never came, each use of the Shortcut Ring ("opened

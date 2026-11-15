@@ -4496,3 +4496,73 @@ extension PreferencesWindowRenderTests {
         })
     }
 }
+
+// MARK: - Round 4 D5
+
+/// Round 4 D5 (`ux4-d5-*-<appearance>.png`): a pause that ends by itself. The menu bar
+/// menu while Scrollio works ("Pause Scrollio", and "Pause For" under it, once as the menu
+/// shows it and once with its two lengths open beside it), after a start that failed (both
+/// under "Try Again Now") and paused for a time ("Scrollio is paused until 14:30" over
+/// "Resume Scrollio"); General's row under the card while on (a plain "Pause", as before)
+/// and paused for a time (the same title, "… are off until then." and "Resume"). The time
+/// is 14:30 of the Mac's own clock, written as the Mac writes times.
+extension PreferencesWindowRenderTests {
+
+    func testRenderRound4D5PauseForAWhile() throws {
+        let end = try XCTUnwrap(Calendar.current.date(bySettingHour: 14, minute: 30, second: 0, of: Date()))
+        let actions = StatusMenuActions()
+        let batteries = StatusMenu.batteries(from: [MouseDeviceFixtures.mxMaster4()])
+        let safari = AppSmoothing.App(name: "Safari", bundlePath: "/Applications/Safari.app",
+                                      executablePath: "/Applications/Safari.app/Contents/MacOS/Safari")
+        let smoothing = StatusMenu.appSmoothingItem(front: safari, isScrollio: false, scrollingRuns: true,
+                                                    rule: .usesScrollingSettings, scrollingSmooth: true, limitedToListedApps: false)
+        let settings = StatusMenu.appSettingsItem(front: safari, isScrollio: false)
+        func items(paused: Bool = false, problem: StatusMenu.StartProblem? = nil, pauseEnd: Date? = nil) -> [NSMenuItem] {
+            let works = !paused && problem == nil
+            var state = StatusMenu.State(
+                hasAccess: true, isPaused: paused, showsDiagnostics: false, batteries: works ? batteries : [],
+                appSmoothing: works ? smoothing : nil, appSettings: settings, updates: .check(enabled: true),
+                startProblem: problem, pauseEnd: pauseEnd
+            )
+            state.isDebugBuild = false
+            let menu = NSMenu()
+            StatusMenu.build(into: menu, state: state, actions: actions)
+            return menu.items
+        }
+        let on = items()
+        try renderMenuStandIn(on, name: "ux4-d5-menu-on")
+        let pauseFor = try XCTUnwrap(on.first { $0.hasSubmenu })
+        XCTAssertEqual(pauseFor.title, "Pause For")
+        try round3C1Sheet(on, opened: pauseFor, name: "ux4-d5-menu-pause-open")
+        try renderMenuStandIn(items(problem: .retrying), name: "ux4-d5-menu-could-not-start")
+        let paused = items(paused: true, pauseEnd: end)
+        XCTAssertEqual(paused.first?.title, StatusMenu.titleText(.paused, pauseEnd: end))
+        try renderMenuStandIn(paused, name: "ux4-d5-menu-paused-until")
+
+        let savedAutoLaunch = Options.shared.general.autoLaunch
+        defer {
+            LoginItem.service = InertLoginItemService()
+            Options.shared.general.autoLaunch = savedAutoLaunch
+            LoginItem.service = LoginItem.defaultService
+        }
+        LoginItem.service = InertLoginItemService()
+        let plain: [String: Any] = ["CFBundleShortVersionString": "1.0", "CFBundleVersion": "1"]
+        for (name, pauseEnd) in [("on", nil), ("paused-until", end)] as [(String, Date?)] {
+            try renderPane(PANEL_IDENTIFIER.general, name: "ux4-d5-general-" + name, prepare: { preferences in
+                guard let general = preferences.controller(for: PANEL_IDENTIFIER.general)
+                    as? PreferencesGeneralViewController else { return }
+                general.isAccessGranted = { true }
+                general.isPaused = { pauseEnd != nil }
+                general.pauseEnd = { pauseEnd }
+                general.startProblem = { nil }
+                general.pause = {}
+                general.resume = {}
+                general.tryAgain = {}
+                general.isMenuBarIconHidden = { false }
+                general.bundleInfo = { plain }
+            }, afterLoad: { controller in
+                controller.viewWillAppear()
+            })
+        }
+    }
+}

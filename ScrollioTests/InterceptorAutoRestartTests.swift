@@ -153,7 +153,8 @@ final class InterceptorAutoRestartTests: XCTestCase {
     }
 
     /// The safety timers are made through the helper: the keeper and the restart of every
-    /// event tap, the recovery of AppRunController, the keeper and the rate checks of the
+    /// event tap, the recovery of AppRunController and the end of a pause that ends by
+    /// itself, the keeper and the rate checks of the
     /// display link. None of them may go back to a default-mode `Timer.scheduledTimer`.
     func testTheSafetyTimersAreMadeThroughTheHelper() throws {
         let root = URL(fileURLWithPath: #filePath)
@@ -161,7 +162,7 @@ final class InterceptorAutoRestartTests: XCTestCase {
             .deletingLastPathComponent()       // project root
         let expected: [(path: String, timers: Int)] = [
             ("Scrollio/Utils/Interceptor.swift", 2),
-            ("Scrollio/Managers/AppRunController.swift", 1),
+            ("Scrollio/Managers/AppRunController.swift", 2),
             ("Scrollio/ScrollCore/ScrollPoster.swift", 2),
         ]
         for file in expected {

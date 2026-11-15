@@ -10934,6 +10934,78 @@
           }
         }
       }
+    },
+    "status-menu-pause-for": {
+      "comment": "Status-bar menu: the item under \"Pause Scrollio\" that opens the lengths of a pause that ends by itself",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause For"
+          }
+        }
+      }
+    },
+    "status-menu-pause-15-minutes": {
+      "comment": "Status-bar menu: under \"Pause For\": pauses Scrollio for 15 minutes",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "15 Minutes"
+          }
+        }
+      }
+    },
+    "status-menu-pause-1-hour": {
+      "comment": "Status-bar menu: under \"Pause For\": pauses Scrollio for an hour",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 Hour"
+          }
+        }
+      }
+    },
+    "status-menu-title-paused-until": {
+      "comment": "Status-bar menu: the title while a pause that ends by itself runs, and the title of General's row under the card; %@ is the local time alone, e.g. 14:30",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio is paused until %@"
+          }
+        }
+      }
+    },
+    "status-item-paused-until": {
+      "comment": "Menu bar icon: the tooltip while a pause that ends by itself runs; %@ is the local time alone, e.g. 14:30",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio is paused until %@."
+          }
+        }
+      }
+    },
+    "general-paused-until-hint": {
+      "comment": "General pane: under \"Scrollio is paused until 14:30\" in the row under the card",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrolling, buttons, gestures and the Shortcut Ring are off until then."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

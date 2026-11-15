@@ -8,7 +8,10 @@
 //  app menu shows the standard About panel). Under it, always, one row that says whether
 //  Scrollio works, in the words of the status-bar menu's title and by its rule
 //  (`StatusMenu.title(hasAccess:isPaused:startProblem:)`), with the menu's way out:
-//  "Scrollio is on" with "Pause"; "Scrollio is paused" with "Resume"; "Scrollio couldn't
+//  "Scrollio is on" with "Pause" (until resumed; the lengths of "Pause For" are in the
+//  status-bar menu); "Scrollio is paused" with "Resume", and for a pause that ends by
+//  itself "Scrollio is paused until 14:30" with a line that says "until then";
+//  "Scrollio couldn't
 //  start and is trying again" with "Try Again" (or "Pause" while an event tap is kept off
 //  and comes back by itself); "Scrollio needs Accessibility access" with "Open System
 //  Settings". With the menu bar icon hidden this is the way to pause and back. Then
@@ -67,6 +70,9 @@ class PreferencesGeneralViewController: NSViewController {
     var setMenuBarIconHidden: (Bool) -> Void = { Options.shared.general.hideStatusItem = $0 }
     /// "Pause Scrollio" of the status-bar menu is on.
     var isPaused: () -> Bool = { AppRunController.shared.isPaused }
+    /// When the pause ends by itself ("Pause For" of the status-bar menu); nil for a pause
+    /// until Resume, and while not paused.
+    var pauseEnd: () -> Date? = { AppRunController.shared.pauseEnd }
     /// Pauses, as "Pause Scrollio" of the status-bar menu does.
     var pause: () -> Void = { AppRunController.shared.setPaused(true) }
     /// Ends the pause, as "Resume Scrollio" of the status-bar menu does.
@@ -276,7 +282,7 @@ class PreferencesGeneralViewController: NSViewController {
         )
         statusButton = button
         let row = PreferencesGroupRow(
-            title: text(runStatus.titleKey),
+            title: runStatus.titleText,
             explanation: runStatus.explanationKey.map(text),
             accessory: button
         )
@@ -701,7 +707,8 @@ class PreferencesGeneralViewController: NSViewController {
 
     /// What the row under the card says and what its button does. Pure. The title is the
     /// status-bar menu's, by the menu's rule and in its order (the missing access first,
-    /// also while paused, then the pause, then a start problem); while Scrollio works,
+    /// also while paused, then the pause, then a start problem; a pause that ends by itself
+    /// says until when, as the menu does); while Scrollio works,
     /// "Scrollio is on". The button is the menu's way out: Pause, Resume, Try Again Now (a
     /// start that failed; an event tap kept off comes back by itself, so Pause there, as
     /// in the menu), and for the missing access the Permissions row's way to System Settings.
@@ -716,9 +723,12 @@ class PreferencesGeneralViewController: NSViewController {
         /// The menu's title; nil while Scrollio works.
         let title: StatusMenu.Title?
         let action: Action
+        /// When the pause the title names ends by itself; nil otherwise.
+        let pauseEnd: Date?
 
-        init(hasAccess: Bool, isPaused: Bool, startProblem: StatusMenu.StartProblem?) {
+        init(hasAccess: Bool, isPaused: Bool, startProblem: StatusMenu.StartProblem?, pauseEnd: Date? = nil) {
             title = StatusMenu.title(hasAccess: hasAccess, isPaused: isPaused, startProblem: startProblem)
+            self.pauseEnd = title == .paused ? pauseEnd : nil
             switch title {
             case .needsAccess?: action = .allowAccess
             case .paused?: action = .resume
@@ -731,9 +741,18 @@ class PreferencesGeneralViewController: NSViewController {
             return title?.key ?? "general-status-on"
         }
 
-        /// Only the pause needs a line: what is off until Resume.
+        /// The title as the row shows it: the menu's words (`StatusMenu.titleText`), with the
+        /// time for a pause that ends by itself.
+        var titleText: String {
+            guard let title else { return NSLocalizedString(titleKey, comment: "") }
+            return StatusMenu.titleText(title, pauseEnd: pauseEnd)
+        }
+
+        /// Only the pause needs a line: what is off until Resume, or until the time the
+        /// title names.
         var explanationKey: String? {
-            return title == .paused ? "general-paused-hint" : nil
+            guard title == .paused else { return nil }
+            return pauseEnd == nil ? "general-paused-hint" : "general-paused-until-hint"
         }
 
         var buttonKey: String {
@@ -750,10 +769,12 @@ class PreferencesGeneralViewController: NSViewController {
     /// Reads whether Scrollio works and shows it in the row under the card.
     func refreshRunStatus() {
         guard isViewLoaded else { return }
-        let status = RunStatus(hasAccess: isAccessGranted(), isPaused: isPaused(), startProblem: startProblem())
+        let status = RunStatus(
+            hasAccess: isAccessGranted(), isPaused: isPaused(), startProblem: startProblem(), pauseEnd: pauseEnd()
+        )
         runStatus = status
         syncAccessButton()
-        let title = text(status.titleKey)
+        let title = status.titleText
         let explanation = status.explanationKey.map(text)
         let buttonTitle = text(status.buttonKey)
         guard statusRow.title != title || statusRow.explanation != explanation || statusButton.title != buttonTitle else { return }

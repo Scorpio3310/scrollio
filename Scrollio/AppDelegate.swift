@@ -161,7 +161,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Follows what the Mac tells the app while it runs: another user takes the Mac or gives
     /// it back, sleep and wake, a change of the displays, a loss or a change of the
-    /// Accessibility access, a change of the macOS keyboard shortcuts. The three centers
+    /// Accessibility access, a change of the macOS keyboard shortcuts, a change of the
+    /// clock or the time zone. The three centers
     /// are parameters so that a test can post to its own and see where each one leads:
     /// under XCTest the launch code that calls this does not run.
     func registerObservers(
@@ -234,6 +235,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: Self.accessibilityListChangedNotification,
             object: nil
         )
+        // The clock or the time zone changed: a pause that ends by itself ends at a time
+        // of the clock ("Scrollio is paused until 14:30"), which is looked at again.
+        for name in [Notification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
+            app.addObserver(self, selector: #selector(clockDidChange), name: name, object: nil)
+        }
     }
 
     /// Posted by macOS (to every process) when the Accessibility list changes.
@@ -358,6 +364,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     @objc func didWake(notification: NSNotification) {
         runController.wake()
+    }
+    @objc func clockDidChange(notification: NSNotification) {
+        // The run controller is the main thread's; macOS does not say which thread posts these.
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.runController.clockDidChange()
+            }
+            return
+        }
+        runController.clockDidChange()
     }
     @objc func reloadSystemShortcutsIfNeeded(notification: NSNotification) {
         let deactivated = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
