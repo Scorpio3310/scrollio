@@ -254,6 +254,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     private var hoveredKey: ScrollHoldKey?
     /// The key whose recorder button has the keyboard focus.
     private var focusedKey: ScrollHoldKey?
+    /// Whether macOS's Natural scrolling is on, for the preview; read again each time the
+    /// tab appears.
+    private lazy var macScrollsNaturally = Options.naturalScrollingIsOn()
 
     private let keyRecorder = KeyRecorder()
 
@@ -418,7 +421,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
 
     override func viewWillAppear() {
         super.viewWillAppear()
-        // The options may have changed while the tab was not showing.
+        // The options may have changed while the tab was not showing, and macOS's Natural
+        // scrolling too.
+        macScrollsNaturally = Options.naturalScrollingIsOn()
         syncViewWithOptions()
     }
 
@@ -615,9 +620,10 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         scene.smoothing = scroll.smooth
         scene.duration = scroll.duration
         scene.speed = scroll.speed
-        // The preview turns the vertical wheel: reversed as the engine reverses that axis
-        // (the switch is also on when only the horizontal one is).
-        scene.reversed = scroll.reverse && scroll.reverseVertical
+        // The preview turns the vertical wheel and moves the page as it really moves on this
+        // Mac: macOS's Natural scrolling turns the wheel, and the engine turns that axis back
+        // while it reverses it (the switch is also on when only the horizontal one is).
+        scene.reversed = (scroll.reverse && scroll.reverseVertical) != macScrollsNaturally
         scene.emphasis = previewEmphasis
         if previewView.scene != scene {
             previewView.scene = scene

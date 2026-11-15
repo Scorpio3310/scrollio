@@ -374,7 +374,8 @@ extension Options {
     /// Whether macOS's Natural scrolling is on (System Settings › Mouse; the same setting
     /// for every pointing device). Read for the scroll options of a new installation
     /// (`OPTIONS_SCROLL_DEFAULT.installationDefaults`: the first settings, and Scrolling ›
-    /// Reset to Defaults), never to change stored settings. Under XCTest the
+    /// Reset to Defaults) and for the direction the Scrolling preview shows, never to
+    /// change stored settings. Under XCTest the
     /// Mac's setting is not read: on, macOS's own default, so a test store starts as
     /// before; a test that needs the other answer replaces this.
     static var naturalScrollingIsOn: () -> Bool = {
