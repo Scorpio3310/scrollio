@@ -216,7 +216,7 @@ struct ApplicationPagePart: Equatable {
 extension ApplicationTriggerRow {
 
     /// The widest the push button of the Gestures and Shortcut Ring parts' first rows gets:
-    /// "Show in <app>" with a long name is cut short (the whole of it in its tooltip), and
+    /// "Show in <app> › Buttons" with a long name is cut short (the whole of it in its tooltip), and
     /// the row's line keeps its room.
     static let buttonMaxWidth: CGFloat = 200
 
@@ -627,8 +627,8 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 /// this app), which open while the app is in front. What opens the ring is a binding of
 /// Buttons, or of the app's Buttons part: the first row, "Button or key", says which one
 /// opens it with the app in front ("Thumb panel, as everywhere", "None in Figma",
-/// `ApplicationTriggerRow`), and its button goes there ("Show in Buttons", "Show in Figma")
-/// or, with none, records one that opens it only in this app ("Set Up…").
+/// `ApplicationTriggerRow`), and its button goes there ("Show in Buttons", "Show in Figma ›
+/// Buttons") or, with none, records one that opens it only in this app ("Set Up…").
 ///
 /// For an app with suggested shortcuts (`ShortcutRingSuggestions`) the ring the switch
 /// makes starts with them, and while such an app uses the general ring and never had one
@@ -664,7 +664,7 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     /// "Show in Buttons" of "Button or key": the Buttons pane, the row of what opens the
     /// ring selected. Tests replace it.
     var openButtonsPane: (() -> Void)?
-    /// "Show in Figma" of "Button or key": the app's Buttons part, the row with this id
+    /// "Show in Figma › Buttons" of "Button or key": the app's Buttons part, the row with this id
     /// selected (the page sets it).
     var showApplicationButtons: ((UUID) -> Void)?
     /// "Set Up…" of "Button or key": records a button or key at the push button that opens

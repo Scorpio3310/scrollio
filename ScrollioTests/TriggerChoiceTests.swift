@@ -375,7 +375,7 @@ final class TriggerChoiceTests: XCTestCase {
     }
 
     /// "Show in Buttons" says where it goes: the Buttons pane, or, while only an app's own
-    /// button or key does it, that app's Buttons part ("Show in Notes"), in both panes.
+    /// button or key does it, that app's Buttons part ("Show in Notes › Buttons"), in both panes.
     func testTheShowItemSaysWhereItGoes() throws {
         let notes = ApplicationTriggers(applicationNames: ["Notes", "Safari"], triggerTitles: ["Back button"], path: "/System/Applications/Notes.app")
         let gesturesController = gesturesPane(undo: undoManager())
@@ -390,7 +390,7 @@ final class TriggerChoiceTests: XCTestCase {
         ringController.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: [], onlyInApps: notes) }
         gesturesController.reload()
         ringController.reload()
-        XCTAssertEqual(showTitles(), ["Show in Notes", "Show in Notes"], "the first app's Buttons part")
+        XCTAssertEqual(showTitles(), ["Show in Notes › Buttons", "Show in Notes › Buttons"], "the first app's Buttons part")
         var opened: [String] = []
         gesturesController.openApplicationButtons = { opened.append($0.applicationNames[0]) }
         ringController.openApplicationButtons = { opened.append($0.applicationNames[0]) }

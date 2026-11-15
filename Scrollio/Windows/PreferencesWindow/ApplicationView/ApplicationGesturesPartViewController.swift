@@ -14,8 +14,9 @@
 //  of Buttons, or of the app's Buttons part: the first row, "Button to hold", says which
 //  one runs the gestures with the app in front ("Gesture button, as everywhere", "Back
 //  button, only in Figma", "None in Figma", `ApplicationTriggerRow`), and its button goes
-//  there: "Show in Buttons", "Show in Figma" (the app's Buttons part, that row selected) or
-//  "Set Up…", which records a mouse button that runs the gestures only in this app.
+//  there: "Show in Buttons", "Show in Figma › Buttons" (the app's Buttons part, that row
+//  selected) or "Set Up…", which records a mouse button that runs the gestures only in
+//  this app.
 //
 //  "Copy from Gestures" ends the own set, there with it: all of it becomes a copy of the
 //  general gestures as they are now (greyed while it is one), the switch stays; the

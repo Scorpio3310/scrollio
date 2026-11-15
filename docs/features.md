@@ -177,11 +177,11 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   hold", which says which button runs the gestures there ("Gesture button, as in other
   apps", "Back button, only in Figma", "Back button as in other apps; Thumb panel only in
   Figma", "None in Figma") and has a button that goes
-  there: "Show in Buttons" (the Buttons pane, that row selected), "Show in Figma" (the
-  app's Buttons part, that row selected) or "Set Up…", which records a mouse button
+  there: "Show in Buttons" (the Buttons pane, that row selected), "Show in Figma ›
+  Buttons" (the app's Buttons part, that row selected) or "Set Up…", which records a mouse button
   right there and gives it Gesture Navigation in that app only. While only an app's own button runs
   Gesture Navigation, the Gestures pane says in which apps and with which button, and
-  its "Show in Figma" (the app's name) shows that app's Buttons part. "Copy from Gestures" under the app's
+  its "Show in Figma › Buttons" (with the app's name) shows that app's Buttons part. "Copy from Gestures" under the app's
   gestures puts them back to a copy of the pane's as they are then (all of them, the
   actions with their names and icons too); the switch stays off, and Edit › Undo takes
   it back. While no button runs Gesture Navigation with the app in front, "Directions",
@@ -210,8 +210,8 @@ whose pull-down works as the Gestures pane's "Button to hold": the mouse's butto
 what each does now, "Record a Button or Key…", "Show in Buttons", and Undo, "Undo Change
 What Opens the Ring"); nothing opens the ring until you do. A button or key of an app's
 own can open it too, only while that app is in front: while nothing else does, the pane
-says in which apps and with what, and its "Show in Figma" (the app's name) shows that
-app's Buttons part. The pane also sets what the eight places hold.
+says in which apps and with what, and its "Show in Figma › Buttons" (with the app's
+name) shows that app's Buttons part. The pane also sets what the eight places hold.
 
 - Two ways to choose, both always there:
   - Hold: press and hold the button, move the mouse towards a shortcut (it lights by
@@ -265,7 +265,7 @@ app's Buttons part. The pane also sets what the eight places hold.
   there. The app's Shortcut Ring part begins with "Button or key", which says what opens
   the ring there ("Thumb panel, as in other apps", "Back button, only in Figma", "None in
   Figma"; a long app name is cut short so the line keeps to two lines) with "Show in
-  Buttons", "Show in Figma" or "Set Up…" beside it, as the Gestures part's "Button to
+  Buttons", "Show in Figma › Buttons" or "Set Up…" beside it, as the Gestures part's "Button to
   hold" (a key works here too); while nothing opens the ring with the
   app in front, "Shortcuts" folds the app's ring away (a click on it opens it). "Copy from Shortcut
   Ring" (or "Use Suggested Shortcuts") under the app's ring puts it back where it started (its suggested shortcuts, see
