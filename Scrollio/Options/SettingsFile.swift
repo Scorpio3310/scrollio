@@ -855,7 +855,9 @@ enum SettingsFile {
         options.saveOptions()
 
         let defaults = options.defaults
+        let keepsDirection = saysNothingOfTheDirection(contents)
         for key in exportedKeys where contents.groups.contains(key.group) {
+            if keepsDirection, directionKeys.contains(key.name) { continue }
             defaults.removeObject(forKey: key.name)
         }
         for (name, value) in values {
@@ -863,6 +865,20 @@ enum SettingsFile {
         }
         options.reloadFromStore(notifying: OptionsGroup.allCases.filter(contents.groups.contains))
         return true
+    }
+
+    /// The three stored flags of the wheel's direction ("Reverse wheel direction").
+    static let directionKeys: Set<String> = [
+        OptionItem.Scroll.Reverse, OptionItem.Scroll.ReverseVertical, OptionItem.Scroll.ReverseHorizontal,
+    ]
+
+    /// The file holds scroll settings and none of the three direction flags (only a file
+    /// made or trimmed by hand: Export… writes all three). An import then leaves the
+    /// stored direction as it is. Every other missing value becomes its default, but the
+    /// direction has none that is right on every Mac: a missing "reverse" reads as on,
+    /// which turns the wheel round on a Mac whose Natural scrolling is off.
+    static func saysNothingOfTheDirection(_ contents: Contents) -> Bool {
+        return contents.groups.contains(.scroll) && directionKeys.allSatisfy { contents.scrollSwitches[$0] == nil }
     }
 
     /// What goes into the store for `contents`, by key: a switch as a Bool, a number as a

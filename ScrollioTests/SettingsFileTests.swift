@@ -2099,6 +2099,48 @@ final class SettingsFileCenterTests: XCTestCase {
         return ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
     }
 
+    /// A file that says nothing about the wheel's direction (made or trimmed by hand: an
+    /// export holds all three flags) leaves the stored direction as it is. Regression: the
+    /// three keys were removed with the rest of Scrolling and a missing "reverse" reads as
+    /// on, so such a file turned the wheel round on a Mac that had reversing off (every
+    /// new installation on a Mac with Natural scrolling off). A file that names a flag is
+    /// taken at its word, and every other missing value still becomes its default.
+    func testAFileWithoutTheWheelsDirectionLeavesTheDirectionAlone() throws {
+        let own = OwnSettings(for: self)
+        own.options.readOptions()
+        own.options.scroll.reverse = false
+        own.options.scroll.reverseHorizontal = false
+        own.options.scroll.smooth = false
+        own.options.scroll.step = 20
+
+        let silent = try Fixture.contents(#""speed":5"#)
+        XCTAssertTrue(SettingsFile.saysNothingOfTheDirection(silent))
+        _ = try own.center.importSettings(silent).get()
+        XCTAssertEqual(own.options.scroll.speed, 5)
+        XCTAssertFalse(own.options.scroll.reverse, "the direction stays")
+        XCTAssertTrue(own.options.scroll.reverseVertical)
+        XCTAssertFalse(own.options.scroll.reverseHorizontal)
+        XCTAssertFalse(own.options.scroll.reversesWheel)
+        XCTAssertEqual(own.stored["reverse"] as? Bool, false)
+        XCTAssertTrue(own.options.scroll.smooth, "not in the file: the default, as before")
+        XCTAssertEqual(own.options.scroll.step, OPTIONS_SCROLL_DEFAULT().step)
+
+        // One flag named: the file speaks of the direction, the others are their defaults.
+        let named = try Fixture.contents(#""speed":4,"reverse":true"#)
+        XCTAssertFalse(SettingsFile.saysNothingOfTheDirection(named))
+        _ = try own.center.importSettings(named).get()
+        XCTAssertTrue(own.options.scroll.reverse)
+        XCTAssertTrue(own.options.scroll.reverseHorizontal)
+        XCTAssertTrue(own.options.scroll.reversesWheel)
+
+        // A file without scroll settings never touched them.
+        XCTAssertFalse(SettingsFile.saysNothingOfTheDirection(try Fixture.contents(#""buttonBindings":[]"#)))
+        own.options.scroll.reverse = false
+        _ = try own.center.importSettings(try Fixture.contents(#""buttonBindings":[]"#)).get()
+        XCTAssertFalse(own.options.scroll.reverse)
+        XCTAssertEqual(own.options.scroll.speed, 4)
+    }
+
     /// Nothing is lost by an import: the settings from before are a file that the same
     /// import reads, and importing it brings them back (and keeps what it replaced).
     func testTheSettingsFromBeforeAnImportAreKeptAndComeBack() throws {
