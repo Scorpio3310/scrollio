@@ -246,7 +246,9 @@ See `.agents/docs/code-map.md` for the map. The rules:
   persistence and execution. When you change one, check the others.
 - Only `AppRunController` (`Scrollio/Managers/`) starts and stops the cores (the scroll
   and button event taps and the Logitech sessions): launch, sleep and wake, fast user
-  switching, lost Accessibility access, "Pause Scrollio", quit. An active event tap that
+  switching, lost Accessibility access, "Pause Scrollio", the end of a "Pause For" (its
+  end is a moment, `pauseEnd`, looked at by `endPauseIfDue()`: it starts the cores as
+  Resume does), quit. An active event tap that
   is not serviced freezes input system-wide: never leave one installed while the cores
   count as stopped, and never block the main thread while one runs. The pointer-movement
   tap of gesture holds (and of a Shortcut Ring that is held open) is made on demand
@@ -329,8 +331,8 @@ Choose by risk, and run it: reading the code is not verification.
 | Swift logic | the related `ScrollioTests` class | full test run |
 | New, moved or deleted Swift file; project or target change | Debug build | related tests |
 | ScrollCore hot path | `ScrollClassicPathTests`, `ScrollMotionTests`, `ScrollFilterTests`, `ScrollPoster*Tests`, `ScrollSystemLogTests` | full run; by hand: scroll and read the `scroll` log |
-| ButtonCore, Shortcut, InputEvent | ButtonBinding, InputProcessor, ShortcutExecutor tests | by hand: the Buttons pane |
-| App lifecycle (`AppRunController`, `AppDelegate`, status-bar menu) | `AppRunControllerTests`, `StatusMenuTests` | by hand: sleep and wake, another user, Pause / Resume, Accessibility turned off and on |
+| ButtonCore, Shortcut, InputEvent | `ButtonBindingTests`, `InputProcessorTests`, `ShortcutExecutorFixesTests`, `ShortcutExecutorOpenTargetTests` | by hand: the Buttons pane |
+| App lifecycle (`AppRunController`, `AppDelegate`, status-bar menu) | `AppRunControllerTests`, `StatusMenuTests` | by hand: sleep and wake, another user, Pause / Resume, a "Pause For" that ends by itself (also across a sleep), Accessibility turned off and on |
 | Logi, HID | the `ScrollioTests/Logi*` tests and the boundary lint | real-device tests and the `logi` log, by hand |
 | Preferences panes | the pane's `Preferences*Tests` (for Mouse the classes of `MousePreferencesTests.swift`), the classes of `PreferencesWindowTests.swift` | by hand: look at the pane (its render test can draw it); previews stop when it is hidden |
 | The Shortcut Ring (`Scrollio/Ring/`, its hooks in `InputProcessor`) | the classes of `ShortcutRingTests.swift`, `ShortcutRingControllerTests.swift` and `ShortcutRingDropsTests.swift`, `InputProcessorTests`, `PreferencesRingTests` | by hand, on a screen: open it with a button and with a key, both ways of choosing, at a screen edge, over a full-screen app; that the app in front keeps the keyboard (`ShortcutRingRenderTests` only draws it) |
