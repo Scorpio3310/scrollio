@@ -454,12 +454,22 @@ final class LogiDivertReconciliationTests: XCTestCase {
         enum Write: Equatable { case divert(UInt16), giveBack(UInt16) }
 
         var ledger = LogiDivertLedger()
-        let modes = LogiButtonDeliveryModeStore()
+        let modes: LogiButtonDeliveryModeStore
         var now = Date(timeIntervalSince1970: 1_000)
         private(set) var writes: [Write] = []
+        private let productId: UInt16
+        private let name: String
+
+        /// `modes`: the manager's store, one for every mouse; `productId` and `name`: which mouse.
+        init(modes: LogiButtonDeliveryModeStore = LogiButtonDeliveryModeStore(),
+             productId: UInt16 = 0xB034, name: String = "MX Master 3S") {
+            self.modes = modes
+            self.productId = productId
+            self.name = name
+        }
 
         func key(_ cid: UInt16) -> LogiOwnershipKey {
-            return LogiOwnershipKey(vendorId: 0x046D, productId: 0xB034, name: "MX Master 3S", transport: .receiver, cid: cid)
+            return LogiOwnershipKey(vendorId: 0x046D, productId: productId, name: name, transport: .receiver, cid: cid)
         }
 
         mutating func write(_ cid: UInt16, divert: Bool) {
@@ -596,27 +606,95 @@ final class LogiDivertReconciliationTests: XCTestCase {
         XCTAssertTrue(taken.ledger.pendingAcks.isEmpty)
     }
 
-    /// Only an echo of Scrollio's own write counts: another app's divert of the button, or an
-    /// echo after the slot was forgotten, does not make Scrollio believe it diverted it.
+    /// Only an echo of Scrollio's own write counts: another app's divert of the button, an
+    /// echo of Scrollio's that comes too late to be told from another app's, or an echo after
+    /// the slot was forgotten, does not make Scrollio believe it diverted it.
     func testOnlyScrolliosOwnEchoCountsADivertAsTaken() {
         let gesture: UInt16 = 0x00C3
         var slot = ModelledSlot()
         slot.pass(bindings: [gesture])
         slot.ledger.noteQuerySent(cid: gesture)
-        slot.now += LogiPendingReportingAcks.lifetime + 1
-        XCTAssertFalse(slot.ledger.consumeAck(cid: gesture, flags: 0x03, targetCID: 0, now: slot.now), "another app's write")
+        XCTAssertEqual(slot.ledger.heldBack, [gesture])
+        // Another app diverts the button to a target of its own while Scrollio's divert waits.
+        XCTAssertFalse(slot.ledger.consumeAck(cid: gesture, flags: 0x03, targetCID: 0x0056, now: slot.now), "another app's write")
         XCTAssertEqual(slot.ledger.lastApplied, [], "not believed applied: the pass after the re-read writes it again")
         XCTAssertEqual(slot.ledger.toGiveBack, [gesture])
+        // Scrollio's own echo after the lifetime matches nothing any more.
+        slot.now += LogiPendingReportingAcks.lifetime + 1
+        XCTAssertFalse(slot.ledger.consumeAck(cid: gesture, flags: 0x03, targetCID: 0, now: slot.now))
+        XCTAssertEqual(slot.ledger.lastApplied, [])
 
         // The slot disconnects (the session forgets what it applied and diverted): an echo
         // that comes after that puts nothing back.
-        slot.write(gesture, divert: true)
+        var forgotten = ModelledSlot()
+        forgotten.pass(bindings: [gesture])
+        forgotten.ledger.noteQuerySent(cid: gesture)
+        XCTAssertEqual(forgotten.ledger.heldBack, [gesture])
+        forgotten.ledger.lastApplied.removeAll()
+        forgotten.ledger.diverted.removeAll()
+        forgotten.echo(gesture, divert: true)
+        XCTAssertEqual(forgotten.ledger.lastApplied, [])
+        XCTAssertEqual(forgotten.ledger.toGiveBack, [])
+    }
+
+    /// A pass between a query and its answer: a binding is added while the buttons' state is
+    /// re-read. The held-back divert is written again in that pass; the answer was asked for
+    /// before that write, so it counts nothing.
+    func testAPassBetweenAQueryAndItsAnswer() {
+        let gesture: UInt16 = 0x00C3, back: UInt16 = 0x0053
+        var slot = ModelledSlot()
+        slot.pass(bindings: [gesture])          // refused: no echo
+        slot.now += 15
         slot.ledger.noteQuerySent(cid: gesture)
-        slot.ledger.lastApplied.removeAll()
-        slot.ledger.diverted.removeAll()
-        slot.echo(gesture, divert: true)
-        XCTAssertEqual(slot.ledger.lastApplied, [])
-        XCTAssertEqual(slot.ledger.toGiveBack, [])
+        XCTAssertEqual(slot.ledger.heldBack, [gesture])
+
+        slot.pass(bindings: [gesture, back])    // before the answer comes
+        XCTAssertEqual(slot.writes, [.divert(gesture), .divert(back), .divert(gesture)])
+        XCTAssertEqual(slot.ledger.heldBack, [])
+        XCTAssertTrue(slot.ledger.answerPredatesAWrite(cid: gesture))
+        var copy = slot.ledger
+        XCTAssertEqual(copy.dropLost(queriedControls: [queried(gesture, diverted: false)]), [], "older than the write")
+        XCTAssertEqual(slot.ledger.lastApplied, [gesture, back])
+
+        // The binding removed instead: the pass gives back what lastApplied has
+        // (LogiDeviceSession), so it writes nothing for the held-back button. The ledger
+        // still has it, and gives it back at Pause, Quit and sleep.
+        var removed = ModelledSlot()
+        removed.pass(bindings: [gesture])
+        removed.now += 15
+        removed.ledger.noteQuerySent(cid: gesture)
+        removed.pass(bindings: [])
+        XCTAssertEqual(removed.ledger.heldBack, [gesture])
+        XCTAssertEqual(removed.ledger.toGiveBack, [gesture])
+    }
+
+    /// Two mice on one receiver, both with a gesture button. The session keeps a ledger per
+    /// slot and gives an echo to the slot the report names: the second mouse's echo does not
+    /// vouch for the first mouse's divert, which that mouse refused. Reading the second
+    /// mouse (the cursor slot) writes nothing; the first one, when its slot is read, is held
+    /// back and written again, and never counts as another app's.
+    func testTwoMiceOfAReceiverKeepTheirOwnEchoes() {
+        let gesture: UInt16 = 0x00C3
+        let modes = LogiButtonDeliveryModeStore()
+        var first = ModelledSlot(modes: modes)
+        var second = ModelledSlot(modes: modes, productId: 0xB023, name: "MX Master 3")
+        first.pass(bindings: [gesture])         // refused: no echo
+        second.pass(bindings: [gesture])
+        second.echo(gesture, divert: true)
+        XCTAssertEqual(first.ledger.unacknowledged, [gesture])
+        XCTAssertEqual(second.ledger.unacknowledged, [])
+
+        second.now += 15
+        second.reRead(controls: [gesture], divertedOnTheMouse: [gesture], bindings: [gesture])
+        XCTAssertEqual(second.writes, [.divert(gesture)])
+
+        for _ in 0..<2 {
+            first.now += 12
+            first.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        }
+        XCTAssertEqual(first.writes, [.divert(gesture), .divert(gesture), .divert(gesture)])
+        XCTAssertEqual(modes.mode(for: first.key(gesture)), .hidpp)
+        XCTAssertEqual(modes.mode(for: second.key(gesture)), .hidpp)
     }
 
     func testAnEchoThatDiffersOrComesTooLateIsNotScrollios() {
