@@ -254,14 +254,14 @@ final class PreferencesApplicationTests: XCTestCase {
         let rows = controller.list.rows
         XCTAssertEqual(rows.map { $0.id as? String }, [Self.calculator, Self.textEditProgram, "/Applications/Renamed Test.app"])
         XCTAssertEqual(rows.map(\.title), ["Calculator", "TextEdit", "My Renamed App"])
-        XCTAssertEqual(rows.map(\.explanation), ["Own scrolling", "Nothing of its own yet", "Nothing of its own yet"])
+        XCTAssertEqual(rows.map(\.explanation), ["Own: scrolling", "Nothing of its own yet", "Nothing of its own yet"])
         for row in rows {
             let icon = try XCTUnwrap(row.iconView, row.title)
             XCTAssertNotNil(icon.image, row.title)
             XCTAssertEqual(icon.image?.isTemplate, false, "an app's own icon, not a symbol")
             XCTAssertNotNil(row.chevronView, "\(row.title) opens a page of its own")
         }
-        XCTAssertEqual(rows[0].accessibilityLabel(), "Calculator, Own scrolling, Own scrolling settings",
+        XCTAssertEqual(rows[0].accessibilityLabel(), "Calculator, Own: scrolling, Own scrolling settings",
                        "then what its marks say")
         XCTAssertEqual(rows[1].toolTip, "TextEdit\nNothing of its own yet\n" + Self.textEdit, "the name, the line, then the app")
     }
@@ -495,7 +495,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertFalse(again.inherit, "the removed entry's settings")
         XCTAssertEqual(again.scroll.speed, 2.5)
         XCTAssertEqual(again.displayName, "Numbers")
-        XCTAssertEqual(controller.list.rows.last?.explanation, "Own scrolling")
+        XCTAssertEqual(controller.list.rows.last?.explanation, "Own: scrolling")
         XCTAssertEqual(controller.list.selectedID, AnyHashable(Self.calculator))
         XCTAssertTrue(window.firstResponder === controller.list)
         XCTAssertEqual(Set((try storedObject() ?? []).compactMap { $0 as? NSDictionary }),
@@ -587,8 +587,8 @@ final class PreferencesApplicationTests: XCTestCase {
         // The header: the app's icon, name and what it has of its own (where it is in the
         // tooltip); then its Scrolling settings.
         XCTAssertEqual(page.headerRow.title, "Calculator")
-        XCTAssertEqual(page.headerRow.explanation, "Own scrolling")
-        XCTAssertEqual(page.headerRow.toolTip, "Calculator\nOwn scrolling\n" + Self.calculator)
+        XCTAssertEqual(page.headerRow.explanation, "Own: scrolling")
+        XCTAssertEqual(page.headerRow.toolTip, "Calculator\nOwn: scrolling\n" + Self.calculator)
         XCTAssertEqual(page.headerRow.iconView.frame.size, NSSize(width: 32, height: 32))
         XCTAssertNotNil(page.headerRow.iconView.image)
         // No link back on the page any more (the window's title bar has the back button):
@@ -714,7 +714,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(scrolling.scrollSpeedSlider.doubleValue, 1.5, accuracy: 1e-9)
         XCTAssertEqual(page.view.fittingSize.height, height, accuracy: 0.5)
         XCTAssertEqual(controller.view.frame.height, height, accuracy: 0.5)
-        XCTAssertEqual(controller.list.rows.first?.explanation, "Own scrolling")
+        XCTAssertEqual(controller.list.rows.first?.explanation, "Own: scrolling")
     }
 
     /// A new app's own options are those of a new installation: switched off as they were,
@@ -1012,7 +1012,7 @@ final class PreferencesApplicationTests: XCTestCase {
         )
         let controller = makeController()
         XCTAssertEqual(controller.list.rows.map(\.title), ["Calculator", "Editor"])
-        XCTAssertEqual(controller.list.rows.map(\.explanation), ["Own scrolling", "Nothing of its own yet"])
+        XCTAssertEqual(controller.list.rows.map(\.explanation), ["Own: scrolling", "Nothing of its own yet"])
 
         controller.openApplication(withID: Self.calculatorProgram)
         let scrolling = try XCTUnwrap(controller.detailController?.scrollingController)
@@ -1020,7 +1020,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(scrolling.feelControl.selectedSegment, ScrollFeel.direct.rawValue)
         XCTAssertEqual(scrolling.reverseSwitch.state, .off)
         XCTAssertEqual(scrolling.trackpadEventsSwitch.state, .on)
-        XCTAssertEqual(controller.detailController?.headerRow.explanation, "Own scrolling")
+        XCTAssertEqual(controller.detailController?.headerRow.explanation, "Own: scrolling")
         controller.showList(focusList: false)
         controller.openApplication(withID: Self.textEdit)
         controller.viewDidDisappear()
