@@ -41,8 +41,8 @@
 //  other way does) until it ends or the Space changes after all, so the wheel never sends
 //  the Dock into a loop of bounces; a later stroke is not barred, and the travel it kept at
 //  the gate begins its swipe. A timed-out gate's swipe waits `followLateSpaceChangeWindow`
-//  more as a late record, so a change that comes late is logged as such. The gate's memory
-//  outlives the stroke.
+//  more as a late record, so a change that comes late is logged as such; a change while a
+//  gate is closed is that gate's. The gate's memory outlives the stroke.
 //
 //  Where the work is done: the tap callback only adds an event's travel up (`add`, a few
 //  sums and at most one closure per display frame; a rest or a timeout whose look has not
@@ -194,7 +194,7 @@ final class ThumbWheelFollower {
     private var gate: Gate?
     private var gateCount = 0
     /// A gate that timed out, for `followLateSpaceChangeWindow` more: a change meanwhile is
-    /// its swipe's, late (`spaceDidChange` says when a newer gate's instead).
+    /// its swipe's, late, unless a newer gate is closed (then it is that gate's).
     private var lateRecord: Gate?
     /// Swipe endings told after the late record's, so the roll's line lists them in order.
     private var queuedEnds: [(tag: Int, swipe: Swipe)] = []
@@ -321,12 +321,10 @@ final class ThumbWheelFollower {
         // begin again.
         blockedDirection = 0
         let now = clock()
-        // A change while a late record waits is the late record's when no newer gate is
-        // closed, or when the newer one closed less than `followSpaceChangeTooSoon` ago (too
-        // soon for that end's own change); else the newer gate's, and the late record waits
-        // on.
-        if var record = lateRecord,
-           gate.map({ now - $0.endedAt < ThumbWheelTuning.followSpaceChangeTooSoon }) ?? true {
+        // A change is the closed gate's, however soon after its end (macOS can tell one
+        // within 80 ms), and a late record waits on. Only with no gate closed is it the late
+        // record's.
+        if gate == nil, var record = lateRecord {
             lateRecord = nil
             record.swipe.spaceChangedAfter = max(0, now - record.endedAt)
             record.swipe.late = true

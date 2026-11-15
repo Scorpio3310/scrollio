@@ -777,27 +777,33 @@ final class ThumbWheelFollowTests: XCTestCase {
                       ScrollSystemLog.followMessage(for: line))
     }
 
-    /// A change while a swipe waits as late and a newer one waits at its gate: within
-    /// 120 ms of the newer end it is too soon to be the newer swipe's, it goes to the late
-    /// one and the gate stays shut; the next change opens the gate.
-    func testAChangeTooSoonAfterANewerEndIsTheLateSwipes() throws {
-        var time = 0.0
-        while time < 0.9 { try turn(at: time); time += 0.05 }
-        while time < 1.3 { try turn(at: time, lines: 2); time += 0.05 }
-        rig.advance(to: 500 + time)
-        let rightEnd = try XCTUnwrap(endTimes.first)
-        let leftEnd = try XCTUnwrap(endTimes.dropFirst().first)
-        rig.advance(to: 500 + leftEnd + 0.05)
-        rig.engine.follower.spaceDidChange()
-        XCTAssertEqual(rig.engine.follower.state, .gated, "the newer swipe still waits")
-        rig.advance(to: 500 + leftEnd + 0.3)
-        rig.engine.follower.spaceDidChange()
-        XCTAssertEqual(rig.engine.follower.state, .following)
-        rig.advance(to: 506)
-        let late = Int(((leftEnd + 0.05 - rightEnd) * 1000).rounded())
-        let line = try XCTUnwrap(rig.lines.first)
-        XCTAssertTrue(ScrollSystemLog.followMessage(for: line).hasPrefix("swipes 1.00 chained late +\(late) ms, 1.00 chained +300 ms"),
-                      ScrollSystemLog.followMessage(for: line))
+    /// A change while a swipe waits as late and a newer one waits at its gate is the newer
+    /// swipe's, however soon after its end (80 ms: macOS can be that quick): the gate opens
+    /// and the stroke goes on; the older swipe is logged "no change". A second change, with
+    /// no gate closed, is the older swipe's, late.
+    func testAChangeWhileANewerGateIsClosedIsTheNewerSwipes() throws {
+        for secondChange in [false, true] {
+            let start = secondChange ? 10.0 : 0.0
+            dock.calls = []
+            for index in 0..<18 { try turn(at: start + Double(index) * 0.05) }
+            for index in 18..<26 { try turn(at: start + Double(index) * 0.05, lines: 2) }
+            rig.advance(to: 500 + start + 1.3)
+            let rightEnd = try XCTUnwrap(endTimes.first)
+            let leftEnd = try XCTUnwrap(endTimes.dropFirst().first)
+            rig.advance(to: 500 + leftEnd + 0.08)
+            rig.engine.follower.spaceDidChange()
+            XCTAssertEqual(rig.engine.follower.state, .following, "the newer gate opened")
+            var older = "no change"
+            if secondChange {
+                rig.advance(to: 500 + leftEnd + 0.3)
+                rig.engine.follower.spaceDidChange()
+                older = "late +\(Int(((leftEnd + 0.3 - rightEnd) * 1000).rounded())) ms"
+            }
+            rig.advance(to: 506 + start)
+            let line = try XCTUnwrap(rig.lines.last)
+            XCTAssertTrue(ScrollSystemLog.followMessage(for: line).hasPrefix("swipes 1.00 chained \(older), 1.00 chained +80 ms"),
+                          ScrollSystemLog.followMessage(for: line))
+        }
     }
 
     /// A new stroke soon after an end where a switch is expected waits for the Space change,
