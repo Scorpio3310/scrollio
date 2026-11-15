@@ -176,6 +176,16 @@ enum ButtonDefaultOutcome: Equatable {
         return effect
     }
 
+    /// Whether the connected mouse sends the Logitech control of `code` as the standard
+    /// button it is, whatever Scrollio asks of it: over Bluetooth the middle, back and
+    /// forward buttons are never diverted (the Logitech side's delivery rule), so no binding
+    /// and no hold key catches them and their press always arrives as the standard button.
+    /// False on a receiver, for every other control and without a Logitech mouse. A seam
+    /// (tests have no mouse); it reads what the sessions know and never asks a mouse.
+    static var arrivesAsStandardButton: (UInt16) -> Bool = {
+        LogiCenter.shared.buttonCaptureDiagnosis(forScrollioCode: $0).usesNativeEvents
+    }
+
     /// What a press of `trigger` does while it has no action.
     /// - Parameters:
     ///   - part: the row's part (a button of the mouse); nil: the part `trigger` presses.
@@ -185,7 +195,8 @@ enum ButtonDefaultOutcome: Equatable {
     ///     `bindings` (for an app's own row: those with an action, not its own "Default").
     ///   - holdKeys: the keys of Scrolling › While you hold a key the mouse is asked for
     ///     (`holdKeysThatCatch`): a Logitech one catches its control, a standard one only
-    ///     listens.
+    ///     listens. Nothing catches a button the mouse keeps to itself
+    ///     (`arrivesAsStandardButton`).
     ///   - isAppsOwn: the row is an app's own "Default": a caught press that reaches it goes
     ///     on as the standard middle, back or forward button
     ///     (`InputProcessor.standardButton(forAppsOwnDefault:)`). Only one stored under the
@@ -205,14 +216,19 @@ enum ButtonDefaultOutcome: Equatable {
         // knows only by its number are none).
         let part = trigger.type == .mouse && ButtonTriggerPicture.number(for: trigger) == nil
             ? ButtonsMousePart.part(for: trigger, logitechRole: logitechRole) : nil
-        let isHoldKey = part.map { part in
+        // The part as far as catching goes: none while the mouse keeps the button to itself
+        // (over Bluetooth the middle, back and forward buttons).
+        let control = isLogitechCode(trigger.code)
+            ? trigger.code : LogiStandardMouseButtonAlias.logitechCode(forNativeButton: trigger.code) ?? trigger.code
+        let catchable = part != nil && arrivesAsStandardButton(control) ? nil : part
+        let isHoldKey = catchable.map { part in
             holdKeys.contains { key in
                 key.type == .mouse && isLogitechCode(key.code) && ButtonsMousePart.part(
                     for: RecordedEvent(type: .mouse, code: key.code, modifiers: 0, deviceFilter: nil), logitechRole: logitechRole
                 ) == part
             }
         } ?? false
-        let caught = isHoldKey || part.map { part in
+        let caught = isHoldKey || catchable.map { part in
             ButtonsListLayout.catchesControl(
                 of: part, in: catching ?? bindings, isLogitechCode: isLogitechCode, logitechRole: logitechRole
             )

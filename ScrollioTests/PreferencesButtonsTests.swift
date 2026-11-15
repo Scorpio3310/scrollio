@@ -3393,6 +3393,51 @@ final class PreferencesButtonsTests: XCTestCase {
         )
     }
 
+    /// Over Bluetooth the mouse keeps its middle, back and forward buttons whatever Scrollio
+    /// asks of it (they are never diverted there), so nothing catches them: a Logitech hold
+    /// key on Back, set up on the receiver, leaves the row "Default (Back)" where it read
+    /// "No Action", and the press, which arrives as the standard button, goes by a binding
+    /// of the standard number that a caught press never reaches. The mode shift button is
+    /// asked for on either connection. Without a mouse (every other test) and on a receiver
+    /// the outcome is as before.
+    func testOverBluetoothNothingCatchesTheStandardButtons() throws {
+        let back = LogiCenter.shared.scrollioCode(for: .back)
+        let modeShift = LogiCenter.shared.scrollioCode(for: .modeShift)
+        func trigger(_ code: UInt16) -> RecordedEvent {
+            return RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil)
+        }
+        let keys = [ScrollHotkey(type: .mouse, code: back), ScrollHotkey(type: .mouse, code: modeShift)]
+        func outcomes() -> [ButtonDefaultOutcome] {
+            return [
+                ButtonDefaultOutcome.of(trigger(back), bindings: [], holdKeys: keys),
+                ButtonDefaultOutcome.of(trigger(3), bindings: [], holdKeys: keys),
+                ButtonDefaultOutcome.of(trigger(modeShift), bindings: [], holdKeys: keys),
+            ]
+        }
+        XCTAssertFalse(ButtonDefaultOutcome.arrivesAsStandardButton(back), "no mouse here: as on a receiver")
+        XCTAssertEqual(outcomes(), [.caught, .caught, .caught], "on a receiver")
+
+        let saved = ButtonDefaultOutcome.arrivesAsStandardButton
+        defer { ButtonDefaultOutcome.arrivesAsStandardButton = saved }
+        // Bluetooth: every control with a standard button arrives as that button.
+        ButtonDefaultOutcome.arrivesAsStandardButton = { LogiCenter.shared.nativeMouseButton(forScrollioCode: $0) != nil }
+        XCTAssertEqual(outcomes(), [.passes(.back), .passes(.back), .caught], "over Bluetooth")
+        // ⌘ + Back under the Logitech code catches nothing there, and the plain press is
+        // the standard button 3, which has its own binding.
+        let standardBack = binding(3, "paste")
+        XCTAssertEqual(
+            ButtonDefaultOutcome.of(trigger(back), bindings: [binding(back, "copy", modifiers: command), standardBack]),
+            .runs(standardBack)
+        )
+
+        // In the pane: the hold key's line stays, the pull-down says what the press does.
+        scrollKeys = [ScrollHotkey(type: .mouse, code: back)]
+        let pane = makePane()
+        let row = try XCTUnwrap(pane.row(for: AnyHashable(ButtonsMousePart.back)))
+        XCTAssertEqual(shown(row.pullDown), "Default (Back)")
+        XCTAssertEqual(row.note?.kind, .alsoScrollKey)
+    }
+
     /// VoiceOver's help of a row's pull-down follows the row, which is reused: the sentence
     /// of "Default (Back)" while it has no line, nothing once it has an action, the
     /// sentence again at "Default"; the thumb wheel's row: the sentence of "Default (Scroll
