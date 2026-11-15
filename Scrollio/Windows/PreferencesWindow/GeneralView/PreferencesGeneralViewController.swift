@@ -14,8 +14,9 @@
 //  "Scrollio couldn't
 //  start and is trying again" with "Try Again" (or "Pause" while an event tap is kept off
 //  and comes back by itself); "Scrollio needs Accessibility access" with "Open System
-//  Settings"; "Scrollio can't send scroll events" with a line that says what to do there
-//  and "Open System Settings". With the menu bar icon hidden this is the way to pause and back. Then
+//  Settings"; "Scrollio can't send events to apps" with a line that says what to do and
+//  "Pause" (Permissions then has its own "Open System Settings"). With the menu bar icon
+//  hidden this is the way to pause and back. Then
 //  two boxes:
 //  - "Open at login" (with a row to approve it in System Settings while macOS waits for
 //    that) and "Show in menu bar";
@@ -723,7 +724,8 @@ class PreferencesGeneralViewController: NSViewController {
     /// says until when, as the menu does); while Scrollio works,
     /// "Scrollio is on". The button is the menu's way out: Pause, Resume, Try Again Now (a
     /// start that failed; an event tap kept off comes back by itself, so Pause there, as
-    /// in the menu), and for the missing access the Permissions row's way to System Settings.
+    /// in the menu; without the right to post events Pause too, which comes before the way
+    /// out), and for the missing access the Permissions row's way to System Settings.
     struct RunStatus: Equatable {
         enum Action: Equatable {
             case pause
@@ -745,8 +747,9 @@ class PreferencesGeneralViewController: NSViewController {
             case .needsAccess?: action = .allowAccess
             case .paused?: action = .resume
             case .couldNotStart?: action = startProblem == .retrying ? .tryAgain : .pause
-            // The way out is in System Settings, where the access is.
-            case .cannotPostEvents?: action = .allowAccess
+            // The cores run: Pause, which the line asks for before Scrollio is removed from
+            // the Accessibility list; System Settings is the Permissions row's button.
+            case .cannotPostEvents?: action = .pause
             case nil: action = .pause
             }
         }
@@ -889,9 +892,11 @@ class PreferencesGeneralViewController: NSViewController {
 
     /// One "Open System Settings" on General: while the row under the card offers it (the
     /// access is missing, which it says first), the Accessibility row keeps its sign and its
-    /// "Not allowed." line and shows no button of its own.
+    /// "Not allowed." line and shows no button of its own. While macOS does not let Scrollio
+    /// post events the row under the card offers Pause, and the Accessibility row its button
+    /// beside "Allowed" (the way out is in that list).
     private func syncAccessButton() {
-        let hidden = hasAccess || runStatus.action == .allowAccess
+        let hidden = (hasAccess && runStatus.title != .cannotPostEvents) || runStatus.action == .allowAccess
         guard openAccessibilitySettingsButton.isHidden != hidden else { return }
         openAccessibilitySettingsButton.isHidden = hidden
         PreferencesForm.fitToContent(self)
