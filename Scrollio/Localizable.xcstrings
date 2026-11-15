@@ -10431,6 +10431,30 @@
           }
         }
       }
+    },
+    "apps-ring-suggestion-offer": {
+      "comment": "An app's Shortcut Ring part: the line under the switch while the app (%@) has suggested shortcuts and uses the general ring; beside it “Use Suggested Shortcuts”, which turns the switch off with them",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio has suggested shortcuts for %@."
+          }
+        }
+      }
+    },
+    "apps-add-suggested-ring": {
+      "comment": "Apps › +: the grey badge of a running app that has suggested shortcuts for the Shortcut Ring",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggested ring"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

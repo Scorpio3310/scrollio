@@ -40,6 +40,8 @@ struct ApplicationCandidate {
     let knownPaths: [String]
     let name: String
     let icon: NSImage?
+    /// The app's bundle identifier, for its suggested shortcuts (`ShortcutRingSuggestions`).
+    var bundleIdentifier: String? = nil
 
     /// The running apps with a Dock icon, Scrollio itself left out, by name.
     static func running() -> [ApplicationCandidate] {
@@ -54,7 +56,8 @@ struct ApplicationCandidate {
                 path: program,
                 knownPaths: [bundle, program].compactMap { $0 },
                 name: app.localizedName ?? Utils.getApplicationName(fromPath: program),
-                icon: app.icon ?? Utils.getApplicationIcon(fromPath: bundle ?? program)
+                icon: app.icon ?? Utils.getApplicationIcon(fromPath: bundle ?? program),
+                bundleIdentifier: app.bundleIdentifier
             ))
         }
         return candidates.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -83,6 +86,8 @@ class PreferencesApplicationViewController: NSViewController {
 
     /// The running apps "+" offers; tests give fixed ones.
     var runningApplications: () -> [ApplicationCandidate] = { ApplicationCandidate.running() }
+    /// The suggested shortcuts "+" marks apps by ("Suggested ring"); tests give their own.
+    var ringSuggestions: ShortcutRingSuggestions.Catalog = ShortcutRingSuggestions.shipped
 
     /// Shows the "+" menu under the + button; tests take the menu instead.
     var presentMenu: (NSMenu, NSButton) -> Void = { menu, button in
@@ -342,8 +347,9 @@ class PreferencesApplicationViewController: NSViewController {
         presentMenu(makeAddMenu(), button)
     }
 
-    /// The running apps with their icons (those on the list already off, with a checkmark),
-    /// then "Choose in Finder…".
+    /// The running apps with their icons (those on the list already off, with a checkmark;
+    /// those with suggested shortcuts marked "Suggested ring" in grey, a badge), then
+    /// "Choose in Finder…". Choosing one adds it with nothing of its own, as always.
     func makeAddMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -354,6 +360,9 @@ class PreferencesApplicationViewController: NSViewController {
             if let icon = candidate.icon?.copy() as? NSImage {
                 icon.size = NSSize(width: Self.menuIconSize, height: Self.menuIconSize)
                 item.image = icon
+            }
+            if let identifier = candidate.bundleIdentifier, ringSuggestions.suggestion(forBundleIdentifier: identifier) != nil {
+                item.badge = NSMenuItemBadge(string: text("apps-add-suggested-ring"))
             }
             if Self.existingApplication(forPaths: candidate.knownPaths + [candidate.path]) != nil {
                 item.isEnabled = false

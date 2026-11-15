@@ -354,8 +354,10 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 /// or, with none, records one that opens it only in this app ("Set Up…").
 ///
 /// For an app with suggested shortcuts (`ShortcutRingSuggestions`) the ring the switch
-/// makes starts with them. Nothing is filled without a click: the switch, or the button
-/// under the own ring.
+/// makes starts with them, and while such an app uses the general ring and never had one
+/// of its own, a line under the switch's box says that there are some, with "Use
+/// Suggested Shortcuts", which does what turning the switch off does. Nothing is filled
+/// without a click: the switch, that button, or the button under the own ring.
 ///
 /// The button under the own ring is named by what it does: "Use Suggested Shortcuts" for
 /// an app with a suggestion, else "Copy from Shortcut Ring". It ends the own ring, there
@@ -377,6 +379,7 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         static let generalRing = NSUserInterfaceItemIdentifier("apps-detail-general-ring")
         static let reset = NSUserInterfaceItemIdentifier("apps-detail-ring-reset")
         static let triggerButton = NSUserInterfaceItemIdentifier("apps-detail-ring-trigger")
+        static let useSuggested = NSUserInterfaceItemIdentifier("apps-detail-ring-use-suggested")
     }
 
     let application: Application
@@ -410,7 +413,9 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     private(set) var triggerButton: NSButton!
     /// What the row says now, and where its button leads.
     private(set) var shownTrigger: ApplicationTriggerRow?
-    /// The quiet line under the switch's box: how many places of the suggestion the keyboard
+    /// The line under the switch's box: "Scrollio has suggested shortcuts for Figma." with
+    /// "Use Suggested Shortcuts" while the app has a suggestion and uses the general ring,
+    /// never having had one of its own; how many places of the suggestion the keyboard
     /// layout leaves empty, while the own ring is in use and it leaves some; else no room.
     private(set) var suggestionNote: ApplicationPageNote!
     /// The app's own ring, its drawing and its eight rows: there only while "Use the
@@ -490,8 +495,10 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         )
         ringSection = section
         let note = ApplicationPageNote(
-            boxWidth: PreferencesGroupedForm.boxWidth(paneWidth: ApplicationDetailViewController.paneWidth), target: nil, action: nil
+            boxWidth: PreferencesGroupedForm.boxWidth(paneWidth: ApplicationDetailViewController.paneWidth),
+            target: self, action: #selector(useSuggestedShortcutsClick(_:))
         )
+        note.button.identifier = Identifier.useSuggested
         suggestionNote = note
         root.addSubview(section)
         root.addSubview(note)
@@ -582,12 +589,24 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         return application.ring?.startedFromSuggestion == true || own == suggested
     }
 
-    /// The line under the switch's box while the app has a suggestion and its own ring is
-    /// in use, and the keyboard layout leaves places of it empty: how many (of a ring that
-    /// started from it, those still empty in it: a place filled by hand is not counted;
+    /// Whether the line offers the app's suggested shortcuts: the app has some, uses the
+    /// general ring and never had one of its own (turning the switch off then fills them in,
+    /// as the line's button does).
+    var offersSuggestion: Bool {
+        return suggestion != nil && application.ring == nil
+    }
+
+    /// The line under the switch's box: while `offersSuggestion`, that the app has suggested
+    /// shortcuts, with "Use Suggested Shortcuts"; while the app has a suggestion and its own
+    /// ring is in use, and the keyboard layout leaves places of it empty, how many (of a ring
+    /// that started from it, those still empty in it: a place filled by hand is not counted;
     /// else those the button would leave empty). True when the line came, went or changed
     /// while the part is on screen (the page measures again).
     private func showSuggestion() -> Bool {
+        if offersSuggestion {
+            let line = String(format: NSLocalizedString("apps-ring-suggestion-offer", comment: ""), application.getName())
+            return suggestionNote.show(line, buttonTitle: NSLocalizedString("apps-ring-use-suggested", comment: "")) && view.superview != nil
+        }
         var line: String?
         if let suggestion, application.ownRingPlaces != nil, let suggested = suggestedPlaces() {
             let started = ringStartedFromSuggestion(suggested: suggested)
@@ -796,6 +815,16 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
                   let buttons = split.controller(for: PANEL_IDENTIFIER.buttons) as? PreferencesButtonsViewController else { return }
             buttons.selectRingTrigger()
         }
+    }
+
+    /// "Use Suggested Shortcuts" beside "Scrollio has suggested shortcuts for Figma.": what
+    /// turning "Use the general ring" off does for an app that never had a ring of its own,
+    /// its ring filled with the suggestion.
+    @objc func useSuggestedShortcutsClick(_ sender: NSButton) {
+        guard offersSuggestion, application.usesGeneralRing else { return }
+        application.setUsesGeneralRing(false, general: Options.shared.ring, suggested: suggestedPlaces())
+        sync()
+        onHeightChange?()
     }
 
     /// On: the ring of the Shortcut Ring pane opens while the app is in front; the app's

@@ -230,7 +230,10 @@ the eight places hold.
   Safari, Word, Xcode, Discord, Zed, GitHub Desktop …: each app's most used ones, Undo
   and Redo on the left and right, zoom on top and bottom, Copy and Paste below). Nothing
   changes by itself: only when you turn "Use the general ring" off for such an app does
-  its ring start with them instead of the copy, and while its own ring is in use,
+  its ring start with them instead of the copy (while such an app uses the general ring
+  and never had one of its own, its Shortcut Ring part says "Scrollio has suggested
+  shortcuts for Figma." with "Use Suggested Shortcuts", which does the same, and "+" in
+  Apps marks such running apps "Suggested ring" in grey), and while its own ring is in use,
   "Use Suggested Shortcuts" under it puts them in all eight places again (Edit › Undo
   takes that back); while your keyboard layout leaves places of them empty, a quiet line
   under the switch says how many. They are ordinary

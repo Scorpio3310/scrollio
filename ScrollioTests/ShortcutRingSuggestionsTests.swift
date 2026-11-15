@@ -807,6 +807,66 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         return (try? SuggestionFixtures.app("Figma").places(on: .us)) ?? []
     }
 
+    /// While an app with suggested shortcuts uses the general ring and never had one of its
+    /// own, its Ring part says that it has some, with "Use Suggested Shortcuts", which does
+    /// what turning the switch off does: the ring filled with them. Nothing is filled
+    /// before the click; an app without a suggestion, and one whose own ring is kept for
+    /// later, get no line.
+    func testTheRingPartOffersTheSuggestedShortcutsWhileTheAppUsesTheGeneralRing() throws {
+        let figma = add(SuggestionFixtures.figmaPath, name: "Figma")
+        let part = part(for: figma)
+        XCTAssertEqual(part.suggestionNote.text, "Scrollio has suggested shortcuts for Figma.")
+        let button = part.suggestionNote.button
+        XCTAssertFalse(button.isHidden)
+        XCTAssertEqual(button.title, "Use Suggested Shortcuts")
+        XCTAssertNil(figma.ring, "nothing is filled before the click")
+        XCTAssertTrue(figma.usesGeneralRing)
+
+        XCTAssertTrue(button.sendAction(button.action, to: button.target))
+        XCTAssertFalse(figma.usesGeneralRing, "as the switch turned off")
+        XCTAssertEqual(part.generalRingRow.toggle.state, .off)
+        XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
+        XCTAssertNotNil(part.ringController)
+        XCTAssertNil(part.suggestionNote.text, "no offer any more")
+        XCTAssertEqual(Options.shared.ring, .default, "the general ring is untouched")
+
+        // Back to the general ring: the own ring is kept, and the switch brings it back.
+        turn(part, general: true)
+        XCTAssertNil(part.suggestionNote.text)
+
+        let calculator = add(SuggestionFixtures.calculatorPath)
+        XCTAssertNil(self.part(for: calculator).suggestionNote.text, "no suggestion, no line")
+    }
+
+    /// "+" of Apps marks the running apps that have suggested shortcuts "Suggested ring" in
+    /// grey (a badge); choosing one adds it with nothing of its own.
+    func testThePlusMenuMarksAppsWithASuggestedRing() throws {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let pane = storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.application) as! PreferencesApplicationViewController
+        pane.uiStateDefaults = TestDefaults.make(for: self)
+        pane.presentMenu = { _, _ in }
+        pane.chooseApplications = { _, _ in XCTFail("no open panel was expected") }
+        pane.runningApplications = {
+            [
+                ApplicationCandidate(path: SuggestionFixtures.figmaPath + "/Contents/MacOS/Figma", knownPaths: [SuggestionFixtures.figmaPath],
+                                     name: "Figma", icon: nil, bundleIdentifier: "com.figma.Desktop"),
+                ApplicationCandidate(path: SuggestionFixtures.calculatorPath, knownPaths: [SuggestionFixtures.calculatorPath],
+                                     name: "Calculator", icon: nil, bundleIdentifier: "com.apple.calculator"),
+            ]
+        }
+        _ = pane.view
+        let menu = pane.makeAddMenu()
+        XCTAssertEqual(menu.items.first?.title, "Figma", "the name stays the item's title")
+        XCTAssertEqual(menu.items.first?.badge?.stringValue, "Suggested ring")
+        XCTAssertNil(menu.items[1].badge)
+
+        let figma = try XCTUnwrap(menu.items.first)
+        pane.addRunningApplication(figma)
+        let added = try XCTUnwrap(Options.shared.application.applications.get(by: SuggestionFixtures.figmaPath + "/Contents/MacOS/Figma"))
+        XCTAssertNil(added.ring, "nothing is filled")
+        XCTAssertTrue(added.usesGeneralRing)
+    }
+
     /// The model: off with a suggestion, the ring starts with it; without one, as a copy
     /// of the general ring; a ring the app had comes back as it was left.
     func testTheSwitchStartsTheRingWithTheSuggestionElseACopy() throws {

@@ -166,6 +166,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-undo-use-suggested", "apps-undo-copy-scrolling",
         "apps-ring-layout-empty-one", "apps-ring-layout-empty-other",
         "apps-ring-layout-would-empty-one", "apps-ring-layout-would-empty-other",
+        "apps-ring-suggestion-offer", "apps-add-suggested-ring",
         "apps-trigger-everywhere", "apps-trigger-only-here", "apps-trigger-mixed", "apps-trigger-none",
         "apps-trigger-show-in-buttons", "apps-trigger-show-buttons",
         "apps-summary-own", "apps-summary-scrolling", "apps-summary-buttons-one", "apps-summary-buttons-other",
@@ -364,6 +365,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-undo-copy-scrolling": "@",
         "apps-ring-layout-empty-other": "d",
         "apps-ring-layout-would-empty-other": "d",
+        "apps-ring-suggestion-offer": "@",
         // General pane
         "about-version": "@@",
         "about-version-commit": "@@@",

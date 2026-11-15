@@ -47,6 +47,8 @@ it for the people who use the app, and give the version its part before you tag 
   the list and on the app's page, where a dot marks those parts.
 - **An app's buttons say what they do.** "Remove All Buttons", "Copy from Gestures",
   "Use Suggested Shortcuts" and "Copy from Scrolling" instead of "Reset to Defaults".
+- **Suggested rings are easy to find.** An app's Shortcut Ring part offers its suggested
+  shortcuts, and + in Apps marks the apps that have them.
 - **A click while you hold the ring's button belongs to the ring.** It runs the shortcut
   that is lit (nothing lit: the ring closes), and nothing reaches the app under the ring.
   A click right as you press the button does nothing.
