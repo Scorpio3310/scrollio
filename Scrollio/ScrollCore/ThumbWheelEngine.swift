@@ -13,7 +13,9 @@
 //  waiting at most (the system does not keep up with volume keys, the Dock with ⌃→); the others
 //  run at once. Switch Desktops
 //  with "Follow the wheel" drives a swipe of the desktops instead (`ThumbWheelFollower`).
-//  Every sideways event, at the defaults as well, goes into the roll's one log line.
+//  Every sideways event, at the defaults as well, goes into the roll's one log line, which
+//  is written on the main queue once the roll's steps ran and its swipes ended: a roll
+//  that ended before that is kept by its id until then (`endedRolls`).
 //
 
 import Cocoa
@@ -100,8 +102,12 @@ struct ThumbWheelActionPerformer {
     /// The zoom keys of the layout in use (tests pass one with a fake layout).
     var zoomKeys: AppZoomKeys = .shared
 
-    func perform(_ action: ThumbWheelAction, times: Int) {
-        guard times > 0 else { return }
+    /// - Returns: how many of the `times` sent nothing: the executor refused the action (a
+    ///   Spaces action whose shortcut is switched off in System Settings, where its toast
+    ///   says so; a retired action, or one this version does not know).
+    @discardableResult
+    func perform(_ action: ThumbWheelAction, times: Int) -> Int {
+        guard times > 0 else { return 0 }
         // Zoom: the layout is asked once per step's action, not per key press.
         let zoomCode: CGKeyCode?
         switch action {
@@ -109,10 +115,16 @@ struct ThumbWheelActionPerformer {
         case .zoomOut: zoomCode = zoomKeys.codes().zoomOut
         default: zoomCode = nil
         }
+        var sentNothing = 0
         for _ in 0..<times {
             switch action {
             case .named(let name):
-                executor.execute(named: name)
+                // As `ShortcutExecutor.execute(named:)`, keeping its answer.
+                if let resolved = executor.resolveAction(named: name) {
+                    if executor.execute(action: resolved, phase: .down).refusal != nil { sentNothing += 1 }
+                } else {
+                    sentNothing += 1
+                }
             case .keys(let shortcut):
                 executor.execute(shortcut)
             case .zoomIn, .zoomOut:
@@ -123,6 +135,7 @@ struct ThumbWheelActionPerformer {
                 volumeKeys.press(key)
             }
         }
+        return sentNothing
     }
 }
 
@@ -175,8 +188,19 @@ final class ThumbWheelEngine {
     private var tickFilterFunction: ThumbWheelFunction?
     /// The roll whose events still come.
     private(set) var roll: Roll?
-    /// A roll ended in the middle (a setting changed): written once its steps have run.
-    private(set) var ended: Roll?
+    /// Rolls that ended before their line could be written, oldest first, each with its
+    /// trace: a setting changed in the middle, or the next roll began while a swipe of
+    /// Follow the wheel still waited for its Space change (up to 2.5 s after its end). A
+    /// roll stays until its steps ran and its strokes and swipes ended, so an ending told
+    /// late still finds its roll by its id (there was one place: a second roll that ended
+    /// pushed the first out, written "no swipe" in the tap callback). At most
+    /// `ThumbWheelTuning.endedRollsKept`.
+    private var endedRolls: [EndedRoll] = []
+
+    private struct EndedRoll {
+        var roll: Roll
+        var trace: ContiguousArray<ScrollSystemLog.ThumbWheelTraceEntry>
+    }
     /// The steps of a paced function (volume) that wait, and when the last one ran.
     private(set) var pacer = ThumbWheelPacer()
     /// The function whose steps the pacer holds.
@@ -186,8 +210,9 @@ final class ThumbWheelEngine {
     let follower = ThumbWheelFollower()
     /// A look at the pacer is scheduled: one at a time, none while no step waits.
     private var paceScheduled = false
-    /// Runs a step's action this many times, on the main queue (tests replace it).
-    var perform: (ThumbWheelAction, Int) -> Void = { action, times in
+    /// Runs a step's action this many times, on the main queue, and says how many of them
+    /// sent nothing (`ThumbWheelActionPerformer.perform`; tests replace it).
+    var perform: (ThumbWheelAction, Int) -> Int = { action, times in
         ThumbWheelActionPerformer().perform(action, times: times)
     }
     /// Runs work on the main queue after a delay (0: as soon as the tap callback returned).
@@ -211,15 +236,22 @@ final class ThumbWheelEngine {
     /// Moves on with `reset()`: steps decided before it do not run.
     private var generation = 0
     private var nextRollID = 0
-    /// The trace of the open roll and of the ended one (each event's gap and fixed-point
-    /// lines, the first `ThumbWheelTuning.traceEntries`): reserved once, swapped and emptied,
-    /// never grown, so the tap callback allocates nothing for it.
-    private var traceOpen = ContiguousArray<ScrollSystemLog.ThumbWheelTraceEntry>()
-    private var traceEnded = ContiguousArray<ScrollSystemLog.ThumbWheelTraceEntry>()
+    /// The trace of the open roll (each event's gap and fixed-point lines, the first
+    /// `ThumbWheelTuning.traceEntries`). An ended roll keeps its own until its line is
+    /// written; the buffers are reserved once, handed round and emptied, never grown, so
+    /// the tap callback allocates nothing for them.
+    private var traceOpen = ThumbWheelEngine.emptyTrace()
+    private var spareTraces: [ContiguousArray<ScrollSystemLog.ThumbWheelTraceEntry>] = []
+
+    private static func emptyTrace() -> ContiguousArray<ScrollSystemLog.ThumbWheelTraceEntry> {
+        var trace = ContiguousArray<ScrollSystemLog.ThumbWheelTraceEntry>()
+        trace.reserveCapacity(ThumbWheelTuning.traceEntries)
+        return trace
+    }
 
     init() {
-        traceOpen.reserveCapacity(ThumbWheelTuning.traceEntries)
-        traceEnded.reserveCapacity(ThumbWheelTuning.traceEntries)
+        endedRolls.reserveCapacity(ThumbWheelTuning.endedRollsKept + 1)
+        spareTraces = (0...ThumbWheelTuning.endedRollsKept).map { _ in ThumbWheelEngine.emptyTrace() }
         // A roll's line waits for its strokes and swipes (by its id, the tag of their events).
         follower.onStrokeEnd = { [weak self] tag, waited in
             self?.changeRoll(tag) { $0.strokeEnded(waited: waited) }
@@ -342,8 +374,8 @@ final class ThumbWheelEngine {
             let generation = self.generation
             schedule(0) { [weak self] in
                 guard let self = self, self.generation == generation else { return }
-                self.perform(action, abs(steps))
-                self.stepsRan(steps, rollID: rollID)
+                let sentNothing = self.perform(action, abs(steps))
+                self.stepsRan(steps, rollID: rollID, sentNothing: sentNothing)
             }
         }
         return steps
@@ -367,8 +399,8 @@ final class ThumbWheelEngine {
             let generation = self.generation
             schedule(0) { [weak self] in
                 guard let self = self, self.generation == generation else { return }
-                self.perform(action, 1)
-                self.stepsRan(step, rollID: rollID)
+                let sentNothing = self.perform(action, 1)
+                self.stepsRan(step, rollID: rollID, sentNothing: sentNothing)
             }
         }
         schedulePaceLook(pacing)
@@ -391,9 +423,9 @@ final class ThumbWheelEngine {
         guard let function = pacedFunction, let pacing = function.pacing else { return }
         let step = pacer.take(pacing: pacing, at: clock())
         if step != 0, let action = ThumbWheelAction.action(for: function, towardNext: step > 0) {
-            perform(action, 1)
+            let sentNothing = perform(action, 1)
             // Waiting steps belong to the open roll: a roll that ends drops them.
-            stepsRan(step, rollID: roll?.id, waited: true)
+            stepsRan(step, rollID: roll?.id, waited: true, sentNothing: sentNothing)
         }
         schedulePaceLook(pacing)
     }
@@ -437,35 +469,43 @@ final class ThumbWheelEngine {
         schedule(ThumbWheelTuning.logRollRest) { [weak self] in self?.checkRoll() }
     }
 
+    /// The open roll is over (in the tap callback: nothing is written here). It is kept,
+    /// with its trace, until its line can be written on the main queue.
     private func endOpenRoll() {
         dropWaitingSteps()
         guard let open = roll else { return }
         roll = nil
-        if let previous = ended {
-            // Two settings changes before the main queue ran (or an ended roll of Follow the
-            // wheel still waits for its last swipe's Space change): rare; written as it stands.
-            write(previous, trace: &traceEnded)
-        }
-        ended = open
-        swap(&traceOpen, &traceEnded)
+        // The next roll's trace goes into a spare buffer (a new one only when more rolls
+        // ended than are ever kept before the main queue ran).
+        var trace = spareTraces.popLast() ?? ThumbWheelEngine.emptyTrace()
+        swap(&trace, &traceOpen)
+        endedRolls.append(EndedRoll(roll: open, trace: trace))
         // Queued after the steps of its events: they have run when it is written.
         let id = open.id
         schedule(0) { [weak self] in self?.writeEndedRoll(id: id) }
+        if endedRolls.count > ThumbWheelTuning.endedRollsKept {
+            // More rolls wait for a swipe's ending than ever should: the oldest is written as
+            // it stands, after the callback (its line says what had not ended).
+            let oldest = endedRolls[0].roll.id
+            schedule(0) { [weak self] in self?.writeEndedRoll(id: oldest, asItStands: true) }
+        }
     }
 
-    /// Writes the ended roll (only that one, when `id` is given; then not while a stroke or
-    /// a swipe of it is still to end: its last end writes it).
-    private func writeEndedRoll(id: Int? = nil) {
-        guard let done = ended, id == nil || done.id == id else { return }
-        if id != nil, done.pendingSwipes > 0 { return }
-        ended = nil
-        write(done, trace: &traceEnded)
+    /// Writes the ended roll `id` and lets it go; not while a stroke or a swipe of it is
+    /// still to end (its last ending writes it), unless `asItStands`. Main queue.
+    private func writeEndedRoll(id: Int, asItStands: Bool = false) {
+        guard let index = endedRolls.firstIndex(where: { $0.roll.id == id }),
+              asItStands || endedRolls[index].roll.pendingSwipes == 0 else { return }
+        var done = endedRolls.remove(at: index)
+        write(done.roll, trace: &done.trace)
+        if spareTraces.count <= ThumbWheelTuning.endedRollsKept { spareTraces.append(done.trace) }
     }
 
     /// Writes a roll's line and, for a roll that ran a function, its trace line right after
     /// it; the trace is emptied (its room kept). The trace line is written in every build for
     /// now, the owner runs Release builds to tune the wheel: cut it, or keep it to DEBUG,
-    /// before the next release.
+    /// before the next release (`scripts/release.sh` refuses a build that still has the
+    /// words "thumb wheel trace:" in it).
     private func write(_ done: Roll, trace: inout ContiguousArray<ScrollSystemLog.ThumbWheelTraceEntry>) {
         writeLog(done)
         if done.function != .scroll, done.events > 0 {
@@ -480,19 +520,20 @@ final class ThumbWheelEngine {
     private func changeRoll(_ id: Int, _ change: (inout Roll) -> Void) {
         if roll != nil, roll?.id == id {
             change(&roll!)
-        } else if ended != nil, ended?.id == id {
-            change(&ended!)
-            if ended?.pendingSwipes == 0 {
+        } else if let index = endedRolls.firstIndex(where: { $0.roll.id == id }) {
+            change(&endedRolls[index].roll)
+            if endedRolls[index].roll.pendingSwipes == 0 {
                 schedule(0) { [weak self] in self?.writeEndedRoll(id: id) }
             }
         }
     }
 
-    private func stepsRan(_ steps: Int, rollID: Int?, waited: Bool = false) {
-        if roll?.id == rollID {
-            roll?.stepsRan(steps, waited: waited)
-        } else if ended?.id == rollID {
-            ended?.stepsRan(steps, waited: waited)
+    /// - Parameter sentNothing: how many of the steps the executor refused (`perform`).
+    private func stepsRan(_ steps: Int, rollID: Int?, waited: Bool = false, sentNothing: Int = 0) {
+        if roll != nil, roll?.id == rollID {
+            roll?.stepsRan(steps, waited: waited, sentNothing: sentNothing)
+        } else if let index = endedRolls.firstIndex(where: { $0.roll.id == rollID }) {
+            endedRolls[index].roll.stepsRan(steps, waited: waited, sentNothing: sentNothing)
         }
     }
 
@@ -544,7 +585,10 @@ final class ThumbWheelEngine {
         pacer = ThumbWheelPacer()
         pacedFunction = nil
         paceScheduled = false
-        writeEndedRoll()
+        // (The stop told every swipe's ending above: nothing is still to end.)
+        while let first = endedRolls.first {
+            writeEndedRoll(id: first.roll.id, asItStands: true)
+        }
         if let open = roll {
             roll = nil
             write(open, trace: &traceOpen)

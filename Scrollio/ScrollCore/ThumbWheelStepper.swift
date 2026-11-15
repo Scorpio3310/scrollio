@@ -109,6 +109,11 @@ enum ThumbWheelTuning {
     /// A function roll's trace line (`ScrollSystemLog.thumbWheelTraceMessage`) lists this many
     /// events at most (the engine's buffers are reserved once for them).
     static let traceEntries = 128
+    /// Rolls that ended and wait for their line (`ThumbWheelEngine.endedRolls`): at most this
+    /// many. A swipe of Follow the wheel is told at most 2.5 s after its end (a second for
+    /// the Space change, 1.5 s as a late record) and rolls are 0.6 s apart at least, so four
+    /// or five can wait; past this many the oldest is written as it stands.
+    static let endedRollsKept = 8
     /// A roll's line is due but steps still wait to run: the look comes again after at least
     /// this long (s), so it never spins on the main queue.
     static let pendingRecheck: TimeInterval = 0.01

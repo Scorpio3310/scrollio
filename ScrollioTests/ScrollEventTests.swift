@@ -1126,6 +1126,10 @@ final class ThumbWheelEngineTests: XCTestCase {
         /// When each action ran (seconds after the rig's start).
         private(set) var performedAt: [Double] = []
         private(set) var lines: [ScrollSystemLog.ThumbWheelRoll] = []
+        /// Roll lines written while `turn` was inside the engine's `handle` (the tap
+        /// callback): there must never be one.
+        private(set) var linesWrittenInsideTheCallback = 0
+        private var insideTheCallback = false
         /// The trace lines, as written.
         private(set) var traces: [String] = []
 
@@ -1139,8 +1143,12 @@ final class ThumbWheelEngineTests: XCTestCase {
             engine.perform = { [unowned self] action, times in
                 self.performed.append(Performed(action: action, times: times))
                 self.performedAt.append(self.now - 500)
+                return 0
             }
-            engine.writeLog = { [unowned self] roll in self.lines.append(roll) }
+            engine.writeLog = { [unowned self] roll in
+                if self.insideTheCallback { self.linesWrittenInsideTheCallback += 1 }
+                self.lines.append(roll)
+            }
             engine.writeTrace = { [unowned self] line in self.traces.append(line) }
         }
 
@@ -1183,6 +1191,8 @@ final class ThumbWheelEngineTests: XCTestCase {
                 lineDelta: Int64(lines), fixedDelta: fixed ?? lines, pointDelta: (lines * 10).rounded(),
                 isContinuous: continuous, timestamp: Rig.timestamp(time + timestampOffset)
             )
+            insideTheCallback = true
+            defer { insideTheCallback = false }
             return engine.handle(event, settings: settings, flipped: flipped)
         }
     }
@@ -1808,6 +1818,129 @@ final class ThumbWheelEngineTests: XCTestCase {
 
         let sideways = ScrollSystemLog.ThumbWheelRoll(id: 2, settings: .default, at: 0)
         XCTAssertFalse(ScrollSystemLog.thumbWheelMessage(for: sideways).contains("ticks"), "Scroll Sideways filters nothing")
+    }
+
+    /// Three rolls of Follow the wheel 0.8 s apart at the last desktop (the Space never
+    /// changes): a flick whose swipe ends at the full desktop, then another flick or a
+    /// short turn, then a flick. The first roll's swipe waits two seconds for a late Space
+    /// change, a short second roll's line waits behind it, and the third roll begins
+    /// meanwhile. Each roll gets its own line with its own swipe (the first was written
+    /// "no swipe" when the third roll began, inside the tap callback, and its swipe's
+    /// ending then found no roll), and no line is ever written inside the callback.
+    func testLog_followRollsThatWaitForALateSpaceChange_keepTheirSwipes_neverWrittenInTheCallback() throws {
+        for shortSecondRoll in [false, true] {
+            let rig = Rig()
+            let synthesizer = DockSwipeSynthesizer()
+            synthesizer.setTestingDriver(DockSwipeDriver(isAvailable: { true }, begin: { _ in }, update: { _ in }, end: { _ in }, cancel: {}))
+            defer { synthesizer.clearTestingDriver() }
+            rig.engine.follower.synthesizer = synthesizer
+            rig.engine.follower.screen = { InteractiveGestureScreen(width: 1440, spaceCount: 3, frameDuration: 1.0 / 60.0) }
+            let follow = ThumbWheelSettings(function: .desktops, followsWheel: true)
+            func flick(at start: Double) {
+                for index in 0..<8 { rig.turn(lines: -12, at: start + Double(index) * 0.016, settings: follow) }
+            }
+            flick(at: 0)
+            if shortSecondRoll {
+                rig.turn(lines: -1, at: 0.8, settings: follow)
+                rig.turn(lines: -1, at: 0.85, settings: follow)
+            } else {
+                flick(at: 0.8)
+            }
+            flick(at: 1.6)
+            rig.advance(to: 510)
+
+            let name = shortSecondRoll ? "a short second roll" : "three flicks"
+            XCTAssertEqual(rig.linesWrittenInsideTheCallback, 0, "\(name): a line written inside the tap callback")
+            let lines = rig.lines.sorted { $0.id < $1.id }.map(ScrollSystemLog.followMessage)
+            XCTAssertEqual(lines, [
+                "swipes 1.00 chained no change",
+                shortSecondRoll ? "swipes 0.33 ended" : "swipes 1.00 chained no change",
+                "swipes 1.00 chained no change",
+            ], name)
+            XCTAssertEqual(rig.lines.map(\.pendingSwipes), [0, 0, 0], name)
+            XCTAssertFalse(rig.hasPendingWork, name)
+        }
+    }
+
+    /// A roll written before its swipes ended (only when more rolls wait than are kept)
+    /// says so: never "no swipe" while a swipe is pending.
+    func testLog_aFollowLineNeverSaysNoSwipeWhileOneIsPending() {
+        var roll = ScrollSystemLog.ThumbWheelRoll(id: 1, settings: ThumbWheelSettings(function: .desktops, followsWheel: true), at: 0)
+        XCTAssertEqual(ScrollSystemLog.followMessage(for: roll), "no swipe")
+        roll.pendingSwipes = 2
+        XCTAssertEqual(ScrollSystemLog.followMessage(for: roll), "2 not ended yet")
+        roll.swipeEnded(ThumbWheelFollower.Swipe(furthest: 1, ending: .chained, expectsSwitch: true, spaceChangedAfter: 0.24))
+        XCTAssertEqual(ScrollSystemLog.followMessage(for: roll), "swipes 1.00 chained +240 ms, 1 not ended yet")
+    }
+
+    /// "Move right a space" is switched off in System Settings: the executor sends nothing
+    /// for the step (and shows its toast). The roll's line says so instead of counting a
+    /// desktop that never moved; the other way, whose shortcut is on, is a plain step.
+    func testLog_aStepWhoseActionIsRefused_isWrittenAsSentNothing() throws {
+        SystemShortcut.setTestingSystemShortcutState(SystemShortcut.SystemShortcutState(switchedOff: ["moveSpaceRight"]))
+        let savedNotice = ShortcutExecutor.shared.switchedOffNotice
+        var notices = 0
+        var keys = 0
+        ShortcutExecutor.shared.switchedOffNotice = { _ in notices += 1 }
+        ShortcutExecutor.shared.setTestingKeyboardShortcutObserver { _, _, _ in keys += 1 }
+        defer {
+            SystemShortcut.setTestingSystemShortcutState(nil)
+            ShortcutExecutor.shared.switchedOffNotice = savedNotice
+            ShortcutExecutor.shared.clearTestingKeyboardShortcutObserver()
+        }
+        let rig = Rig()
+        rig.engine.perform = { action, times in ThumbWheelActionPerformer().perform(action, times: times) }
+        let settings = ThumbWheelSettings(function: .desktops)
+        for index in 0..<3 { rig.turn(lines: -1, at: Double(index) * 0.05, settings: settings) }
+        rig.advance(to: 501)
+        XCTAssertEqual(keys, 0, "nothing was sent")
+        XCTAssertEqual(notices, 1, "the executor's toast")
+        let refused = try XCTUnwrap(rig.lines.first)
+        XCTAssertEqual(refused.stepsNext, 1)
+        XCTAssertEqual(refused.stepsSentNothing, 1)
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: refused).hasSuffix(
+            "switch desktops x1.00, travel 3.0: 1 step next, sent nothing; ticks held 0, dropped 0"
+        ), ScrollSystemLog.thumbWheelMessage(for: refused))
+
+        for index in 0..<3 { rig.turn(lines: 1, at: 2 + Double(index) * 0.05, settings: settings) }
+        rig.advance(to: 510)
+        XCTAssertEqual(keys, 1, "the other way is switched on")
+        let sent = try XCTUnwrap(rig.lines.last)
+        XCTAssertEqual(sent.stepsSentNothing, 0)
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: sent).hasSuffix(": 1 step previous; ticks held 0, dropped 0"),
+                      ScrollSystemLog.thumbWheelMessage(for: sent))
+
+        var some = ScrollSystemLog.ThumbWheelRoll(id: 9, settings: settings, at: 0)
+        some.stepsRan(2, sentNothing: 0)
+        some.stepsRan(1, waited: true, sentNothing: 1)
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: some).hasSuffix(": 3 steps next, 1 sent nothing, 1 waited; ticks held 0, dropped 0"),
+                      ScrollSystemLog.thumbWheelMessage(for: some))
+    }
+
+    /// Follow the wheel is on but no swipe can be made here, so the desktops go in steps:
+    /// the roll's line says the steps (it said "no swipe" and nothing of the desktop that
+    /// moved). A roll that did both says both.
+    func testLog_aFollowingRollThatRanSteps_saysItsSteps() throws {
+        let rig = Rig()
+        let synthesizer = DockSwipeSynthesizer()
+        synthesizer.setTestingDriver(DockSwipeDriver(isAvailable: { false }, begin: { _ in }, update: { _ in }, end: { _ in }, cancel: {}))
+        defer { synthesizer.clearTestingDriver() }
+        rig.engine.follower.synthesizer = synthesizer
+        let follow = ThumbWheelSettings(function: .desktops, followsWheel: true)
+        for index in 0..<3 { rig.turn(lines: -1, at: Double(index) * 0.05, settings: follow) }
+        rig.advance(to: 510)
+        XCTAssertEqual(rig.performed, [Performed(action: .named("moveSpaceRight"), times: 1)])
+        var roll = try XCTUnwrap(rig.lines.first)
+        XCTAssertTrue(roll.follows)
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: roll).hasSuffix(
+            "switch desktops, following x1.00, travel 3.0: 1 step next; ticks held 0, dropped 0"
+        ), ScrollSystemLog.thumbWheelMessage(for: roll))
+
+        roll.pendingSwipes = 1
+        roll.swipeEnded(ThumbWheelFollower.Swipe(furthest: 0.4, ending: .interrupted))
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: roll).hasSuffix(
+            "travel 3.0: swipes 0.40 interrupted, 1 step next; ticks held 0, dropped 0"
+        ), ScrollSystemLog.thumbWheelMessage(for: roll))
     }
 
     /// One trace line per roll that runs a function, right after its line: each event's gap
