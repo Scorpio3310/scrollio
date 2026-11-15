@@ -10848,6 +10848,30 @@
           }
         }
       }
+    },
+    "buttons-default-runs-another": {
+      "comment": "Buttons pane: the line of a row without an action (\"No Action\") whose press runs another row's action, because a button bound without modifier keys also runs with them; %@ is that action as Buttons names it",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A press runs %@."
+          }
+        }
+      }
+    },
+    "buttons-default-caught": {
+      "comment": "Buttons pane: the line of a row without an action (\"No Action\") whose Logitech button Scrollio keeps for another binding, so its press reaches no app",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio keeps it for another row, so a press does nothing."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

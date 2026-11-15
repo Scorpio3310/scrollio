@@ -511,6 +511,49 @@ final class TriggerChoiceTests: XCTestCase {
         XCTAssertEqual(chooser.recordedNote(KeyRecorder(), event: press), "Replaces: Copy")
     }
 
+    /// The menu and the recorder say what a press really does (round 2 fix Y1, Y2): a
+    /// button Scrollio catches for another binding reads "No Action" and loses nothing; ⌥
+    /// Back while Back runs Mission Control loses Mission Control; a Logitech key under
+    /// Scrolling › While you hold a key catches its button, a standard one only listens.
+    func testTheChooserSaysWhatAPressReallyDoes() throws {
+        let control = UInt(CGEventFlags.maskControl.rawValue)
+        let option = UInt(CGEventFlags.maskAlternate.rawValue)
+        let resolve: (ButtonBinding) -> String? = { ActionDisplayResolver().actionName(of: $0) }
+        func items(_ bindings: [ButtonBinding], holdKeys: [ScrollHotkey] = []) -> [ButtonsMousePart: TriggerChoiceMenu.Item] {
+            let model = TriggerChoiceMenu.make(
+                rule: .shortcutRing, triggerTitles: [], bindings: bindings, mouse: .mxMaster3,
+                recordedTrigger: recordedTrigger, actionName: resolve, holdKeys: holdKeys
+            )
+            return Dictionary(uniqueKeysWithValues: model.items.map { ($0.part, $0) })
+        }
+        func replaced(_ trigger: RecordedEvent, _ bindings: [ButtonBinding], holdKeys: [ScrollHotkey] = []) -> String? {
+            return TriggerChoiceMenu.replaced(
+                by: trigger, rule: .shortcutRing, bindings: bindings, mouse: .mxMaster3, actionName: resolve, holdKeys: holdKeys
+            )
+        }
+
+        let caughtForControl = [binding(logi(.gesture), SystemShortcut.copy.identifier, modifiers: control)]
+        let gesture = try XCTUnwrap(items(caughtForControl)[.gesture])
+        XCTAssertEqual(gesture.shownAction, "No Action")
+        XCTAssertFalse(gesture.replacesAction, "a press does nothing: nothing is lost")
+        XCTAssertNil(replaced(event(logi(.gesture)), caughtForControl))
+
+        let missionControl = [binding(3, SystemShortcut.missionControl.identifier)]
+        XCTAssertEqual(replaced(event(3, modifiers: option), missionControl), "Mission Control", "⌥ Back runs it now")
+
+        let logitechKey = [ScrollHotkey(type: .mouse, code: logi(.back))]
+        let caughtBack = try XCTUnwrap(items([], holdKeys: logitechKey)[.back])
+        XCTAssertEqual(caughtBack.shownAction, "No Action")
+        XCTAssertFalse(caughtBack.replacesAction)
+        XCTAssertNil(replaced(event(3), [], holdKeys: logitechKey))
+
+        let standardKey = [ScrollHotkey(type: .mouse, code: 3)]
+        let back = try XCTUnwrap(items([], holdKeys: standardKey)[.back])
+        XCTAssertEqual(back.shownAction, "Default (Back)")
+        XCTAssertTrue(back.replacesAction)
+        XCTAssertEqual(replaced(event(3), [], holdKeys: standardKey), "Default (Back)")
+    }
+
     /// The recorder shows its delegate's note under the press it recorded, where the line
     /// is otherwise empty, and holds it as long as a refusal; a delegate without one leaves
     /// the line empty as before. A recorder that taps nothing and a popover never shown.

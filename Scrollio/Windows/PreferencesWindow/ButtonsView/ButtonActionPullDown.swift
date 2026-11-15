@@ -80,15 +80,22 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     var offersDefault: Bool {
         return use == .binding
     }
-    /// What "Default" does where that is certain, named in its parentheses ("Default
-    /// (Back)"); nil: "Default". The owner of the row works it out
-    /// (`ButtonsMousePart.defaultEffect`).
-    var defaultEffect: ButtonsMousePart? {
+    /// What a press does without an action (`ButtonDefaultOutcome`): "Default (Back)" or
+    /// "Default" where it passes through, else "No Action" (another row's action runs, or
+    /// nothing happens). The owner of the row works it out.
+    var defaultOutcome: ButtonDefaultOutcome = .passes(nil) {
         didSet {
-            guard defaultEffect != oldValue else { return }
+            guard defaultOutcome != oldValue else { return }
             applyNoActionTitle()
             refreshActionDisplay()
         }
+    }
+
+    /// What "Default" does where that is certain, named in its parentheses ("Default
+    /// (Back)"); nil: "Default", or no default at all.
+    var defaultEffect: ButtonsMousePart? {
+        get { return defaultOutcome.effect }
+        set { defaultOutcome = .passes(newValue) }
     }
     /// The title of "Same as Other Apps (Mission Control)", the first item of the menu (an
     /// app's Buttons part); nil: no such item.
@@ -221,10 +228,10 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         }
     }
 
-    /// What the pull-down and its item say without an action: "Default (Back)" or
-    /// "Default" (`defaultEffect`).
+    /// What the pull-down and its item say without an action: "Default (Back)", "Default",
+    /// or "No Action" (`defaultOutcome`).
     var defaultTitle: String {
-        return ButtonsMousePart.defaultTitle(effect: defaultEffect)
+        return defaultOutcome.title
     }
 
     private func applyNoActionTitle() {

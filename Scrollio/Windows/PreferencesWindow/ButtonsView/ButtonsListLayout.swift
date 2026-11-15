@@ -15,7 +15,7 @@
 //  the bindings are laid out exactly as without it.
 //
 
-import Foundation
+import Cocoa
 
 extension ButtonsMousePart {
 
@@ -139,6 +139,124 @@ extension ButtonsMousePart {
     static func defaultTitle(effect: ButtonsMousePart?) -> String {
         guard let name = effect?.defaultEffectName else { return NSLocalizedString("buttons-default", comment: "") }
         return String(format: NSLocalizedString("buttons-default-with", comment: ""), name)
+    }
+}
+
+/// What a press of a button or key does while its row has no action, as the input side
+/// decides it (`InputProcessor`, `ButtonUtils`): "Default" only where the press passes
+/// through. Pure: the Buttons pane, the trigger choosers and an app's Buttons part share it.
+enum ButtonDefaultOutcome: Equatable {
+    /// The press passes through: the button or key does what it does by itself, with the
+    /// effect where that is certain ("Default (Back)").
+    case passes(ButtonsMousePart?)
+    /// Another binding with an action runs on that press: a button bound without modifier
+    /// keys also runs with them, and a binding without an action is skipped ("No Action",
+    /// "A press runs Mission Control.").
+    case runs(ButtonBinding)
+    /// Scrollio catches the button's Logitech control for another binding (or for a key of
+    /// Scrolling › While you hold a key) and no binding runs: the press does nothing ("No
+    /// Action").
+    case caught
+
+    /// What the row's pull-down says: "Default (Back)", "Default", or "No Action" where a
+    /// press does not pass through.
+    var title: String {
+        switch self {
+        case .passes(let effect): return ButtonsMousePart.defaultTitle(effect: effect)
+        case .runs, .caught: return NSLocalizedString("unbound", comment: "")
+        }
+    }
+
+    /// What "Default" does where that is certain; nil for any other outcome.
+    var effect: ButtonsMousePart? {
+        guard case .passes(let effect) = self else { return nil }
+        return effect
+    }
+
+    /// What a press of `trigger` does while it has no action.
+    /// - Parameters:
+    ///   - part: the row's part (a button of the mouse); nil: the part `trigger` presses.
+    ///   - bindings: the bindings the press goes by (an app's own merged over Buttons' for a
+    ///     row of the app's own).
+    ///   - catching: the bindings whose Logitech controls Scrollio asks the mouse for; nil:
+    ///     `bindings` (for an app's own row: those with an action, not its own "Default").
+    ///   - holdKeys: the keys of Scrolling › While you hold a key the mouse is asked for
+    ///     (`holdKeysThatCatch`): a Logitech one catches its control, a standard one only
+    ///     listens.
+    ///   - isAppsOwn: the row is an app's own "Default": a caught press that reaches it goes
+    ///     on as the standard middle, back or forward button
+    ///     (`InputProcessor.standardButton(forAppsOwnDefault:)`). Only one stored under the
+    ///     Logitech code is reached: a caught press arrives as the control.
+    static func of(
+        _ trigger: RecordedEvent,
+        part rowPart: ButtonsMousePart? = nil,
+        bindings: [ButtonBinding],
+        catching: [ButtonBinding]? = nil,
+        holdKeys: [ScrollHotkey] = [],
+        isAppsOwn: Bool = false,
+        isLogitechCode: (UInt16) -> Bool = { LogiCenter.shared.isLogiCode($0) },
+        logitechRole: (UInt16) -> LogiControlRole? = { LogiCenter.shared.controlRole(forScrollioCode: $0) }
+    ) -> ButtonDefaultOutcome {
+        let effect = ButtonsMousePart.defaultEffect(of: trigger, part: rowPart, isCaught: false, logitechRole: logitechRole)
+        // The control the button is, whatever the modifier keys (a key and a button the Mac
+        // knows only by its number are none).
+        let part = trigger.type == .mouse && ButtonTriggerPicture.number(for: trigger) == nil
+            ? ButtonsMousePart.part(for: trigger, logitechRole: logitechRole) : nil
+        let caught = part.map { part in
+            ButtonsListLayout.catchesControl(
+                of: part, in: catching ?? bindings, isLogitechCode: isLogitechCode, logitechRole: logitechRole
+            ) || holdKeys.contains { key in
+                key.type == .mouse && isLogitechCode(key.code) && ButtonsMousePart.part(
+                    for: RecordedEvent(type: .mouse, code: key.code, modifiers: 0, deviceFilter: nil), logitechRole: logitechRole
+                ) == part
+            }
+        } ?? false
+        // The press as it reaches Scrollio: a caught control as itself (over HID++); one the
+        // mouse keeps as the standard middle, back or forward button it sends, or not at
+        // all (the mouse does its own thing).
+        var code = trigger.code
+        if part != nil {
+            if caught {
+                code = isLogitechCode(code) ? code : LogiStandardMouseButtonAlias.logitechCode(forNativeButton: code) ?? code
+            } else if isLogitechCode(code) {
+                guard let native = LogiStandardMouseButtonAlias.nativeButtonCode(forScrollioCode: code) else {
+                    return .passes(effect)
+                }
+                code = native
+            }
+        }
+        let press = InputEvent(
+            type: trigger.type, code: code, modifiers: CGEventFlags(rawValue: UInt64(trigger.modifiers)),
+            phase: .down, source: .hidPP, device: nil
+        )
+        let match = ButtonUtils.bestMatch(among: bindings, for: press, where: { ButtonUtils.isRunnable($0.triggerEvent) })
+        if let match, CellActionState(binding: match).hasBoundAction {
+            return .runs(match)
+        }
+        guard caught else { return .passes(effect) }
+        if isAppsOwn, let match, match.systemShortcutName.isEmpty,
+           let native = LogiStandardMouseButtonAlias.nativeButtonCode(forScrollioCode: code), (2...4).contains(native) {
+            return .passes(effect)
+        }
+        return .caught
+    }
+
+    /// The keys of Scrolling › While you hold a key that the mouse is asked for: the
+    /// Scrolling pane's and those of every app with Scrolling settings of its own
+    /// (`LogiUsageBootstrap` asks for all of them, whatever app is in front).
+    static func holdKeysThatCatch(
+        general: OPTIONS_SCROLL_DEFAULT = Options.shared.scroll,
+        applications: EnhanceArray<Application> = Options.shared.application.applications
+    ) -> [ScrollHotkey] {
+        func keys(_ scroll: OPTIONS_SCROLL_DEFAULT) -> [ScrollHotkey] {
+            return [scroll.dash, scroll.slow, scroll.toggle, scroll.block].compactMap { $0 }
+        }
+        var result = keys(general)
+        for index in 0..<applications.count {
+            guard let application = applications.get(by: index), !application.inherit else { continue }
+            result += keys(application.scroll)
+        }
+        return result
     }
 }
 
