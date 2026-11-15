@@ -455,28 +455,109 @@ class ShortcutExecutor {
         return preserveFlagsOnKeyUp ? shortcutFlags : heldModifiers & modifierKeyMask
     }
 
-    private static var didLogLeftModifiers = false
+    /// The two looks at the modifier keys after a sent shortcut: the first soon after it,
+    /// the second, only when the first found some set, late enough that the shortcut's key
+    /// up has certainly gone through every event tap (this app's own are served by the
+    /// main thread, which can be busy right after a ring closed).
+    static let modifierLooks: (first: TimeInterval, second: TimeInterval) = (0.06, 0.3)
 
-    /// A moment after a shortcut was sent: if the system still reports modifier keys that
-    /// nobody holds, one line in the log, once per run of the app.
-    private func checkModifiersAfterShortcut(expected: UInt64) {
-        guard !AppRuntime.isRunningXCTest, !Self.didLogLeftModifiers else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
-            guard !Self.didLogLeftModifiers else { return }
-            let session = CGEventSource.flagsState(.combinedSessionState).rawValue & Self.modifierKeyMask
-            let hardware = CGEventSource.flagsState(.hidSystemState).rawValue & Self.modifierKeyMask
-            guard let line = Self.leftModifiersLine(session: session, hardware: hardware, expected: expected) else { return }
-            Self.didLogLeftModifiers = true
-            AppSystemLog.problem(line)
+    /// Every finding is written, not only the first of a run: a debug build, and one built
+    /// with SCROLLIO_TRACE (the owner's own installed copies).
+    static let writesEveryLeftModifier: Bool = {
+        #if DEBUG || SCROLLIO_TRACE
+        return true
+        #else
+        return false
+        #endif
+    }()
+
+    /// What was already written in this run, per kind of line (`ModifiersAfterShortcut`).
+    private static var didLogLeftModifiers = false
+    private static var didLogLateModifiers = false
+
+    /// What the looks after a sent shortcut found.
+    enum ModifiersAfterShortcut: Equatable {
+        /// Nothing is reported that nobody holds.
+        case clear
+        /// Modifier keys were still reported at the first look and no longer at the
+        /// second: the shortcut's key up came through late, nothing stayed set.
+        case late(UInt64)
+        /// Modifier keys are still reported at the second look: the shortcut left them set.
+        case left(UInt64)
+
+        /// `first` and `second`: the modifier keys reported and held by nobody at each look
+        /// (`ShortcutExecutor.leftModifiers`); the second is not taken when the first found
+        /// none.
+        init(first: UInt64, second: UInt64?) {
+            if first == 0 {
+                self = .clear
+            } else if let second, second == 0 {
+                self = .late(first)
+            } else {
+                self = .left(second ?? first)
+            }
+        }
+
+        /// The line for the `app` log, with the times of the looks; nil when all is as it
+        /// was. `isProblem`: modifier keys stayed set (a late key up is a note).
+        func line(looks: (first: TimeInterval, second: TimeInterval) = ShortcutExecutor.modifierLooks) -> (text: String, isProblem: Bool)? {
+            let first = Int((looks.first * 1000).rounded())
+            let second = Int((looks.second * 1000).rounded())
+            switch self {
+            case .clear:
+                return nil
+            case .late(let keys):
+                return (String(format: "A sent shortcut's modifier keys were still reported %d ms after it (0x%llX) "
+                    + "and no longer %d ms after it: its key up came through late, nothing stayed set", first, keys, second), false)
+            case .left(let keys):
+                return (String(format: "A sent shortcut left modifier keys set that nobody holds (0x%llX), "
+                    + "%d ms after it was sent", keys, second), true)
+            }
         }
     }
 
-    /// The line for modifier keys that a sent shortcut left set; nil when all is as it was,
-    /// or when the hardware itself reports them (a key the user pressed meanwhile).
-    static func leftModifiersLine(session: UInt64, hardware: UInt64, expected: UInt64) -> String? {
-        let left = session & ~expected & ~hardware
-        guard left != 0 else { return nil }
-        return String(format: "A sent shortcut left modifier keys set that nobody holds (0x%llX)", left)
+    /// After a shortcut was sent: if the system still reports modifier keys that nobody
+    /// holds, a second look later, and then one line in the log that says which it was
+    /// (`ModifiersAfterShortcut`), each kind once per run of the app (every time while
+    /// `writesEveryLeftModifier`).
+    private func checkModifiersAfterShortcut(expected: UInt64) {
+        guard !AppRuntime.isRunningXCTest else { return }
+        guard Self.writesEveryLeftModifier || !Self.didLogLeftModifiers else { return }
+        let looks = Self.modifierLooks
+        func left() -> UInt64 {
+            let session = CGEventSource.flagsState(.combinedSessionState).rawValue & Self.modifierKeyMask
+            let hardware = CGEventSource.flagsState(.hidSystemState).rawValue & Self.modifierKeyMask
+            return Self.leftModifiers(session: session, hardware: hardware, expected: expected)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + looks.first) {
+            let first = left()
+            guard first != 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + (looks.second - looks.first)) {
+                Self.write(ModifiersAfterShortcut(first: first, second: left()))
+            }
+        }
+    }
+
+    /// Writes what the looks found, unless that kind of line was written in this run
+    /// already (`writesEveryLeftModifier`: every time).
+    private static func write(_ found: ModifiersAfterShortcut) {
+        guard let line = found.line() else { return }
+        if line.isProblem {
+            guard writesEveryLeftModifier || !didLogLeftModifiers else { return }
+            didLogLeftModifiers = true
+            AppSystemLog.problem(line.text)
+        } else {
+            guard writesEveryLeftModifier || !didLogLateModifiers else { return }
+            didLogLateModifiers = true
+            AppSystemLog.note(line.text)
+        }
+    }
+
+    /// The modifier keys the session reports that the shortcut's sender did not hold
+    /// before it (`expected`) and the hardware does not report either (a key the user
+    /// pressed meanwhile): 0 when all is as it was.
+    static func leftModifiers(session: UInt64, hardware: UInt64, expected: UInt64) -> UInt64 {
+        return session & ~expected & ~hardware
     }
 
     /// The key down or key up of a shortcut, marked as Scrollio's own (`ScrollioEventMarker`) like
