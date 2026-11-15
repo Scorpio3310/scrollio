@@ -522,6 +522,75 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertNil(action(40, type: .keyboard, in: Self.safari))
     }
 
+    // MARK: - An entry stored under a symbolic link
+
+    /// "Choose in Finder…" stores the path the panel hands over. For Safari that is
+    /// `/Applications/Safari.app`, a symbolic link into the system's cryptex, while the
+    /// running Safari reports the path behind the link, so the entry never matched. The
+    /// entry is found by the path its link leads to as well, the bundle's or the program's,
+    /// in the one lookup everything uses: the app's buttons (its gestures and its thumb
+    /// wheel find it the same way), its ring, the menu bar's "Smooth Scrolling in …" and
+    /// "Settings for …", and "+" in Apps, which adds no second entry. An entry stored under
+    /// that very path still comes first, and nothing stored changes.
+    func testAnEntryStoredUnderASymbolicLinkIsFoundByThePathBehindIt() throws {
+        let files = FileManager.default
+        let folder = files.temporaryDirectory.appendingPathComponent("scrollio-link-\(UUID().uuidString)")
+        addTeardownBlock { try? files.removeItem(at: folder) }
+        let bundle = folder.appendingPathComponent("Real.app")
+        try files.createDirectory(at: bundle.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
+        XCTAssertTrue(files.createFile(atPath: bundle.appendingPathComponent("Contents/MacOS/Real").path, contents: Data()))
+        let link = folder.appendingPathComponent("Link.app")
+        try files.createSymbolicLink(at: link, withDestinationURL: bundle)
+
+        // What the running app reports: its real place, no link in it.
+        let real = (bundle.path as NSString).resolvingSymlinksInPath
+        let program = real + "/Contents/MacOS/Real"
+        let running = ShortcutRingChoice.FrontApp(bundlePath: real, executablePath: program)
+
+        let entry = Application(path: link.path)
+        entry.setOwnButtonBindings([binding(3, "undo")])
+        entry.setUsesGeneralRing(false, general: .default)
+        Options.shared.buttons.binding = [binding(3, "copy")]
+        var list = Self.makeStore([entry])
+        Options.shared.application.applications = list
+        ButtonUtils.shared.invalidateCache()
+
+        XCTAssertTrue(list.get(by: real) === entry, "by the bundle's real path")
+        XCTAssertTrue(list.get(by: link.path) === entry, "by the stored path, as ever")
+        XCTAssertNil(list.get(by: real + "/Contents"), "no other path")
+        XCTAssertTrue(ApplicationButtons.entry(front: running, applications: list) === entry)
+        XCTAssertEqual(action(3, in: running), "undo", "a press goes by the app's own buttons")
+        XCTAssertEqual(action(3, in: Self.textEdit), "copy")
+        XCTAssertTrue(ShortcutRingChoice.make(front: running, applications: list, general: .default).isAppsOwn, "its own ring")
+        let menuApp = AppSmoothing.App(name: "Real", bundlePath: real, executablePath: program)
+        XCTAssertTrue(AppSmoothing.entry(for: menuApp, in: list) === entry, "the menu bar's items")
+        XCTAssertTrue(
+            PreferencesApplicationViewController.existingApplication(forPaths: [real, program]) === entry,
+            "+ finds it: no second entry"
+        )
+        XCTAssertEqual(entry.path, link.path, "stored as it was")
+
+        // Stored as the program inside the linked bundle: found by the real program's path.
+        let byProgram = Application(path: link.path + "/Contents/MacOS/Real")
+        list = Self.makeStore([byProgram])
+        XCTAssertTrue(list.get(by: program) === byProgram)
+        XCTAssertNil(list.get(by: real))
+
+        // An entry stored under the real path itself comes first, wherever it stands.
+        let exact = Application(path: real)
+        for order in [[exact, entry], [entry, exact]] {
+            list = Self.makeStore(order)
+            XCTAssertTrue(list.get(by: real) === exact)
+            XCTAssertTrue(list.get(by: link.path) === entry)
+        }
+
+        // A path without a link, a file that is not there and a key that is no path have
+        // no second form.
+        XCTAssertNil(EnhanceArray<Application>.pathBehindSymbolicLinks(of: real))
+        XCTAssertNil(EnhanceArray<Application>.pathBehindSymbolicLinks(of: "/Applications/Not There \(UUID().uuidString).app"))
+        XCTAssertNil(EnhanceArray<Application>.pathBehindSymbolicLinks(of: "com.example.app"))
+    }
+
     /// "Everywhere: …": the general binding of the same trigger, else the one such a press
     /// matches best, else none.
     func testWhatTheButtonDoesEverywhere() {

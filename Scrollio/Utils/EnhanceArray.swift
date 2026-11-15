@@ -17,6 +17,12 @@ class EnhanceArray<T:Codable> {
         }
     }
     private var dictionary = [String: Int]()
+    /// The keys that are paths with a symbolic link in them, by where the links lead:
+    /// `/Applications/Safari.app`, as "Choose in Finder…" stores it, is a link into the
+    /// system's cryptex, and the running Safari reports the path behind it. Read from disk
+    /// when the array changes, never at a lookup (the scroll path looks an app up for
+    /// every wheel event). What is stored stays as it is.
+    private var dictionaryOfResolvedPaths = [String: Int]()
     private var dictionaryKey: String!
     private var observer = {()}
 
@@ -43,8 +49,14 @@ extension EnhanceArray {
         }
     }
     // 获取值
+    /// The item stored under `key`. A path also finds the item whose stored path leads to
+    /// it through symbolic links; the item stored under the key itself always comes first.
     public func get(by key: String?) -> T? {
-        guard let validKey = key, let index = dictionary[validKey] else { return nil }
+        guard let validKey = key else { return nil }
+        if let index = dictionary[validKey] {
+            return array[index]
+        }
+        guard !dictionaryOfResolvedPaths.isEmpty, let index = dictionaryOfResolvedPaths[validKey] else { return nil }
         return array[index]
     }
     public func get(by index: Int?) -> T? {
@@ -107,6 +119,7 @@ extension EnhanceArray {
     // 更新
     private func updateDictionary() {
         var nextDic = [String: Int]()
+        var nextResolved = [String: Int]()
         for (index, item) in array.enumerated() {
             let mirror = Mirror(reflecting: item)
             for property in mirror.children {
@@ -115,10 +128,22 @@ extension EnhanceArray {
                         fatalError("Property of \(String(describing: dictionaryKey)) in EnhanceArray must be String Type")
                     }
                     nextDic[targetPropertyValue] = index
+                    if let resolved = Self.pathBehindSymbolicLinks(of: targetPropertyValue) {
+                        nextResolved[resolved] = index
+                    }
                     break
                 }
             }
         }
         dictionary = nextDic
+        dictionaryOfResolvedPaths = nextResolved
+    }
+    /// Where the symbolic links in `key` lead, when it is an absolute path and they lead
+    /// somewhere else; nil for every other key (a path without a link, a file that is not
+    /// there, a key that is no path).
+    static func pathBehindSymbolicLinks(of key: String) -> String? {
+        guard key.hasPrefix("/") else { return nil }
+        let resolved = (key as NSString).resolvingSymlinksInPath
+        return resolved == key ? nil : resolved
     }
 }
