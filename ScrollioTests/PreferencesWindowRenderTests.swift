@@ -4496,3 +4496,107 @@ extension PreferencesWindowRenderTests {
         })
     }
 }
+
+// MARK: - Round 4 D6
+
+extension PreferencesWindowRenderTests {
+
+    /// The ring's drawing as an editor (`r4-d6-<case>-<appearance>.png`). `pane-menu-at-drop`
+    /// and `app-page-menu-at-drop`: the pane, and Calculator's own ring on its page, as they
+    /// stand while a place's menu is open at its drop: the place lit, its row's title tinted
+    /// and the row's pull-down showing its action although the menu's title item is hidden.
+    /// The red circles are drawn by this test: the views over the drops that the recorder,
+    /// the name and icon and "Open App or File…" stand at. AppKit's menus cannot be drawn
+    /// off screen: `menu-secondary`, `menu-swap-with` and `menu-own` are their items (the
+    /// secondary click's two, the seven places of "Swap With" from "Top", and a place's own
+    /// menu, which ends with "Swap With"), drawn by the test.
+    func testRenderRound4D6() throws {
+        let savedRing = Options.shared.ring
+        let stored = Options.shared.application.applications
+        addTeardownBlock {
+            Options.shared.ring = savedRing
+            Options.shared.application.applications = stored
+            ShortcutRingController.forgetPreparedFaces()
+        }
+        var ring = ShortcutRingSettings.default
+        ring[5] = ShortcutRingPlace(
+            action: "custom::1:1048576", label: ShortcutLabel(name: "Save All", icon: .symbol("square.and.arrow.down"))
+        )
+        ring[6] = .empty
+        Options.shared.ring = ring
+
+        func standAtDrop(_ controller: RingPreferencesViewController?, place: Int) {
+            guard let controller else { return }
+            controller.presentPlaceMenu = { _, _, _ in }
+            controller.openMenu(forPlace: place)
+            controller.placePopUps[place].menu?.items.first?.isHidden = true
+            for other in 0..<ShortcutRingSettings.placeCount {
+                let anchor = controller.previewView.anchor(forPlace: other)
+                let outline = Round4D6Outline(frame: anchor.bounds)
+                outline.autoresizingMask = [.width, .height]
+                anchor.addSubview(outline)
+            }
+        }
+
+        let thumbPanel = RecordedEvent(type: .mouse, code: LogiCenter.shared.scrollioCode(for: .thumbPanel), modifiers: 0, deviceFilter: nil)
+        try renderPane(RingPreferencesViewController.tabIdentifier, name: "r4-d6-pane-menu-at-drop", titled: TitledCut(), replacement: {
+            let pane = RingPreferencesViewController()
+            pane.bindingSummary = {
+                ShortcutRingBindingSummary(triggerTitles: ["Thumb panel"], picture: TriggerPictureSource(event: thumbPanel))
+            }
+            return pane
+        }, afterLoad: { controller in
+            guard let pane = controller as? RingPreferencesViewController else { return }
+            Self.stillTriggerCard(of: pane, mouse: .mxMaster4)
+            standAtDrop(pane, place: 1)
+        })
+
+        let calculator = Application(path: "/System/Applications/Calculator.app")
+        calculator.setUsesGeneralRing(false, general: ring)
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [calculator], matchKey: "path")
+        let defaults = uiDefaults(advanced: false)
+        try renderPane(PANEL_IDENTIFIER.application, name: "r4-d6-app-page-menu-at-drop", prepare: { preferences in
+            (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                .uiStateDefaults = defaults
+        }, afterLoad: { controller in
+            let apps = controller as? PreferencesApplicationViewController
+            apps?.openApplication(withID: calculator.path, part: .ring)
+            standAtDrop(apps?.detailController?.ringController, place: 5)
+        })
+
+        /// The items as the stand-in draws them: a disabled one dimmed, a submenu's chevron.
+        func standIns(_ items: [NSMenuItem]) -> [NSMenuItem] {
+            return items.map { item in
+                if item.isSeparatorItem { return .separator() }
+                let copy = NSMenuItem(title: item.title, action: item.isEnabled ? #selector(NSObject.description) : nil, keyEquivalent: "")
+                copy.image = item.image
+                copy.state = item.state
+                if item.submenu != nil {
+                    copy.submenu = NSMenu()
+                }
+                return copy
+            }
+        }
+        let pane = RingPreferencesViewController()
+        pane.bindingSummary = { ShortcutRingBindingSummary(triggerTitles: ["Thumb panel"]) }
+        _ = pane.view
+        let secondary = try XCTUnwrap(pane.contextMenu(forPlace: 0))
+        try renderMenuStandIn(standIns(secondary.items), name: "r4-d6-menu-secondary")
+        let swapWith = try XCTUnwrap(secondary.items.first?.submenu)
+        swapWith.delegate?.menuNeedsUpdate?(swapWith)
+        try renderMenuStandIn(standIns(swapWith.items), name: "r4-d6-menu-swap-with")
+        let own = try XCTUnwrap(pane.placePopUps[0].menu)
+        pane.placePopUps[0].menuWillOpen(own)
+        try renderMenuStandIn(standIns(Array(own.items.dropFirst().filter { !$0.isHidden })), name: "r4-d6-menu-own")
+    }
+}
+
+/// A red circle, for a picture that shows where something stands.
+private final class Round4D6Outline: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.systemRed.setStroke()
+        let circle = NSBezierPath(ovalIn: bounds.insetBy(dx: 0.5, dy: 0.5))
+        circle.lineWidth = 1
+        circle.stroke()
+    }
+}
