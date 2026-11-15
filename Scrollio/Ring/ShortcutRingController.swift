@@ -77,9 +77,9 @@ final class ShortcutRingController {
     /// made when no ring was held: by Settings whenever it shows a ring (the pane the
     /// general one, an app's page the app's own), at launch and after a change of the
     /// settings for the rings that can open and open something, and after a ring closed
-    /// that had to be shown without it. The newest
-    /// first, one per ring: a face belongs to the eight places it was made for and is
-    /// never shown for others, so the ring of one app never shows another's.
+    /// that had to be shown without it. Only rings that open something keep one (`prepare`).
+    /// The newest first, one per ring: a face belongs to the eight places it was made for
+    /// and is never shown for others, so the ring of one app never shows another's.
     private(set) static var preparedFaces: [(ring: ShortcutRingSettings, face: ShortcutRingFace)] = []
 
     /// How many faces are kept (the general ring's and those of apps' own rings). A ring
@@ -97,8 +97,11 @@ final class ShortcutRingController {
         return preparedFaces.first { $0.ring.places == ring.places }?.face
     }
 
-    /// Keeps `face` for the next ring that is `ring`.
+    /// Keeps `face` for the next ring that is `ring`. A ring that opens nothing needs no
+    /// look on disk (its face is whole when it is made at a press): its face is not kept,
+    /// so that the app pages a user browses never push out a face with an app's icon.
     static func prepare(_ face: ShortcutRingFace, for ring: ShortcutRingSettings) {
+        guard ring.opensSomething else { return }
         preparedFaces.removeAll { $0.ring.places == ring.places }
         preparedFaces.insert((ring, face), at: 0)
         if preparedFaces.count > preparedFaceLimit {
