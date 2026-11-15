@@ -88,6 +88,39 @@ final class ReleaseReadinessTests: XCTestCase {
         XCTAssertTrue(readme.contains("not affiliated with or endorsed by Apple or Logitech"))
     }
 
+    // MARK: - The tagline
+
+    /// One sentence says what Scrollio is, in the app (`about-tagline`: General's card, the
+    /// About panel, the Welcome Guide) and as the README's first line. It promises what a
+    /// new installation does: Trackpad-style scrolling is experimental and off.
+    func testTheReadmeOpensWithTheAppsTagline() throws {
+        let tagline = NSLocalizedString("about-tagline", comment: "")
+        XCTAssertNotEqual(tagline, "about-tagline", "the key is in the catalog")
+        XCTAssertFalse(tagline.localizedCaseInsensitiveContains("trackpad"), tagline)
+
+        let readme = try text("README.md")
+        let firstBoldLine = readme.components(separatedBy: "\n").first { $0.hasPrefix("**") }
+        XCTAssertEqual(firstBoldLine, "**\(tagline)**")
+    }
+
+    /// The sentence stays on one line where it is shown under a name: in General's card,
+    /// right of the icon, and in the Welcome Guide's column of text. (A label keeps 2 pt on
+    /// each side of its text.)
+    func testTheTaglineIsOneLineInTheCardAndInTheGuide() {
+        let tagline = NSLocalizedString("about-tagline", comment: "")
+        func width(in font: NSFont) -> CGFloat {
+            return (tagline as NSString).size(withAttributes: [.font: font]).width.rounded(.up) + 4
+        }
+
+        let card = PreferencesGroupedForm.boxWidth(paneWidth: PreferencesGeneralViewController.paneWidth)
+        XCTAssertEqual(card, 480)
+        XCTAssertLessThanOrEqual(
+            width(in: GeneralHeaderView.detailFont),
+            card - GeneralHeaderView.iconColumnWidth - GeneralHeaderView.textTrailingInset
+        )
+        XCTAssertLessThanOrEqual(width(in: WelcomeGuideText.bodyFont), WelcomeGuideLayout.textWidth)
+    }
+
     // MARK: - Acknowledgements
 
     /// The file ships in the app (and `scripts/release.sh` puts it on the disk image): it

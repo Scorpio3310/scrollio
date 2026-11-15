@@ -285,7 +285,11 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(controller.steps, [.welcome, .access, .feel, .finish])
         XCTAssertEqual(controller.currentStep, .welcome)
         XCTAssertEqual(controller.welcomeStep.titleLabel.stringValue, "Welcome to Scrollio")
-        XCTAssertEqual(controller.welcomeStep.textLabel.stringValue, "Smooth scrolling, button actions and gestures for your mouse.")
+        XCTAssertEqual(controller.welcomeStep.textLabel.stringValue, "Smooth scrolling and shortcuts for any mouse.")
+        XCTAssertEqual(
+            controller.welcomeStep.textLabel.stringValue, NSLocalizedString("about-tagline", comment: ""),
+            "the sentence of General's card and of the About panel"
+        )
         XCTAssertEqual(controller.welcomeStep.features.map(\.titleLabel.stringValue), ["Smooth scrolling", "Button actions", "Gestures"])
         XCTAssertNotNil(controller.welcomeStep.iconView.image)
 

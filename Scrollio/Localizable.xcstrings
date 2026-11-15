@@ -1946,17 +1946,6 @@
         }
       }
     },
-    "intro-subtitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Smooth scrolling, button actions and gestures for your mouse."
-          }
-        }
-      }
-    },
     "intro-status-granted": {
       "extractionState": "manual",
       "localizations": {
@@ -5430,13 +5419,13 @@
       }
     },
     "about-tagline": {
-      "comment": "General pane header card: one line on what the app is for, under its name",
+      "comment": "The app's one tagline: General's header card under the name, the first line of the About panel, the Welcome Guide's first step. README's first line is the same sentence",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Smooth, trackpad-like scrolling for any mouse."
+            "value": "Smooth scrolling and shortcuts for any mouse."
           }
         }
       }

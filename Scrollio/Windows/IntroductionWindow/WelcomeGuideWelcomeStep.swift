@@ -37,7 +37,8 @@ final class WelcomeGuideWelcomeStep: WelcomeGuideStepView {
         picture = card
 
         let title = WelcomeGuideText.makeTitle(WelcomeGuideText.localized("intro-title"))
-        let text = WelcomeGuideText.makeText(WelcomeGuideText.localized("intro-subtitle"))
+        // The app's one tagline: the sentence of General's card and of the About panel.
+        let text = WelcomeGuideText.makeText(WelcomeGuideText.localized("about-tagline"))
         let kinds: [WelcomeGuideFeatureView.Kind] = [.scrolling, .buttons, .gestures]
         let featureViews = kinds.map { WelcomeGuideFeatureView(kind: $0) }
         let row = NSStackView(views: featureViews)

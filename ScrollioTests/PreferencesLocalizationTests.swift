@@ -274,7 +274,7 @@ final class PreferencesLocalizationTests: XCTestCase {
 
     /// The Welcome Guide (Introduction window): its bar, the four steps and their pictures.
     static let introKeys = [
-        "intro-title", "intro-subtitle", "intro-continue-button", "intro-back-button", "intro-step-of",
+        "intro-title", "intro-continue-button", "intro-back-button", "intro-step-of",
         "intro-welcome-picture", "intro-feature-scrolling", "intro-feature-scrolling-detail",
         "intro-feature-buttons", "intro-feature-buttons-detail", "intro-feature-gestures",
         "intro-feature-gestures-detail",

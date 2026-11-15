@@ -235,7 +235,7 @@ final class MainMenuTests: XCTestCase {
         let options = try XCTUnwrap(shownAboutPanels.first)
         XCTAssertEqual(Array(options.keys), [.credits], "version, name, icon and copyright are the bundle's own")
         let credits = try XCTUnwrap(options[.credits] as? NSAttributedString)
-        XCTAssertEqual(credits.string, "Smooth, trackpad-like scrolling for any mouse.\ngithub.com/Scorpio3310/scrollio")
+        XCTAssertEqual(credits.string, "Smooth scrolling and shortcuts for any mouse.\ngithub.com/Scorpio3310/scrollio")
         let linkStart = (credits.string as NSString).range(of: "github.com").location
         XCTAssertEqual(
             credits.attribute(.link, at: linkStart, effectiveRange: nil) as? URL,
