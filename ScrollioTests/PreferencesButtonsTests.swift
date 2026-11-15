@@ -2946,6 +2946,40 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(undo.redoMenuItemTitle, "Redo Remove Button")
     }
 
+    /// Undo and Redo of the thumb wheel row's action show themselves as a button row's do
+    /// (QA B3): the pane comes forward while another one shows, the wheel's row is selected
+    /// and the list has the keyboard. They acted unseen: another pane stayed on screen and
+    /// nothing was selected. Choosing the action itself brings nothing forward.
+    func testUndoOfTheThumbWheelRowsActionShowsItself() throws {
+        let pane = makePane()
+        let (window, container) = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        step(undo) { pane.setThumbWheelFunction(.zoom) }
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+        XCTAssertTrue(shownPanes.isEmpty, "the choice itself is made in sight")
+        XCTAssertNil(pane.list.selectedID)
+
+        // Another pane shows.
+        pane.view.removeFromSuperview()
+        undo.undo()
+        XCTAssertEqual(Options.shared.thumbWheel.function, .scroll)
+        XCTAssertEqual(shownPanes, [PANEL_IDENTIFIER.buttons], "Buttons comes forward")
+        XCTAssertEqual(pane.list.selectedID, ButtonsListLayout.thumbWheelRowID, "with the wheel's row selected")
+
+        // The pane is back: Redo selects the row again and gives the list the keyboard.
+        container.addSubview(pane.view)
+        window.makeFirstResponder(nil)
+        pane.list.select(nil)
+        shownPanes = []
+        undo.redo()
+        XCTAssertEqual(Options.shared.thumbWheel.function, .zoom)
+        XCTAssertTrue(shownPanes.isEmpty, "already on show")
+        XCTAssertEqual(pane.list.selectedID, ButtonsListLayout.thumbWheelRowID)
+        XCTAssertTrue(window.firstResponder === pane.list, "the list has the keyboard")
+        XCTAssertEqual(undo.undoMenuItemTitle, "Undo Change Action")
+    }
+
     // MARK: - Changing a row, with Undo
 
     /// A wrong click in a row's menu is no longer for good: Edit › Undo ("Undo Change

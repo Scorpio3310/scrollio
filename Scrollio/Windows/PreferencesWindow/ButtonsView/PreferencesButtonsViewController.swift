@@ -457,23 +457,35 @@ class PreferencesButtonsViewController: NSViewController {
     /// Stores what the thumb wheel does, only when it changes. Both panes then show it
     /// (ThumbWheelSettingsChange); the bindings are not touched. Undo ("Undo Change
     /// Action", as a button row's) puts back the function it had; Redo and Undo stay with
-    /// the manager the change used.
+    /// the manager the change used, and show where they act as a button row's do: the pane
+    /// comes forward while another one shows, the wheel's row is selected and the list has
+    /// the keyboard.
     func setThumbWheelFunction(_ function: ThumbWheelFunction) {
-        setThumbWheelFunction(function, undoManager: undoTarget)
+        setThumbWheelFunction(function, undoManager: undoTarget, isUndoOrRedo: false)
     }
 
-    private func setThumbWheelFunction(_ function: ThumbWheelFunction, undoManager undo: UndoManager?) {
+    private func setThumbWheelFunction(_ function: ThumbWheelFunction, undoManager undo: UndoManager?, isUndoOrRedo: Bool) {
         let old = Options.shared.thumbWheel.function
         if old != function {
             Options.shared.thumbWheel.function = function
             if let undo {
                 undo.registerUndo(withTarget: self) { [weak undo] controller in
-                    controller.setThumbWheelFunction(old, undoManager: undo)
+                    controller.setThumbWheelFunction(old, undoManager: undo, isUndoOrRedo: true)
                 }
                 undo.setActionName(text("buttons-undo-change-action"))
             }
         }
+        if isUndoOrRedo {
+            comeForward()
+        }
         syncThumbWheel()
+        if isUndoOrRedo {
+            if thumbWheelRow != nil {
+                list.select(ButtonsListLayout.thumbWheelRowID)
+            }
+            focusList()
+            updateHeader()
+        }
     }
 
     /// The thumb wheel's row (and the card while it is about that row) shows the stored
