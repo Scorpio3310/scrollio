@@ -41,7 +41,9 @@
 //  outlives the stroke.
 //
 //  Where the work is done: the tap callback only adds an event's travel up (`add`, a few
-//  sums and at most one closure per display frame); the swipe begins, moves and ends on the
+//  sums and at most one closure per display frame; a rest or a timeout whose look has not
+//  run yet is seen there, and what it ends is told to the roll's line afterwards, on the
+//  main queue); the swipe begins, moves and ends on the
 //  main queue, at most once per display frame, as a gesture's does (the Dock stutters when
 //  swipe events come faster than it draws). The screen (its width does not matter here, the
 //  number of Spaces does) is looked at when a swipe begins, on the main queue. The desktop
@@ -185,6 +187,8 @@ final class ThumbWheelFollower {
     private var lateRecord: Gate?
     /// Swipe endings told after the late record's, so the roll's line lists them in order.
     private var queuedEnds: [(tag: Int, swipe: Swipe)] = []
+    /// `add` or `endStroke(at:)` runs (the tap callback): endings are told on the main queue.
+    private var inTapCallback = false
 
     private let spaceChanges: NotificationCenter?
     private var spaceObserver: NSObjectProtocol?
@@ -227,6 +231,8 @@ final class ThumbWheelFollower {
     ///   - time: the event's own time; `seenAt`: `clock` when the callback saw it.
     ///   - tag: told back with what the stroke and its swipes did (the engine's roll).
     func add(_ travel: Double, at time: TimeInterval, seenAt: TimeInterval, tag: Int = 0) -> Taken {
+        inTapCallback = true
+        defer { inTapCallback = false }
         if state != .idle, time >= lastEventAt + ThumbWheelTuning.followRest {
             // The rest's look has not come yet (the main queue was busy): the stroke ended.
             finishStroke(at: lastEventAt + ThumbWheelTuning.followRest)
@@ -261,9 +267,11 @@ final class ThumbWheelFollower {
     }
 
     /// The turn no longer follows the wheel (its settings changed in the middle): the stroke
-    /// ends now, by the same rule as at a rest.
+    /// ends now, by the same rule as at a rest. In the tap callback, as `add`.
     func endStroke(at time: TimeInterval) {
         guard state != .idle else { return }
+        inTapCallback = true
+        defer { inTapCallback = false }
         finishStroke(at: max(time, lastEventAt))
     }
 
@@ -547,17 +555,27 @@ final class ThumbWheelFollower {
         if lateRecord != nil {
             queuedEnds.append((tag, swipe))
         } else {
-            onSwipeEnd?(tag, swipe)
+            deliver(tag, swipe)
         }
     }
 
     /// Tells the late record's ending (taken off already), then those that waited behind it.
     private func tellLate(_ record: Gate) {
-        onSwipeEnd?(record.tag, record.swipe)
+        deliver(record.tag, record.swipe)
         while lateRecord == nil, !queuedEnds.isEmpty {
             let end = queuedEnds.removeFirst()
-            onSwipeEnd?(end.tag, end.swipe)
+            deliver(end.tag, end.swipe)
         }
+    }
+
+    /// The roll's line lists the swipe (its list grows: never in the tap callback). From
+    /// `add` it is told after the callback, on the main queue, in the order told.
+    private func deliver(_ tag: Int, _ swipe: Swipe) {
+        guard inTapCallback else {
+            onSwipeEnd?(tag, swipe)
+            return
+        }
+        schedule(0) { [weak self] in self?.onSwipeEnd?(tag, swipe) }
     }
 
     /// The stroke at the gate goes on: it follows again (its kept travel begins a swipe),

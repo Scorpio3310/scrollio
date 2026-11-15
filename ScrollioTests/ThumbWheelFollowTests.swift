@@ -199,6 +199,8 @@ final class ThumbWheelFollowTests: XCTestCase {
     private var savedAllowlist = false
     private var savedApplications: EnhanceArray<Application>!
     private var front: FrontApp?
+    /// The scroll tap's callback runs: no swipe's ending may be told to the line then.
+    private var insideTapCallback = false
 
     /// Three Spaces: one Space is 1.5 of progress, a unit a quarter of that.
     private static let space = DockSwipeGeometry.progressPerSpace(spaceCount: 3)
@@ -218,6 +220,11 @@ final class ThumbWheelFollowTests: XCTestCase {
         synthesizer.setTestingDriver(dock.driver())
         rig.engine.follower.synthesizer = synthesizer
         rig.engine.follower.screen = { InteractiveGestureScreen(width: 1440, spaceCount: 3, frameDuration: 1.0 / 60.0) }
+        let told = rig.engine.follower.onSwipeEnd
+        rig.engine.follower.onSwipeEnd = { [unowned self] tag, swipe in
+            XCTAssertFalse(self.insideTapCallback, "a swipe's ending told inside the tap callback")
+            told?(tag, swipe)
+        }
         ScrollCore.shared.thumbWheelEngine = rig.engine
         ScrollCore.shared.handover = ScrollHandover()
         Options.shared.scroll.smooth = false
@@ -263,6 +270,8 @@ final class ThumbWheelFollowTests: XCTestCase {
         event.setIntegerValueField(.eventSourceUnixProcessID, value: 0)
         event.setIntegerValueField(.eventTargetUnixProcessID, value: 1)
         event.timestamp = ThumbWheelEngineTests.Rig.timestamp(time)
+        insideTapCallback = true
+        defer { insideTapCallback = false }
         return ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .scrollWheel, event, nil)?.takeUnretainedValue()
     }
 
@@ -649,6 +658,32 @@ final class ThumbWheelFollowTests: XCTestCase {
         rig.advance(to: 502)
         XCTAssertEqual(beginCount, 1)
         XCTAssertEqual(try XCTUnwrap(dock.updates.last), Self.space / 6, accuracy: 1e-9, "the new stroke's one event")
+    }
+
+    /// The main queue was busy: an event finds that the stroke rested, or that a gate timed
+    /// out, before their looks ran. The endings that brings are told to the roll's line after
+    /// the callback, on the main queue, in order (the setup fails one told inside it).
+    func testWhatAnEventEndsIsToldAfterTheTapCallback() throws {
+        try turn(at: 0)
+        try turn(at: 0.05)
+        rig.advance(to: 500.1)
+        try turn(at: 0.6, busy: true)
+        XCTAssertEqual(dock.terminals, [.end(0)], "the stroke ended in the callback")
+        rig.advance(to: 503)
+        XCTAssertEqual(rig.lines.first?.swipes.map(ScrollSystemLog.swipeMessage), ["0.33 ended", "0.17 ended"], "the new stroke's too")
+
+        // A swipe that waits as late, and a newer gate that times out while the queue is busy.
+        dock.calls = []
+        var time = 5.0
+        while time < 5.9 { try turn(at: time); time += 0.05 }
+        while time < 6.3 { try turn(at: time, lines: 2); time += 0.05 }
+        rig.advance(to: 500 + time)
+        XCTAssertEqual(endTimes.count, 2)
+        try turn(at: 7, lines: 2, busy: true)
+        rig.advance(to: 510)
+        let line = try XCTUnwrap(rig.lines.dropFirst().first)
+        XCTAssertTrue(ScrollSystemLog.followMessage(for: line).hasPrefix("swipes 1.00 chained no change, 1.00 chained no change"),
+                      ScrollSystemLog.followMessage(for: line))
     }
 
     /// The Space changes 0.55 s after a chained end, after the gate's timeout, while the
