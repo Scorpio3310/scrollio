@@ -4496,3 +4496,130 @@ extension PreferencesWindowRenderTests {
         })
     }
 }
+
+// MARK: - Round 4 D2
+
+/// Round 4, D2 (`round4-d2-*-<appearance>.png`): "Freeze pointer during a gesture" while
+/// the mouse holds the pointer itself (on, dimmed, with the reason), while it does so for
+/// some of the buttons only, and the pane without a Logitech mouse (it ends with
+/// "Behavior": no line asks for one); the same switch of an app's own gestures; and the
+/// Buttons pane's free Gesture button and Thumb panel saying what they are good for.
+extension PreferencesWindowRenderTests {
+
+    func testRenderRound4D2Gestures() throws {
+        let stored = Options.shared.application.applications
+        addTeardownBlock {
+            Options.shared.application.applications = stored
+            ButtonUtils.shared.invalidateCache()
+        }
+        let master4 = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
+        let action = SystemShortcut.mouseGestureNavigation.identifier
+        let tracked = round2Binding(LogiCenter.shared.scrollioCode(for: .gesture), action)
+        let back = round2Binding(3, action)
+        var tracking = MouseGestureSettings.default
+        tracking.deviceTracking = true
+        tracking.freezePointer = false
+
+        let cases: [(name: String, settings: MouseGestureSettings, support: MouseGestureDeviceSupport, bindings: [ButtonBinding],
+                     titles: [String], holder: MouseGesturePointerHolder)] = [
+            ("mouse-holds", tracking, master4, [tracked], ["Gesture button"], .mouse),
+            ("some", tracking, master4, [tracked, back], ["Gesture button", "Back button"], .mouseForSome),
+            ("no-logitech", .default, .none, [back], ["Back button"], .scrollio),
+        ]
+        for item in cases {
+            Options.shared.gesture = item.settings
+            var pane: GesturesPreferencesViewController?
+            try renderPane(GesturesPreferencesViewController.tabIdentifier, name: "round4-d2-gestures-\(item.name)", replacement: {
+                let gestures = GesturesPreferencesViewController(isInteractiveAvailable: { true })
+                gestures.deviceSource = MouseGestureDeviceSource(support: { item.support }, refresh: {})
+                gestures.gestureBindingSets = { [item.bindings] }
+                gestures.holdKeysThatCatch = { [] }
+                gestures.bindingSummary = {
+                    MouseGestureBindingSummary(
+                        hasGestureButton: true, hasLogitechGestureButton: item.support.deviceTracking, buttonTitles: item.titles,
+                        picture: self.gesturePicture(logitech: item.support.deviceTracking)
+                    )
+                }
+                return gestures
+            }, afterLoad: { controller in
+                guard let gestures = controller as? GesturesPreferencesViewController else { return }
+                pane = gestures
+                gestures.previewView.prefersReducedMotion = { true }
+                gestures.previewView.reduceMotionDidChange()
+                if item.support.deviceTracking {
+                    gestures.previewView.mouseSource = { .mxMaster4 }
+                    gestures.previewView.reloadMouse()
+                }
+            })
+            let shown = try XCTUnwrap(pane)
+            XCTAssertEqual(shown.pointerHolder, item.holder, item.name)
+            XCTAssertEqual(shown.freezeRow.isEnabled, item.holder != .mouse, item.name)
+            XCTAssertEqual(MouseGestureSettingsControls.isOn(shown.controls.freezeToggle), item.name != "some", item.name)
+            XCTAssertEqual(shown.logitechSection.isHidden, !item.support.deviceTracking, item.name)
+            XCTAssertEqual(Options.shared.gesture, item.settings, "\(item.name): drawing stores nothing")
+        }
+
+        // Safari's own gestures on an MX Master 4, its own "Let the mouse track the gesture"
+        // on and its own Freeze stored off: the same row in Safari › Gestures.
+        Options.shared.gesture = .default
+        Options.shared.buttons.binding = [tracked]
+        let safari = Application(path: "/Applications/Safari.app")
+        safari.setUsesGeneralGestures(false, general: .default)
+        safari.changeOwnGestures {
+            $0.deviceTracking = true
+            $0.freezePointer = false
+        }
+        Options.shared.application.applications = EnhanceArray<Application>(withArray: [safari], matchKey: "path")
+        ButtonUtils.shared.invalidateCache()
+        let defaults = uiDefaults(advanced: false)
+        var part: ApplicationGesturesPartViewController?
+        try renderPane(PANEL_IDENTIFIER.application, name: "round4-d2-app-gestures-mouse-holds", prepare: { preferences in
+            (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                .uiStateDefaults = defaults
+        }, afterLoad: { controller in
+            let apps = controller as? PreferencesApplicationViewController
+            apps?.openApplication(withID: safari.path, part: .gestures)
+            part = apps?.detailController?.gesturesPart
+            part?.deviceSource = MouseGestureDeviceSource(support: { master4 }, refresh: {})
+            part?.isInteractiveAvailable = { true }
+            part?.holdKeysThatCatch = { [] }
+            part?.syncViewWithOptions()
+        })
+        let own = try XCTUnwrap(part)
+        XCTAssertEqual(own.pointerHolder, .mouse)
+        XCTAssertEqual(own.freezeRow?.isEnabled, false)
+        XCTAssertEqual(safari.ownGestures?.freezePointer, false)
+    }
+
+    /// Buttons on an MX Master 4 with nothing set up (both rows name Gestures and the
+    /// Shortcut Ring), with the Gesture button's row selected, with the Gesture button
+    /// running the gestures (the Thumb panel names the ring), and an MX Master 3S with
+    /// nothing set up (its Gesture button's row).
+    func testRenderRound4D2Buttons() throws {
+        let gesture = LogiCenter.shared.scrollioCode(for: .gesture)
+        let both = "Good for Gestures or the Shortcut Ring."
+        Options.shared.buttons.binding = []
+        for selected in [false, true] {
+            try renderButtons(name: "round4-d2-buttons-mx4-free" + (selected ? "-selected" : ""), source: round2Source("MX Master 4")) { buttons in
+                buttons.holdKeysThatCatch = { [] }
+                buttons.reload()
+                XCTAssertEqual(buttons.row(for: ButtonsMousePart.gesture)?.explanation, both)
+                XCTAssertEqual(buttons.row(for: ButtonsMousePart.thumbPanel)?.explanation, both)
+                if selected {
+                    buttons.list.select(ButtonsMousePart.gesture)
+                }
+            }
+        }
+        try renderButtons(name: "round4-d2-buttons-mx3s-free", source: round2Source("MX Master 3S")) { buttons in
+            buttons.holdKeysThatCatch = { [] }
+            buttons.reload()
+            XCTAssertEqual(buttons.row(for: ButtonsMousePart.gesture)?.explanation, both)
+        }
+        Options.shared.buttons.binding = [round2Binding(gesture, SystemShortcut.mouseGestureNavigation.identifier)]
+        try renderButtons(name: "round4-d2-buttons-mx4-gestures-taken", source: round2Source("MX Master 4")) { buttons in
+            buttons.holdKeysThatCatch = { [] }
+            buttons.reload()
+            XCTAssertEqual(buttons.row(for: ButtonsMousePart.thumbPanel)?.explanation, "Good for the Shortcut Ring.")
+        }
+    }
+}
