@@ -172,7 +172,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-ring-layout-would-empty-one", "apps-ring-layout-would-empty-other",
         "apps-ring-suggestion-offer", "apps-add-suggested-ring",
         "apps-trigger-everywhere", "apps-trigger-only-here", "apps-trigger-mixed", "apps-trigger-none",
-        "apps-trigger-show-in-buttons", "apps-trigger-show-buttons",
+        "apps-trigger-show-in-buttons",
         "apps-summary-own", "apps-summary-scrolling", "apps-summary-buttons-one", "apps-summary-buttons-other",
         "apps-summary-thumb-wheel", "apps-summary-gestures", "apps-summary-ring", "apps-summary-none",
         "apps-empty", "apps-show-in-finder",
@@ -277,7 +277,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "intro-access-todo-detail", "intro-status-running",
         "intro-finish-title", "intro-finish-text", "intro-finish-picture", "intro-finish-picture-hidden-icon",
         "intro-finish-hidden-icon-paused", "intro-finish-title-hidden-icon-paused",
-        "intro-open-app-settings-button", "intro-done-button",
+        "intro-done-button",
+        "intro-finish-next-buttons", "intro-finish-next-gestures", "intro-finish-next-ring",
     ]
 
     /// The Shortcut Ring: its action, its pane and its lines elsewhere.

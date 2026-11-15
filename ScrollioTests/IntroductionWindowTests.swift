@@ -53,6 +53,8 @@ private final class GuideWorld {
     var reveals = 0
     var grantsReported = 0
     var appSettingsOpened = 0
+    /// The panes Settings was opened on, in order.
+    var openedPanes: [String] = []
     var broughtToFront = 0
     var announcements: [String] = []
     var presentedHelp: [NSPopover] = []
@@ -76,8 +78,9 @@ private final class GuideWorld {
             if let next = self.runAfterGrant { self.run = next }
         }
         controller.isMenuBarIconHidden = { self.menuBarIconHidden }
-        controller.openAppSettings = {
+        controller.openAppSettings = { pane in
             self.appSettingsOpened += 1
+            self.openedPanes.append(pane)
             self.log.append("Preferences")
         }
         controller.prefersReducedMotion = { self.reduceMotion }
@@ -292,7 +295,6 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(primary.keyEquivalent, "\r", "Return presses it, and AppKit draws it in the accent colour")
         XCTAssertEqual(primary.bezelStyle, .push)
         XCTAssertFalse(isShown(controller.backButton), "nothing to go back to")
-        XCTAssertFalse(isShown(controller.secondaryButton))
         XCTAssertEqual(controller.dots.accessibilityLabel(), "Step 1 of 4")
         XCTAssertEqual(controller.backButton.keyEquivalent, "[", "⌘[ goes back, as in Finder and System Settings")
         XCTAssertEqual(controller.backButton.keyEquivalentModifierMask, .command)
@@ -327,8 +329,7 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(controller.currentStep, .finish)
         XCTAssertEqual(controller.dots.accessibilityLabel(), "Step 4 of 4")
         XCTAssertEqual(controller.primaryButton.title, "Done")
-        XCTAssertEqual(controller.secondaryButton.title, "Open Settings")
-        XCTAssertTrue(isShown(controller.secondaryButton))
+        XCTAssertEqual(controller.finishStep.nextRows.filter(isShown).count, 3)
 
         // Only the step on screen is in the window.
         XCTAssertEqual(controller.pictureHost.subviews.count, 1)
@@ -931,8 +932,8 @@ final class IntroductionWindowTests: XCTestCase {
 
         world.currentEvent = mouseUp(clicks: 3)
         click(controller.primaryButton)
-        click(controller.secondaryButton)
-        XCTAssertFalse(world.progress.isFinished, "neither Done nor Open Settings right after the change")
+        click(controller.finishStep.nextRows[0])
+        XCTAssertFalse(world.progress.isFinished, "neither Done nor a row right after the change")
         XCTAssertEqual(world.appSettingsOpened, 0)
         world.uptime += IntroductionViewController.pressSettleTime + 0.01
         click(controller.primaryButton)
@@ -1168,9 +1169,9 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertTrue(picture.isClockRunning, "the loop is back with the request")
     }
 
-    /// "Open at login" may open Login Items for an approval: it comes after the Preferences,
-    /// so it is the window in front.
-    func testOpenSettingsLeavesLoginItemsInFront() {
+    /// "Open at login" may open Login Items for an approval: it comes after the Preferences
+    /// a row of the last step opens, so it is the window in front.
+    func testARowLeavesLoginItemsInFront() {
         let fake = install(.requiresApproval)
         fake.afterRegister = nil
         fake.onOpenSystemSettings = { self.world.log.append("Login Items") }
@@ -1178,7 +1179,7 @@ final class IntroductionWindowTests: XCTestCase {
         let row = controller.finishStep.loginRow!
         row.toggle.state = .on
         XCTAssertTrue(row.toggle.sendAction(row.toggle.action, to: row.toggle.target))
-        click(controller.secondaryButton)
+        click(controller.finishStep.nextRows[1])
         XCTAssertEqual(world.log, ["Preferences", "Login Items"])
     }
 
@@ -1242,6 +1243,45 @@ final class IntroductionWindowTests: XCTestCase {
         addTeardownBlock { WelcomeGuideLayout.metrics = .roomy }
         XCTAssertEqual(WelcomeGuideLayout.windowSize.height, 620)
         try assertTheStepsShareOneGrid()
+    }
+
+    /// The last step with its "where next" box fits both windows in every state, the text of
+    /// two lines (the icon hidden while Scrollio runs) too: nothing comes closer than 16 pt
+    /// to the bar, no text is cut off, and the rows keep their height.
+    func testTheLastStepFitsBothWindowsInEveryState() throws {
+        addTeardownBlock { WelcomeGuideLayout.metrics = .roomy }
+        let states: [(Bool, WelcomeGuideRunState)] = [(false, .running), (true, .running), (false, .paused), (true, .paused)]
+        for metrics in [WelcomeGuideLayout.Metrics.roomy, .tight] {
+            WelcomeGuideLayout.metrics = metrics
+            for (hidden, run) in states {
+                let world = GuideWorld()
+                addTeardownBlock { world.tearDown() }
+                world.accessGranted = true
+                world.run = run
+                world.menuBarIconHidden = hidden
+                let controller = world.makeController(flow: .full)
+                _ = makeWindow(for: controller)
+                controller.go(by: try XCTUnwrap(controller.steps.firstIndex(of: .finish)) - controller.index)
+                controller.view.layoutSubtreeIfNeeded()
+                let canvas = try XCTUnwrap(controller.contentHost.superview)
+                let bar = WelcomeGuideLayout.barFrame
+                let name = "\(Int(metrics.windowHeight)) pt, icon hidden \(hidden), \(run)"
+                let shown = allSubviews(of: controller.finishStep.content).filter(isShown)
+                for view in shown {
+                    XCTAssertLessThanOrEqual(canvas.convert(view.bounds, from: view).maxY, bar.minY - 16, "\(name): \(type(of: view))")
+                }
+                for field in shown.compactMap({ $0 as? NSTextField }) where !field.stringValue.isEmpty {
+                    let needed = try XCTUnwrap(field.cell).cellSize(
+                        forBounds: NSRect(x: 0, y: 0, width: field.bounds.width, height: .greatestFiniteMagnitude)
+                    )
+                    XCTAssertLessThanOrEqual(needed.width, field.bounds.width + 0.5, "\(name): \"\(field.stringValue)\" is cut off")
+                    XCTAssertLessThanOrEqual(needed.height, field.bounds.height + 0.5, "\(name): \"\(field.stringValue)\" is cut off")
+                }
+                XCTAssertEqual(
+                    controller.finishStep.nextRows.map(\.frame.height), Array(repeating: metrics == .tight ? 28 : 36, count: 3), name
+                )
+            }
+        }
     }
 
     /// The feel step looked crammed in 620 pt (its parts 14 to 18 pt apart). The
@@ -1790,7 +1830,7 @@ final class IntroductionWindowTests: XCTestCase {
             XCTAssertEqual(controller.feelStep.reverseRow.isOn, reversed, spot)
         }
 
-        // The last step: Open at login, Done and Open Settings (which closes the window).
+        // The last step: Open at login, Done and the three rows (a row closes the window).
         controller.go(by: 1)
         settle()
         XCTAssertEqual(controller.currentStep, .finish)
@@ -1802,12 +1842,18 @@ final class IntroductionWindowTests: XCTestCase {
         for (spot, point) in spots(of: controller.primaryButton) {
             assertTakesTheClick(controller.primaryButton, at: point, "Done, \(spot)")
         }
-        for (spot, point) in spots(of: controller.secondaryButton) {
-            assertTakesTheClick(controller.secondaryButton, at: point, "Open Settings, \(spot)")
+        for row in controller.finishStep.nextRows {
+            for (spot, point) in spots(of: row) {
+                assertTakesTheClick(row, at: point, "\(row.place.title), \(spot)")
+            }
         }
+        // A press that leaves the row sends nothing.
+        let gestures = controller.finishStep.nextRows[1]
+        realClick(gestures, path: [spots(of: gestures)[0].1, NSPoint(x: gestures.bounds.midX, y: gestures.bounds.maxY + 30)])
+        XCTAssertEqual(world.appSettingsOpened, 0)
         install(.notRegistered)
-        realClick(controller.secondaryButton, at: spots(of: controller.secondaryButton)[2].1, move: 2)
-        XCTAssertEqual(world.appSettingsOpened, 1)
+        realClick(gestures, at: spots(of: gestures)[2].1, move: 2)
+        XCTAssertEqual(world.openedPanes, ["gestures"])
         XCTAssertTrue(world.progress.isFinished)
     }
 
@@ -1933,19 +1979,19 @@ final class IntroductionWindowTests: XCTestCase {
         let off = install(.notRegistered)
         controller = makeFinishController(finished: true)
         XCTAssertFalse(controller.finishStep.loginRow.isOn)
-        click(controller.secondaryButton)
+        click(controller.finishStep.nextRows[2])
         XCTAssertEqual(off.calls, 0)
-        XCTAssertEqual(world.appSettingsOpened, 1)
+        XCTAssertEqual(world.openedPanes, ["ring"])
     }
 
-    func testTurningItOffRemovesTheRegistrationWhenLeavingWithOpenSettings() {
+    func testTurningItOffRemovesTheRegistrationWhenLeavingByARow() {
         let fake = install(.enabled)
         let controller = makeFinishController(finished: true)
         let row = controller.finishStep.loginRow!
         row.toggle.state = .off
         XCTAssertTrue(row.toggle.sendAction(row.toggle.action, to: row.toggle.target))
         XCTAssertEqual(fake.calls, 0)
-        click(controller.secondaryButton)
+        click(controller.finishStep.nextRows[0])
         XCTAssertEqual(fake.unregisterCalls, 1)
         XCTAssertEqual(fake.registerCalls, 0)
         XCTAssertFalse(Options.shared.general.autoLaunch)
@@ -2017,18 +2063,101 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(world.appSettingsOpened, 0)
     }
 
-    func testOpenSettingsOpensThePreferencesThenCloses() {
+    /// Each row opens Settings on its pane and ends the guide as Done does: the guide is
+    /// finished and its window closes. Nothing in the pane is started.
+    func testEachRowOpensSettingsOnItsPaneAndFinishesTheGuide() {
+        for (index, pane) in ["buttons", "gestures", "ring"].enumerated() {
+            let world = GuideWorld()
+            addTeardownBlock { world.tearDown() }
+            world.accessGranted = true
+            world.run = .running
+            let controller = world.makeController(flow: .full)
+            let window = makeWindow(for: controller)
+            click(controller.primaryButton)
+            click(controller.primaryButton)
+            XCTAssertEqual(controller.currentStep, .finish)
+            XCTAssertFalse(world.progress.isFinished)
+            let closed = expectation(forNotification: NSWindow.willCloseNotification, object: window)
+            click(controller.finishStep.nextRows[index])
+            wait(for: [closed], timeout: 1)
+            XCTAssertEqual(world.openedPanes, [pane])
+            XCTAssertTrue(world.progress.isFinished, pane)
+        }
+        // VoiceOver's press is a click.
+        let world = GuideWorld()
+        addTeardownBlock { world.tearDown() }
         world.accessGranted = true
         world.run = .running
         let controller = world.makeController(flow: .full)
-        let window = makeWindow(for: controller)
-        click(controller.primaryButton)
-        click(controller.primaryButton)
-        let closed = expectation(forNotification: NSWindow.willCloseNotification, object: window)
-        click(controller.secondaryButton)
-        wait(for: [closed], timeout: 1)
-        XCTAssertEqual(world.appSettingsOpened, 1)
+        controller.go(by: 2)
+        XCTAssertTrue(controller.finishStep.nextRows[1].accessibilityPerformPress())
+        XCTAssertEqual(world.openedPanes, ["gestures"])
         XCTAssertTrue(world.progress.isFinished)
+    }
+
+    /// The last step leads to Buttons, Gestures and the Shortcut Ring: one row each, named
+    /// and drawn as the sidebar names and draws the pane, with a hint and a chevron. VoiceOver
+    /// reads a button named after the pane, with the hint as its help. The rows are there
+    /// whatever the menu bar icon and the pause.
+    func testTheLastStepLeadsToButtonsGesturesAndTheRing() throws {
+        let controller = makeFinishController()
+        _ = makeWindow(for: controller)
+        controller.view.layoutSubtreeIfNeeded()
+        let rows = controller.finishStep.nextRows
+        XCTAssertEqual(rows.map(\.place), [.buttons, .gestures, .ring])
+        XCTAssertEqual(rows.map(\.nameLabel.stringValue), ["Buttons", "Gestures", "Shortcut Ring"], "the sidebar's names")
+        XCTAssertEqual(rows.map(\.hintLabel.stringValue), [
+            "Give any button its own action.", "Hold a button and move the mouse.", "Eight shortcuts around the pointer.",
+        ])
+        XCTAssertEqual(rows.map(\.place.paneIdentifier), [
+            PANEL_IDENTIFIER.buttons, GesturesPreferencesViewController.tabIdentifier, RingPreferencesViewController.tabIdentifier,
+        ])
+        let sidebar = PreferencesPane.all.map(\.identifier)
+        XCTAssertEqual(
+            rows.map { sidebar.firstIndex(of: $0.place.paneIdentifier) ?? -1 },
+            rows.map { sidebar.firstIndex(of: $0.place.paneIdentifier) ?? -1 }.sorted(), "the sidebar's order"
+        )
+        for row in rows {
+            let pane = try XCTUnwrap(row.place.pane, row.place.title)
+            XCTAssertEqual(row.tileView.image?.size, NSSize(width: PreferencesSidebarViewController.tileSize, height: PreferencesSidebarViewController.tileSize))
+            XCTAssertNotNil(NSImage(systemSymbolName: pane.symbolName, accessibilityDescription: nil), pane.symbolName)
+            XCTAssertNotNil(row.chevronView.image)
+            XCTAssertEqual(row.accessibilityRole(), .button)
+            XCTAssertEqual(row.accessibilityLabel(), row.place.title)
+            XCTAssertEqual(row.accessibilityHelp(), row.place.hint)
+            for part in [row.tileView, row.nameLabel, row.hintLabel, row.chevronView] as [NSView] {
+                XCTAssertFalse(part.isAccessibilityElement(), "\(row.place.title): the row speaks for its parts")
+            }
+            XCTAssertEqual(row.keyEquivalent, "", "\(row.place.title) is not the default button")
+            XCTAssertEqual(row.frame.height, WelcomeGuideNextRow.height)
+            XCTAssertTrue(row.target === controller)
+        }
+        XCTAssertEqual(controller.finishStep.nextBox.separatorRects.count, 2, "a hairline between two rows")
+        XCTAssertEqual(controller.finishStep.nextBox.frame.width, controller.finishStep.loginBox.frame.width)
+        // Under the text, above "Open at login".
+        let canvas = try XCTUnwrap(controller.contentHost.superview)
+        func frame(_ view: NSView) -> NSRect { canvas.convert(view.bounds, from: view) }
+        XCTAssertGreaterThan(frame(controller.finishStep.nextBox).minY, frame(controller.finishStep.textLabel).maxY)
+        XCTAssertGreaterThan(frame(controller.finishStep.loginBox).minY, frame(controller.finishStep.nextBox).maxY)
+
+        for (hidden, run) in [(true, WelcomeGuideRunState.running), (false, .paused), (true, .paused)] {
+            world.menuBarIconHidden = hidden
+            world.run = run
+            controller.finishStep.refresh()
+            XCTAssertTrue(rows.allSatisfy(isShown), "hidden icon \(hidden), \(run)")
+        }
+    }
+
+    /// "Open Settings" is gone: Done is the step's only push button in the bar and the only
+    /// default button of the window, drawn in the accent colour; Return presses it.
+    func testDoneIsTheOnlyDefaultButtonOfTheLastStep() {
+        let controller = makeFinishController()
+        _ = makeWindow(for: controller)
+        let buttons = allSubviews(of: controller.view).compactMap { $0 as? NSButton }.filter(isShown)
+        XCTAssertEqual(buttons.filter { $0.keyEquivalent == "\r" }, [controller.primaryButton])
+        XCTAssertEqual(controller.primaryButton.title, "Done")
+        XCTAssertFalse(buttons.contains { $0.title == "Open Settings" })
+        XCTAssertEqual(buttons.filter { $0.bezelStyle == .push && $0.isBordered }.map(\.title), ["Back", "Done"])
     }
 
     /// "Having trouble?": the help in its popover is written in the label colour (the muted
@@ -2045,8 +2174,8 @@ final class IntroductionWindowTests: XCTestCase {
         XCTAssertEqual(link.attributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .controlAccentColor)
     }
 
-    /// The buttons of the last step stand clear of the step dots in the middle of the bar:
-    /// a longer title for "Open Settings" ("Open Scrollio Settings") ran into them.
+    /// The buttons of the last step stand clear of the step dots in the middle of the bar
+    /// (a longer title for the "Open Settings" it had ran into them).
     func testTheLastStepsButtonsStandClearOfTheDots() {
         world.accessGranted = true
         world.run = .running
@@ -2056,10 +2185,8 @@ final class IntroductionWindowTests: XCTestCase {
         click(controller.primaryButton)
         XCTAssertEqual(controller.currentStep, .finish)
         controller.view.layoutSubtreeIfNeeded()
-        XCTAssertFalse(controller.secondaryButton.isHidden)
-        XCTAssertGreaterThanOrEqual(controller.secondaryButton.frame.minX - controller.dots.frame.maxX, 8, "Open Settings and the dots")
+        XCTAssertGreaterThanOrEqual(controller.primaryButton.frame.minX - controller.dots.frame.maxX, 8, "Done and the dots")
         XCTAssertGreaterThanOrEqual(controller.dots.frame.minX - controller.backButton.frame.maxX, 8, "Back and the dots")
-        XCTAssertLessThanOrEqual(controller.secondaryButton.frame.maxX, controller.primaryButton.frame.minX)
     }
 
     func testTheLastStepNamesTheHiddenIconWay() {
@@ -2313,7 +2440,7 @@ final class IntroductionWindowTests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(button.frame.width, button.intrinsicContentSize.width - 0.5, "\(name): \(button.title)")
             }
             // The bar's buttons stay on the bar, inside the margins.
-            for button in [controller.backButton!, controller.primaryButton!, controller.secondaryButton!] where isShown(button) {
+            for button in [controller.backButton!, controller.primaryButton!] where isShown(button) {
                 let frame = view.convert(button.bounds, from: button)
                 XCTAssertGreaterThanOrEqual(frame.minX, 23.5, "\(name): \(button.title)")
                 XCTAssertLessThanOrEqual(frame.maxX, view.bounds.width - 23.5, "\(name): \(button.title)")
@@ -2378,7 +2505,8 @@ final class IntroductionWindowTests: XCTestCase {
         for old in ["Introducing", "Allow Access ", "Not effective", "Authorized", "Open the Accessibility settings", "Step 1:"] {
             XCTAssertFalse(texts.contains { $0.localizedCaseInsensitiveContains(old) }, old)
         }
-        for key in ["intro-access-heading", "intro-step-open-settings", "intro-step-accessibility", "intro-status-missing"] {
+        for key in ["intro-access-heading", "intro-step-open-settings", "intro-step-accessibility", "intro-status-missing",
+                    "intro-open-app-settings-button"] {
             XCTAssertEqual(NSLocalizedString(key, comment: ""), key, "\(key) is still in the catalog")
         }
         for name in ["manual-remove", "drag-arrow", "sparkle"] {
@@ -2649,6 +2777,31 @@ final class WelcomeGuideRenderTests: XCTestCase {
         try render("guide-4-finish-hidden-icon-paused", configure: {
             $0.accessGranted = true
             $0.run = .paused
+            $0.menuBarIconHidden = true
+        }) { controller, _ in
+            self.toStep(.finish, in: controller)
+            controller.finishStep.artwork.showStill()
+        }
+        try render("guide-4-finish-paused", configure: { $0.accessGranted = true; $0.run = .paused }) { controller, _ in
+            self.toStep(.finish, in: controller)
+            controller.finishStep.artwork.showStill()
+        }
+        // The Gestures row held down.
+        try render("guide-4-finish-pressed", configure: { $0.accessGranted = true; $0.run = .running }) { controller, _ in
+            self.toStep(.finish, in: controller)
+            controller.finishStep.artwork.showStill()
+            controller.finishStep.nextRows[1].isHighlighted = true
+        }
+        // The window of a short screen (620 pt), the longest text (two lines) included.
+        WelcomeGuideLayout.metrics = .tight
+        defer { WelcomeGuideLayout.metrics = .roomy }
+        try render("guide-4-finish-tight", configure: { $0.accessGranted = true; $0.run = .running }) { controller, _ in
+            self.toStep(.finish, in: controller)
+            controller.finishStep.artwork.showStill()
+        }
+        try render("guide-4-finish-tight-hidden-icon", configure: {
+            $0.accessGranted = true
+            $0.run = .running
             $0.menuBarIconHidden = true
         }) { controller, _ in
             self.toStep(.finish, in: controller)

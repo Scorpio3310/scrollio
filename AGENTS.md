@@ -280,6 +280,19 @@ that must stay separate:
   the arguments its call site passes (`formatArguments`). Add a new key to the array of
   its area, and a formatted one to `formatArguments` too: several keys are built from
   variables, and a missing one would only show up as the raw key in the UI.
+- Words in the interface: one vocabulary everywhere the window speaks (the Settings
+  window, the menus, the Welcome Guide, the toasts).
+  - Name a place as the sidebar does ("Buttons", "Shortcut Ring"), and an app's part as
+    "Safari › Buttons".
+  - Never write "pane", "part", "general", "everywhere" or "while … is in front" in text a
+    user reads. Write "in Safari" and "in other apps".
+  - A switch that follows a pane: "Use settings from <Pane>"; on, its line says "Changes
+    under <Pane> apply to <App> too." A pop-up item that follows one: "Same as <Pane>".
+  - Buttons say "Default", with the effect in parentheses where it is known ("Default
+    (Back)"). The places of Gestures and of the Shortcut Ring say "No Action".
+  - What macOS does by itself: "the way macOS does", or "Left to macOS".
+  - The exact runtime rule is written only in `docs/features.md`: scrolling follows the
+    app under the pointer, while buttons, gestures and the ring follow the app in front.
 - Adding a language: add it to `knownRegions` in the project for both catalogs, translate
   both catalogs (the terms of System Settings for system features), add the locale to
   `PreferencesLocalizationTests.locales`, and look for clipped text in the Welcome Guide,
