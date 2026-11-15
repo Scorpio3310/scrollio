@@ -492,7 +492,80 @@ final class ApplicationPageTests: XCTestCase {
         pane.reloadRows()
         let again = try XCTUnwrap(pane.list.rows.compactMap { $0 as? ApplicationListRow }.first { $0.id == AnyHashable(own.path) })
         XCTAssertEqual(again.marks, [.buttons])
-        XCTAssertEqual(again.accessibilityLabel(), "Calculator, Uses your scrolling settings., Own button settings")
+        XCTAssertEqual(again.accessibilityLabel(), "Calculator, Own 1 button, Own button settings")
+    }
+
+    /// The list and the page's header say in words what an app has of its own, in the
+    /// parts' order ("Own scrolling, 2 buttons and ring"), or that it has nothing yet; the
+    /// list's line is one line, cut off at its end, and the tooltip has all of it with where
+    /// the app is. The page's segments carry a dot for each part of its own, and the header
+    /// follows a change made on the page at once.
+    func testTheListAndThePageSayWhatAnAppHasOfItsOwn() throws {
+        let calculator = addApp(Self.calculator, inherit: false)
+        calculator.setOwnButtonBindings([binding(3, "copy"), binding(4, "paste")])
+        calculator.setUsesGeneralRing(false, general: .default)
+        let textEdit = addApp(Self.textEdit)
+        // (Joined as the locale joins a list.)
+        func own(_ items: String...) -> String { return "Own " + ListFormatter.localizedString(byJoining: items) }
+        let three = own("scrolling", "2 buttons", "ring")
+        XCTAssertEqual(ApplicationPagePart.summary(of: calculator), three)
+        XCTAssertEqual(ApplicationPagePart.summary(of: textEdit), "Nothing of its own yet")
+        textEdit.setUsesGeneralRing(false, general: .default)
+        XCTAssertEqual(ApplicationPagePart.summary(of: textEdit), "Own ring")
+        textEdit.setOwnButtonBindings([binding(3, "copy")])
+        textEdit.setOwnThumbWheelFunction(.tabs)
+        textEdit.setUsesGeneralGestures(false, general: .default)
+        XCTAssertEqual(ApplicationPagePart.summary(of: textEdit), own("1 button", "thumb wheel", "gestures", "ring"))
+        textEdit.setOwnButtonBindings([])
+        textEdit.setOwnThumbWheelFunction(nil)
+        textEdit.setUsesGeneralGestures(true, general: .default)
+        textEdit.setUsesGeneralRing(true, general: .default)
+
+        let pane = makePane()
+        let rows = pane.list.rows
+        XCTAssertEqual(rows.map(\.explanation), [three, "Nothing of its own yet"])
+        XCTAssertEqual(rows[0].explanationLabel.maximumNumberOfLines, 1)
+        XCTAssertEqual(rows[0].explanationLabel.lineBreakMode, .byTruncatingTail)
+        XCTAssertEqual(rows[0].toolTip, "Calculator\n\(three)\n" + Self.calculator)
+
+        pane.openApplication(withID: Self.calculator, part: .buttons)
+        let page = try XCTUnwrap(pane.detailController)
+        XCTAssertEqual(page.headerRow.explanation, three)
+        XCTAssertEqual(page.headerRow.toolTip, "Calculator\n\(three)\n" + Self.calculator)
+        let dotted = { (0..<page.partControl.segmentCount).map { page.partControl.image(forSegment: $0) != nil } }
+        XCTAssertEqual(dotted(), [true, true, false, true], "a dot on Scrolling, Buttons and Shortcut Ring")
+        XCTAssertEqual(page.partControl.toolTip(forSegment: 1), "Own button settings")
+        XCTAssertEqual(page.partControl.image(forSegment: 0)?.accessibilityDescription, "Own scrolling settings")
+        XCTAssertEqual(page.partControl.image(forSegment: 1)?.isTemplate, true, "on the selected segment, tinted as its title")
+        XCTAssertEqual(page.partControl.image(forSegment: 0)?.isTemplate, false, "elsewhere in the accent colour")
+
+        // A change on the page: the header, the dots and the list follow at once.
+        let part = try XCTUnwrap(page.buttonsPart)
+        part.paneUndoManager = UndoManager()
+        part.removeOwnBinding(id: calculator.ownButtonBindings[0].id)
+        XCTAssertEqual(page.headerRow.explanation, own("scrolling", "1 button", "ring"))
+        page.show(.ring)
+        page.generalRingSwitch.state = .on
+        send(page.generalRingSwitch)
+        XCTAssertEqual(page.headerRow.explanation, "Own scrolling and 1 button")
+        XCTAssertEqual(dotted(), [true, true, false, false])
+        XCTAssertEqual(page.partControl.image(forSegment: 1)?.isTemplate, false, "Buttons is not selected any more")
+        XCTAssertEqual(pane.list.rows.first?.explanation, "Own scrolling and 1 button")
+
+        // "Show in Finder" selects the app's bundle.
+        var revealed: [URL] = []
+        page.revealInFinder = { revealed.append($0) }
+        let reveal = try XCTUnwrap(allSubviews(of: page.headerRow).compactMap { $0 as? NSButton }.first { $0.title == "Show in Finder" })
+        send(reveal)
+        XCTAssertEqual(revealed, [URL(fileURLWithPath: Self.calculator)])
+    }
+
+    /// Empty, the list says in one line how to give an app settings of its own, of every
+    /// kind.
+    func testAnEmptyListSaysInOneLineWhatAnAppCanHave() {
+        let pane = makePane()
+        XCTAssertEqual(pane.list.emptyRow.title, "Click + to give an app its own scrolling, buttons, gestures or Shortcut Ring.")
+        XCTAssertNil(pane.list.emptyRow.explanation)
     }
 
     /// Undo of a removal while the page of the app added again is open: the page shows the
@@ -951,28 +1024,29 @@ final class ApplicationPageTests: XCTestCase {
         }
 
         // The Gestures part: the thumb panel runs the gestures again once its row is gone.
-        let noButton = "While Calculator is in front, no button runs the gestures: see its Buttons part."
-        let generalGestures = "While Calculator is in front, the general gestures run."
+        let thumb = ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: thumbPanel, modifiers: 0, deviceFilter: nil))
+        let noButton = "None in Calculator"
+        let generalGestures = "\(thumb), as everywhere"
         remove(0)
         choose(ApplicationPagePart.all.firstIndex(of: .gestures)!, on: page)
-        XCTAssertEqual(page.gesturesPart.generalGesturesRow.explanation, generalGestures)
+        XCTAssertEqual(page.gesturesPart.holdRow.explanation, generalGestures)
         undo.undo()
-        XCTAssertEqual(page.gesturesPart.generalGesturesRow.explanation, noButton, "Undo shows on the part shown now")
+        XCTAssertEqual(page.gesturesPart.holdRow.explanation, noButton, "Undo shows on the part shown now")
         undo.redo()
-        XCTAssertEqual(page.gesturesPart.generalGesturesRow.explanation, generalGestures, "and Redo")
+        XCTAssertEqual(page.gesturesPart.holdRow.explanation, generalGestures, "and Redo")
 
         // The Shortcut Ring part: Buttons' ring button does something else here, and back.
         choose(ApplicationPagePart.all.firstIndex(of: .buttons)!, on: page)
         let copyRow = try XCTUnwrap(calculator.ownButtonBindings.firstIndex { $0.systemShortcutName == "copy" })
         remove(copyRow)
         choose(ApplicationPagePart.all.firstIndex(of: .ring)!, on: page)
-        let generalRing = "While Calculator is in front, the general ring opens."
-        let nothing = "While Calculator is in front, nothing opens the ring: see its Buttons part."
-        XCTAssertEqual(page.generalRingRow.explanation, generalRing)
+        let five = ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 5, modifiers: 0, deviceFilter: nil))
+        let generalRing = "\(five), as everywhere"
+        XCTAssertEqual(page.ringPart.triggerRow.explanation, generalRing)
         undo.undo()
-        XCTAssertEqual(page.generalRingRow.explanation, nothing)
+        XCTAssertEqual(page.ringPart.triggerRow.explanation, "None in Calculator")
         undo.redo()
-        XCTAssertEqual(page.generalRingRow.explanation, generalRing)
+        XCTAssertEqual(page.ringPart.triggerRow.explanation, generalRing)
     }
 
     /// "−" on the page, the page closes and the app's page opens again, then Edit › Undo:
@@ -1465,193 +1539,267 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertFalse(note.isHidden, "opens with its box")
     }
 
-    /// One wording: while no button runs Gesture Navigation with the app in front
-    /// (whatever Buttons has), the switch's own line says so, in both states, and there is
-    /// no line under the box; the line under the box only names another button than
-    /// Buttons' ("Button to hold while … is in front: …"). With the same button as in
-    /// Buttons there is neither.
-    func testTheGesturesPartSaysWhenTheButtonToHoldIsAnotherHere() throws {
+    /// "Button to hold", the part's first row: which button runs Gesture Navigation with
+    /// the app in front, by the rule the pane counts by, and where its button leads: Buttons'
+    /// button "as everywhere" (Show in Buttons), one of the app's own "only in" it (Show
+    /// Buttons, that row), none (Set Up…; Show Buttons when a row of the app's own took
+    /// Buttons' button). The switch's line is the plain one in every case.
+    func testTheGesturesPartsFirstRowSaysWhichButtonRunsTheGesturesHere() throws {
         let gestures = SystemShortcut.mouseGestureNavigation.identifier
         let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
         Options.shared.buttons.binding = [binding(thumbPanel, gestures), binding(3, "copy")]
         let calculator = addApp(Self.calculator)
         let general = ["While Calculator is in front, the general gestures run.", "While Calculator is in front, the gestures below run."]
-        let none = "While Calculator is in front, no button runs the gestures: see its Buttons part."
-        /// The switch's line in both states, and the line under the box (nil: none).
-        func lines() throws -> (switchLines: [String], note: String?) {
+        func title(_ code: UInt16) -> String {
+            return ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil))
+        }
+        let thumb = title(thumbPanel), back = title(3)
+        func check(
+            _ text: String, _ destination: ApplicationTriggerRow.Destination, _ button: String, _ message: String, line: UInt = #line
+        ) throws {
             let (_, part) = try gesturesPart()
-            let holder = try XCTUnwrap(part.buttonNoteLabel.superview)
-            XCTAssertEqual(holder.isHidden, part.buttonNoteLabel.stringValue.isEmpty, "in sight exactly with a line")
+            XCTAssertTrue(part.generalSection.box.rows.first === part.holdRow, "the first row", line: line)
+            XCTAssertEqual(part.holdRow.title, "Button to hold", line: line)
+            XCTAssertEqual(part.holdRow.explanation, text, message, line: line)
+            XCTAssertEqual(part.shownHold?.destination, destination, message, line: line)
+            XCTAssertEqual(part.holdButton.title, button, message, line: line)
             var switchLines = [part.generalGesturesRow.explanation ?? ""]
             part.generalGesturesSwitch.state = part.generalGesturesSwitch.state == .on ? .off : .on
             send(part.generalGesturesSwitch)
             switchLines.append(part.generalGesturesRow.explanation ?? "")
             part.generalGesturesSwitch.state = part.generalGesturesSwitch.state == .on ? .off : .on
             send(part.generalGesturesSwitch)
-            return (switchLines, holder.isHidden ? nil : part.buttonNoteLabel.stringValue)
+            XCTAssertEqual(switchLines, general, "the switch's line never says it", line: line)
         }
-        func check(_ switchLines: [String], _ note: String?, _ message: String, line: UInt = #line) throws {
-            let shown = try lines()
-            XCTAssertEqual(shown.switchLines, switchLines, message, line: line)
-            XCTAssertEqual(shown.note, note, message, line: line)
-        }
-        try check(general, nil, "the button of Buttons")
+        try check("\(thumb), as everywhere", .buttonsPane, "Show in Buttons", "the button of Buttons")
         calculator.setOwnButtonBindings([binding(3, "paste")])
-        try check(general, nil, "another button changed, not the one that runs the gestures")
+        try check("\(thumb), as everywhere", .buttonsPane, "Show in Buttons", "another button changed")
         calculator.setOwnButtonBindings([binding(thumbPanel, gestures)])
-        try check(general, nil, "the same button, also the app's own")
+        try check("\(thumb), as everywhere", .buttonsPane, "Show in Buttons", "the same button, also the app's own")
 
-        calculator.setOwnButtonBindings([binding(thumbPanel, SystemShortcut.shortcutRing.identifier)])
-        try check([none, none], nil, "the app's own buttons took it: the switch's line says so, nothing under the box")
-        calculator.setOwnButtonBindings([binding(thumbPanel, SystemShortcut.shortcutRing.identifier), binding(3, gestures)])
-        let back = ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil))
-        try check(general, "Button to hold while Calculator is in front: \(back).", "another button")
-        // Without a button in Buttons, one of the app's own is another one too.
+        let took = binding(thumbPanel, SystemShortcut.shortcutRing.identifier)
+        calculator.setOwnButtonBindings([took])
+        try check("None in Calculator", .applicationButtons(took.id), "Show Buttons", "the app's own row took it: that row")
+        let ownBack = binding(3, gestures)
+        calculator.setOwnButtonBindings([took, ownBack])
+        try check("\(back), only in Calculator", .applicationButtons(ownBack.id), "Show Buttons", "another button")
+        calculator.setOwnButtonBindings([ownBack])
+        try check(
+            "\(thumb) as everywhere, \(back) only in Calculator", .applicationButtons(ownBack.id), "Show Buttons", "both"
+        )
+        // Without a button in Buttons, one of the app's own is "only in" it too.
         Options.shared.buttons.binding = []
-        calculator.setOwnButtonBindings([binding(3, gestures)])
-        try check(general, "Button to hold while Calculator is in front: \(back).", "only the app's own")
+        try check("\(back), only in Calculator", .applicationButtons(ownBack.id), "Show Buttons", "only the app's own")
         // A key never runs the gestures; nor does anything, with none anywhere.
         calculator.setOwnButtonBindings([binding(40, gestures, modifiers: UInt(CGEventFlags.maskCommand.rawValue), type: .keyboard)])
-        try check([none, none], nil, "a key")
+        try check("None in Calculator", .setUp, "Set Up…", "a key")
         calculator.setOwnButtonBindings([])
-        try check([none, none], nil, "none anywhere")
+        try check("None in Calculator", .setUp, "Set Up…", "none anywhere")
         XCTAssertTrue(calculator.usesGeneralGestures, "the switch was only tried")
-
-        // The line sits close under the switch's box, and the app's own set keeps its gap.
-        Options.shared.buttons.binding = [binding(thumbPanel, gestures)]
-        calculator.setOwnButtonBindings([binding(thumbPanel, "copy"), binding(3, gestures)])
-        calculator.setUsesGeneralGestures(false, general: Options.shared.gesture)
-        let (pane, part) = try gesturesPart()
-        _ = makeWindow(for: pane)
-        pane.view.layoutSubtreeIfNeeded()
-        let holder = try XCTUnwrap(part.buttonNoteLabel.superview)
-        // (The own set begins with "Mode", as the pane's first box ends with it.)
-        let ownSet = try XCTUnwrap(part.modeSection)
-        let section = part.generalSection!
-        func gap(_ upper: NSView, _ lower: NSView) -> CGFloat {
-            let a = upper.convert(upper.bounds, to: nil), b = lower.convert(lower.bounds, to: nil)
-            return a.minY - b.maxY
-        }
-        XCTAssertFalse(holder.isHidden)
-        XCTAssertEqual(gap(section, holder), PreferencesGroupedForm.noteSpacing, accuracy: 0.5)
-        XCTAssertEqual(gap(holder, ownSet), PreferencesGroupedForm.sectionSpacing, accuracy: 0.5)
-        XCTAssertFalse(part.view.hasAmbiguousLayout)
     }
 
-    /// The switch's line is a plain sentence that fits two lines, also for an app with a
-    /// long name.
-    func testTheGesturesSwitchsLineFitsTwoLines() throws {
+    /// The first row's buttons go where its line says: "Show in Buttons" to the Buttons
+    /// pane, "Show Buttons" to the app's Buttons part with that row selected, "Set Up…"
+    /// records a mouse button at the push button that runs the gestures only in this app
+    /// (a key is refused, a row with "Default" takes it), and the row says so at once.
+    func testTheFirstRowsButtonsOfTheGesturesPartGoWhereTheLineSays() throws {
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        let calculator = addApp(Self.calculator)
+        let pane = makePane()
+        pane.openApplication(withID: Self.calculator, part: .gestures)
+        let page = try XCTUnwrap(pane.detailController)
+        let part = try XCTUnwrap(page.gesturesPart)
+        let buttons = try XCTUnwrap(page.buttonsPart)
+        var anchors: [NSView] = []
+        buttons.startRecording = { anchors.append($0) }
+        buttons.stopRecording = {}
+        buttons.openActionMenu = { _ in XCTFail("no menu opens: the action is chosen") }
+        var panes = 0
+        part.openButtonsPane = { panes += 1 }
+
+        // Set Up…: at the push button, on the Gestures part; a key is refused.
+        XCTAssertEqual(part.holdButton.title, "Set Up…")
+        send(part.holdButton)
+        XCTAssertEqual(anchors.count, 1)
+        XCTAssertTrue(anchors.first === part.holdButton, "the recorder hangs on the push button")
+        XCTAssertEqual(page.shownPart, .gestures, "the part stays")
+        let recorder = KeyRecorder()
+        let key = InputEvent(type: .keyboard, code: 40, modifiers: CGEventFlags.maskCommand, phase: .down, source: .hidPP, device: nil)
+        XCTAssertFalse(buttons.validateRecordedEvent(recorder, event: key), "a key never holds the gestures")
+        XCTAssertEqual(buttons.refusalHint(recorder, event: key), "Gestures need a mouse button")
+        XCTAssertEqual(buttons.waitingHint(recorder, mode: .combination), "Press a mouse button")
+        let back = InputEvent(type: .mouse, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil)
+        XCTAssertTrue(buttons.validateRecordedEvent(recorder, event: back))
+        buttons.onEventRecorded(recorder, didRecordEvent: back, isDuplicate: false)
+        buttons.onRecordingStopped(recorder, didRecord: true)
+        let added = try XCTUnwrap(calculator.ownButtonBindings.first)
+        XCTAssertEqual(calculator.ownButtonBindings.count, 1)
+        XCTAssertEqual(added.systemShortcutName, gestures, "for this app only")
+        XCTAssertTrue(Options.shared.buttons.binding.isEmpty, "Buttons untouched")
+        XCTAssertEqual(part.holdRow.explanation?.hasSuffix(", only in Calculator"), true, "the row says it at once")
+        XCTAssertEqual(part.holdButton.title, "Show Buttons")
+        XCTAssertNil(buttons.waitingHint(recorder, mode: .combination), "\"Record a Button or Key…\" asks as ever")
+
+        // Show Buttons: the app's Buttons part, that row selected.
+        send(part.holdButton)
+        XCTAssertEqual(page.shownPart, .buttons)
+        XCTAssertEqual(buttons.list.selectedID, AnyHashable(added.id))
+
+        // A row with "Default" takes the action at Set Up….
+        calculator.setOwnButtonBindings([binding(3, "")])
+        page.show(.gestures)
+        XCTAssertEqual(part.holdButton.title, "Set Up…")
+        send(part.holdButton)
+        XCTAssertTrue(buttons.validateRecordedEvent(recorder, event: back), "its row has no action of its own")
+        buttons.onEventRecorded(recorder, didRecordEvent: back, isDuplicate: false)
+        buttons.onRecordingStopped(recorder, didRecord: true)
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), [gestures])
+
+        // Show in Buttons: the Buttons pane.
+        Options.shared.buttons.binding = [binding(4, gestures)]
+        calculator.setOwnButtonBindings([])
+        part.syncViewWithOptions()
+        XCTAssertEqual(part.holdButton.title, "Show in Buttons")
+        send(part.holdButton)
+        XCTAssertEqual(panes, 1)
+    }
+
+    /// The switch's lines are plain sentences, and the first row's lines fit two lines, also
+    /// for an app with a long name.
+    func testTheGesturesPartsLinesFitTwoLines() throws {
         let long = addApp(Self.calculator)
         long.displayName = "An Application With A Remarkably Long Name For Its Kind"
         let (pane, part) = try gesturesPart()
         pane.detailController?.view.layoutSubtreeIfNeeded()
-        let label = part.generalGesturesRow.explanationLabel
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
-        XCTAssertGreaterThan(label.frame.width, 300)
         let gestures = SystemShortcut.mouseGestureNavigation.identifier
-        let back = binding(3, gestures)
-        let ownBack = Application(path: Self.textEdit)
-        ownBack.displayName = long.displayName
-        ownBack.setOwnButtonBindings([binding(4, gestures)])
-        let notes = [
-            ApplicationGesturesPartViewController.buttonNote(for: long, general: [back]) ?? "",
-            ApplicationGesturesPartViewController.buttonNote(for: ownBack, general: []) ?? "",
+        let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
+        let general = [binding(thumbPanel, gestures)]
+        long.setOwnButtonBindings([binding(3, gestures), binding(4, gestures)])
+        let holds = [
+            ApplicationGesturesPartViewController.hold(for: long, general: general).text,
+            ApplicationGesturesPartViewController.hold(for: long, general: []).text,
         ]
-        long.setOwnButtonBindings([binding(3, "copy")])
-        XCTAssertNil(ApplicationGesturesPartViewController.buttonNote(for: long, general: [back]), "none: the switch's line says it")
-        let none = ApplicationDetailViewController.generalGesturesExplanation(on: true, name: long.displayName!, hasButton: false)
-        XCTAssertEqual(none, ApplicationDetailViewController.generalGesturesExplanation(on: false, name: long.displayName!, hasButton: false))
-        let texts = [true, false].map { ApplicationDetailViewController.generalGesturesExplanation(on: $0, name: long.displayName!) }
-            + notes + [none]
-        XCTAssertEqual(notes[0], "", "the same button as in Buttons: no line")
-        for text in texts.filter({ !$0.isEmpty }) {
+        long.setOwnButtonBindings([])
+        let switchLines = [true, false].map { ApplicationDetailViewController.generalGesturesExplanation(on: $0, name: long.displayName!) }
+        for (text, label) in switchLines.map({ ($0, part.generalGesturesRow.explanationLabel) }) + holds.map({ ($0, part.holdRow.explanationLabel) }) {
             XCTAssertTrue(text.contains(long.displayName!))
-            XCTAssertTrue(text.hasSuffix("."))
+            XCTAssertGreaterThan(label.frame.width, 200)
             let height = (text as NSString).boundingRect(
                 with: NSSize(width: label.frame.width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
             ).height
             XCTAssertLessThanOrEqual(height, twoLines, text)
         }
-        XCTAssertEqual(texts.filter { !$0.isEmpty }.count, 4)
+        XCTAssertTrue(switchLines.allSatisfy { $0.hasSuffix(".") })
     }
 
     // MARK: - The Shortcut Ring part
 
-    /// The switch's line counts the app's own buttons: with the app in front the ring opens
-    /// by a button of its own only (nothing in Buttons), or nothing opens it because its own
-    /// buttons gave what opens it elsewhere another action, or nothing opens it anywhere.
-    func testTheRingPartsLineSaysWhatOpensTheRingWithTheAppInFront() throws {
+    /// "Button or key", the part's first row, counts the app's own buttons: the ring opens
+    /// by Buttons' button, by a button or key of the app's own only, or nothing opens it
+    /// here (a row of its own took Buttons' button: Show Buttons; else Set Up…). The
+    /// switch's line is the plain one in every case.
+    func testTheRingPartsFirstRowSaysWhatOpensTheRingWithTheAppInFront() throws {
         let ring = SystemShortcut.shortcutRing.identifier
         let calculator = addApp(Self.calculator)
-        func lines() throws -> [String] {
+        func shown() throws -> (String, ApplicationTriggerRow.Destination?, String) {
             let pane = makePane()
             pane.openApplication(withID: Self.calculator, part: .ring)
             let page = try XCTUnwrap(pane.detailController)
-            var result = [page.generalRingRow.explanation ?? ""]
+            let part = try XCTUnwrap(page.ringPart)
+            XCTAssertTrue(part.ringSection.box.rows.first === part.triggerRow, "the first row")
+            XCTAssertEqual(part.triggerRow.title, "Button or key")
+            var lines = [page.generalRingRow.explanation ?? ""]
             page.generalRingSwitch.state = page.generalRingSwitch.state == .on ? .off : .on
             send(page.generalRingSwitch)
-            result.append(page.generalRingRow.explanation ?? "")
+            lines.append(page.generalRingRow.explanation ?? "")
             page.generalRingSwitch.state = page.generalRingSwitch.state == .on ? .off : .on
             send(page.generalRingSwitch)
-            return result
+            XCTAssertEqual(lines, ["While Calculator is in front, the general ring opens.", "While Calculator is in front, the ring below opens."])
+            return (part.triggerRow.explanation ?? "", part.shownTrigger?.destination, part.triggerButton.title)
         }
-        let opens = ["While Calculator is in front, the general ring opens.", "While Calculator is in front, the ring below opens."]
-        let nothing = "Nothing opens the ring yet: set up a button or key for it in the Shortcut Ring pane."
-        let replaced = "While Calculator is in front, nothing opens the ring: see its Buttons part."
-
-        XCTAssertEqual(try lines(), [nothing, nothing], "nothing anywhere")
-        calculator.setOwnButtonBindings([binding(6, ring)])
-        XCTAssertEqual(try lines(), opens, "a button that opens the ring only in this app")
+        func title(_ code: UInt16) -> String {
+            return ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil))
+        }
+        var (text, destination, button) = try shown()
+        XCTAssertEqual([text, button], ["None in Calculator", "Set Up…"], "nothing anywhere")
+        XCTAssertEqual(destination, .setUp)
+        let own = binding(6, ring)
+        calculator.setOwnButtonBindings([own])
+        (text, destination, button) = try shown()
+        XCTAssertEqual([text, button], ["\(title(6)), only in Calculator", "Show Buttons"], "only in this app")
+        XCTAssertEqual(destination, .applicationButtons(own.id))
 
         Options.shared.buttons.binding = [binding(6, ring)]
-        calculator.setOwnButtonBindings([binding(6, "copy")])
-        XCTAssertEqual(try lines(), [replaced, replaced], "the ring's button does something else here")
+        let copy = binding(6, "copy")
+        calculator.setOwnButtonBindings([copy])
+        (text, destination, button) = try shown()
+        XCTAssertEqual([text, button], ["None in Calculator", "Show Buttons"], "the ring's button does something else here")
+        XCTAssertEqual(destination, .applicationButtons(copy.id))
         let controlSpace = binding(49, ring, modifiers: UInt(CGEventFlags.maskControl.rawValue), type: .keyboard)
-        calculator.setOwnButtonBindings([binding(6, "copy"), controlSpace])
-        XCTAssertEqual(try lines(), opens, "a key of its own opens it here")
+        calculator.setOwnButtonBindings([copy, controlSpace])
+        (text, destination, button) = try shown()
+        XCTAssertEqual(destination, .applicationButtons(controlSpace.id), "a key of its own opens it here")
+        XCTAssertTrue(text.hasSuffix(", only in Calculator"), text)
         calculator.setOwnButtonBindings([binding(5, "copy")])
-        XCTAssertEqual(try lines(), opens, "Buttons' button opens it here too")
-        calculator.setOwnButtonBindings([binding(6, "")])
-        XCTAssertEqual(try lines(), [replaced, replaced], "\"Default\" here: the button does what it does by itself")
+        (text, destination, button) = try shown()
+        XCTAssertEqual([text, button], ["\(title(6)), as everywhere", "Show in Buttons"], "Buttons' button opens it here too")
+        let byDefault = binding(6, "")
+        calculator.setOwnButtonBindings([byDefault])
+        (text, destination, button) = try shown()
+        XCTAssertEqual(destination, .applicationButtons(byDefault.id), "\"Default\" here: the button does what it does by itself")
 
-        // Nothing in Buttons, but another app's own button opens it: not "yet", and not here.
+        // Nothing in Buttons, but another app's own button opens it: Set Up… one here.
         Options.shared.buttons.binding = []
         calculator.setOwnButtonBindings([])
         addApp(Self.textEdit).setOwnButtonBindings([binding(6, ring)])
-        XCTAssertEqual(try lines(), [replaced, replaced], "it opens in TextEdit, not with Calculator in front")
+        (text, destination, button) = try shown()
+        XCTAssertEqual([text, button], ["None in Calculator", "Set Up…"], "it opens in TextEdit, not with Calculator in front")
         XCTAssertTrue(calculator.usesGeneralRing, "the switch was only tried")
     }
 
-    /// The box fits the line it shows (as the Gestures part's does): it keeps room only for
-    /// the longer of the two lines the switch alternates, not for a two-line line on what
-    /// opens the ring, which takes its room only while it shows.
-    func testTheRingPartsBoxFitsItsLine() throws {
-        Options.shared.buttons.binding = [binding(6, SystemShortcut.shortcutRing.identifier)]
-        addApp(Self.calculator)
+    /// "Set Up…" of the Ring part records a button or a key (a key opens the ring too) at
+    /// the push button, for this app only; "Show in Buttons" goes to the Buttons pane.
+    func testTheRingPartsSetUpRecordsAButtonOrKeyForThisAppOnly() throws {
+        let ring = SystemShortcut.shortcutRing.identifier
+        let calculator = addApp(Self.calculator)
         let pane = makePane()
-        _ = makeWindow(for: pane)
         pane.openApplication(withID: Self.calculator, part: .ring)
         let page = try XCTUnwrap(pane.detailController)
-        let font = PreferencesGroupedForm.explanationFont
-        let oneLine = ceil(font.ascender - font.descender + font.leading) + 1
-        func height() -> CGFloat {
-            page.view.layoutSubtreeIfNeeded()
-            return page.generalRingRow.explanationLabel.frame.height
-        }
-        XCTAssertEqual(page.generalRingRow.explanation, "While Calculator is in front, the general ring opens.")
-        XCTAssertLessThanOrEqual(height(), oneLine, "no empty line kept")
+        let part = try XCTUnwrap(page.ringPart)
+        let buttons = try XCTUnwrap(page.buttonsPart)
+        var anchors: [NSView] = []
+        buttons.startRecording = { anchors.append($0) }
+        buttons.stopRecording = {}
+        buttons.openActionMenu = { _ in XCTFail("no menu opens: the action is chosen") }
+        send(part.triggerButton)
+        XCTAssertTrue(anchors.first === part.triggerButton)
+        let recorder = KeyRecorder()
+        let key = InputEvent(type: .keyboard, code: 49, modifiers: CGEventFlags.maskControl, phase: .down, source: .hidPP, device: nil)
+        XCTAssertTrue(buttons.validateRecordedEvent(recorder, event: key), "a key opens the ring")
+        XCTAssertNil(buttons.waitingHint(recorder, mode: .combination))
+        buttons.onEventRecorded(recorder, didRecordEvent: key, isDuplicate: false)
+        buttons.onRecordingStopped(recorder, didRecord: true)
+        XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), [ring])
+        XCTAssertTrue(Options.shared.buttons.binding.isEmpty)
+        XCTAssertEqual(page.shownPart, .ring)
+        XCTAssertEqual(part.triggerRow.explanation?.hasSuffix(", only in Calculator"), true)
+        XCTAssertEqual(part.triggerButton.title, "Show Buttons")
 
-        Options.shared.buttons.binding = []
-        page.syncViewWithOptions()
-        XCTAssertEqual(page.generalRingRow.explanation, "Nothing opens the ring yet: set up a button or key for it in the Shortcut Ring pane.")
-        XCTAssertGreaterThan(height(), oneLine, "the longer line takes its room")
+        var panes = 0
+        part.openButtonsPane = { panes += 1 }
+        Options.shared.buttons.binding = [binding(6, ring)]
+        calculator.setOwnButtonBindings([])
+        part.syncViewWithOptions()
+        send(part.triggerButton)
+        XCTAssertEqual(panes, 1)
     }
 
-    /// The switch's lines fit two lines, also for an app with a long name: the box keeps
-    /// room for the longer of the two the switch alternates, so switching never moves what
-    /// is below.
-    func testTheRingSwitchsLinesFitTwoLines() throws {
+    /// The switch's lines and the first row's lines fit two lines, also for an app with a
+    /// long name; the switch keeps room for the longer of its two lines, so switching never
+    /// moves what is below.
+    func testTheRingPartsLinesFitTwoLines() throws {
         let long = addApp(Self.calculator)
         long.displayName = "An Application With A Remarkably Long Name For Its Kind"
         let pane = makePane()
@@ -1659,19 +1807,21 @@ final class ApplicationPageTests: XCTestCase {
         pane.openApplication(withID: Self.calculator, part: .ring)
         let page = try XCTUnwrap(pane.detailController)
         page.view.layoutSubtreeIfNeeded()
-        let label = page.generalRingRow.explanationLabel
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
-        XCTAssertGreaterThan(label.frame.width, 300)
         let name = long.displayName!
-        let texts = [true, false].map { ApplicationDetailViewController.generalRingExplanation(on: $0, name: name) }
-            + [ApplicationDetailViewController.RingTrigger.noTrigger, .replacedHere].map {
-                ApplicationDetailViewController.generalRingExplanation(on: true, name: name, opens: $0)
-            }
-        XCTAssertEqual(Set(texts).count, 4)
-        XCTAssertEqual(page.generalRingRow.reservedExplanations, Array(texts.prefix(2)), "only the two the switch alternates")
-        for text in texts {
-            XCTAssertTrue(text.hasSuffix("."))
+        let ring = SystemShortcut.shortcutRing.identifier
+        let switchLines = [true, false].map { ApplicationDetailViewController.generalRingExplanation(on: $0, name: name) }
+        XCTAssertEqual(page.generalRingRow.reservedExplanations, switchLines, "the two the switch alternates")
+        long.setOwnButtonBindings([binding(3, ring), binding(4, ring)])
+        let rows = [
+            ApplicationTriggerRow.make(.shortcutRing, application: long, general: [binding(5, ring)]).text,
+            ApplicationTriggerRow.make(.shortcutRing, application: long, general: []).text,
+        ]
+        let part = try XCTUnwrap(page.ringPart)
+        for (text, label) in switchLines.map({ ($0, page.generalRingRow.explanationLabel) }) + rows.map({ ($0, part.triggerRow.explanationLabel) }) {
+            XCTAssertTrue(text.contains(name))
+            XCTAssertGreaterThan(label.frame.width, 200)
             let height = (text as NSString).boundingRect(
                 with: NSSize(width: label.frame.width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
             ).height

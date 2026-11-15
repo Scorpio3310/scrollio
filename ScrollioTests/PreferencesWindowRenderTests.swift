@@ -1680,7 +1680,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
         ShortcutRingSuggestions.bundleIdentifierOfApplication = { identifiers[$0] }
 
         func render(_ app: (file: String, name: String, path: String, identifier: String), suffix: String = "",
-                    afterSwitch: @escaping (Application) -> Void = { _ in }) throws {
+                    switchesOff: Bool = true, afterSwitch: @escaping (Application) -> Void = { _ in }) throws {
             let entry = Application(path: app.path)
             entry.displayName = app.name
             Options.shared.application.applications = EnhanceArray<Application>(withArray: [entry], matchKey: "path")
@@ -1695,6 +1695,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 // Each appearance starts from the general ring, as the user finds it.
                 entry.ring = nil
                 part.syncViewWithOptions()
+                guard switchesOff else { return }
                 part.generalRingRow.toggle.state = .off
                 part.generalRingClick(part.generalRingRow.toggle)
                 afterSwitch(entry)
@@ -1703,6 +1704,8 @@ final class PreferencesWindowRenderTests: XCTestCase {
         }
 
         ShortcutRingSuggestions.layout = { .us }
+        // Before the switch: the part offers the suggested shortcuts (`-figma-offer`).
+        try render(apps[0], suffix: "-offer", switchesOff: false)
         for app in apps {
             try render(app)
         }

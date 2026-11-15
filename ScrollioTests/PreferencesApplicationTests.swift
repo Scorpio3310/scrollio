@@ -238,8 +238,7 @@ final class PreferencesApplicationTests: XCTestCase {
     func testAnEmptyListSaysHowToAddAnApp() {
         let controller = makeController()
         XCTAssertTrue(controller.list.rows.isEmpty)
-        XCTAssertEqual(controller.list.emptyRow.title, "No apps yet")
-        XCTAssertEqual(controller.list.emptyRow.explanation, "Click + to give an app its own scrolling settings.")
+        XCTAssertEqual(controller.list.emptyRow.title, "Click + to give an app its own scrolling, buttons, gestures or Shortcut Ring.")
         XCTAssertFalse(controller.list.removeButton.isEnabled)
         XCTAssertEqual(controller.listSection.titleLabel?.stringValue, "Apps")
     }
@@ -255,16 +254,16 @@ final class PreferencesApplicationTests: XCTestCase {
         let rows = controller.list.rows
         XCTAssertEqual(rows.map { $0.id as? String }, [Self.calculator, Self.textEditProgram, "/Applications/Renamed Test.app"])
         XCTAssertEqual(rows.map(\.title), ["Calculator", "TextEdit", "My Renamed App"])
-        XCTAssertEqual(rows.map(\.explanation), ["Uses its own scrolling settings.", "Uses your scrolling settings.", "Uses your scrolling settings."])
+        XCTAssertEqual(rows.map(\.explanation), ["Own scrolling", "Nothing of its own yet", "Nothing of its own yet"])
         for row in rows {
             let icon = try XCTUnwrap(row.iconView, row.title)
             XCTAssertNotNil(icon.image, row.title)
             XCTAssertEqual(icon.image?.isTemplate, false, "an app's own icon, not a symbol")
             XCTAssertNotNil(row.chevronView, "\(row.title) opens a page of its own")
         }
-        XCTAssertEqual(rows[0].accessibilityLabel(), "Calculator, Uses its own scrolling settings., Own scrolling settings",
+        XCTAssertEqual(rows[0].accessibilityLabel(), "Calculator, Own scrolling, Own scrolling settings",
                        "then what its marks say")
-        XCTAssertEqual(rows[1].toolTip, "TextEdit\n" + Self.textEditProgram, "the name, then the path")
+        XCTAssertEqual(rows[1].toolTip, "TextEdit\nNothing of its own yet\n" + Self.textEdit, "the name, the line, then the app")
     }
 
     // MARK: - Adding
@@ -496,7 +495,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertFalse(again.inherit, "the removed entry's settings")
         XCTAssertEqual(again.scroll.speed, 2.5)
         XCTAssertEqual(again.displayName, "Numbers")
-        XCTAssertEqual(controller.list.rows.last?.explanation, "Uses its own scrolling settings.")
+        XCTAssertEqual(controller.list.rows.last?.explanation, "Own scrolling")
         XCTAssertEqual(controller.list.selectedID, AnyHashable(Self.calculator))
         XCTAssertTrue(window.firstResponder === controller.list)
         XCTAssertEqual(Set((try storedObject() ?? []).compactMap { $0 as? NSDictionary }),
@@ -585,18 +584,21 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertFalse(controller.listPage.isDescendant(of: controller.view))
         XCTAssertEqual(controller.title, "Apps", "the pane keeps its name")
         XCTAssertEqual(controller.subpageTitle, "Calculator", "the window is named after the app while its page shows")
-        // The header: the app's icon, name and where it is; then its Scrolling settings.
+        // The header: the app's icon, name and what it has of its own (where it is in the
+        // tooltip); then its Scrolling settings.
         XCTAssertEqual(page.headerRow.title, "Calculator")
-        XCTAssertEqual(page.headerRow.explanation, Self.calculator)
-        XCTAssertEqual(page.headerRow.toolTip, "Calculator\n" + Self.calculator)
+        XCTAssertEqual(page.headerRow.explanation, "Own scrolling")
+        XCTAssertEqual(page.headerRow.toolTip, "Calculator\nOwn scrolling\n" + Self.calculator)
         XCTAssertEqual(page.headerRow.iconView.frame.size, NSSize(width: 32, height: 32))
         XCTAssertNotNil(page.headerRow.iconView.image)
         // No link back on the page any more (the window's title bar has the back button):
-        // no button but the settings' own, and the app's box begins where the first box of
-        // every pane does.
+        // no button but "Show in Finder" and the settings' own, and the app's box begins
+        // where the first box of every pane does.
         XCTAssertFalse(allSubviews(of: page.view).contains { ($0 as? NSButton)?.title == "Apps" })
         XCTAssertFalse(allSubviews(of: page.view).contains { $0.identifier?.rawValue == "apps-detail-back" })
-        XCTAssertTrue(allSubviews(of: page.view).compactMap { $0 as? NSButton }.allSatisfy { $0.isDescendant(of: page.scrollingController.view) || $0 === page.inheritSwitch })
+        XCTAssertTrue(allSubviews(of: page.view).compactMap { $0 as? NSButton }.allSatisfy {
+            $0.isDescendant(of: page.scrollingController.view) || $0 === page.inheritSwitch || $0.title == "Show in Finder"
+        })
         XCTAssertEqual(page.view.frame.height - page.headerSection.frame.maxY, PreferencesGroupedForm.margin, accuracy: 0.5)
         XCTAssertEqual(page.headerSection.frame.minX, PreferencesGroupedForm.margin, accuracy: 0.5)
         XCTAssertTrue(page.scrollingController.currentTargetApplication === calculator)
@@ -698,7 +700,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertFalse(scrolling.view.isDescendant(of: page.view), "out of sight while the app uses the Scrolling settings")
         XCTAssertFalse(scrolling.resetToDefaultsButton.isDescendant(of: page.view))
         XCTAssertEqual(calculator.scroll.speed, 1.5, "its own value is kept for later")
-        XCTAssertEqual(controller.list.rows.first?.explanation, "Uses your scrolling settings.")
+        XCTAssertEqual(controller.list.rows.first?.explanation, "Nothing of its own yet")
         XCTAssertEqual(page.inheritRow.fittingSize.height, switchHeight, accuracy: 0.5, "the other line takes the same room")
         XCTAssertLessThan(page.view.fittingSize.height, height - 300, "the page is the switch's box under the app's")
         XCTAssertEqual(controller.view.frame.height, page.view.fittingSize.height, accuracy: 0.5, "the pane follows")
@@ -712,7 +714,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(scrolling.scrollSpeedSlider.doubleValue, 1.5, accuracy: 1e-9)
         XCTAssertEqual(page.view.fittingSize.height, height, accuracy: 0.5)
         XCTAssertEqual(controller.view.frame.height, height, accuracy: 0.5)
-        XCTAssertEqual(controller.list.rows.first?.explanation, "Uses its own scrolling settings.")
+        XCTAssertEqual(controller.list.rows.first?.explanation, "Own scrolling")
     }
 
     /// A new app's own options are those of a new installation: switched off as they were,
@@ -853,8 +855,8 @@ final class PreferencesApplicationTests: XCTestCase {
             let text = header.convert(label.alignmentRect(forFrame: label.frame), to: page.view)
             XCTAssertLessThanOrEqual(text.maxX, row.maxX - PreferencesGroupedForm.rowHorizontalInset + 0.5)
         }
-        XCTAssertEqual(header.explanationLabel.frame.height, oneLine.fittingSize.height, accuracy: 1, "one line, shortened in the middle")
-        XCTAssertEqual(header.toolTip, app.getName() + "\n" + path, "the whole name and path in the tooltip")
+        XCTAssertEqual(header.explanationLabel.frame.height, oneLine.fittingSize.height, accuracy: 1, "one line, shortened at its end")
+        XCTAssertEqual(header.toolTip, app.getName() + "\nNothing of its own yet\n" + path, "the whole name and path in the tooltip")
         XCTAssertEqual(header.explanationLabel.toolTip, header.toolTip)
     }
 
@@ -980,7 +982,7 @@ final class PreferencesApplicationTests: XCTestCase {
         )
         let controller = makeController()
         XCTAssertEqual(controller.list.rows.map(\.title), ["Calculator", "Editor"])
-        XCTAssertEqual(controller.list.rows.map(\.explanation), ["Uses its own scrolling settings.", "Uses your scrolling settings."])
+        XCTAssertEqual(controller.list.rows.map(\.explanation), ["Own scrolling", "Nothing of its own yet"])
 
         controller.openApplication(withID: Self.calculatorProgram)
         let scrolling = try XCTUnwrap(controller.detailController?.scrollingController)
@@ -988,7 +990,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(scrolling.feelControl.selectedSegment, ScrollFeel.direct.rawValue)
         XCTAssertEqual(scrolling.reverseSwitch.state, .off)
         XCTAssertEqual(scrolling.trackpadEventsSwitch.state, .on)
-        XCTAssertEqual(controller.detailController?.headerRow.explanation, Self.calculator)
+        XCTAssertEqual(controller.detailController?.headerRow.explanation, "Own scrolling")
         controller.showList(focusList: false)
         controller.openApplication(withID: Self.textEdit)
         controller.viewDidDisappear()
@@ -1027,20 +1029,21 @@ final class PreferencesApplicationTests: XCTestCase {
         ButtonUtils.shared.invalidateCache()
     }
 
-    /// Without a button or key that opens the ring, the switch's line says so in both
-    /// positions instead of promising a ring, and where to set one up.
+    /// Without a button or key that opens the ring, the first row says so in both
+    /// positions of the switch, with "Set Up…" beside it.
     func testTheRingPartSaysWhenNothingOpensTheRing() throws {
         setGeneralRing(.default, opensWithAButton: false)
         Options.shared.application.applications = Self.makeStore([application(Self.calculator, inherit: true)])
         let controller = makeController()
         controller.openApplication(withID: Self.calculator, part: .ring)
         let page = try XCTUnwrap(controller.detailController)
-        let nothing = "Nothing opens the ring yet: set up a button or key for it in the Shortcut Ring pane."
-        XCTAssertEqual(page.generalRingRow.explanation, nothing)
+        XCTAssertEqual(page.ringPart.triggerRow.explanation, "None in Calculator")
+        XCTAssertEqual(page.ringPart.triggerButton.title, "Set Up…")
         page.generalRingSwitch.state = .off
         send(page.generalRingSwitch)
         XCTAssertNotNil(page.ringController)
-        XCTAssertEqual(page.generalRingRow.explanation, nothing)
+        XCTAssertEqual(page.ringPart.triggerRow.explanation, "None in Calculator")
+        XCTAssertEqual(page.generalRingRow.explanation, "While Calculator is in front, the ring below opens.")
     }
 
     /// While "Change scrolling only in these apps" is on, a muted line under the app's box
@@ -1080,8 +1083,8 @@ final class PreferencesApplicationTests: XCTestCase {
     }
 
     /// The page's "Shortcut Ring" part. While "Use the general ring" is on (as for every
-    /// app until the user turns it off) there is the switch and nothing else: no drawing,
-    /// no rows, and nothing new is stored for the app.
+    /// app until the user turns it off) there is what opens the ring and the switch, and
+    /// nothing else: no drawing, no rows, and nothing new is stored for the app.
     func testTheShortcutRingSectionHasOnlyItsSwitchWhileTheAppUsesTheGeneralRing() throws {
         setGeneralRing(.default)
         let calculator = application(Self.calculator, inherit: true)
@@ -1091,7 +1094,7 @@ final class PreferencesApplicationTests: XCTestCase {
         let page = try XCTUnwrap(controller.detailController)
 
         XCTAssertNil(page.ringSection.titleLabel, "the part's segment names it")
-        XCTAssertEqual(page.ringSection.box.visibleRows.count, 1)
+        XCTAssertEqual(page.ringSection.box.visibleRows, [page.ringPart.triggerRow, page.generalRingRow])
         XCTAssertEqual(page.generalRingRow.title, "Use the general ring")
         XCTAssertEqual(page.generalRingSwitch.state, .on)
         XCTAssertEqual(page.generalRingSwitch.controlSize, PreferencesGroupedForm.switchControlSize)

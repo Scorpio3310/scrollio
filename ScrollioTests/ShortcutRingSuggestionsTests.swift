@@ -807,6 +807,66 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         return (try? SuggestionFixtures.app("Figma").places(on: .us)) ?? []
     }
 
+    /// While an app with suggested shortcuts uses the general ring and never had one of its
+    /// own, its Ring part says that it has some, with "Use Suggested Shortcuts", which does
+    /// what turning the switch off does: the ring filled with them. Nothing is filled
+    /// before the click; an app without a suggestion, and one whose own ring is kept for
+    /// later, get no line.
+    func testTheRingPartOffersTheSuggestedShortcutsWhileTheAppUsesTheGeneralRing() throws {
+        let figma = add(SuggestionFixtures.figmaPath, name: "Figma")
+        let part = part(for: figma)
+        XCTAssertEqual(part.suggestionNote.text, "Scrollio has suggested shortcuts for Figma.")
+        let button = part.suggestionNote.button
+        XCTAssertFalse(button.isHidden)
+        XCTAssertEqual(button.title, "Use Suggested Shortcuts")
+        XCTAssertNil(figma.ring, "nothing is filled before the click")
+        XCTAssertTrue(figma.usesGeneralRing)
+
+        XCTAssertTrue(button.sendAction(button.action, to: button.target))
+        XCTAssertFalse(figma.usesGeneralRing, "as the switch turned off")
+        XCTAssertEqual(part.generalRingRow.toggle.state, .off)
+        XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
+        XCTAssertNotNil(part.ringController)
+        XCTAssertNil(part.suggestionNote.text, "no offer any more")
+        XCTAssertEqual(Options.shared.ring, .default, "the general ring is untouched")
+
+        // Back to the general ring: the own ring is kept, and the switch brings it back.
+        turn(part, general: true)
+        XCTAssertNil(part.suggestionNote.text)
+
+        let calculator = add(SuggestionFixtures.calculatorPath)
+        XCTAssertNil(self.part(for: calculator).suggestionNote.text, "no suggestion, no line")
+    }
+
+    /// "+" of Apps marks the running apps that have suggested shortcuts "Suggested ring" in
+    /// grey (a badge); choosing one adds it with nothing of its own.
+    func testThePlusMenuMarksAppsWithASuggestedRing() throws {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        let pane = storyboard.instantiateController(withIdentifier: PANEL_IDENTIFIER.application) as! PreferencesApplicationViewController
+        pane.uiStateDefaults = TestDefaults.make(for: self)
+        pane.presentMenu = { _, _ in }
+        pane.chooseApplications = { _, _ in XCTFail("no open panel was expected") }
+        pane.runningApplications = {
+            [
+                ApplicationCandidate(path: SuggestionFixtures.figmaPath + "/Contents/MacOS/Figma", knownPaths: [SuggestionFixtures.figmaPath],
+                                     name: "Figma", icon: nil, bundleIdentifier: "com.figma.Desktop"),
+                ApplicationCandidate(path: SuggestionFixtures.calculatorPath, knownPaths: [SuggestionFixtures.calculatorPath],
+                                     name: "Calculator", icon: nil, bundleIdentifier: "com.apple.calculator"),
+            ]
+        }
+        _ = pane.view
+        let menu = pane.makeAddMenu()
+        XCTAssertEqual(menu.items.first?.title, "Figma", "the name stays the item's title")
+        XCTAssertEqual(menu.items.first?.badge?.stringValue, "Suggested ring")
+        XCTAssertNil(menu.items[1].badge)
+
+        let figma = try XCTUnwrap(menu.items.first)
+        pane.addRunningApplication(figma)
+        let added = try XCTUnwrap(Options.shared.application.applications.get(by: SuggestionFixtures.figmaPath + "/Contents/MacOS/Figma"))
+        XCTAssertNil(added.ring, "nothing is filled")
+        XCTAssertTrue(added.usesGeneralRing)
+    }
+
     /// The model: off with a suggestion, the ring starts with it; without one, as a copy
     /// of the general ring; a ring the app had comes back as it was left.
     func testTheSwitchStartsTheRingWithTheSuggestionElseACopy() throws {
@@ -830,32 +890,29 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertEqual(figma.ownRingPlaces?[0], ShortcutRingPlace(SystemShortcut.paste))
     }
 
-    /// The page: turning the switch off fills the ring from the suggestion, and the row
-    /// says the ring started from it, with no button of its own (one button per action:
-    /// "Reset to Defaults" goes back to it); after a change the row says the same,
-    /// "Reset to Defaults" fills all eight places again, Undo takes it back and Redo puts
-    /// it back. The general ring is never touched.
+    /// The page: turning the switch off fills the ring from the suggestion, with no line
+    /// to add on a layout that types every key; after a change "Use Suggested Shortcuts"
+    /// fills all eight places again (greyed while they hold them), Undo takes it back and
+    /// Redo puts it back. The general ring is never touched.
     func testThePageFillsFromTheSuggestionAndResetToDefaultsGoesBackToIt() throws {
         let figma = add(SuggestionFixtures.figmaPath, name: "Figma")
         let undo = UndoManager()
         undo.groupsByEvent = false
         let part = part(for: figma, undo: undo)
         XCTAssertNotNil(part.suggestion)
-        XCTAssertTrue(part.suggestionRow.isHidden, "the general ring: no row")
         XCTAssertNil(figma.ring, "showing the page fills nothing")
 
         turn(part, general: false)
         XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
-        XCTAssertFalse(part.suggestionRow.isHidden)
-        XCTAssertEqual(part.suggestionRow.explanation, "The ring started from the shortcuts suggested for Figma.")
-        XCTAssertNil(part.suggestionRow.accessory, "the row has no button")
+        XCTAssertNil(part.suggestionNote.text, "nothing new to say: the layout types every key")
+        XCTAssertEqual(part.resetToDefaultsButton.title, "Use Suggested Shortcuts")
         XCTAssertFalse(part.resetToDefaultsButton.isEnabled, "the ring is where it started")
         XCTAssertNotNil(part.ringController)
 
         figma.ring?[0] = ShortcutRingPlace(SystemShortcut.find)
         figma.ring?[3] = .empty
         part.syncViewWithOptions()
-        XCTAssertEqual(part.suggestionRow.explanation, "The ring started from the shortcuts suggested for Figma.")
+        XCTAssertNil(part.suggestionNote.text)
         XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
         let edited = try XCTUnwrap(figma.ownRingPlaces)
 
@@ -864,21 +921,21 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         undo.endUndoGrouping()
         XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
         XCTAssertFalse(figma.usesGeneralRing, "the switch stays")
-        XCTAssertEqual(part.resetToDefaultsButton.title, "Undo Reset")
-        XCTAssertEqual(undo.undoActionName, "Reset Shortcut Ring in Figma")
+        XCTAssertEqual(part.resetToDefaultsButton.title, "Undo")
+        XCTAssertEqual(undo.undoActionName, "Use Suggested Shortcuts in Figma")
 
         undo.undo()
         XCTAssertEqual(figma.ownRingPlaces, edited)
-        XCTAssertEqual(part.resetToDefaultsButton.title, "Reset to Defaults")
+        XCTAssertEqual(part.resetToDefaultsButton.title, "Use Suggested Shortcuts")
         XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
         undo.redo()
         XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
         XCTAssertFalse(part.resetToDefaultsButton.isEnabled)
         XCTAssertEqual(Options.shared.ring, .default)
 
-        // Back to the general ring: the row goes, the own ring is kept for later.
+        // Back to the general ring: the own ring is kept for later.
         turn(part, general: true)
-        XCTAssertTrue(part.suggestionRow.isHidden)
+        XCTAssertNil(part.suggestionNote.text)
         XCTAssertEqual(figma.ring?.places, figmaSuggestion)
     }
 
@@ -943,9 +1000,8 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
     }
 
     /// Where the layout cannot type some suggested keys (German: "[" "]" "\" need Option)
-    /// and those places stay empty, the row's line says how many, while the ring holds the
-    /// suggestion and after a change; on a layout that types them all it says nothing of
-    /// it.
+    /// and those places stay empty, a quiet line says how many, while the ring holds the
+    /// suggestion and after a change; on a layout that types them all there is no line.
     func testTheRowSaysHowManyPlacesTheLayoutLeavesEmpty() throws {
         let german = try SuggestionFixtures.layout("com.apple.keylayout.German")
         ShortcutRingSuggestions.layout = { german }
@@ -953,32 +1009,23 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         let part = part(for: finder)
         turn(part, general: false)
         XCTAssertEqual(finder.ownRingPlaces?.filter { $0 == .empty }.count, 2, "Back and Forward")
-        XCTAssertEqual(
-            part.suggestionRow.explanation,
-            "The ring started from them. 2 places stay empty: their keys can't be typed on this keyboard layout."
-        )
+        XCTAssertEqual(part.suggestionNote.text, "2 places stay empty: their keys can't be typed on this keyboard layout.")
         finder.ring?[0] = ShortcutRingPlace(SystemShortcut.copy)
         part.syncViewWithOptions()
-        XCTAssertEqual(
-            part.suggestionRow.explanation,
-            "The ring started from them. 2 places stay empty: their keys can't be typed on this keyboard layout."
-        )
+        XCTAssertEqual(part.suggestionNote.text, "2 places stay empty: their keys can't be typed on this keyboard layout.")
 
         let lightroom = add(SuggestionFixtures.lightroomPath, name: "Adobe Lightroom Classic")
         let one = self.part(for: lightroom)
         turn(one, general: false)
-        XCTAssertEqual(
-            one.suggestionRow.explanation,
-            "The ring started from them. 1 place stays empty: its keys can't be typed on this keyboard layout."
-        )
+        XCTAssertEqual(one.suggestionNote.text, "1 place stays empty: its keys can't be typed on this keyboard layout.")
 
         ShortcutRingSuggestions.layout = { .us }
         part.syncViewWithOptions()
-        XCTAssertEqual(part.suggestionRow.explanation, "The ring started from the shortcuts suggested for Finder.")
+        XCTAssertNil(part.suggestionNote.text)
     }
 
-    /// Without a suggestion the part is as before: no row, and the switch copies the
-    /// general ring.
+    /// Without a suggestion the part is as before: no line, the switch copies the general
+    /// ring, and the button under it says so ("Copy from Shortcut Ring").
     func testAnAppWithoutASuggestionGetsACopyOfTheGeneralRingAndNoRow() {
         var general = ShortcutRingSettings.default
         general[1] = ShortcutRingPlace(SystemShortcut.undo)
@@ -988,7 +1035,8 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertNil(part.suggestion)
         turn(part, general: false)
         XCTAssertEqual(calculator.ownRingPlaces, general.places)
-        XCTAssertTrue(part.suggestionRow.isHidden)
+        XCTAssertNil(part.suggestionNote.text)
+        XCTAssertEqual(part.resetToDefaultsButton.title, "Copy from Shortcut Ring")
     }
 
     /// Nothing changes by itself: an app with a suggestion whose switch is on stays on the
@@ -1018,8 +1066,7 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertNil(figma.ring)
     }
 
-    /// The row's line fits two lines, also for an app with a long name, and when it says
-    /// how many places the layout leaves empty.
+    /// The quiet line fits two lines when it says how many places the layout leaves empty.
     func testTheSuggestionLineFitsTwoLines() throws {
         let long = add(SuggestionFixtures.figmaPath, name: "Adobe Lightroom Classic Long Edition")
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 900), styleMask: [.titled], backing: .buffered, defer: true)
@@ -1029,15 +1076,15 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         window.contentView = part.view
         turn(part, general: false)
         part.view.layoutSubtreeIfNeeded()
-        let width = part.suggestionRow.titleColumnWidth
+        let width = PreferencesGroupedForm.boxWidth(paneWidth: ApplicationDetailViewController.paneWidth)
+            - 2 * PreferencesGroupedForm.rowHorizontalInset
         XCTAssertGreaterThan(width, 200)
+        XCTAssertNil(ApplicationRingPartViewController.suggestionNote(emptyPlaces: 0, startedFromIt: true))
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
         for started in [true, false] {
-            for empty in [0, 1, 3] {
-                let text = ApplicationRingPartViewController.suggestionExplanation(
-                    name: long.displayName!, emptyPlaces: empty, startedFromIt: started
-                )
+            for empty in [1, 3] {
+                let text = try XCTUnwrap(ApplicationRingPartViewController.suggestionNote(emptyPlaces: empty, startedFromIt: started))
                 let height = (text as NSString).boundingRect(
                     with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
                 ).height
@@ -1048,9 +1095,8 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
 
     /// A ring of the app's own that did not start from the suggestion (made before there
     /// were suggestions, as a copy of the general ring, or read from the settings and
-    /// changed): the row does not say it started from them, it says what "Reset to
-    /// Defaults" does. After the reset it started from them, also after a change; Undo
-    /// brings back the ring and its line; Redo the reset again.
+    /// changed): after "Use Suggested Shortcuts" it started from them, also after a change;
+    /// Undo brings back the ring and what it knew; Redo the fill again.
     func testTheRowOfARingMadeByHandSaysWhatResetToDefaultsDoes() throws {
         let figma = add(SuggestionFixtures.figmaPath, name: "Figma")
         figma.setUsesGeneralRing(false, general: .default, suggested: nil)
@@ -1058,27 +1104,31 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         let undo = UndoManager()
         undo.groupsByEvent = false
         let part = part(for: figma, undo: undo)
-        XCTAssertFalse(part.suggestionRow.isHidden)
-        let reset = "Reset to Defaults fills the ring with the shortcuts suggested for Figma."
-        let started = "The ring started from the shortcuts suggested for Figma."
-        XCTAssertEqual(part.suggestionRow.explanation, reset)
+        let reset = false
+        let started = true
+        let suggestion = figmaSuggestion
+        func shown(_ part: ApplicationRingPartViewController) -> Bool {
+            XCTAssertNil(part.suggestionNote.text, "the layout types every key: no line")
+            return part.ringStartedFromSuggestion(suggested: suggestion)
+        }
+        XCTAssertEqual(shown(part), reset)
 
         undo.beginUndoGrouping()
         XCTAssertTrue(part.resetToDefaultsButton.sendAction(part.resetToDefaultsButton.action, to: part.resetToDefaultsButton.target))
         undo.endUndoGrouping()
         XCTAssertEqual(figma.ownRingPlaces, figmaSuggestion)
-        XCTAssertEqual(part.suggestionRow.explanation, started)
+        XCTAssertEqual(shown(part), started)
         figma.ring?[0] = ShortcutRingPlace(SystemShortcut.find)
         part.syncViewWithOptions()
-        XCTAssertEqual(part.suggestionRow.explanation, started, "filled from them, then changed")
+        XCTAssertEqual(shown(part), started, "filled from them, then changed")
         figma.ring?[0] = figmaSuggestion[0]
         part.syncViewWithOptions()
 
         undo.undo()
         XCTAssertEqual(figma.ownRingPlaces, byHand)
-        XCTAssertEqual(part.suggestionRow.explanation, reset)
+        XCTAssertEqual(shown(part), reset)
         undo.redo()
-        XCTAssertEqual(part.suggestionRow.explanation, started)
+        XCTAssertEqual(shown(part), started)
 
         // A ring read from the settings knows only its places: the same as the suggestion,
         // it started from them; changed, the row says what the reset does.
@@ -1087,14 +1137,14 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(read.ring).startedFromSuggestion)
         Options.shared.application.applications = list([read])
         let again = self.part(for: read)
-        XCTAssertEqual(again.suggestionRow.explanation, started)
+        XCTAssertEqual(shown(again), started)
         read.ring?[3] = .empty
         again.syncViewWithOptions()
-        XCTAssertEqual(again.suggestionRow.explanation, reset)
+        XCTAssertEqual(shown(again), reset)
     }
 
-    /// The same on a layout that leaves places of the suggestion empty: the line says how
-    /// many the reset would leave empty.
+    /// On a layout that leaves places of the suggestion empty: the line says how many
+    /// "Use Suggested Shortcuts" would leave empty.
     func testTheRowOfARingMadeByHandSaysHowManyPlacesTheResetLeavesEmpty() throws {
         let german = try SuggestionFixtures.layout("com.apple.keylayout.German")
         ShortcutRingSuggestions.layout = { german }
@@ -1102,12 +1152,12 @@ final class ShortcutRingSuggestionFillTests: XCTestCase {
         finder.setUsesGeneralRing(false, general: .default, suggested: nil)
         let part = part(for: finder)
         XCTAssertEqual(
-            part.suggestionRow.explanation,
-            "Reset to Defaults fills the ring with them, except 2 places whose keys can't be typed on this keyboard layout."
+            part.suggestionNote.text,
+            "Use Suggested Shortcuts leaves 2 places empty: their keys can't be typed on this keyboard layout."
         )
         XCTAssertEqual(
-            ApplicationRingPartViewController.suggestionExplanation(name: "Finder", emptyPlaces: 1, startedFromIt: false),
-            "Reset to Defaults fills the ring with them, except 1 place whose keys can't be typed on this keyboard layout."
+            ApplicationRingPartViewController.suggestionNote(emptyPlaces: 1, startedFromIt: false),
+            "Use Suggested Shortcuts leaves 1 place empty: its keys can't be typed on this keyboard layout."
         )
     }
 

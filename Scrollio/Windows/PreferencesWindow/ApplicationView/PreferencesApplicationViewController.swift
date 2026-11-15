@@ -8,9 +8,11 @@
 //  On top "Limit scrolling to these apps" (the allowlist: it only gates smoothing and
 //  reversing, so it says so; buttons and gestures work everywhere). While it is on and no
 //  app is on the list, a muted line under it says that every app then scrolls the way
-//  macOS does. Then the list of apps, each with its icon, its name, whether it has
-//  scrolling settings of its own, and a small mark per kind of settings it has of its own
-//  (scrolling, buttons, ring; a click on one opens the page on that part). "+" offers the
+//  macOS does. Then the list of apps, each with its icon, its name, what it has of its own
+//  in words ("Own scrolling and 2 buttons", `ApplicationPagePart.summary`; cut off
+//  in a narrow window, whole in the tooltip with where the app is), and a small mark per
+//  kind of settings it has of its own (a click on one opens the page on that part). Empty,
+//  the list says how to give an app settings of its own. "+" offers the
 //  running apps and "Choose in Finder…" and opens the
 //  page of the app it added; "−" and Delete remove (Edit › Undo brings the
 //  app back with its settings; when it was added again meanwhile, its settings go onto
@@ -38,6 +40,8 @@ struct ApplicationCandidate {
     let knownPaths: [String]
     let name: String
     let icon: NSImage?
+    /// The app's bundle identifier, for its suggested shortcuts (`ShortcutRingSuggestions`).
+    var bundleIdentifier: String? = nil
 
     /// The running apps with a Dock icon, Scrollio itself left out, by name.
     static func running() -> [ApplicationCandidate] {
@@ -52,7 +56,8 @@ struct ApplicationCandidate {
                 path: program,
                 knownPaths: [bundle, program].compactMap { $0 },
                 name: app.localizedName ?? Utils.getApplicationName(fromPath: program),
-                icon: app.icon ?? Utils.getApplicationIcon(fromPath: bundle ?? program)
+                icon: app.icon ?? Utils.getApplicationIcon(fromPath: bundle ?? program),
+                bundleIdentifier: app.bundleIdentifier
             ))
         }
         return candidates.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -81,6 +86,8 @@ class PreferencesApplicationViewController: NSViewController {
 
     /// The running apps "+" offers; tests give fixed ones.
     var runningApplications: () -> [ApplicationCandidate] = { ApplicationCandidate.running() }
+    /// The suggested shortcuts "+" marks apps by ("Suggested ring"); tests give their own.
+    var ringSuggestions: ShortcutRingSuggestions.Catalog = ShortcutRingSuggestions.shipped
 
     /// Shows the "+" menu under the + button; tests take the menu instead.
     var presentMenu: (NSMenu, NSButton) -> Void = { menu, button in
@@ -160,11 +167,7 @@ class PreferencesApplicationViewController: NSViewController {
         )
         allowlistEmptyNote = emptyNote
 
-        let list = PreferencesListBox(
-            width: Self.boxWidth,
-            emptyTitle: text("apps-empty-title"),
-            emptyExplanation: text("apps-empty-hint")
-        )
+        let list = PreferencesListBox(width: Self.boxWidth, emptyTitle: text("apps-empty"))
         list.identifier = Identifier.list
         list.onAdd = { [weak self] button in self?.showAddMenu(from: button) }
         list.onRemove = { [weak self] id in
@@ -300,21 +303,27 @@ class PreferencesApplicationViewController: NSViewController {
         }
     }
 
-    /// What a row of the list says about an app.
+    /// What a row of the list says about an app: what it has of its own.
     static func explanation(for application: Application) -> String {
-        return NSLocalizedString(application.inherit ? "apps-row-inherit" : "apps-row-own", comment: "")
+        return ApplicationPagePart.summary(of: application)
     }
 
     private func makeRow(_ application: Application, id: String) -> PreferencesListRow {
         let name = application.getName()
+        let summary = Self.explanation(for: application)
         let row = ApplicationListRow(
             id: id,
             title: name,
-            explanation: Self.explanation(for: application),
+            explanation: summary,
             icon: .image(application.getIcon()),
             showsChevron: true
         )
-        row.toolTip = ApplicationDetailViewController.toolTip(name: name, path: application.path)
+        // One line, cut off at its end in a narrow window; the tooltip has all of it.
+        row.explanationLabel.usesSingleLineMode = true
+        row.explanationLabel.cell?.wraps = false
+        row.explanationLabel.lineBreakMode = .byTruncatingTail
+        row.explanationLabel.maximumNumberOfLines = 1
+        row.toolTip = ApplicationDetailViewController.toolTip(name: name, summary: summary, path: application.path)
         row.onChevronClick = { [weak self] in self?.openApplication(withID: id) }
         // A mark per kind of settings the app has of its own; a click opens that part.
         row.showMarks(ApplicationPagePart.ownSettings(of: application))
@@ -338,8 +347,9 @@ class PreferencesApplicationViewController: NSViewController {
         presentMenu(makeAddMenu(), button)
     }
 
-    /// The running apps with their icons (those on the list already off, with a checkmark),
-    /// then "Choose in Finder…".
+    /// The running apps with their icons (those on the list already off, with a checkmark;
+    /// those with suggested shortcuts marked "Suggested ring" in grey, a badge), then
+    /// "Choose in Finder…". Choosing one adds it with nothing of its own, as always.
     func makeAddMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -350,6 +360,9 @@ class PreferencesApplicationViewController: NSViewController {
             if let icon = candidate.icon?.copy() as? NSImage {
                 icon.size = NSSize(width: Self.menuIconSize, height: Self.menuIconSize)
                 item.image = icon
+            }
+            if let identifier = candidate.bundleIdentifier, ringSuggestions.suggestion(forBundleIdentifier: identifier) != nil {
+                item.badge = NSMenuItemBadge(string: text("apps-add-suggested-ring"))
             }
             if Self.existingApplication(forPaths: candidate.knownPaths + [candidate.path]) != nil {
                 item.isEnabled = false
@@ -537,7 +550,11 @@ class PreferencesApplicationViewController: NSViewController {
         let detail = ApplicationDetailViewController(application: application, uiStateDefaults: uiStateDefaults, part: part)
         part?.remember(in: uiStateDefaults)
         detail.onBack = { [weak self] in self?.showList(focusList: true) }
-        detail.onInheritChange = { [weak self] in self?.reloadRows() }
+        // (Also after this page closed: the page open then says it.)
+        detail.onInheritChange = { [weak self] in
+            self?.reloadRows()
+            self?.detailController?.showOwnSettings()
+        }
         // An Undo of a removed button row, or of a part's "Reset to Defaults", shows on the
         // page of its app that is open when it runs (the page that made it may be gone);
         // the page then tells its new height.

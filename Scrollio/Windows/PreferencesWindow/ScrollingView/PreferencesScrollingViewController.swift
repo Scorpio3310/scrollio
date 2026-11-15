@@ -25,9 +25,11 @@
 //  itself reads "Undo Reset" and does the same.
 //  The tab edits scroll options (Options.shared.scroll, or the target application's own) and,
 //  on the tab itself, Options.shared.thumbWheel, which the Buttons pane edits too: a change
-//  made there shows here at once (ThumbWheelSettingsChange). On an app's page "Reset to
-//  Defaults" also gives the app's thumb wheel 1×, nothing reversed and desktops in steps,
-//  and takes its own action away.
+//  made there shows here at once (ThumbWheelSettingsChange). On an app's page the button is
+//  "Copy from Scrolling": the app's settings become a copy of the Scrolling settings, its
+//  thumb wheel's speed, reverses and follow switch those of Scrolling › Thumb wheel, and
+//  its own action goes (so does what Undo and its offer say: "Undo", "Copy from Scrolling
+//  in Figma").
 //
 //  Created by Caldis on 2017/1/26.
 //  Copyright © 2017年 Caldis. All rights reserved.
@@ -368,7 +370,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         sections = [basic, thumbWheel, keys, advanced]
 
         let reset = PreferencesGroupedForm.makePushButton(
-            title: text("scrolling-reset"),
+            title: resetTitles.title,
             target: self,
             action: #selector(resetToDefaultClick(_:))
         )
@@ -580,15 +582,18 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     }
 
     /// True while the options differ from the defaults (an app that inherits has none of its
-    /// own). The thumb wheel counts too: on the tab its settings, on an app's page the speed,
-    /// reverses and follow switch a turn runs with there and the app's own action.
+    /// own), on an app's page from a copy of the Scrolling settings. The thumb wheel counts
+    /// too: on the tab its settings, on an app's page the speed, reverses and follow switch
+    /// a turn runs with there (against Scrolling › Thumb wheel's) and the app's own action.
     var hasSettingsToReset: Bool {
         guard !isTargetApplicationInheritOptions() else { return false }
         if let application = currentTargetApplication {
-            let running = application.thumbWheelThatRuns(general: Options.shared.thumbWheel)
-            if application.thumbWheel != nil || ApplicationThumbWheelScrolling(running) != .defaults {
+            let general = Options.shared.thumbWheel
+            let running = application.thumbWheelThatRuns(general: general)
+            if application.thumbWheel != nil || ApplicationThumbWheelScrolling(running) != ApplicationThumbWheelScrolling(general) {
                 return true
             }
+            return application.scroll != Options.shared.scroll
         } else if Options.shared.thumbWheel != .default {
             return true
         }
@@ -876,11 +881,12 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// Back to the scroll options of a new installation: the "Smooth" feel, the default
     /// speed and step, the three default keys, trackpad-style scrolling off; also the
     /// thumb wheel: on the tab it scrolls sideways at 1×, nothing reversed, desktops in
-    /// steps; on an app's page its speed is 1×, nothing reversed, desktops in steps, and its
-    /// action is the general one again
-    /// (no function of its own, as "−" on its Buttons part's row gives). "Advanced" stays as
-    /// it is. One click, no question: Edit › Undo ("Undo Reset Scrolling") brings back every
-    /// value it changed.
+    /// steps. On an app's page ("Copy from Scrolling") a copy of the Scrolling settings
+    /// instead, the thumb wheel's speed, reverses and follow switch those of Scrolling ›
+    /// Thumb wheel, and its action the general one again (no function of its own, as "−"
+    /// on its Buttons part's row gives). "Advanced" stays as it is. One click, no
+    /// question: Edit › Undo ("Undo Reset Scrolling", "Undo Copy from Scrolling in Figma")
+    /// brings back every value it changed.
     @objc func resetToDefaultClick(_ sender: NSButton) {
         // "Undo Reset": while the button offers it and the settings are still the defaults.
         if offersUndoOfReset, !hasSettingsToReset {
@@ -931,14 +937,29 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     private func undoReset() {
         let undo = undoTarget
         endUndoOffer()
-        guard let undo, undo.canUndo, undo.undoActionName == text("scrolling-undo-reset") else { return }
+        guard let undo, undo.canUndo, undo.undoActionName == Self.resetActionName(of: currentTargetApplication) else { return }
         undo.undo()
+    }
+
+    /// The button's two titles: "Reset to Defaults" and "Undo Reset" on the tab, "Copy
+    /// from Scrolling" and "Undo" on an app's page.
+    private var resetTitles: (title: String, undo: String) {
+        guard currentTargetApplication != nil else { return (text("scrolling-reset"), text("scrolling-reset-undo")) }
+        return (text("apps-scrolling-copy"), text("apps-part-undo"))
+    }
+
+    /// What Edit › Undo calls a reset: "Reset Scrolling", on an app's page "Copy from
+    /// Scrolling in Figma" (its own, so that "Undo" never takes back the tab's or another
+    /// app's).
+    static func resetActionName(of application: Application?) -> String {
+        guard let application else { return NSLocalizedString("scrolling-undo-reset", comment: "") }
+        return String(format: NSLocalizedString("apps-undo-copy-scrolling", comment: ""), application.getName())
     }
 
     /// The button's title and whether it can be clicked: "Undo Reset" while that is offered,
     /// else "Reset to Defaults", on only while something differs from the defaults.
     private func updateResetButton() {
-        let title = text(offersUndoOfReset ? "scrolling-reset-undo" : "scrolling-reset")
+        let title = offersUndoOfReset ? resetTitles.undo : resetTitles.title
         if resetToDefaultsButton.title != title {
             resetToDefaultsButton.title = title
             NSAccessibility.post(element: resetToDefaultsButton as Any, notification: .titleChanged)
@@ -963,13 +984,13 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         var thumbWheel: ThumbWheelSettings?
         var ownThumbWheel: ApplicationThumbWheel?
 
-        /// The defaults for the app (nil: the tab).
+        /// Where a reset leads for the app (nil: the tab, its defaults): a copy of the
+        /// Scrolling settings, the thumb wheel's values of Scrolling › Thumb wheel.
         static func defaults(for application: Application?) -> ResettableSettings {
             guard application != nil else {
                 return ResettableSettings(scroll: OPTIONS_SCROLL_DEFAULT(), thumbWheel: .default, ownThumbWheel: nil)
             }
-            let scroll = OPTIONS_SCROLL_DEFAULT()
-            scroll.thumbWheel = ApplicationThumbWheelScrolling.defaults
+            let scroll = Application.scrollingCopy(of: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
             return ResettableSettings(scroll: scroll, thumbWheel: nil, ownThumbWheel: nil)
         }
     }
@@ -997,7 +1018,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
                 previous, of: currentEntry(of: application), undoManager: undo, didChange: didChange, showOnOpenPage: showOnOpenPage
             )
         }
-        undo.setActionName(NSLocalizedString("scrolling-undo-reset", comment: ""))
+        undo.setActionName(resetActionName(of: application))
     }
 
     /// Undo of a reset: the settings from before it, every value as it was. Redo resets again.
@@ -1017,7 +1038,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
                 of: currentEntry(of: application), undoManager: undo, didChange: didChange, showOnOpenPage: showOnOpenPage, isRedo: true
             )
         }
-        undo.setActionName(NSLocalizedString("scrolling-undo-reset", comment: ""))
+        undo.setActionName(resetActionName(of: application))
     }
 
     /// Whose settings an Undo or Redo of a reset changes: nil, the tab's; else the entry the

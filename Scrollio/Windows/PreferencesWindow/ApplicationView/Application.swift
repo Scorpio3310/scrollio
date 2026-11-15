@@ -149,7 +149,22 @@ extension Application {
     @discardableResult
     func adoptScrollOptionsIfUnedited(from global: OPTIONS_SCROLL_DEFAULT) -> Bool {
         guard scroll == OPTIONS_SCROLL_DEFAULT(), scroll != global else { return false }
-        let own = scroll
+        Self.copyScrollValues(from: global, to: scroll)
+        return true
+    }
+
+    /// "Copy from Scrolling" of the app's Scrolling part: a new container with every scroll
+    /// value of `global`, and the thumb wheel's speed, reverses and follow switch of
+    /// `thumbWheel` (the general ones: no function of its own).
+    static func scrollingCopy(of global: OPTIONS_SCROLL_DEFAULT, thumbWheel: ThumbWheelSettings) -> OPTIONS_SCROLL_DEFAULT {
+        let copy = OPTIONS_SCROLL_DEFAULT()
+        copyScrollValues(from: global, to: copy)
+        copy.thumbWheel = ApplicationThumbWheelScrolling(thumbWheel)
+        return copy
+    }
+
+    /// Every scroll value of `global` into `own` (its container stays its own).
+    private static func copyScrollValues(from global: OPTIONS_SCROLL_DEFAULT, to own: OPTIONS_SCROLL_DEFAULT) {
         own.smooth = global.smooth
         own.reverse = global.reverse
         own.reverseVertical = global.reverseVertical
@@ -165,7 +180,6 @@ extension Application {
         own.smoothSimTrackpad = global.smoothSimTrackpad
         own.smoothVertical = global.smoothVertical
         own.smoothHorizontal = global.smoothHorizontal
-        return true
     }
 }
 

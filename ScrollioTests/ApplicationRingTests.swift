@@ -650,12 +650,12 @@ final class ApplicationRingSuggestedRowTests: XCTestCase {
         XCTAssertEqual(outlook.ownRingPlaces?[2], .empty)
         XCTAssertEqual(outlook.ownRingPlaces?[6], .empty)
         let ring = try XCTUnwrap(part.ringController)
-        XCTAssertTrue(try XCTUnwrap(part.suggestionRow.explanation).hasPrefix("The ring started from them. 2 places stay empty"))
+        XCTAssertTrue(try XCTUnwrap(part.suggestionNote.text).hasPrefix("2 places stay empty"))
 
         ring.setPlace(ShortcutRingPlace(SystemShortcut.copy), at: 2)
-        XCTAssertTrue(try XCTUnwrap(part.suggestionRow.explanation).hasPrefix("The ring started from them. 1 place stays empty"))
+        XCTAssertTrue(try XCTUnwrap(part.suggestionNote.text).hasPrefix("1 place stays empty"))
         ring.setPlace(ShortcutRingPlace(SystemShortcut.paste), at: 6)
-        XCTAssertEqual(part.suggestionRow.explanation, "The ring started from the shortcuts suggested for Outlook.")
+        XCTAssertNil(part.suggestionNote.text, "nothing left empty by the layout: no line")
 
         // A ring that did not start from them says what the reset would leave empty.
         let read = try JSONDecoder().decode(Application.self, from: JSONEncoder().encode(outlook))
@@ -663,7 +663,7 @@ final class ApplicationRingSuggestedRowTests: XCTestCase {
         Options.shared.application.applications = list([read])
         let again = ApplicationRingPartViewController(application: read)
         _ = again.view
-        XCTAssertTrue(try XCTUnwrap(again.suggestionRow.explanation).hasPrefix("Reset to Defaults fills the ring with them, except 2 places"))
+        XCTAssertTrue(try XCTUnwrap(again.suggestionNote.text).hasPrefix("Use Suggested Shortcuts leaves 2 places empty"))
     }
 
     /// Where the layout leaves places empty, the row also says how many more the suggestion
@@ -673,28 +673,24 @@ final class ApplicationRingSuggestedRowTests: XCTestCase {
         let (outlook, part) = try outlookPart()
         XCTAssertEqual(outlook.ownRingPlaces?.filter { $0 == .empty }.count, 3)
         XCTAssertEqual(
-            part.suggestionRow.explanation,
-            "The ring started from them. 2 places stay empty: their keys can't be typed on this keyboard layout. "
-                + "1 more is left empty on purpose."
+            part.suggestionNote.text,
+            "2 places stay empty: their keys can't be typed on this keyboard layout. 1 more is left empty on purpose."
         )
         try XCTUnwrap(part.ringController).setPlace(ShortcutRingPlace(SystemShortcut.copy), at: 4)
-        XCTAssertEqual(
-            part.suggestionRow.explanation,
-            "The ring started from them. 2 places stay empty: their keys can't be typed on this keyboard layout."
-        )
+        XCTAssertEqual(part.suggestionNote.text, "2 places stay empty: their keys can't be typed on this keyboard layout.")
 
         let read = try JSONDecoder().decode(Application.self, from: JSONEncoder().encode(outlook))
         Options.shared.application.applications = list([read])
         let again = ApplicationRingPartViewController(application: read)
         _ = again.view
         XCTAssertEqual(
-            again.suggestionRow.explanation,
-            "Reset to Defaults fills the ring with them, except 2 places whose keys can't be typed on this keyboard layout. "
+            again.suggestionNote.text,
+            "Use Suggested Shortcuts leaves 2 places empty: their keys can't be typed on this keyboard layout. "
                 + "1 more is left empty on purpose."
         )
-        XCTAssertEqual(
-            ApplicationRingPartViewController.suggestionExplanation(name: "Outlook", emptyPlaces: 0, startedFromIt: true, emptyOnPurpose: 1),
-            "The ring started from the shortcuts suggested for Outlook.", "without the layout's count, nothing to add up"
+        XCTAssertNil(
+            ApplicationRingPartViewController.suggestionNote(emptyPlaces: 0, startedFromIt: true, emptyOnPurpose: 1),
+            "without the layout's count, nothing to add up"
         )
 
         // The longest lines fit the row's two lines.
@@ -703,15 +699,16 @@ final class ApplicationRingSuggestedRowTests: XCTestCase {
         addTeardownBlock { window.close() }
         window.contentView = part.view
         part.view.layoutSubtreeIfNeeded()
-        let width = part.suggestionRow.titleColumnWidth
+        let width = PreferencesGroupedForm.boxWidth(paneWidth: ApplicationDetailViewController.paneWidth)
+            - 2 * PreferencesGroupedForm.rowHorizontalInset
         XCTAssertGreaterThan(width, 200)
         let font = PreferencesGroupedForm.explanationFont
         let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
         for started in [true, false] {
             for (empty, onPurpose) in [(1, 1), (3, 4), (8, 8)] {
-                let text = ApplicationRingPartViewController.suggestionExplanation(
-                    name: "Outlook", emptyPlaces: empty, startedFromIt: started, emptyOnPurpose: onPurpose
-                )
+                let text = try XCTUnwrap(ApplicationRingPartViewController.suggestionNote(
+                    emptyPlaces: empty, startedFromIt: started, emptyOnPurpose: onPurpose
+                ))
                 let height = (text as NSString).boundingRect(
                     with: NSSize(width: width, height: 1000), options: [.usesLineFragmentOrigin], attributes: [.font: font]
                 ).height
