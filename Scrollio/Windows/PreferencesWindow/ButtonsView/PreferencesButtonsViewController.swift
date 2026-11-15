@@ -1339,10 +1339,18 @@ extension PreferencesButtonsViewController: KeyRecorderDelegate {
     }
 
     /// The recorder's hint for a refused event: a key while the gesture button is set up
-    /// ("Gestures need a mouse button"); nil (a duplicate) otherwise.
+    /// ("Gestures need a mouse button"); a button or key of the list whose row has no
+    /// action ("Already in the list": the popover's own "Already has an action" is not
+    /// true of a row that reads "Default"); nil otherwise (a row with an action: the
+    /// popover's own line).
     func refusalHint(_ recorder: KeyRecorder, event: InputEvent) -> String? {
-        guard Self.needsMouseButton(pendingAction), normalizedTrigger(for: event).type == .keyboard else { return nil }
-        return NSLocalizedString("buttons-gesture-needs-mouse-button", comment: "")
+        let trigger = normalizedTrigger(for: event)
+        if Self.needsMouseButton(pendingAction), trigger.type == .keyboard {
+            return NSLocalizedString("buttons-gesture-needs-mouse-button", comment: "")
+        }
+        guard let existing = existingBinding(for: trigger), !takesPendingAction(existing, action: pendingAction),
+              !CellActionState(binding: existing).hasBoundAction else { return nil }
+        return NSLocalizedString("buttons-recorder-in-list", comment: "")
     }
 
     /// What the recorder's popover asks for while it waits: a mouse button only while the

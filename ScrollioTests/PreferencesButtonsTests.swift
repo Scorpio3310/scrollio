@@ -1029,6 +1029,30 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(summary.buttonTitles, ["Thumb panel"], "the Gestures pane's line")
     }
 
+    /// The recorder's line about a listed button says what is so (QA B1): "Already has an
+    /// action" only of a row that has one; of a "Default" row, which has none, "Already in
+    /// the list". It said "Already has an action" of both, under a card that answered
+    /// "That's Gesture button / Default".
+    func testTheRecorderSaysAlreadyInTheListOfARowWithoutAnAction() {
+        let pane = makePane([binding(3, "copy"), binding(5)])
+        let recorder = KeyRecorder()
+        pane.beginAddingBinding()
+        pane.onRecordingStarted(recorder)
+        XCTAssertEqual(text("buttons-recorder-in-list"), "Already in the list")
+        // A button of the mouse without a binding.
+        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: mouseEvent(1000)))
+        XCTAssertEqual(pane.refusalHint(recorder, event: mouseEvent(1000)), "Already in the list")
+        // A stored row without an action.
+        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: mouseEvent(5)))
+        XCTAssertEqual(pane.refusalHint(recorder, event: mouseEvent(5)), "Already in the list")
+        // A row with an action: the popover's own "Already has an action".
+        XCTAssertFalse(pane.validateRecordedEvent(recorder, event: mouseEvent(3)))
+        XCTAssertNil(pane.refusalHint(recorder, event: mouseEvent(3)))
+        // A new button: nothing to say.
+        XCTAssertNil(pane.refusalHint(recorder, event: mouseEvent(6)))
+        pane.onRecordingStopped(recorder, didRecord: false)
+    }
+
     /// A "Default" row says what the button then does ("Default (Back)") only where that is
     /// certain: while Scrollio catches its Logitech control for a binding with modifiers (the
     /// plain press then reaches only Scrollio and does nothing), "No Action" and why; a

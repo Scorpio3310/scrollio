@@ -11319,6 +11319,42 @@
           }
         }
       }
+    },
+    "buttons-recorder-in-list": {
+      "comment": "Key recorder popover of \"+\" in Buttons and in an app's Buttons: the pressed button or key is listed already and its row has no action (\"Default\"), so \"Already has an action\" would not be true",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Already in the list"
+          }
+        }
+      }
+    },
+    "buttons-recorder-own-button": {
+      "comment": "Key recorder popover of a row's \"Keyboard Shortcut…\": the row's own button was pressed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A button cannot send itself"
+          }
+        }
+      }
+    },
+    "buttons-recorder-own-key": {
+      "comment": "Key recorder popover of a row's \"Keyboard Shortcut…\": the row's own key was pressed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A key cannot send itself"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

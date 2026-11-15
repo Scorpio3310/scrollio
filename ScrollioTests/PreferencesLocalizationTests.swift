@@ -121,6 +121,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "open-target-mode-label", "open-target-mode-open", "open-target-mode-open-tooltip",
         "open-target-mode-run", "open-target-mode-run-tooltip",
         "Press ESC to cancel recording", "button-recording-duplicate-hint",
+        "buttons-recorder-in-list", "buttons-recorder-own-button", "buttons-recorder-own-key",
         "buttons-default", "buttons-default-back", "buttons-default-forward", "buttons-default-middle",
         "buttons-default-mode-shift", "buttons-default-own", "buttons-list-other",
         "buttons-default-with", "buttons-default-effect-back", "buttons-default-effect-forward", "buttons-default-effect-middle",

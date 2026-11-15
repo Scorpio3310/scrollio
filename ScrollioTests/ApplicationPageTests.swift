@@ -1733,6 +1733,14 @@ final class ApplicationPageTests: XCTestCase {
                        ["appExpose", SystemShortcut.shortcutRing.identifier, ""],
                        "the ring as everywhere; no action of Buttons: Default")
         XCTAssertFalse(part.isRecorderOpen)
+
+        // Of a row that reads "Default" the recorder does not say "Already has an action"
+        // (QA B1): it has none. "Already in the list".
+        part.onRecordingStarted(recorder)
+        XCTAssertFalse(part.validateRecordedEvent(recorder, event: press(5)))
+        XCTAssertEqual(part.refusalHint(recorder, event: press(5)), "Already in the list")
+        XCTAssertNil(part.refusalHint(recorder, event: press(6)), "the ring: \"Already has an action\"")
+        part.onRecordingStopped(recorder, didRecord: false)
     }
 
     /// A binding of the app's own on a button that Buttons gave the ring or Gesture
