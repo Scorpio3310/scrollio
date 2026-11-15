@@ -522,6 +522,164 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertNil(action(40, type: .keyboard, in: Self.safari))
     }
 
+    /// An app's own "Default" on a key runs nothing (the row "+" recorded, its menu closed
+    /// without a choice): it does not keep the keys tap alive by itself, so no keystroke
+    /// passes through Scrollio for it. Where it stands in for a key Buttons binds, Buttons'
+    /// binding keeps the tap for the other apps, and the key still does nothing in the app.
+    func testAnAppsOwnDefaultOnAKeyNeedsNoKeyTap() {
+        let command = UInt(CGEventFlags.maskCommand.rawValue)
+        set(general: [binding(3, "copy")], safari: [binding(40, "", modifiers: command, type: .keyboard)])
+        XCTAssertFalse(ButtonUtils.shared.hasKeyboardTriggers, "nothing runs on a key anywhere")
+
+        set(general: [binding(3, "copy")], safari: [
+            binding(40, "", modifiers: command, type: .keyboard), binding(38, "undo", modifiers: command, type: .keyboard),
+        ])
+        XCTAssertTrue(ButtonUtils.shared.hasKeyboardTriggers, "another key of the app's has an action")
+
+        set(general: [binding(40, "undo", modifiers: command, type: .keyboard)], safari: [
+            binding(40, "", modifiers: command, type: .keyboard),
+        ])
+        XCTAssertTrue(ButtonUtils.shared.hasKeyboardTriggers, "Buttons' binding of the key, for every other app")
+        XCTAssertEqual(action(40, modifiers: .maskCommand, type: .keyboard, in: Self.safari), "", "the app's own Default")
+        XCTAssertEqual(action(40, modifiers: .maskCommand, type: .keyboard, in: Self.textEdit), "undo")
+
+        // An app's own key that opens something is an action.
+        let opens = ButtonBinding(
+            triggerEvent: RecordedEvent(type: .keyboard, code: 40, modifiers: command, deviceFilter: nil),
+            openTarget: OpenTargetPayload(path: "/Applications/Notes.app", bundleID: nil, arguments: "", kind: .application)
+        )
+        set(general: [], safari: [opens])
+        XCTAssertTrue(ButtonUtils.shared.hasKeyboardTriggers)
+    }
+
+    // MARK: - An entry stored under a symbolic link
+
+    /// "Choose in Finder…" stores the path the panel hands over. For Safari that is
+    /// `/Applications/Safari.app`, a symbolic link into the system's cryptex, while the
+    /// running Safari reports the path behind the link, so the entry never matched. The
+    /// entry is found by the path its link leads to as well, the bundle's or the program's,
+    /// in the one lookup everything uses: the app's buttons (its gestures and its thumb
+    /// wheel find it the same way), its ring, the menu bar's "Smooth Scrolling in …" and
+    /// "Settings for …", and "+" in Apps, which adds no second entry. An entry stored under
+    /// that very path still comes first, and nothing stored changes.
+    ///
+    /// Only the links are read, and only in the folders that may be looked into (the
+    /// Applications folders and /System; the test points that rule at its own folder): a
+    /// link elsewhere is not followed, and nothing is asked about where a link leads once
+    /// that is outside them. A link is followed as Safari's is: relative, with "..", and
+    /// through a second link, every path on the way counting.
+    func testAnEntryStoredUnderASymbolicLinkIsFoundByThePathBehindIt() throws {
+        let files = FileManager.default
+        // The temporary folder by its real path (/var is a link itself).
+        let resolved = try XCTUnwrap(realpath(files.temporaryDirectory.path, nil))
+        defer { free(resolved) }
+        let folder = URL(fileURLWithPath: String(cString: resolved)).appendingPathComponent("scrollio-link-\(UUID().uuidString)")
+        addTeardownBlock { try? files.removeItem(at: folder) }
+        let bundle = folder.appendingPathComponent("Real.app")
+        try files.createDirectory(at: bundle.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
+        XCTAssertTrue(files.createFile(atPath: bundle.appendingPathComponent("Contents/MacOS/Real").path, contents: Data()))
+        let link = folder.appendingPathComponent("Link.app")
+        try files.createSymbolicLink(at: link, withDestinationURL: bundle)
+
+        // A folder that is not one of the Applications folders is not looked at.
+        XCTAssertEqual(StoredPathLinks.forms(of: link.path), [])
+        XCTAssertNil(Self.makeStore([Application(path: link.path)]).get(by: bundle.path))
+        let savedRule = StoredPathLinks.mayLookAt
+        defer { StoredPathLinks.mayLookAt = savedRule }
+        var asked: [String] = []
+        StoredPathLinks.mayLookAt = { path in
+            asked.append(path)
+            return path.hasPrefix(folder.path + "/")
+        }
+
+        // What the running app reports: its real place, no link in it.
+        let real = bundle.path
+        let program = real + "/Contents/MacOS/Real"
+        let running = ShortcutRingChoice.FrontApp(bundlePath: real, executablePath: program)
+
+        let entry = Application(path: link.path)
+        entry.setOwnButtonBindings([binding(3, "undo")])
+        entry.setUsesGeneralRing(false, general: .default)
+        Options.shared.buttons.binding = [binding(3, "copy")]
+        var list = Self.makeStore([entry])
+        Options.shared.application.applications = list
+        ButtonUtils.shared.invalidateCache()
+
+        XCTAssertTrue(list.get(by: real) === entry, "by the bundle's real path")
+        XCTAssertTrue(list.get(by: link.path) === entry, "by the stored path, as ever")
+        XCTAssertNil(list.get(by: real + "/Contents"), "no other path")
+        XCTAssertTrue(ApplicationButtons.entry(front: running, applications: list) === entry)
+        XCTAssertEqual(action(3, in: running), "undo", "a press goes by the app's own buttons")
+        XCTAssertEqual(action(3, in: Self.textEdit), "copy")
+        XCTAssertTrue(ShortcutRingChoice.make(front: running, applications: list, general: .default).isAppsOwn, "its own ring")
+        let menuApp = AppSmoothing.App(name: "Real", bundlePath: real, executablePath: program)
+        XCTAssertTrue(AppSmoothing.entry(for: menuApp, in: list) === entry, "the menu bar's items")
+        XCTAssertTrue(
+            PreferencesApplicationViewController.existingApplication(forPaths: [real, program]) === entry,
+            "+ finds it: no second entry"
+        )
+        XCTAssertEqual(entry.path, link.path, "stored as it was")
+
+        // Stored as the program inside the linked bundle: found by the real program's path.
+        let byProgram = Application(path: link.path + "/Contents/MacOS/Real")
+        list = Self.makeStore([byProgram])
+        XCTAssertTrue(list.get(by: program) === byProgram)
+        XCTAssertNil(list.get(by: real))
+
+        // An entry stored under the real path itself comes first, wherever it stands.
+        let exact = Application(path: real)
+        for order in [[exact, entry], [entry, exact]] {
+            list = Self.makeStore(order)
+            XCTAssertTrue(list.get(by: real) === exact)
+            XCTAssertTrue(list.get(by: link.path) === entry)
+        }
+
+        // As Safari's: a relative link that climbs with "..", and a link to a link. Every
+        // path on the way finds the entry.
+        try files.createDirectory(at: folder.appendingPathComponent("Sub"), withIntermediateDirectories: true)
+        let climbing = folder.appendingPathComponent("Sub/Climbing.app")
+        try files.createSymbolicLink(atPath: climbing.path, withDestinationPath: "../Link.app")
+        XCTAssertEqual(StoredPathLinks.forms(of: climbing.path), [link.path, real])
+        XCTAssertEqual(
+            StoredPathLinks.forms(of: climbing.path + "/Contents/MacOS/Real"), [link.path + "/Contents/MacOS/Real", program]
+        )
+        let chained = Application(path: climbing.path)
+        list = Self.makeStore([chained])
+        XCTAssertTrue(list.get(by: real) === chained)
+        XCTAssertTrue(list.get(by: link.path) === chained)
+
+        // A link that leads out of the folders that may be looked at: where it points is a
+        // path the entry is found by, and nothing is asked about that place.
+        let outside = folder.appendingPathComponent("Outside.app")
+        try files.createSymbolicLink(atPath: outside.path, withDestinationPath: "/Volumes/Not Mounted/Other.app")
+        asked = []
+        XCTAssertEqual(StoredPathLinks.forms(of: outside.path), ["/Volumes/Not Mounted/Other.app"])
+        XCTAssertEqual(asked, [outside.path, "/Volumes/Not Mounted/Other.app"], "the rule was asked, the place was not")
+
+        // A path without a link, a file that is not there, a link to itself and a key that
+        // is no path have no second form.
+        XCTAssertEqual(StoredPathLinks.forms(of: real), [])
+        XCTAssertEqual(StoredPathLinks.forms(of: folder.path + "/Not There.app"), [])
+        let loop = folder.appendingPathComponent("Loop.app")
+        try files.createSymbolicLink(atPath: loop.path, withDestinationPath: "Loop.app")
+        XCTAssertEqual(StoredPathLinks.forms(of: loop.path), [])
+        XCTAssertEqual(StoredPathLinks.forms(of: "com.example.app"), [])
+
+        // The rule of the app: the Applications folders and /System, never /System/Volumes.
+        StoredPathLinks.mayLookAt = savedRule
+        XCTAssertTrue(StoredPathLinks.mayLookAt("/Applications/Safari.app"))
+        XCTAssertTrue(StoredPathLinks.mayLookAt("/System/Cryptexes/App/System/Applications/Safari.app"))
+        XCTAssertFalse(StoredPathLinks.mayLookAt("/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app"))
+        XCTAssertFalse(StoredPathLinks.mayLookAt("/Volumes/Disk/Some.app"))
+        XCTAssertFalse(StoredPathLinks.mayLookAt(NSHomeDirectory() + "/Documents/Some.app"))
+
+        // The case itself, on a Mac that has it (Safari in the cryptex): its links, read
+        // one by one, end where the system says they do.
+        if let last = StoredPathLinks.forms(of: "/Applications/Safari.app").last {
+            XCTAssertEqual(last, ("/Applications/Safari.app" as NSString).resolvingSymlinksInPath)
+        }
+    }
+
     /// "Everywhere: …": the general binding of the same trigger, else the one such a press
     /// matches best, else none.
     func testWhatTheButtonDoesEverywhere() {
@@ -577,8 +735,10 @@ final class ApplicationButtonsTests: XCTestCase {
     }
 
     /// "In other apps: …" says "No Action" where a press there does nothing: Scrollio
-    /// catches the button for another binding (round 2 fix Y1), or for a Logitech key of
-    /// While you hold a key (Y2; a standard key only listens).
+    /// catches a button without a standard one for another binding (round 2 fix Y1), or
+    /// the button is a Logitech key of While you hold a key (Y2; a standard key only
+    /// listens). A back button caught for another binding goes on as the standard Back
+    /// button there: "Default (Back)".
     func testInOtherAppsACaughtButtonDoesNothing() throws {
         let option = UInt(CGEventFlags.maskAlternate.rawValue)
         let control = UInt(CGEventFlags.maskControl.rawValue)
@@ -597,13 +757,24 @@ final class ApplicationButtonsTests: XCTestCase {
         XCTAssertEqual(rows[1].explanation, "In other apps: No\u{A0}Action")
         rows = buttonsPart(safari, holdKeys: [ScrollHotkey(type: .mouse, code: 3)]).rows
         XCTAssertEqual(rows[1].explanation, "In other apps: Default\u{A0}(Back)")
+
+        // ⌃ + Back in Buttons keeps the back button with Scrollio; its plain press, which
+        // no binding takes in other apps, is the standard Back button there.
+        let caughtBack = set(general: [binding(back, "paste", modifiers: control)], safari: [binding(back, "copy")])
+        rows = buttonsPart(caughtBack).rows
+        XCTAssertEqual(rows.first?.explanation, "In other apps: Default\u{A0}(Back)")
+        XCTAssertEqual(rows.first?.pullDown.sameAsOtherAppsItem?.title, "Same as Other Apps (Back)")
+        rows = buttonsPart(caughtBack, holdKeys: [ScrollHotkey(type: .mouse, code: back)]).rows
+        XCTAssertEqual(rows.first?.explanation, "In other apps: No\u{A0}Action", "held for Scrolling: not passed on")
     }
 
     /// The app's own "Default" of a button Scrollio catches for another binding names Back
-    /// only where the press reaches it (round 2 fix Y4): stored under the Logitech code it
-    /// goes on as the standard Back button; stored as the standard button it is never
-    /// reached (the caught press arrives as the Logitech control) and does nothing.
-    func testAnAppsOwnDefaultOfACaughtButtonNamesBackOnlyWhereThePressReachesIt() throws {
+    /// (round 2 fix Y4), because the press goes on as the standard Back button either way:
+    /// stored under the Logitech code the caught press reaches it; stored as the standard
+    /// button it is never reached (the caught press arrives as the Logitech control), and
+    /// a caught press no binding takes goes on as the standard button too (it used to do
+    /// nothing, and the row said "No Action").
+    func testAnAppsOwnDefaultOfACaughtButtonNamesBack() throws {
         let option = UInt(CGEventFlags.maskAlternate.rawValue)
         let back = LogiCenter.shared.scrollioCode(for: .back)
         let general = [binding(back, "copy", modifiers: option)]
@@ -611,9 +782,10 @@ final class ApplicationButtonsTests: XCTestCase {
         var safari = set(general: general, safari: [binding(3, "")])
         front = Self.safari
         XCTAssertNil(ButtonUtils.shared.getBestMatchingBinding(for: press(back)), "the caught press never reaches it")
+        XCTAssertNotNil(InputProcessor.standardButton(forCaughtPressWithoutBinding: press(back)), "and goes on as Back")
         var row = try XCTUnwrap(buttonsPart(safari).rows.first)
-        XCTAssertEqual(row.pullDown.menu?.items.first?.title, "No Action")
-        XCTAssertNil(row.pullDown.toolTip)
+        XCTAssertEqual(row.pullDown.menu?.items.first?.title, "Default (Back)")
+        XCTAssertEqual(row.pullDown.toolTip, "Goes back in apps that support it.")
 
         safari = set(general: general, safari: [binding(back, "")])
         let reached = try XCTUnwrap(ButtonUtils.shared.getBestMatchingBinding(for: press(back)))

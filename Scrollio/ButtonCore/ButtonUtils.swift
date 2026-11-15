@@ -54,8 +54,8 @@ class ButtonUtils {
     /// The buttons and keys some app has a binding of its own on: only a press of one of
     /// them asks which app is in front.
     private var cachedAppTriggerKeys: Set<ButtonBindingTriggerKey> = []
-    /// An enabled binding has a key as its trigger (and can run): the key tap is needed.
-    /// The general bindings and every app's own.
+    /// An enabled binding with an action has a key as its trigger (and can run): the key
+    /// tap is needed. The general bindings and every app's own.
     private var cachedHasKeyboardTriggers = false
     private var isDirty = true
     /// Called after the bindings changed (ButtonCore: its key tap follows them).
@@ -180,8 +180,8 @@ class ButtonUtils {
         }
     }
 
-    /// Whether some enabled binding is triggered by a key. Only then (and while a button
-    /// holds a modifier) does ButtonCore listen to the keyboard at all.
+    /// Whether some enabled binding with an action is triggered by a key. Only then (and
+    /// while a button holds a modifier) does ButtonCore listen to the keyboard at all.
     var hasKeyboardTriggers: Bool {
         refreshCacheIfNeeded()
         return cachedHasKeyboardTriggers
@@ -265,7 +265,13 @@ class ButtonUtils {
         return Dictionary(grouping: bindings.filter { isRunnable($0.triggerEvent) }, by: \.triggerKey)
     }
 
+    /// A binding without an action does not count: an app's own "Default" on a key runs
+    /// nothing, and the keys tap is not made for it (every keystroke would pass through
+    /// Scrollio for nothing). Where it stands in for a key Buttons binds, Buttons' binding
+    /// keeps the tap.
     private static func hasKeyboardTriggers(_ bindings: [ButtonBinding]) -> Bool {
-        return bindings.contains { $0.isEnabled && $0.triggerEvent.type == .keyboard && isRunnable($0.triggerEvent) }
+        return bindings.contains {
+            $0.isEnabled && $0.triggerEvent.type == .keyboard && isRunnable($0.triggerEvent) && !$0.systemShortcutName.isEmpty
+        }
     }
 }
