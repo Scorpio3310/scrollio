@@ -8,8 +8,8 @@
 //  part, its name, its mark in the list of apps, whether the app has settings of that kind
 //  of its own, and how its controller is made. Another kind is one more entry.
 //
-//  Scrolling: "Use settings from Scrolling" and, while it is off, the Scrolling settings
-//  for the app.
+//  Scrolling: "Scrolling in Safari" (Same as Scrolling, Own Settings, Left to macOS) and,
+//  under it, the Scrolling settings for the app.
 //  Buttons: the app's own buttons (`ApplicationButtonsViewController`).
 //  Gestures: "Use the general gestures" and, while it is off, the app's own gestures
 //  (`ApplicationGesturesPartViewController`).
@@ -162,6 +162,41 @@ struct ApplicationPagePart: Equatable {
         formatter.locale = locale
         return formatter.string(from: items) ?? items.joined(separator: ", ")
     }
+
+    /// `name` whole, or cut short at its end with "…", so that every text `texts` makes
+    /// with it takes at most two lines `width` wide in the explanations' font (an
+    /// explanation fits two lines). Where such a text stands the whole name is at hand: in
+    /// the app's box above it, and in a title's tooltip.
+    static func name(_ name: String, fittingTwoLinesOf width: CGFloat, in texts: (String) -> [String]) -> String {
+        guard width > 0 else { return name }
+        let measure = NSTextField(wrappingLabelWithString: "")
+        measure.font = PreferencesGroupedForm.explanationFont
+        measure.preferredMaxLayoutWidth = width
+        func height(_ text: String) -> CGFloat {
+            measure.stringValue = text
+            return measure.fittingSize.height
+        }
+        let twoLines = height("A\nA") + 0.5
+        func fits(_ candidate: String) -> Bool {
+            return texts(candidate).allSatisfy { height($0) <= twoLines }
+        }
+        guard !fits(name) else { return name }
+        // The longest beginning of the name that fits, by halves.
+        let characters = Array(name)
+        var shortest = 1, longest = characters.count - 1
+        var fitting = String(characters.prefix(1)) + "…"
+        while shortest <= longest {
+            let length = (shortest + longest) / 2
+            let candidate = String(characters.prefix(length)).trimmingCharacters(in: .whitespaces) + "…"
+            if fits(candidate) {
+                fitting = candidate
+                shortest = length + 1
+            } else {
+                longest = length - 1
+            }
+        }
+        return fitting
+    }
 }
 
 // MARK: - The first rows' push button
@@ -191,28 +226,46 @@ extension ApplicationTriggerRow {
 
 // MARK: - Scrolling
 
-/// "Use settings from Scrolling" and, while it is off, the Scrolling settings editing the
-/// app's own options under the switch's box (PreferencesScrollingViewController with a
-/// target application: no preview, its own "Reset to Defaults"), as the Gestures and
-/// Shortcut Ring parts show what is under their switch: while it is on the part is the
-/// switch's box alone. The settings' "Thumb wheel" box has the app's own speed and swap
-/// (scroll values like the others) and its own action, which is the thumb wheel's row of
-/// the Buttons part: while the switch is on that row is where the action is set.
+/// "Scrolling in Safari", one choice in a pop-up (`ApplicationScrollingChoice`): Same as
+/// Scrolling, Own Settings or Left to macOS, worked out from what is stored. Under its box
+/// the Scrolling settings editing the app's own options (PreferencesScrollingViewController
+/// with a target application: no preview, "Copy from Scrolling") for Own Settings; for Left
+/// to macOS only what still acts there, the Thumb wheel and "While you hold a key" boxes
+/// (`isLeftToMacOS`); for Same as Scrolling nothing, the choice's box alone, as the
+/// Gestures and Shortcut Ring parts show what is under their switch. The settings' "Thumb
+/// wheel" box has the app's own speed and swap (scroll values like the others) and its own
+/// action, which is the thumb wheel's row of the Buttons part: with Same as Scrolling that
+/// row is where the action is set.
 ///
-/// The settings' controller is made with the part and kept while the switch is on, its
-/// view out of the part: "Advanced", the reset's Undo (which shows on the controller that
-/// made it) and its "Undo Reset" stay with the one controller for the page's life.
+/// The pop-up follows what is stored, with one exception: while the part is on screen it
+/// never moves from Own Settings to Left to macOS for what the user does here (the pick
+/// itself, or smoothing and reversing switched off by hand), so nothing folds under the
+/// pointer; the next showing of the part says Left to macOS. A change made elsewhere (the
+/// menu bar, Undo or Redo, "Copy from Scrolling") shows at once.
+///
+/// Each pick is one step of Edit › Undo ("Change Scrolling in Safari"), registered on the
+/// settings (`Options.shared`) so that it outlives the page: Undo and Redo find the app's
+/// entry by its path and show on the part the pane says is open (`partShowing`).
+///
+/// The settings' controller is made with the part and kept while the app uses the
+/// Scrolling settings, its view out of the part: "Advanced", the reset's Undo (which shows
+/// on the controller that made it) and its "Undo Reset" stay with the one controller for
+/// the page's life.
 final class ApplicationScrollingPartViewController: NSViewController, ApplicationPagePartController, PreferencesScrollingContainer {
 
     enum Identifier {
+        /// The pop-up keeps the identifier of the switch it replaced.
         static let inherit = NSUserInterfaceItemIdentifier("apps-detail-inherit")
     }
 
     let application: Application
     private let uiStateDefaults: UserDefaults
     var onHeightChange: (() -> Void)?
-    /// "Use settings from Scrolling" was switched (the list says which apps have their own).
+    /// What the app has of its own changed (a pick, its Undo or Redo): the list says which
+    /// apps have their own. The page hands on the pane's, which outlives the page.
     var onInheritChange: (() -> Void)?
+    /// The choice the pop-up shows changed: the page's line under the app's box follows.
+    var onChoiceChange: (() -> Void)?
     /// The app's own thumb wheel function changed in these settings (its action, a reset or
     /// the reset's Undo): the Buttons part and the list show it. Handed on to the settings
     /// as it is, so that an Undo after the page closed still reaches the list.
@@ -220,24 +273,50 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
         didSet { scrollingController?.onApplicationThumbWheelChange = onOwnThumbWheelChange }
     }
     /// The pane's answer to which Scrolling part shows an app's entry now: an Undo or Redo
-    /// of "Reset to Defaults" shows there, on the page open when it runs (the page that
-    /// made it may be gone). Nil: this part, while it shows that entry.
+    /// of a pick or of "Copy from Scrolling" shows there, on the page open when it runs
+    /// (the page that made it may be gone). Nil: this part, while it shows that entry.
     var partShowing: ((Application) -> ApplicationScrollingPartViewController?)? {
         didSet { handOnPartShowing() }
     }
+    /// Takes Undo and Redo of a pick; the window's when nil.
+    var paneUndoManager: UndoManager?
 
-    private(set) var inheritRow: PreferencesSwitchRow!
-    private(set) var inheritSection: PreferencesGroupSection!
-    /// The app's own settings: in the part only while "Use settings from Scrolling" is off
-    /// (`showsSettings`), kept while it is on.
+    private(set) var choiceRow: PreferencesGroupRow!
+    private(set) var choicePopUp: NSPopUpButton!
+    private(set) var choiceSection: PreferencesGroupSection!
+    /// What the pop-up shows (`syncViewWithOptions` sets it).
+    private(set) var shownChoice: ApplicationScrollingChoice = .sameAsScrolling
+    /// The app's name the row is titled with, and as its lines say it (cut short when a
+    /// line would take more than two lines beside the pop-up).
+    private var titledName: String?
+    private var linesName = ""
+    /// Own Settings is held over stored values that say Left to macOS: the user made them
+    /// so here, by hand, while the part shows. Kept while those values stay as they are
+    /// and the part is on screen.
+    private var heldOwnSettings: ChoiceInputs?
+    /// The app's own settings: in the part except with Same as Scrolling (`showsSettings`),
+    /// kept while that shows.
     private(set) var scrollingController: PreferencesScrollingViewController!
-    /// The settings stand under the switch's box (the switch is off).
+    /// The settings stand under the choice's box.
     var showsSettings: Bool {
         return isViewLoaded && scrollingController.view.superview === view
     }
-    /// The part ends under the switch's box (the switch is on), or under the settings.
-    private var endsUnderInheritSection: NSLayoutConstraint!
+    /// The part ends under the choice's box (Same as Scrolling), or under the settings.
+    private var endsUnderChoiceSection: NSLayoutConstraint!
     private var settingsConstraints: [NSLayoutConstraint] = []
+
+    /// What the choice is worked out from.
+    private struct ChoiceInputs: Equatable {
+        let inherit: Bool
+        let smooth: Bool
+        let reversesWheel: Bool
+
+        init(_ application: Application) {
+            inherit = application.inherit
+            smooth = application.scroll.smooth
+            reversesWheel = application.scroll.reversesWheel
+        }
+    }
 
     init(application: Application, uiStateDefaults: UserDefaults) {
         self.application = application
@@ -253,28 +332,37 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
         let root = NSView()
         root.translatesAutoresizingMaskIntoConstraints = false
         let name = application.getName()
-        let inherit = PreferencesSwitchRow(
-            title: NSLocalizedString("apps-detail-inherit", comment: ""),
-            explanation: nil,
-            target: self,
-            action: #selector(inheritClick(_:))
+        let popUp = NSPopUpButton(frame: .zero, pullsDown: false)
+        popUp.identifier = Identifier.inherit
+        popUp.target = self
+        popUp.action = #selector(choiceChanged(_:))
+        for choice in ApplicationScrollingChoice.allCases {
+            popUp.addItem(withTitle: NSLocalizedString(choice.titleKey, comment: ""))
+            popUp.lastItem?.tag = choice.rawValue
+        }
+        choicePopUp = popUp
+        // (The title and the lines are set by `sync`, once the row knows its width.)
+        let row = PreferencesGroupRow(
+            title: Self.choiceTitle(name: name),
+            explanation: Self.explanation(of: .sameAsScrolling, name: name),
+            accessory: popUp
         )
-        inherit.toggle.identifier = Identifier.inherit
-        // Room for the longer of the two lines, so switching never changes the height.
-        inherit.reservedExplanations = [true, false].map { ApplicationDetailViewController.inheritExplanation(on: $0, name: name) }
-        inheritRow = inherit
+        choiceRow = row
         let section = PreferencesGroupSection(
             width: PreferencesGroupedForm.boxWidth(paneWidth: ApplicationDetailViewController.paneWidth),
-            rows: [inherit]
+            rows: [row]
         )
-        inheritSection = section
+        choiceSection = section
 
         // Added as a child first: the settings tell their container their height as soon
-        // as they load. They load with the page, also while the switch keeps them out.
+        // as they load. They load with the page, also while the choice keeps them out.
         let scrolling = PreferencesScrollingViewController()
         scrolling.uiStateDefaults = uiStateDefaults
         scrolling.currentTargetApplication = application
         scrolling.onApplicationThumbWheelChange = onOwnThumbWheelChange
+        scrolling.onApplicationScrollChange = { [weak self] byHand in
+            self?.settingsChanged(byHand: byHand)
+        }
         addChild(scrolling)
         scrollingController = scrolling
         handOnPartShowing()
@@ -282,34 +370,60 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 
         root.addSubview(section)
         let margin = PreferencesGroupedForm.margin
-        endsUnderInheritSection = section.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -margin)
+        endsUnderChoiceSection = section.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -margin)
         NSLayoutConstraint.activate([
             section.topAnchor.constraint(equalTo: root.topAnchor, constant: margin),
             section.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: margin),
             section.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -margin),
-            endsUnderInheritSection,
+            endsUnderChoiceSection,
         ])
         view = root
         syncViewWithOptions()
     }
 
+    /// "Scrolling in Safari".
+    static func choiceTitle(name: String) -> String {
+        return String(format: NSLocalizedString("apps-detail-scrolling-choice", comment: ""), name)
+    }
+
+    /// The line under the row for `choice`: "Changes under Scrolling apply to Safari too.",
+    /// "Safari keeps its own settings below.", "Safari scrolls the way macOS does: not
+    /// smoothed, not reversed."
+    static func explanation(of choice: ApplicationScrollingChoice, name: String) -> String {
+        return String(format: NSLocalizedString(choice.explanationKey, comment: ""), name)
+    }
+
+    /// The stored settings may have changed elsewhere: the part shows them (and what they
+    /// say, unless Own Settings is held for what the user did here).
     func syncViewWithOptions() {
         if sync() {
             onHeightChange?()
         }
     }
 
+    /// A change made elsewhere that shows at once, also over Own Settings held for what
+    /// the user did here: an Undo or Redo, "Copy from Scrolling".
+    func showStoredChoice() {
+        heldOwnSettings = nil
+        syncViewWithOptions()
+    }
+
     /// Tells the settings where an Undo or Redo of their reset shows: on the Scrolling part
     /// that shows the app's entry then, with the Buttons part and the list
     /// (`onOwnThumbWheelChange`: the reset takes the app's own thumb wheel action too).
     private func handOnPartShowing() {
-        let showing = partShowing ?? { [weak self] entry in
-            self?.application === entry ? self : nil
-        }
+        let showing = partShowingNow
         scrollingController?.showUndoneResetOfApplication = { entry in
             guard let part = showing(entry) else { return }
-            part.syncViewWithOptions()
+            part.showStoredChoice()
             part.onOwnThumbWheelChange?()
+        }
+    }
+
+    /// `partShowing`, or this part while it shows the entry.
+    private var partShowingNow: (Application) -> ApplicationScrollingPartViewController? {
+        return partShowing ?? { [weak self] entry in
+            self?.application === entry ? self : nil
         }
     }
 
@@ -319,22 +433,58 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
     @discardableResult
     private func sync() -> Bool {
         guard isViewLoaded else { return false }
-        let inherits = application.inherit
-        inheritRow.isOn = inherits
-        inheritRow.explanation = ApplicationDetailViewController.inheritExplanation(on: inherits, name: application.getName())
+        let choice = choiceToShow()
+        showName()
+        choicePopUp.selectItem(withTag: choice.rawValue)
+        choiceRow.explanation = Self.explanation(of: choice, name: linesName)
+        let changed = choice != shownChoice
+        shownChoice = choice
+        let showsOwn = choice != .sameAsScrolling
         // Out of the part before they change and into it after, so that the page hears of
         // their height once, from here.
-        var moved = inherits && showSettings(false)
+        var moved = !showsOwn && showSettings(false)
         scrollingController.syncViewWithOptions()
-        moved = (!inherits && showSettings(true)) || moved
+        scrollingController.isLeftToMacOS = choice == .leftToMacOS
+        moved = (showsOwn && showSettings(true)) || moved
+        if changed {
+            onChoiceChange?()
+        }
         return moved && view.superview != nil
     }
 
-    func partWillHide() {}
+    /// The row's title with the app's name (a long one cut short, the whole of it in the
+    /// tooltip), and room for the tallest of the three lines, so that a pick never changes
+    /// the height. Again only when the name changed (an Undo of the app's removal).
+    private func showName() {
+        let name = application.getName()
+        guard name != titledName else { return }
+        titledName = name
+        let title = Self.choiceTitle(name: name)
+        choiceRow.title = title
+        choiceRow.titleLabel.toolTip = title
+        linesName = ApplicationPagePart.name(name, fittingTwoLinesOf: choiceRow.titleColumnWidth) { name in
+            ApplicationScrollingChoice.allCases.map { Self.explanation(of: $0, name: name) }
+        }
+        choiceRow.reservedExplanations = ApplicationScrollingChoice.allCases.map { Self.explanation(of: $0, name: linesName) }
+    }
 
-    /// Puts the app's own settings under the switch's box, or takes them away again: they
-    /// are there exactly while "Use settings from Scrolling" is off. True when they came or
-    /// went.
+    /// What the pop-up shows: what is stored says, unless Own Settings is held over it.
+    private func choiceToShow() -> ApplicationScrollingChoice {
+        let stored = application.scrollingChoice
+        if stored == .leftToMacOS, let held = heldOwnSettings, held == ChoiceInputs(application) {
+            return .ownSettings
+        }
+        heldOwnSettings = nil
+        return stored
+    }
+
+    /// The part goes out of sight: its next showing says what is stored.
+    func partWillHide() {
+        heldOwnSettings = nil
+    }
+
+    /// Puts the app's own settings under the choice's box, or takes them away again: they
+    /// are there except with Same as Scrolling. True when they came or went.
     private func showSettings(_ shows: Bool) -> Bool {
         guard shows != showsSettings else { return false }
         let settings = scrollingController.view
@@ -344,14 +494,14 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
             NSLayoutConstraint.deactivate(settingsConstraints)
             settingsConstraints = []
             settings.removeFromSuperview()
-            endsUnderInheritSection.isActive = true
+            endsUnderChoiceSection.isActive = true
             return true
         }
-        endsUnderInheritSection.isActive = false
+        endsUnderChoiceSection.isActive = false
         view.addSubview(settings)
         settingsConstraints = [
             // The settings bring their own margins.
-            settings.topAnchor.constraint(equalTo: inheritSection.bottomAnchor),
+            settings.topAnchor.constraint(equalTo: choiceSection.bottomAnchor),
             settings.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             settings.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             settings.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -367,19 +517,90 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
         onHeightChange?()
     }
 
-    /// On: the app follows the Scrolling pane; its own options stay stored for later, out
-    /// of sight. Off: the app's own options under the switch's box, which start as a copy
-    /// of the Scrolling settings when they were never edited, and the thumb wheel's speed
-    /// and swap as the wheel runs with them now when the app has none yet (so switching off
-    /// changes nothing until the user does).
-    @objc func inheritClick(_ sender: NSSwitch) {
-        application.setUsesScrollingSettings(
-            sender.state == .on, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel
-        )
-        // (The settings came or went: the page measures again, once.)
+    /// The app's own settings changed in the settings under the box: smoothing or the
+    /// direction switched by hand (Own Settings stays while the part shows), or "Copy from
+    /// Scrolling" (what it gives shows at once).
+    private func settingsChanged(byHand: Bool) {
+        if byHand {
+            holdOwnSettingsIfLeftToMacOS()
+            syncViewWithOptions()
+        } else {
+            showStoredChoice()
+        }
+    }
+
+    /// Own Settings shows and what the user did here makes the stored values say Left to
+    /// macOS: Own Settings stays while they do and the part is on screen.
+    private func holdOwnSettingsIfLeftToMacOS() {
+        guard shownChoice == .ownSettings, application.scrollingChoice == .leftToMacOS else { return }
+        heldOwnSettings = ChoiceInputs(application)
+    }
+
+    // MARK: - A pick
+
+    /// Where a pick registers its Undo: the window's undo manager while the page is in the
+    /// window. Undo and Redo stay with the manager the pick used.
+    var undoTarget: UndoManager? {
+        return paneUndoManager ?? view.window?.undoManager
+    }
+
+    /// A pick in "Scrolling in Safari": writes what the move needs, as one Undo step.
+    @objc func choiceChanged(_ sender: NSPopUpButton) {
+        guard let choice = ApplicationScrollingChoice(rawValue: sender.selectedTag()) else { return }
+        let shown = shownChoice
+        heldOwnSettings = nil
+        let before = ApplicationScrollingSnapshot(of: application)
+        application.choose(choice, from: shown, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
+        // Own Settings chosen over values that say Left to macOS: it stays while the part shows.
+        if choice == .ownSettings, application.scrollingChoice == .leftToMacOS {
+            heldOwnSettings = ChoiceInputs(application)
+        }
+        if ApplicationScrollingSnapshot(of: application) != before {
+            Self.registerUndo(
+                restoring: before, of: application, undoManager: undoTarget,
+                showing: partShowingNow, list: onInheritChange
+            )
+        }
+        // (The settings came, went or folded: the page measures again, once.)
         sync()
         onHeightChange?()
         onInheritChange?()
+    }
+
+    /// What Edit › Undo calls a pick: "Change Scrolling in Safari".
+    static func undoActionName(of application: Application) -> String {
+        return String(format: NSLocalizedString("apps-undo-scrolling-choice", comment: ""), application.getName())
+    }
+
+    /// Registers the step back to `snapshot` for the app's entry. The target is the
+    /// settings, not this part: an Undo after the page closed still works. Undo and Redo
+    /// find the entry by its path when they run (an app removed and added again is a new
+    /// entry), show what they did on the part open then (`showing`) and tell the list.
+    private static func registerUndo(
+        restoring snapshot: ApplicationScrollingSnapshot, of application: Application, undoManager undo: UndoManager?,
+        showing: @escaping (Application) -> ApplicationScrollingPartViewController?, list: (() -> Void)?
+    ) {
+        guard let undo else { return }
+        undo.registerUndo(withTarget: Options.shared) { [weak undo] _ in
+            let entry = currentEntry(of: application)
+            let now = ApplicationScrollingSnapshot(of: entry)
+            snapshot.apply(to: entry)
+            if let part = showing(entry) {
+                part.showStoredChoice()
+                part.onHeightChange?()
+            }
+            list?()
+            registerUndo(restoring: now, of: entry, undoManager: undo, showing: showing, list: list)
+        }
+        undo.setActionName(undoActionName(of: application))
+    }
+
+    /// The entry the list holds now for the app, or the one the pick changed when the list
+    /// has none for it (nothing stores that one).
+    private static func currentEntry(of application: Application) -> Application {
+        return PreferencesApplicationViewController.existingApplication(
+            forPaths: PreferencesApplicationViewController.knownPaths(forStoredPath: application.path)
+        ) ?? application
     }
 }
 

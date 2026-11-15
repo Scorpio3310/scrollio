@@ -1100,8 +1100,8 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
         XCTAssertEqual(page.buttonsPart.thumbWheelRow?.function, .zoom, "the action is set in the Buttons part")
         page.show(.scrolling)
 
-        page.inheritSwitch.state = .off
-        send(page.inheritSwitch)
+        page.scrollingChoicePopUp.selectItem(withTag: ApplicationScrollingChoice.ownSettings.rawValue)
+        send(page.scrollingChoicePopUp)
         XCTAssertFalse(calculator.inherit)
         XCTAssertTrue(tab.thumbWheelSection.isDescendant(of: page.view))
         XCTAssertFalse(tab.thumbWheelSection.isHiddenOrHasHiddenAncestor)
@@ -1125,13 +1125,13 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
                        "the switch is Zoom's (the app's action); the other actions keep theirs")
         XCTAssertEqual(Options.shared.thumbWheel, ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: true))
 
-        page.inheritSwitch.state = .on
-        send(page.inheritSwitch)
+        page.scrollingChoicePopUp.selectItem(withTag: ApplicationScrollingChoice.sameAsScrolling.rawValue)
+        send(page.scrollingChoicePopUp)
         XCTAssertFalse(tab.thumbWheelSection.isDescendant(of: page.view))
         XCTAssertEqual(calculator.scroll.thumbWheel?.speed, 0.75, "kept for later")
         XCTAssertEqual(calculator.ownThumbWheelFunction, .zoom, "the action stays the app's own")
-        page.inheritSwitch.state = .off
-        send(page.inheritSwitch)
+        page.scrollingChoicePopUp.selectItem(withTag: ApplicationScrollingChoice.ownSettings.rawValue)
+        send(page.scrollingChoicePopUp)
         XCTAssertEqual(tab.thumbWheelSpeedSlider.doubleValue, 0.75, accuracy: 1e-9, "back as it was left")
         XCTAssertEqual(tab.thumbWheelReverseSwitch.state, .off)
     }
@@ -1146,8 +1146,8 @@ final class ApplicationThumbWheelScrollingPageTests: XCTestCase {
         let pane = makePane()
         let page = try page(pane: pane)
         let tab = try XCTUnwrap(page.scrollingController)
-        page.inheritSwitch.state = .off
-        send(page.inheritSwitch)
+        page.scrollingChoicePopUp.selectItem(withTag: ApplicationScrollingChoice.ownSettings.rawValue)
+        send(page.scrollingChoicePopUp)
         XCTAssertTrue(tab.thumbWheelFunctionPopUp.isDescendant(of: page.view))
 
         try choose(.tabs, in: tab.thumbWheelFunctionPopUp)

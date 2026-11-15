@@ -30,6 +30,8 @@
 //  thumb wheel's speed, reverses and follow switch those of Scrolling › Thumb wheel, and
 //  its own action goes (so does what Undo and its offer say: "Undo", "Copy from Scrolling
 //  in Figma").
+//  For an app left to macOS ("Scrolling in Safari": Left to macOS) only what still acts
+//  there shows: the Thumb wheel and "While you hold a key" boxes (`isLeftToMacOS`).
 //
 //  Created by Caldis on 2017/1/26.
 //  Copyright © 2017年 Caldis. All rights reserved.
@@ -236,6 +238,21 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     /// the reset, as the reset's Undo does.
     var showUndoneResetOfApplication: ((Application) -> Void)?
 
+    /// On an app's page: the app's own settings changed here, by hand in "Smooth scrolling"
+    /// or "Reverse wheel direction" (true), or by "Copy from Scrolling" (false). The app's
+    /// Scrolling part decides what "Scrolling in Safari" shows.
+    var onApplicationScrollChange: ((_ byHand: Bool) -> Void)?
+
+    /// On an app's page with Left to macOS: only what still acts shows, the Thumb wheel and
+    /// "While you hold a key" boxes. The main box (smoothing, feel, speed, direction),
+    /// "Advanced" and "Copy from Scrolling" are hidden; their values stay stored.
+    var isLeftToMacOS = false {
+        didSet {
+            guard isLeftToMacOS != oldValue else { return }
+            applyLeftToMacOS()
+        }
+    }
+
     /// How long "Reset to Defaults" reads "Undo Reset" after a reset. Tests shorten it.
     var undoOfferDuration: TimeInterval = 8
     /// The button offers to take the reset back (it reads "Undo Reset").
@@ -280,6 +297,8 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     private(set) var keyBindButtons: [NSButton] = []
     private(set) var keyClearButtons: [NSButton] = []
     private(set) var resetToDefaultsButton: NSButton!
+    /// The line under the boxes that holds the reset button.
+    private(set) var resetFooter: PreferencesGroupFooter!
 
     /// The rows of the first box: smooth scrolling, feel, speed, direction.
     private(set) var smoothRow: PreferencesSwitchRow!
@@ -312,6 +331,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     private(set) var thumbWheelSection: PreferencesGroupSection!
     /// The line under the box (in a holder that insets it, which is what hides).
     private(set) var thumbWheelNote: NSTextField!
+    /// The line's text, made again only when the app's name changes (nil: the tab's).
+    private var thumbWheelNoteName: String?
+    private lazy var thumbWheelNoteText = text("scrolling-thumb-wheel-note")
     private(set) var thumbWheelFunctionRow: PreferencesGroupRow!
     private(set) var thumbWheelFunctionPopUp: NSPopUpButton!
     private(set) var thumbWheelSpeedRow: PreferencesSliderRow!
@@ -384,8 +406,10 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         advancedRow.revealedViews = advancedRows
 
         // The thumb wheel above the keys, so the default window shows it.
+        let footer = PreferencesGroupFooter(trailing: [reset])
+        resetFooter = footer
         PreferencesGroupedForm.add(
-            [preview, basic, thumbWheel, thumbWheelNoteHolder, keys, keysNoteHolder, advanced, PreferencesGroupFooter(trailing: [reset])],
+            [preview, basic, thumbWheel, thumbWheelNoteHolder, keys, keysNoteHolder, advanced, footer],
             to: content
         )
         contentStack = content
@@ -398,6 +422,7 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         isAdvancedExpanded = uiStateDefaults.bool(forKey: Self.advancedExpandedDefaultsKey)
         applyAdvancedExpanded()
         syncViewWithOptions()
+        applyLeftToMacOS()
         root.setFrameSize(root.fittingSize)
         isBuilt = true
     }
@@ -522,7 +547,12 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         let general = Options.shared.thumbWheel
         let settings = currentTargetApplication?.thumbWheelThatRuns(general: general) ?? general
         let editable = !isTargetApplicationInheritOptions()
-        let note = text(currentTargetApplication == nil ? "scrolling-thumb-wheel-note" : "apps-detail-thumb-wheel-shared")
+        let name = currentTargetApplication?.getName()
+        if thumbWheelNoteName != name {
+            thumbWheelNoteName = name
+            thumbWheelNoteText = name.map(Self.applicationThumbWheelNote(name:)) ?? text("scrolling-thumb-wheel-note")
+        }
+        let note = thumbWheelNoteText
         if thumbWheelNote.stringValue != note {
             thumbWheelNote.stringValue = note
             thumbWheelSection.setAccessibilityHelp(note)
@@ -567,6 +597,15 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
                 contentHeightDidChange()
             }
         }
+    }
+
+    /// "The action is also set in Safari › Buttons. …", a long name cut short where the line
+    /// would take more than two lines (the whole name is in the app's box).
+    static func applicationThumbWheelNote(name: String) -> String {
+        let format = NSLocalizedString("apps-detail-thumb-wheel-shared", comment: "")
+        let width = boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset
+        let fitting = ApplicationPagePart.name(name, fittingTwoLinesOf: width) { [String(format: format, $0)] }
+        return String(format: format, fitting)
     }
 
     /// A slider row and its value. A refresh arriving while the user drags this knob must
@@ -699,6 +738,22 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
         contentHeightDidChange()
     }
 
+    /// Hides or shows what Left to macOS leaves out (`isLeftToMacOS`); the pane's height
+    /// follows. A reset's "Undo Reset" is not offered for a button out of sight.
+    private func applyLeftToMacOS() {
+        guard isViewLoaded else { return }
+        let hidden = isLeftToMacOS
+        for view: NSView in [sections[0], advancedSection, resetFooter] where view.isHidden != hidden {
+            view.isHidden = hidden
+        }
+        if hidden {
+            endUndoOffer()
+        }
+        if isBuilt {
+            contentHeightDidChange()
+        }
+    }
+
     private func contentHeightDidChange() {
         if let container = parent as? PreferencesScrollingContainer {
             container.fitToContent()
@@ -712,6 +767,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     @objc func scrollSmoothClick(_ sender: NSSwitch) {
         getTargetApplicationScrollOptions().smooth = sender.state == .on
         syncViewWithOptions()
+        if currentTargetApplication != nil {
+            onApplicationScrollChange?(true)
+        }
     }
 
     /// A preset is a value of Duration: picking one moves the glide time slider with it.
@@ -733,6 +791,9 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
     @objc func scrollReverseClick(_ sender: NSSwitch) {
         getTargetApplicationScrollOptions().reversesWheel = sender.state == .on
         syncViewWithOptions()
+        if currentTargetApplication != nil {
+            onApplicationScrollChange?(true)
+        }
     }
 
     @objc func advancedClick(_ sender: NSButton) {
@@ -915,6 +976,10 @@ class PreferencesScrollingViewController: NSViewController, ScrollOptionsContext
             showOnOpenPage: showOnOpenPage
         )
         beginUndoOffer()
+        // (What the copy gives shows at once on the app's part: it may be Left to macOS.)
+        if currentTargetApplication != nil {
+            onApplicationScrollChange?(false)
+        }
     }
 
     // MARK: - "Undo Reset", offered after a reset

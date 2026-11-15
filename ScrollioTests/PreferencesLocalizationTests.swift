@@ -149,7 +149,7 @@ final class PreferencesLocalizationTests: XCTestCase {
     /// Apps pane and an app's page.
     static let appsKeys = [
         "apps-limit", "apps-limit-hint", "apps-list-header", "apps-choose-in-finder", "apps-open-panel-prompt",
-        "apps-undo-remove", "apps-detail-inherit",
+        "apps-undo-remove",
         "apps-detail-inherit-on", "apps-detail-inherit-off", "apps-limit-empty",
         "apps-detail-ring-general", "apps-detail-ring-general-on", "apps-detail-ring-general-off",
         "apps-detail-part-scrolling", "apps-detail-part-buttons", "apps-detail-part-ring", "apps-detail-parts",
@@ -176,6 +176,9 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-summary-own", "apps-summary-scrolling", "apps-summary-buttons-one", "apps-summary-buttons-other",
         "apps-summary-thumb-wheel", "apps-summary-gestures", "apps-summary-ring", "apps-summary-none",
         "apps-empty", "apps-show-in-finder",
+        // Round 2 B1: "Scrolling in Safari"
+        "apps-detail-scrolling-choice", "apps-detail-scrolling-same", "apps-detail-scrolling-own",
+        "apps-detail-scrolling-macos", "apps-detail-scrolling-macos-hint", "apps-undo-scrolling-choice",
     ]
 
     /// General pane, with what the About pane showed (the `about-*` keys).
@@ -448,6 +451,12 @@ final class PreferencesLocalizationTests: XCTestCase {
         "openTargetScriptFailed": "@",
         "openTargetScriptExitedWithError": "@d",
         "toast-system-shortcut-off": "@",
+        // Round 2 B1: "Scrolling in Safari", the line under the app's box, the thumb wheel's
+        "apps-detail-scrolling-choice": "@",
+        "apps-detail-scrolling-macos-hint": "@",
+        "apps-undo-scrolling-choice": "@",
+        "apps-detail-allowlist-note": "@",
+        "apps-detail-thumb-wheel-shared": "@",
     ]
 
     /// The arguments `format` reads, in argument order: "%2$d of %1$@" -> "@d"; "@" an

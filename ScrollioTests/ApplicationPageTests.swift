@@ -5,9 +5,9 @@
 //  An app's page in parts (Scrolling, Buttons, Gestures, Shortcut Ring: one at a time
 //  under the app's box, the one shown last remembered for every app, a part that does not
 //  exist falling back to Scrolling, the page's height following the part), the marks of
-//  the list of apps, the Scrolling part: the switch's box alone while the app uses the
-//  Scrolling settings, its own settings and "Reset to Defaults" under it while it does
-//  not; the Buttons part: only the app's own rows with what they do
+//  the list of apps, the Scrolling part: the box of "Scrolling in Safari" alone while the
+//  app uses the Scrolling settings, its own settings and "Copy from Scrolling" under it
+//  while it does not; the Buttons part: only the app's own rows with what they do
 //  everywhere, the "+" menu, changing, recording and removing a row, the Shortcut Ring and
 //  Gesture Navigation offered as everything else, "Show Gesture Settings" leading to the
 //  Gestures part; the Gestures part: the switch, the app's own five rows and invert switch,
@@ -119,6 +119,13 @@ final class ApplicationPageTests: XCTestCase {
         send(page.partControl)
     }
 
+    /// Picks `choice` in "Scrolling in …", as a click on its item does.
+    private func pick(_ choice: ApplicationScrollingChoice, on page: ApplicationDetailViewController,
+                      file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(page.scrollingChoicePopUp.selectItem(withTag: choice.rawValue), file: file, line: line)
+        send(page.scrollingChoicePopUp, file: file, line: line)
+    }
+
     private func allSubviews(of view: NSView) -> [NSView] {
         return view.subviews.flatMap { [$0] + allSubviews(of: $0) }
     }
@@ -168,8 +175,8 @@ final class ApplicationPageTests: XCTestCase {
     // MARK: - The parts
 
     /// The page shows the app's box, then the control with the four parts in the sidebar's
-    /// order, then one part at a time: Scrolling first, with "Use settings from Scrolling"
-    /// on top of it.
+    /// order, then one part at a time: Scrolling first, with "Scrolling in Calculator" on
+    /// top of it.
     func testThePageShowsOnePartAtATimeUnderTheAppsBox() throws {
         addApp(Self.calculator)
         let pane = makePane()
@@ -184,7 +191,7 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(page.partControl.selectedSegment, 0)
         XCTAssertEqual(page.headerSection.box.visibleRows.count, 1, "the box holds the app alone")
         XCTAssertTrue(page.scrollingPart.view.isDescendant(of: page.partContainer))
-        XCTAssertTrue(page.inheritRow.isDescendant(of: page.scrollingPart.view), "Use settings from Scrolling is Scrolling's")
+        XCTAssertTrue(page.scrollingChoiceRow.isDescendant(of: page.scrollingPart.view), "Scrolling in Calculator is Scrolling's")
         XCTAssertNil(page.buttonsPart.view.superview)
         XCTAssertNil(page.gesturesPart.view.superview)
         XCTAssertNil(page.ringPart.view.superview)
@@ -275,10 +282,10 @@ final class ApplicationPageTests: XCTestCase {
 
     // MARK: - The Scrolling part
 
-    /// While the app uses the Scrolling settings the part is the switch's box alone, as the
-    /// Gestures and Shortcut Ring parts are: no settings, no "Thumb wheel" box, no "Reset
-    /// to Defaults". The settings' controller is kept for when the switch goes off.
-    func testTheScrollingPartIsTheSwitchAloneWhileTheAppUsesTheScrollingSettings() throws {
+    /// With Same as Scrolling the part is the choice's box alone, as the Gestures and
+    /// Shortcut Ring parts are their switch's: no settings, no "Thumb wheel" box, no "Copy
+    /// from Scrolling". The settings' controller is kept for another choice.
+    func testTheScrollingPartIsTheChoiceAloneWhileTheAppUsesTheScrollingSettings() throws {
         addApp(Self.calculator)
         let pane = makePane()
         pane.openApplication(withID: Self.calculator, part: .scrolling)
@@ -286,29 +293,29 @@ final class ApplicationPageTests: XCTestCase {
         let part = try XCTUnwrap(page.scrollingPart)
         page.view.layoutSubtreeIfNeeded()
 
-        XCTAssertTrue(part.inheritRow.isOn)
-        XCTAssertEqual(part.inheritRow.explanation, "Changes under Scrolling apply to Calculator too.")
+        XCTAssertEqual(part.choicePopUp.selectedTag(), ApplicationScrollingChoice.sameAsScrolling.rawValue)
+        XCTAssertEqual(part.choiceRow.explanation, "Changes under Scrolling apply to Calculator too.")
         XCTAssertFalse(part.showsSettings)
-        XCTAssertEqual(part.view.subviews, [part.inheritSection], "the switch's box alone")
+        XCTAssertEqual(part.view.subviews, [part.choiceSection], "the choice's box alone")
         let controls = allSubviews(of: part.view).filter { $0 is NSControl && !($0 is NSTextField) }
-        XCTAssertEqual(controls, [part.inheritRow.toggle], "the switch is the part's only control")
+        XCTAssertEqual(controls, [part.choicePopUp], "the pop-up is the part's only control")
         let settings = try XCTUnwrap(part.scrollingController)
-        XCTAssertTrue(settings.parent === part, "kept for when the switch goes off")
+        XCTAssertTrue(settings.parent === part, "kept for another choice")
         XCTAssertNil(settings.view.superview)
         for view: NSView in [settings.smoothSwitch, settings.thumbWheelSection, settings.keysSection, settings.resetToDefaultsButton] {
             XCTAssertFalse(view.isDescendant(of: page.view))
         }
         let margin = PreferencesGroupedForm.margin
-        XCTAssertEqual(part.view.fittingSize.height, part.inheritSection.fittingSize.height + 2 * margin, accuracy: 0.5)
+        XCTAssertEqual(part.view.fittingSize.height, part.choiceSection.fittingSize.height + 2 * margin, accuracy: 0.5)
         XCTAssertFalse(page.view.hasAmbiguousLayout)
         XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
     }
 
-    /// Off: the app's own settings stand under the switch's box, "Reset to Defaults" at
-    /// their end, the page measures again once and the list marks the app. On again: they
-    /// go, the page measures once more and is as short as before; the values are kept for
-    /// later and come back as they were left.
-    func testTurningTheScrollingSwitchOffShowsTheSettingsAndOnTakesThemAway() throws {
+    /// Own Settings: the app's own settings stand under the choice's box, "Copy from
+    /// Scrolling" at their end, the page measures again once and the list marks the app.
+    /// Same as Scrolling again: they go, the page measures once more and is as short as
+    /// before; the values are kept for later and come back as they were left.
+    func testOwnSettingsShowsTheSettingsAndSameAsScrollingTakesThemAway() throws {
         let calculator = addApp(Self.calculator)
         let pane = makePane()
         pane.openApplication(withID: Self.calculator, part: .scrolling)
@@ -323,12 +330,11 @@ final class ApplicationPageTests: XCTestCase {
         }
         let short = pane.view.frame.height
 
-        page.inheritSwitch.state = .off
-        send(page.inheritSwitch)
+        pick(.ownSettings, on: page)
         XCTAssertFalse(calculator.inherit)
         XCTAssertEqual(heightChanges, 1, "the page measures again, once")
         XCTAssertTrue(part.showsSettings)
-        XCTAssertEqual(part.inheritRow.explanation, "Calculator keeps its own settings below.")
+        XCTAssertEqual(part.choiceRow.explanation, "Calculator keeps its own settings below.")
         let shown: [NSView] = [
             settings.smoothSwitch, settings.feelControl, settings.scrollSpeedSlider, settings.reverseSwitch,
             settings.thumbWheelSection, settings.thumbWheelNote, settings.keysSection, settings.advancedButton,
@@ -348,8 +354,7 @@ final class ApplicationPageTests: XCTestCase {
 
         settings.scrollSpeedSlider.doubleValue = 3
         send(settings.scrollSpeedSlider)
-        page.inheritSwitch.state = .on
-        send(page.inheritSwitch)
+        pick(.sameAsScrolling, on: page)
         XCTAssertTrue(calculator.inherit)
         XCTAssertEqual(heightChanges, 2)
         XCTAssertFalse(part.showsSettings)
@@ -358,16 +363,15 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(calculator.scroll.speed, 3, "kept for later")
         XCTAssertEqual((pane.list.rows.first as? ApplicationListRow)?.marks ?? [], [])
 
-        page.inheritSwitch.state = .off
-        send(page.inheritSwitch)
+        pick(.ownSettings, on: page)
         XCTAssertEqual(heightChanges, 3)
         XCTAssertEqual(settings.scrollSpeedSlider.doubleValue, 3, accuracy: 1e-9, "back as it was left")
     }
 
-    /// "Reset to Defaults" is there only while the switch is off, at the end of the app's
-    /// own settings. Its Undo still takes the reset back after the switch went on (the
-    /// switch stays), and Redo shows on the settings once they are back.
-    func testTheScrollingPartsResetIsThereOnlyWhileTheSwitchIsOffAndItsUndoStays() throws {
+    /// "Copy from Scrolling" is there only with Own Settings, at the end of the app's own
+    /// settings. Its Undo still takes the copy back after Same as Scrolling was picked (the
+    /// choice stays), and Redo shows on the settings once they are back.
+    func testTheScrollingPartsCopyIsThereOnlyWithOwnSettingsAndItsUndoStays() throws {
         let calculator = addApp(Self.calculator, inherit: false)
         calculator.scroll.speed = 4.5
         let pane = makePane()
@@ -387,17 +391,16 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(calculator.scroll, OPTIONS_SCROLL_DEFAULT())
         XCTAssertTrue(settings.offersUndoOfReset)
 
-        page.inheritSwitch.state = .on
-        send(page.inheritSwitch)
-        XCTAssertFalse(reset.isDescendant(of: page.view), "no Reset while the app uses the Scrolling settings")
+        page.scrollingPart.paneUndoManager = UndoManager()
+        pick(.sameAsScrolling, on: page)
+        XCTAssertFalse(reset.isDescendant(of: page.view), "no Copy while the app uses the Scrolling settings")
         XCTAssertFalse(settings.offersUndoOfReset, "nor its offer")
         undo.undo()
-        XCTAssertEqual(calculator.scroll.speed, 4.5, "Edit › Undo still takes the reset back")
-        XCTAssertTrue(calculator.inherit, "the switch stays")
+        XCTAssertEqual(calculator.scroll.speed, 4.5, "Edit › Undo still takes the copy back")
+        XCTAssertTrue(calculator.inherit, "the choice stays")
         XCTAssertFalse(page.scrollingPart.showsSettings)
 
-        page.inheritSwitch.state = .off
-        send(page.inheritSwitch)
+        pick(.ownSettings, on: page)
         XCTAssertTrue(reset.isDescendant(of: page.view))
         XCTAssertEqual(settings.scrollSpeedSlider.doubleValue, 4.5, accuracy: 1e-9)
         undo.redo()
@@ -406,7 +409,7 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// Undo of a removal while the page of the app added again is open on Scrolling: the
-    /// switch goes off as it was, the app's own settings come back under it and the pane
+    /// choice is Own Settings as it was, the app's own settings come back under it and the pane
     /// takes the page's new height; Redo takes them away again.
     func testUndoOntoTheOpenPageShowsTheScrollingSettingsAndRefitsThePane() throws {
         let calculator = addApp(Self.calculator, inherit: false)
@@ -430,7 +433,7 @@ final class ApplicationPageTests: XCTestCase {
 
         undo.undo()
         XCTAssertFalse(again.inherit)
-        XCTAssertEqual(page.inheritSwitch.state, .off)
+        XCTAssertEqual(page.scrollingChoicePopUp.selectedTag(), ApplicationScrollingChoice.ownSettings.rawValue)
         XCTAssertTrue(page.scrollingPart.showsSettings, "the app's own settings")
         XCTAssertEqual(page.scrollingController.scrollSpeedSlider.doubleValue, 4.5, accuracy: 1e-9)
         XCTAssertGreaterThan(pane.view.frame.height, short + 300)
@@ -438,9 +441,356 @@ final class ApplicationPageTests: XCTestCase {
 
         undo.redo()
         XCTAssertTrue(again.inherit)
-        XCTAssertEqual(page.inheritSwitch.state, .on)
+        XCTAssertEqual(page.scrollingChoicePopUp.selectedTag(), ApplicationScrollingChoice.sameAsScrolling.rawValue)
         XCTAssertFalse(page.scrollingPart.showsSettings)
         XCTAssertEqual(pane.view.frame.height, short, accuracy: 0.5)
+    }
+
+    // MARK: - "Scrolling in Calculator": one choice (round 2, 21)
+
+    /// Gives `application` what makes `choice`: its own values edited (a speed, the thumb
+    /// wheel's), so that no move copies the Scrolling settings over them.
+    private func make(_ application: Application, _ choice: ApplicationScrollingChoice) {
+        application.scroll.speed = 2.5
+        application.scroll.thumbWheel = ApplicationThumbWheelScrolling(ThumbWheelSettings(speed: 0.75, swapsDirection: true))
+        application.inherit = choice == .sameAsScrolling
+        if choice == .leftToMacOS {
+            application.scroll.smooth = false
+            application.scroll.reversesWheel = false
+        }
+        XCTAssertEqual(application.scrollingChoice, choice)
+    }
+
+    private func shown(_ page: ApplicationDetailViewController) -> ApplicationScrollingChoice? {
+        return ApplicationScrollingChoice(rawValue: page.scrollingChoicePopUp.selectedTag())
+    }
+
+    /// The table: "Use settings from Scrolling" on is Same as Scrolling whatever the app's
+    /// own values; off, smoothing off and the wheel not reversed is Left to macOS (as the
+    /// engine scrolls an app off the list while the limit is on), anything else Own Settings.
+    func testTheChoiceIsWorkedOutFromWhatIsStored() {
+        func scroll(smooth: Bool, reverse: Bool, vertical: Bool = true, horizontal: Bool = true) -> OPTIONS_SCROLL_DEFAULT {
+            let scroll = OPTIONS_SCROLL_DEFAULT()
+            scroll.smooth = smooth
+            scroll.reverse = reverse
+            scroll.reverseVertical = vertical
+            scroll.reverseHorizontal = horizontal
+            return scroll
+        }
+        for smooth in [true, false] {
+            for reverse in [true, false] {
+                XCTAssertEqual(ApplicationScrollingChoice.of(inherit: true, scroll: scroll(smooth: smooth, reverse: reverse)), .sameAsScrolling)
+            }
+        }
+        XCTAssertEqual(ApplicationScrollingChoice.of(inherit: false, scroll: scroll(smooth: true, reverse: true)), .ownSettings)
+        XCTAssertEqual(ApplicationScrollingChoice.of(inherit: false, scroll: scroll(smooth: true, reverse: false)), .ownSettings)
+        XCTAssertEqual(ApplicationScrollingChoice.of(inherit: false, scroll: scroll(smooth: false, reverse: true)), .ownSettings)
+        XCTAssertEqual(ApplicationScrollingChoice.of(inherit: false, scroll: scroll(smooth: false, reverse: false)), .leftToMacOS)
+        // Reversing that reaches no axis reverses nothing (the switch shows it off).
+        XCTAssertEqual(
+            ApplicationScrollingChoice.of(inherit: false, scroll: scroll(smooth: false, reverse: true, vertical: false, horizontal: false)),
+            .leftToMacOS
+        )
+        XCTAssertEqual(Application(path: Self.calculator).scrollingChoice, .sameAsScrolling, "a new entry")
+
+        // On a Mac with Natural scrolling off a new entry's own direction is the classic
+        // one: its own settings are Own Settings while smoothing is on, Left to macOS with
+        // smoothing off.
+        let natural = Options.naturalScrollingIsOn
+        defer { Options.naturalScrollingIsOn = natural }
+        Options.naturalScrollingIsOn = { false }
+        let classic = Application(path: Self.textEdit)
+        classic.inherit = false
+        XCTAssertFalse(classic.scroll.reversesWheel)
+        XCTAssertEqual(classic.scrollingChoice, .ownSettings)
+        classic.scroll.smooth = false
+        XCTAssertEqual(classic.scrollingChoice, .leftToMacOS)
+    }
+
+    /// The nine picks (three faces to three) write only what their move needs: Same as
+    /// Scrolling only the switch; Own Settings from Same as Scrolling only the switch, from
+    /// Left to macOS only smoothing; Left to macOS the switch, smoothing and the direction.
+    /// Speeds, feel, keys and the thumb wheel's values stay; a pick of the face shown writes
+    /// nothing.
+    func testEachOfTheNinePicksWritesOnlyWhatItsMoveNeeds() {
+        let scrolling = OPTIONS_SCROLL_DEFAULT()
+        scrolling.speed = 8
+        let thumbWheel = ThumbWheelSettings(function: .tabs, speed: 1.5, swapsDirection: false)
+        let keptThumbWheel = ApplicationThumbWheelScrolling(ThumbWheelSettings(speed: 0.75, swapsDirection: true))
+        for from in ApplicationScrollingChoice.allCases {
+            for to in ApplicationScrollingChoice.allCases {
+                let move = "\(from) → \(to)"
+                let application = Application(path: Self.calculator)
+                make(application, from)
+                let before = ApplicationScrollingSnapshot(of: application)
+                let (smooth, reverses) = (application.scroll.smooth, application.scroll.reversesWheel)
+                application.choose(to, from: from, scrolling: scrolling, thumbWheel: thumbWheel)
+                XCTAssertEqual(application.scrollingChoice, to, move)
+                XCTAssertEqual(application.scroll.speed, 2.5, "\(move): the app's own speed stays")
+                XCTAssertEqual(application.scroll.duration, OPTIONS_SCROLL_DEFAULT().duration, move)
+                XCTAssertEqual(application.scroll.dash, OPTIONS_SCROLL_DEFAULT().dash, "\(move): the keys stay")
+                XCTAssertEqual(application.scroll.thumbWheel, keptThumbWheel, "\(move): the thumb wheel stays")
+                XCTAssertEqual(application.inherit, to == .sameAsScrolling, move)
+                switch (from, to) {
+                case _ where from == to:
+                    XCTAssertEqual(ApplicationScrollingSnapshot(of: application), before, "\(move): nothing written")
+                case (_, .sameAsScrolling), (.sameAsScrolling, .ownSettings):
+                    XCTAssertEqual(application.scroll.smooth, smooth, move)
+                    XCTAssertEqual(application.scroll.reversesWheel, reverses, move)
+                case (.leftToMacOS, .ownSettings):
+                    XCTAssertTrue(application.scroll.smooth, "\(move): smoothing on")
+                    XCTAssertFalse(application.scroll.reversesWheel, "\(move): the direction is not touched")
+                case (_, .leftToMacOS):
+                    XCTAssertFalse(application.scroll.smooth, move)
+                    XCTAssertFalse(application.scroll.reversesWheel, move)
+                default:
+                    XCTFail("\(move) not covered")
+                }
+            }
+        }
+        XCTAssertEqual(scrolling.speed, 8, "the Scrolling settings are untouched")
+    }
+
+    /// On the page: the pop-up's three items in their order, named by its row, and a pick
+    /// of each face from each other is one Undo step, "Change Scrolling in Calculator";
+    /// Undo gives back every value it changed and the face, Redo the pick again. A pick of
+    /// the face shown offers no Undo.
+    func testEachPickOnThePageIsOneUndoStepAndRedoWorks() throws {
+        for from in ApplicationScrollingChoice.allCases {
+            for to in ApplicationScrollingChoice.allCases {
+                let move = "\(from) → \(to)"
+                Options.shared.application.applications = Self.makeStore([])
+                let calculator = addApp(Self.calculator)
+                make(calculator, from)
+                let pane = makePane()
+                pane.openApplication(withID: Self.calculator, part: .scrolling)
+                let page = try XCTUnwrap(pane.detailController)
+                let undo = UndoManager()
+                undo.groupsByEvent = false
+                page.scrollingPart.paneUndoManager = undo
+                XCTAssertEqual(page.scrollingChoicePopUp.itemTitles, ["Same as Scrolling", "Own Settings", "Left to macOS"])
+                XCTAssertEqual(shown(page), from, move)
+                let before = ApplicationScrollingSnapshot(of: calculator)
+
+                undo.beginUndoGrouping()
+                pick(to, on: page)
+                undo.endUndoGrouping()
+                let after = ApplicationScrollingSnapshot(of: calculator)
+                XCTAssertEqual(shown(page), to, move)
+                XCTAssertEqual(page.scrollingPart.showsSettings, to != .sameAsScrolling, move)
+                XCTAssertEqual(page.scrollingController.isLeftToMacOS, to == .leftToMacOS, move)
+                XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5, "\(move): the pane follows")
+                guard from != to else {
+                    XCTAssertEqual(undo.undoActionName, "", "\(move): nothing to undo")
+                    pane.leaveSubpage()
+                    continue
+                }
+                XCTAssertEqual(undo.undoActionName, "Change Scrolling in Calculator", move)
+                undo.undo()
+                XCTAssertEqual(ApplicationScrollingSnapshot(of: calculator), before, "\(move): Undo")
+                XCTAssertEqual(shown(page), from, "\(move): Undo shows")
+                XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5, move)
+                undo.redo()
+                XCTAssertEqual(ApplicationScrollingSnapshot(of: calculator), after, "\(move): Redo")
+                XCTAssertEqual(shown(page), to, "\(move): Redo shows")
+                pane.leaveSubpage()
+            }
+        }
+    }
+
+    /// Undo and Redo of a pick outlive the page: they find the app's entry by its path, the
+    /// list's line follows, and on a page open again they show there.
+    func testUndoAndRedoOfAPickWorkAfterThePageClosed() throws {
+        let calculator = addApp(Self.calculator)
+        make(calculator, .ownSettings)
+        let pane = makePane()
+        let window = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        pane.openApplication(withID: Self.calculator, part: .scrolling)
+        var page = try XCTUnwrap(pane.detailController)
+        undo.beginUndoGrouping()
+        pick(.sameAsScrolling, on: page)
+        undo.endUndoGrouping()
+        XCTAssertTrue(calculator.inherit)
+        XCTAssertEqual(pane.list.rows.first?.explanation, "Nothing of its own yet")
+
+        pane.showList(focusList: false)
+        XCTAssertNil(pane.detailController)
+        XCTAssertEqual(undo.undoActionName, "Change Scrolling in Calculator")
+        undo.undo()
+        XCTAssertFalse(calculator.inherit)
+        XCTAssertEqual(calculator.scroll.speed, 2.5)
+        XCTAssertEqual(pane.list.rows.first?.explanation, Self.own("scrolling"), "the list follows")
+        undo.redo()
+        XCTAssertTrue(calculator.inherit)
+        XCTAssertEqual(pane.list.rows.first?.explanation, "Nothing of its own yet")
+
+        pane.openApplication(withID: Self.calculator, part: .scrolling)
+        page = try XCTUnwrap(pane.detailController)
+        XCTAssertEqual(shown(page), .sameAsScrolling)
+        undo.undo()
+        XCTAssertEqual(shown(page), .ownSettings, "shows on the page open now")
+        XCTAssertTrue(page.scrollingPart.showsSettings)
+        XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+        XCTAssertEqual(page.headerRow.explanation, Self.own("scrolling"))
+    }
+
+    /// Smoothing and the direction switched off by hand under Own Settings: what is stored
+    /// says Left to macOS, but while the part shows nothing folds under the pointer (also
+    /// over a refresh of the page); the next showing of the part says Left to macOS, with
+    /// the main box folded away.
+    func testOwnSettingsStaysWhileThePartShowsAndTheNextShowingSaysLeftToMacOS() throws {
+        let calculator = addApp(Self.calculator)
+        make(calculator, .ownSettings)
+        let pane = makePane()
+        pane.openApplication(withID: Self.calculator, part: .scrolling)
+        let page = try XCTUnwrap(pane.detailController)
+        let settings = try XCTUnwrap(page.scrollingController)
+        let height = pane.view.frame.height
+
+        settings.smoothSwitch.state = .off
+        send(settings.smoothSwitch)
+        settings.reverseSwitch.state = .off
+        send(settings.reverseSwitch)
+        XCTAssertEqual(calculator.scrollingChoice, .leftToMacOS, "what is stored says so")
+        XCTAssertEqual(shown(page), .ownSettings, "nothing folds under the pointer")
+        XCTAssertEqual(page.scrollingChoiceRow.explanation, "Calculator keeps its own settings below.")
+        XCTAssertFalse(settings.smoothSwitch.isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(settings.advancedButton.isHiddenOrHasHiddenAncestor)
+        XCTAssertGreaterThanOrEqual(pane.view.frame.height, height, "only the keys' line comes (smoothing is off)")
+        page.syncViewWithOptions()
+        XCTAssertEqual(shown(page), .ownSettings, "a refresh with the same values keeps it")
+        // On and off again by hand: still.
+        settings.smoothSwitch.state = .on
+        send(settings.smoothSwitch)
+        settings.smoothSwitch.state = .off
+        send(settings.smoothSwitch)
+        XCTAssertEqual(shown(page), .ownSettings)
+
+        choose(1, on: page)
+        choose(0, on: page)
+        XCTAssertEqual(shown(page), .leftToMacOS, "the next showing")
+        XCTAssertEqual(page.scrollingChoiceRow.explanation, "Calculator scrolls the way macOS does: not smoothed, not reversed.")
+        XCTAssertTrue(settings.smoothSwitch.isHiddenOrHasHiddenAncestor)
+        XCTAssertLessThan(pane.view.frame.height, height - 100, "the main box is folded away")
+        XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+    }
+
+    /// Own Settings picked over values that say Left to macOS (the copy of Scrolling
+    /// settings with smoothing and reversing off) stays Own Settings while the part shows;
+    /// Left to macOS picked over it then folds the box and writes nothing, with no Undo.
+    func testOwnSettingsPickedOverLeftToMacOSValuesStaysUntilLeftToMacOSIsPicked() throws {
+        Options.shared.scroll.smooth = false
+        Options.shared.scroll.reversesWheel = false
+        let calculator = addApp(Self.calculator)
+        let pane = makePane()
+        pane.openApplication(withID: Self.calculator, part: .scrolling)
+        let page = try XCTUnwrap(pane.detailController)
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        page.scrollingPart.paneUndoManager = undo
+
+        undo.beginUndoGrouping()
+        pick(.ownSettings, on: page)
+        undo.endUndoGrouping()
+        XCTAssertFalse(calculator.inherit)
+        XCTAssertEqual(calculator.scrollingChoice, .leftToMacOS, "a copy of the Scrolling settings")
+        XCTAssertEqual(shown(page), .ownSettings)
+        XCTAssertFalse(page.scrollingController.smoothSwitch.isHiddenOrHasHiddenAncestor)
+        XCTAssertEqual(undo.undoActionName, "Change Scrolling in Calculator")
+
+        let stored = ApplicationScrollingSnapshot(of: calculator)
+        undo.beginUndoGrouping()
+        pick(.leftToMacOS, on: page)
+        undo.endUndoGrouping()
+        XCTAssertEqual(shown(page), .leftToMacOS)
+        XCTAssertTrue(page.scrollingController.smoothSwitch.isHiddenOrHasHiddenAncestor)
+        XCTAssertEqual(ApplicationScrollingSnapshot(of: calculator), stored, "nothing to write")
+        XCTAssertEqual(undo.undoActionName, "", "nothing to undo")
+        undo.undo()
+        undo.undo()
+        XCTAssertTrue(calculator.inherit, "the first pick's Undo")
+    }
+
+    /// "Smooth Scrolling in Calculator" of the menu bar changes the app's own smoothing:
+    /// the open page shows what it gives as soon as it refreshes, also over Own Settings
+    /// held for what was done here by hand.
+    func testAMenuBarChangeShowsOnTheOpenPage() throws {
+        let calculator = addApp(Self.calculator)
+        make(calculator, .ownSettings)
+        calculator.scroll.reversesWheel = false
+        let pane = makePane()
+        pane.openApplication(withID: Self.calculator, part: .scrolling)
+        let page = try XCTUnwrap(pane.detailController)
+        let menu = AppSmoothing.App(name: "Calculator", bundlePath: Self.calculator, executablePath: nil)
+        func toggle(_ expected: AppSmoothing.Change, line: UInt = #line) {
+            XCTAssertEqual(AppSmoothing.toggle(menu, list: Options.shared.application, scrolling: Options.shared.scroll), expected, line: line)
+            pane.syncViewWithOptions()
+        }
+
+        toggle(.setOwnSmoothing(false))
+        XCTAssertEqual(shown(page), .leftToMacOS, "a change made elsewhere shows at once")
+        XCTAssertTrue(page.scrollingController.smoothSwitch.isHiddenOrHasHiddenAncestor)
+        XCTAssertEqual(pane.view.frame.height, page.view.fittingSize.height, accuracy: 0.5)
+        toggle(.setOwnSmoothing(true))
+        XCTAssertEqual(shown(page), .ownSettings)
+        XCTAssertFalse(page.scrollingController.smoothSwitch.isHiddenOrHasHiddenAncestor)
+
+        // Held for smoothing switched off here, then the menu bar on and off again.
+        page.scrollingController.smoothSwitch.state = .off
+        send(page.scrollingController.smoothSwitch)
+        XCTAssertEqual(shown(page), .ownSettings)
+        toggle(.setOwnSmoothing(true))
+        XCTAssertEqual(shown(page), .ownSettings)
+        toggle(.setOwnSmoothing(false))
+        XCTAssertEqual(shown(page), .leftToMacOS)
+    }
+
+    /// "Scrolling in …" and its three lines for an app with a long name: the title is cut
+    /// short with the whole of it in its tooltip, the lines say the name cut short so that
+    /// each fits two lines, and the row keeps the room of the tallest, so a pick never
+    /// changes its height. So do the line under the app's box and the thumb wheel's.
+    func testALongNameStaysInTheRowAndEveryLineFitsTwoLines() throws {
+        let long = addApp(Self.calculator, inherit: false)
+        long.displayName = "An Application With A Remarkably Long Name For Its Kind"
+        let pane = makePane()
+        pane.openApplication(withID: Self.calculator, part: .scrolling)
+        let page = try XCTUnwrap(pane.detailController)
+        let row = try XCTUnwrap(page.scrollingChoiceRow)
+        page.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(row.title, "Scrolling in An Application With A Remarkably Long Name For Its Kind")
+        XCTAssertEqual(row.titleLabel.toolTip, row.title)
+        XCTAssertLessThanOrEqual(row.titleLabel.frame.maxX, page.scrollingChoicePopUp.frame.minX, "never under the pop-up")
+        let font = PreferencesGroupedForm.explanationFont
+        let twoLines = 2 * ceil(font.ascender - font.descender + font.leading) + 2
+        let height = row.frame.height
+        for choice in [ApplicationScrollingChoice.leftToMacOS, .sameAsScrolling, .ownSettings] {
+            pick(choice, on: page)
+            page.view.layoutSubtreeIfNeeded()
+            let line = try XCTUnwrap(row.explanation)
+            XCTAssertTrue(line.contains("An Application With A"), line)
+            XCTAssertTrue(line.contains("…"), line)
+            XCTAssertLessThanOrEqual(row.explanationLabel.frame.height, twoLines, line)
+            XCTAssertEqual(row.frame.height, height, accuracy: 0.5, "\(choice): the room of the tallest line")
+        }
+        XCTAssertFalse(page.view.hasAmbiguousLayout)
+        // A name that fits is said whole.
+        XCTAssertEqual(ApplicationPagePart.name("Calculator", fittingTwoLinesOf: 200) { [$0] }, "Calculator")
+
+        // The line under the app's box (the limit on) and the thumb wheel's.
+        Options.shared.application.allowlist = true
+        defer { Options.shared.application.allowlist = false }
+        page.syncViewWithOptions()
+        page.view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(page.allowlistNote.isHidden)
+        XCTAssertTrue(page.allowlistNote.stringValue.hasPrefix("An Application With A"))
+        XCTAssertLessThanOrEqual(page.allowlistNote.fittingSize.height, twoLines)
+        pick(.ownSettings, on: page)
+        page.view.layoutSubtreeIfNeeded()
+        let thumbWheelNote = try XCTUnwrap(page.scrollingController.thumbWheelNote)
+        XCTAssertTrue(thumbWheelNote.stringValue.hasPrefix("The action is also set in An Application With A"))
+        XCTAssertLessThanOrEqual(thumbWheelNote.fittingSize.height, twoLines)
     }
 
     /// What an app has of its own is joined in the app's language, not the Mac's region:
