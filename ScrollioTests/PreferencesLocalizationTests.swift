@@ -172,7 +172,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "apps-ring-layout-would-empty-one", "apps-ring-layout-would-empty-other",
         "apps-ring-suggestion-offer", "apps-add-suggested-ring",
         "apps-trigger-everywhere", "apps-trigger-only-here", "apps-trigger-mixed", "apps-trigger-none",
-        "apps-trigger-show-in-buttons", "apps-trigger-show-buttons",
+        "apps-trigger-show-in-buttons",
         "apps-summary-own", "apps-summary-scrolling", "apps-summary-buttons-one", "apps-summary-buttons-other",
         "apps-summary-thumb-wheel", "apps-summary-gestures", "apps-summary-ring", "apps-summary-none",
         "apps-empty", "apps-show-in-finder",
