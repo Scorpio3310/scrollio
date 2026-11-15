@@ -232,6 +232,8 @@ final class PreferencesLocalizationTests: XCTestCase {
         "status-menu-pause", "status-menu-resume", "status-menu-allow-access", "status-menu-test-toasts",
         "status-menu-battery", "status-menu-battery-charging", "status-item-paused", "status-item-needs-access",
         "status-item-could-not-start", "status-menu-app-smoothing", "status-item-battery-low",
+        "status-menu-title-paused", "status-menu-title-needs-access", "status-menu-title-could-not-start",
+        "status-menu-try-again",
         "status-item-accessibility", "status-item-accessibility-battery", "status-item-accessibility-battery-low",
         "scroll-monitor-title", "logitech-diagnostics-title",
         "toast-accessibility-lost", "toast-battery-low", "toast-battery-low-plain",

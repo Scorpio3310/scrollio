@@ -3,18 +3,25 @@
 //  Mos
 //  The menu bar icon and its menu.
 //
-//  With Accessibility access, top to bottom: one disabled line per Logitech mouse with its
-//  battery ("MX Master 4: 75%"), "Smooth Scrolling in Safari" for the app in front (while the
-//  event handling runs; `AppSmoothing`), "Pause Scrollio" or "Resume Scrollio", "Settings…",
-//  and "Quit Scrollio". While Option is held (always in the debug build) the diagnostic windows
-//  are added above Quit: Logitech Diagnostics in every build, Scroll Monitor and Test
-//  Toasts only in the debug build. Without the access: "Allow Accessibility Access…" (the
-//  Welcome Guide) and Quit.
+//  With Accessibility access, in groups: one line per Logitech mouse with its battery
+//  ("MX Master 4: 75%"; a click opens Settings › Mouse) | "Smooth Scrolling in Safari" for
+//  the app in front (while the event handling runs; `AppSmoothing`) and "Pause Scrollio" |
+//  "Settings…" (and "Check for Updates…") | "Quit Scrollio". While Option is held (always in
+//  the debug build) the diagnostic windows are added above Quit: Logitech Diagnostics in
+//  every build, Scroll Monitor and Test Toasts only in the debug build.
+//
+//  While Scrollio does not work, and only then, the menu starts with a title that says so and
+//  the action for it under the title: "Scrollio is paused" with "Resume Scrollio";
+//  "Scrollio needs Accessibility access" with "Allow Accessibility Access…" (the Welcome
+//  Guide; the menu then has only the updater and Quit besides); "Scrollio couldn't start and
+//  is trying again" with "Try Again Now" (a start that failed, `AppRunController`) and
+//  "Pause Scrollio", or with "Pause Scrollio" alone (an event tap whose restarts are refused
+//  for a while comes back by itself, `Interceptor`). The menu is built when it opens.
 //
 //  In a copy that updates itself (UpdateCenter) "Check for Updates…" follows "Settings…";
-//  while a found update waits for an answer, the menu starts with "Update to Scrollio
-//  1.1.0…" instead, which brings the updater's window to the front. Both are there
-//  without the access too: an update may be what is needed.
+//  while a found update waits for an answer, "Update to Scrollio 1.1.0…" stands at the top
+//  (under the title, when there is one) instead, which brings the updater's window to the
+//  front. Both are there without the access too: an update may be what is needed.
 //
 //  The icon is dimmed while the event handling does not run: paused, the access is missing,
 //  or the access is there but an event tap could not be created or stays off because its
@@ -128,13 +135,19 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
         #else
         let showsDiagnostics = NSEvent.modifierFlags.contains(.option)
         #endif
+        let controller = AppRunController.shared
         return StatusMenu.State(
             hasAccess: hasAccess,
-            isPaused: AppRunController.shared.isPaused,
+            isPaused: controller.isPaused,
             showsDiagnostics: showsDiagnostics,
             batteries: hasAccess ? StatusMenu.batteries(from: LogiCenter.shared.mouseDeviceStates()) : [],
             appSmoothing: hasAccess ? liveAppSmoothingItem() : nil,
-            updates: StatusMenu.updates(from: UpdateCenter.shared.status)
+            updates: StatusMenu.updates(from: UpdateCenter.shared.status),
+            startProblem: StatusMenu.startProblem(
+                coresActive: controller.coresActive,
+                startFailed: controller.isRetryingStart,
+                tapRestartsThrottled: Interceptor.hasThrottledTap
+            )
         )
     }
 
@@ -226,8 +239,52 @@ enum StatusMenu {
         var appSmoothing: AppSmoothingItem? = nil
         /// What the menu offers of the updater.
         var updates: Updates = .none
+        /// The access is there and Scrollio is not paused, but it does not work; nil while it
+        /// works (or for another reason it does not).
+        var startProblem: StartProblem? = nil
         /// The developer tools (Scroll Monitor, Test Toasts) are offered only in the debug build.
         var isDebugBuild: Bool = StatusMenu.isDebugBuild
+    }
+
+    /// Why Scrollio does not work although it has the access and is not paused: the icon's
+    /// "couldn't start" (`IconLook`).
+    enum StartProblem: Equatable {
+        /// A start failed (an event tap could not be created); the controller tries again
+        /// every few seconds, and the menu offers to try at once.
+        case retrying
+        /// An event tap is off and its restarts are refused for up to a minute; it comes
+        /// back by itself.
+        case tapOff
+    }
+
+    /// The run state's start problem, by the icon's rule.
+    static func startProblem(coresActive: Bool, startFailed: Bool, tapRestartsThrottled: Bool) -> StartProblem? {
+        if !coresActive && startFailed { return .retrying }
+        if coresActive && tapRestartsThrottled { return .tapOff }
+        return nil
+    }
+
+    /// What the title at the top of the menu says. Only while Scrollio does not work.
+    enum Title: Equatable {
+        case paused
+        case needsAccess
+        case couldNotStart
+
+        var key: String {
+            switch self {
+            case .paused: return "status-menu-title-paused"
+            case .needsAccess: return "status-menu-title-needs-access"
+            case .couldNotStart: return "status-menu-title-could-not-start"
+            }
+        }
+    }
+
+    /// The title for `state`; nil while Scrollio works (the menu then has none).
+    static func title(for state: State) -> Title? {
+        if !state.hasAccess { return .needsAccess }
+        if state.isPaused { return .paused }
+        if state.startProblem != nil { return .couldNotStart }
+        return nil
     }
 
     /// This build is the debug build.
@@ -302,11 +359,13 @@ enum StatusMenu {
     }
 
     enum Item: Equatable {
+        case title(Title)
         case battery(Battery)
         case appSmoothing(AppSmoothingItem)
         case separator
         case pause
         case resume
+        case tryAgain
         case settings
         case scrollMonitor
         case diagnostics
@@ -320,6 +379,10 @@ enum StatusMenu {
     /// Tag of the battery lines, so they can be updated while the menu is open.
     static let batteryTag = 7_301
 
+    /// The groups, top to bottom: the title and its action (only while Scrollio does not
+    /// work) | a waiting update | the batteries | the app in front and Pause | Settings and
+    /// the check for updates | the diagnostics | Quit. While there is a title, Pause stands
+    /// under it, in the title's group.
     static func items(for state: State) -> [Item] {
         var waiting: [Item] = []
         var check: [Item] = []
@@ -329,16 +392,31 @@ enum StatusMenu {
         case .waiting(let version): waiting = [.updateWaiting(version: version), .separator]
         }
         guard state.hasAccess else {
-            return waiting + [.allowAccess, .separator] + (check.isEmpty ? [] : check + [.separator]) + [.quit]
+            return [.title(.needsAccess), .allowAccess, .separator] + waiting
+                + (check.isEmpty ? [] : check + [.separator]) + [.quit]
         }
-        var items: [Item] = waiting + state.batteries.map(Item.battery)
+        // "Smooth Scrolling in …" and Pause, or the title with its action.
+        var running: [Item] = state.appSmoothing.map { [.appSmoothing($0)] } ?? []
+        var items: [Item] = []
+        switch title(for: state) {
+        case .paused?:
+            items = [.title(.paused), .resume, .separator]
+            running = []
+        case .couldNotStart?:
+            let tryAgain: [Item] = state.startProblem == .retrying ? [.tryAgain] : []
+            items = [.title(.couldNotStart)] + tryAgain + running + [.pause, .separator]
+            running = []
+        case .needsAccess?, nil:
+            running.append(.pause)
+        }
+        items += waiting + state.batteries.map(Item.battery)
         if !state.batteries.isEmpty {
             items.append(.separator)
         }
-        if let appSmoothing = state.appSmoothing {
-            items += [.appSmoothing(appSmoothing), .separator]
+        if !running.isEmpty {
+            items += running + [.separator]
         }
-        items += [state.isPaused ? .resume : .pause, .settings] + check + [.separator]
+        items += [.settings] + check + [.separator]
         if state.showsDiagnostics {
             items += diagnosticItems(isDebugBuild: state.isDebugBuild) + [.separator]
         }
@@ -384,9 +462,13 @@ enum StatusMenu {
             return menuItem
         }
         switch item {
+        case .title(let title):
+            // A section header (macOS 14): the title of the group under it, read as a heading.
+            return NSMenuItem.sectionHeader(title: NSLocalizedString(title.key, comment: ""))
         case .battery(let battery):
-            // No action: AppKit shows it disabled.
-            let line = NSMenuItem(title: battery.title, action: nil, keyEquivalent: "")
+            // A click opens Settings › Mouse, where the mouse is.
+            let line = NSMenuItem(title: battery.title, action: #selector(StatusMenuActions.batteryClicked(_:)), keyEquivalent: "")
+            line.target = actions
             line.image = NSImage(systemSymbolName: battery.symbolName, accessibilityDescription: nil)
             line.tag = batteryTag
             return line
@@ -408,6 +490,8 @@ enum StatusMenu {
             return action("status-menu-pause", #selector(StatusMenuActions.togglePauseClicked(_:)))
         case .resume:
             return action("status-menu-resume", #selector(StatusMenuActions.togglePauseClicked(_:)))
+        case .tryAgain:
+            return action("status-menu-try-again", #selector(StatusMenuActions.tryAgainClicked(_:)))
         case .settings:
             return action("main-menu-settings", #selector(StatusMenuActions.settingsClicked(_:)), shortcut: ",")
         case .scrollMonitor:
@@ -516,12 +600,18 @@ enum StatusMenu {
 final class StatusMenuActions: NSObject {
 
     var showSettings: () -> Void = { MainMenuManager.showPreferencesWindow(paneIdentifier: nil) }
+    /// A battery line: Settings, on the Mouse pane.
+    var showMouseSettings: () -> Void = {
+        MainMenuManager.showPreferencesWindow(paneIdentifier: MousePreferencesViewController.tabIdentifier)
+    }
     /// The Welcome Guide, as the app opens it (the Accessibility step alone once the guide
     /// was finished).
     var showWelcomeGuide: () -> Void = { IntroductionWindowController.showAutomatically() }
     var togglePause: () -> Void = {
         AppRunController.shared.setPaused(!AppRunController.shared.isPaused)
     }
+    /// "Try Again Now": the start that failed, tried at once.
+    var tryAgain: () -> Void = { AppRunController.shared.tryAgainNow() }
     var showScrollMonitor: () -> Void = {
         WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.monitorWindowController)
     }
@@ -539,6 +629,8 @@ final class StatusMenuActions: NSObject {
     @objc func settingsClicked(_ sender: Any?) { showSettings() }
     @objc func allowAccessClicked(_ sender: Any?) { showWelcomeGuide() }
     @objc func togglePauseClicked(_ sender: Any?) { togglePause() }
+    @objc func tryAgainClicked(_ sender: Any?) { tryAgain() }
+    @objc func batteryClicked(_ sender: Any?) { showMouseSettings() }
     @objc func appSmoothingClicked(_ sender: Any?) {
         guard let app = (sender as? NSMenuItem)?.representedObject as? AppSmoothing.App else { return }
         toggleAppSmoothing(app)

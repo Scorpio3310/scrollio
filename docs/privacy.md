@@ -82,7 +82,8 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](../SECU
 - Besides its own settings, Scrollio reads:
   - the macOS keyboard shortcuts for Spaces (to run them), the keyboard layout in use
     (to press the right key for shortcuts such as ⌘A, and to name keys) and the macOS
-    setting for natural scrolling (for "Follow the hand");
+    setting for natural scrolling (for "Follow the hand", and once on a new
+    installation for the wheel's first direction);
   - which app is under the pointer or in front, for the per-app settings and "Smooth
     Scrolling in …". With "Trackpad-style scrolling (Experimental)" on, for a wheel scroll in an
     app that gets the one-touch form, it reads the kind of the element under the pointer

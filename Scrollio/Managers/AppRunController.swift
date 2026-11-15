@@ -18,6 +18,7 @@
 //  - setPaused(_:): "Pause Scrollio" in the status-bar menu. Pausing is stop(); resuming is
 //    start(). While paused nothing starts the cores again, also not waking up. The pause is
 //    never stored: a relaunch starts unpaused.
+//  - tryAgainNow(): "Try Again Now" in the status-bar menu: a failed start's next try, now.
 //
 //  Starting: the event taps first, then the Logitech sessions, and only when every tap runs.
 //  A start that fails half-way (a tap could not be created) stops everything again, so no tap
@@ -271,6 +272,14 @@ final class AppRunController {
         } else {
             start(.resume, showingWelcomeGuide: true)
         }
+    }
+
+    /// "Try Again Now" in the status-bar menu: a start that failed with the access there is
+    /// tried at once, as the timer would try it. Nothing otherwise (waiting for the access,
+    /// paused, running).
+    func tryAgainNow() {
+        guard isRetryingStart else { return }
+        recoveryTimer?.fire()
     }
 
     /// The Welcome Guide saw the permission arrive: the timer's next look, now, so the window

@@ -368,13 +368,18 @@ those controls.
 
 ## Menu bar
 
-- The menu lists each Logitech mouse's battery, "Smooth Scrolling in …" for the app in
-  front, "Pause Scrollio" or "Resume Scrollio", "Settings…" and "Quit Scrollio". A pause
-  stops everything and gives the Logitech mice their buttons back; it is not kept after
-  Scrollio quits. With Option held the menu also lists Logitech Diagnostics, a developer
-  window with the HID++ details of the connected mice. In the released app it only reads.
-- The icon is dimmed while Scrollio is paused, waits for Accessibility access, or could
-  not start and tries again; its tooltip says which.
+- The menu lists each Logitech mouse's battery (a click opens Settings › Mouse), then
+  "Smooth Scrolling in …" for the app in front with "Pause Scrollio", then "Settings…"
+  (and "Check for Updates…"), then "Quit Scrollio". A pause stops everything and gives
+  the Logitech mice their buttons back; it is not kept after Scrollio quits. With Option
+  held the menu also lists Logitech Diagnostics, a developer window with the HID++
+  details of the connected mice. In the released app it only reads.
+- While Scrollio does not work, and only then, the menu starts with a title that says so
+  and the way out under it: "Scrollio is paused" with "Resume Scrollio"; "Scrollio needs
+  Accessibility access" with "Allow Accessibility Access…"; "Scrollio couldn't start and
+  is trying again" with "Try Again Now" (or, while an event tap is kept off for up to a
+  minute and comes back by itself, with "Pause Scrollio" alone).
+- The icon is dimmed in the same three cases; its tooltip says which.
 - The icon can be hidden (General › Show in menu bar). Opening Scrollio again then shows
   its settings, or the Welcome Guide while Accessibility access is missing.
 - General also has "Open at login", the state of the Accessibility access, the

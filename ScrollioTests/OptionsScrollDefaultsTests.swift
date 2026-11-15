@@ -72,6 +72,108 @@ final class OptionsScrollDefaultsTests: XCTestCase {
                           "missing speed key must never resolve to 0.0 (deadens scrolling)")
     }
 
+    // MARK: - A fresh installation: the wheel starts in the classic direction for this Mac
+
+    /// Answers "Natural scrolling is on" with `on` and counts the questions.
+    private func macOSNaturalScrolling(_ on: Bool) {
+        naturalScrollingQuestions = 0
+        Options.naturalScrollingIsOn = { [unowned self] in
+            self.naturalScrollingQuestions += 1
+            return on
+        }
+    }
+
+    private var naturalScrollingQuestions = 0
+
+    /// Natural scrolling on (macOS's default): macOS turns the wheel too, and "Reverse wheel
+    /// direction" starts on, as before.
+    func testAFreshInstallationWithNaturalScrollingReversesTheWheel() {
+        macOSNaturalScrolling(true)
+        Options.shared.readOptions()
+        XCTAssertEqual(naturalScrollingQuestions, 1)
+        XCTAssertTrue(Options.shared.scroll.reversesWheel)
+        XCTAssertTrue(Options.shared.scroll.reverse)
+        XCTAssertTrue(Options.shared.scroll.reverseVertical)
+        XCTAssertTrue(Options.shared.scroll.reverseHorizontal)
+        XCTAssertEqual(defaults.object(forKey: OptionItem.Scroll.Reverse) as? Bool, true, "stored at once")
+        XCTAssertNotNil(defaults.object(forKey: OptionItem.General.OptionsExist))
+    }
+
+    /// Natural scrolling off: the wheel is classic already, so the switch starts off, the
+    /// way the switch turns it off (the main flag; the axes keep theirs).
+    func testAFreshInstallationWithoutNaturalScrollingLeavesTheWheelAlone() {
+        macOSNaturalScrolling(false)
+        Options.shared.readOptions()
+        XCTAssertEqual(naturalScrollingQuestions, 1)
+        XCTAssertFalse(Options.shared.scroll.reversesWheel)
+        XCTAssertFalse(Options.shared.scroll.reverse)
+        XCTAssertTrue(Options.shared.scroll.reverseVertical, "as the switch leaves it when turned off")
+        XCTAssertTrue(Options.shared.scroll.reverseHorizontal)
+        XCTAssertEqual(defaults.object(forKey: OptionItem.Scroll.Reverse) as? Bool, false, "stored at once")
+
+        // The next launch reads what was stored, and asks macOS nothing more.
+        Options.shared.scroll.reverse = true
+        Options.shared.readOptions()
+        XCTAssertEqual(naturalScrollingQuestions, 1)
+        XCTAssertFalse(Options.shared.scroll.reversesWheel)
+
+        // Turned on by hand it stays on, whatever macOS says.
+        Options.shared.scroll.reversesWheel = true
+        Options.shared.flushPendingSaves()
+        Options.shared.readOptions()
+        XCTAssertTrue(Options.shared.scroll.reversesWheel)
+        XCTAssertEqual(naturalScrollingQuestions, 1)
+    }
+
+    /// Settings that exist keep their direction, also one that macOS's setting would
+    /// change, and also when the direction's keys are missing (their default, on).
+    func testAnInstallationWithSettingsKeepsItsWheelDirection() {
+        for natural in [false, true] {
+            for stored in [nil, false, true] as [Bool?] {
+                let store = TestDefaults.make(for: self)
+                store.set("optionsExist", forKey: OptionItem.General.OptionsExist)
+                if let stored {
+                    store.set(stored, forKey: OptionItem.Scroll.Reverse)
+                    store.set(stored, forKey: OptionItem.Scroll.ReverseVertical)
+                    store.set(stored, forKey: OptionItem.Scroll.ReverseHorizontal)
+                }
+                Options.shared.defaults = store
+                macOSNaturalScrolling(natural)
+                Options.shared.readOptions()
+                XCTAssertEqual(naturalScrollingQuestions, 0, "macOS is not asked: natural \(natural), stored \(String(describing: stored))")
+                XCTAssertEqual(Options.shared.scroll.reversesWheel, stored ?? true, "natural \(natural), stored \(String(describing: stored))")
+                XCTAssertEqual(store.object(forKey: OptionItem.Scroll.Reverse) as? Bool, stored, "nothing written")
+            }
+        }
+    }
+
+    /// Fresh means no settings at all: no `optionsExist` and no stored wheel direction. A
+    /// store that has a direction but lost `optionsExist` is not asked about macOS either.
+    func testWhatCountsAsAFreshInstallation() {
+        XCTAssertTrue(Options.isFreshInstallation(defaults))
+        for key in [OptionItem.General.OptionsExist, OptionItem.Scroll.Reverse,
+                    OptionItem.Scroll.ReverseVertical, OptionItem.Scroll.ReverseHorizontal] {
+            let store = TestDefaults.make(for: self)
+            store.set(key == OptionItem.General.OptionsExist ? "optionsExist" as Any : true as Any, forKey: key)
+            XCTAssertFalse(Options.isFreshInstallation(store), key)
+        }
+        // Other settings without `optionsExist` do not decide it: a save always writes both.
+        defaults.set(5.0, forKey: OptionItem.Scroll.Speed)
+        XCTAssertTrue(Options.isFreshInstallation(defaults))
+
+        let lostTheMark = TestDefaults.make(for: self)
+        lostTheMark.set(false, forKey: OptionItem.Scroll.ReverseVertical)
+        Options.shared.defaults = lostTheMark
+        macOSNaturalScrolling(false)
+        Options.shared.readOptions()
+        XCTAssertEqual(naturalScrollingQuestions, 0)
+    }
+
+    /// Under XCTest the Mac's own setting is never read: the answer is macOS's default.
+    func testTheTestsDoNotReadTheMacsSetting() {
+        XCTAssertTrue(Self.liveNaturalScrollingIsOn())
+    }
+
     // MARK: - Migration: the old Duration lock of "Trackpad-style events"
 
     // Builds with the lock forced Duration to 4.75 and stored the Duration from before in
@@ -118,17 +220,22 @@ final class OptionsScrollDefaultsTests: XCTestCase {
 
     // MARK: - setUp / tearDown
 
+    /// The seam as the app has it, kept before any test replaces it.
+    private static let liveNaturalScrollingIsOn = Options.naturalScrollingIsOn
+
     override func setUp() {
         super.setUp()
         scrollSnapshot = ScrollSnapshot(of: Options.shared.scroll)
         otherSettings = OptionsSnapshot()
         defaults = TestDefaults.make(for: self)
         Options.shared.defaults = defaults
+        _ = Self.liveNaturalScrollingIsOn
     }
 
     override func tearDown() {
         // The app's own store first, then the captured in-memory values back into the
         // shared singleton (written nowhere: under XCTest the real preferences never are).
+        Options.naturalScrollingIsOn = Self.liveNaturalScrollingIsOn
         Options.shared.defaults = .standard
         defaults = nil
         scrollSnapshot?.restore(into: Options.shared.scroll)
