@@ -443,20 +443,32 @@ final class ApplicationDetailViewController: NSViewController {
         for (index, part) in parts.enumerated() {
             let own = part.hasOwnSettings(application)
             let selected = index == partControl.selectedSegment
-            partControl.setImage(own ? Self.ownDot(label: part.markLabel, onSelection: selected) : nil, forSegment: index)
+            partControl.setImage(Self.segmentImage(own: own ? part.markLabel : nil, onSelection: selected), forSegment: index)
             partControl.setToolTip(own ? part.markLabel : nil, forSegment: index)
         }
     }
 
+    /// The dot's diameter, and the room after it, before the segment's title.
+    static let dotSide: CGFloat = 6
+    static let dotGap: CGFloat = 3
+
     /// The dot on a part's segment: a small circle in the accent colour, said as the mark of
-    /// the list ("Own gestures"). On the selected segment, which can be that colour, a
-    /// template the control tints as its title (white on the accent, dark in a window in
-    /// the back).
+    /// the list ("Own gestures"), with room after it before the title. On the selected
+    /// segment, which can be that colour, a template the control tints as its title (white
+    /// on the accent, dark in a window in the back).
     static func ownDot(label: String, onSelection: Bool = false) -> NSImage {
-        let side: CGFloat = 6
-        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+        return segmentImage(own: label, onSelection: onSelection)
+    }
+
+    /// What a segment shows before its title: the dot while the app has settings of that
+    /// kind of its own (`own`: what it says), else the same room, clear. Every segment has
+    /// it, so the control keeps its width and no segment moves when a switch below makes a
+    /// part the app's own or takes it away.
+    static func segmentImage(own label: String?, onSelection: Bool) -> NSImage {
+        let image = NSImage(size: NSSize(width: dotSide + dotGap, height: dotSide), flipped: false) { _ in
+            guard label != nil else { return true }
             (onSelection ? NSColor.black : NSColor.controlAccentColor).setFill()
-            NSBezierPath(ovalIn: rect).fill()
+            NSBezierPath(ovalIn: NSRect(x: 0, y: 0, width: dotSide, height: dotSide)).fill()
             return true
         }
         image.isTemplate = onSelection

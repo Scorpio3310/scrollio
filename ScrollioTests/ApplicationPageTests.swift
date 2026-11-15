@@ -532,7 +532,7 @@ final class ApplicationPageTests: XCTestCase {
         let page = try XCTUnwrap(pane.detailController)
         XCTAssertEqual(page.headerRow.explanation, three)
         XCTAssertEqual(page.headerRow.toolTip, "Calculator\n\(three)\n" + Self.calculator)
-        let dotted = { (0..<page.partControl.segmentCount).map { page.partControl.image(forSegment: $0) != nil } }
+        let dotted = { (0..<page.partControl.segmentCount).map { page.partControl.image(forSegment: $0)?.accessibilityDescription != nil } }
         XCTAssertEqual(dotted(), [true, true, false, true], "a dot on Scrolling, Buttons and Shortcut Ring")
         XCTAssertEqual(page.partControl.toolTip(forSegment: 1), "Own button settings")
         XCTAssertEqual(page.partControl.image(forSegment: 0)?.accessibilityDescription, "Own scrolling settings")
@@ -558,6 +558,40 @@ final class ApplicationPageTests: XCTestCase {
         let reveal = try XCTUnwrap(allSubviews(of: page.headerRow).compactMap { $0 as? NSButton }.first { $0.title == "Show in Finder" })
         send(reveal)
         XCTAssertEqual(revealed, [URL(fileURLWithPath: Self.calculator)])
+    }
+
+    /// Every segment keeps the dot's room, with a gap between the dot and the title, so the
+    /// control keeps its width, and no segment moves under the pointer, when a switch below
+    /// makes a part the app's own or takes it away.
+    func testThePartsControlKeepsItsWidthWhenADotComesOrGoes() throws {
+        addApp(Self.calculator)
+        let pane = makePane()
+        pane.openApplication(withID: Self.calculator, part: .ring)
+        let page = try XCTUnwrap(pane.detailController)
+        let control = try XCTUnwrap(page.partControl)
+        let dot = ApplicationDetailViewController.ownDot(label: "Own Shortcut Ring")
+        XCTAssertGreaterThanOrEqual(dot.size.width, dot.size.height + 2, "room between the dot and the title")
+        func layout() -> (width: CGFloat, images: [CGFloat?], dots: [Bool]) {
+            let segments = 0..<control.segmentCount
+            return (
+                control.intrinsicContentSize.width,
+                segments.map { control.image(forSegment: $0)?.size.width },
+                segments.map { control.image(forSegment: $0)?.accessibilityDescription != nil }
+            )
+        }
+        let before = layout()
+        XCTAssertEqual(before.images, Array(repeating: dot.size.width, count: 4), "the dot's room on every segment")
+        XCTAssertEqual(before.dots, [false, false, false, false])
+
+        page.generalRingSwitch.state = .off
+        send(page.generalRingSwitch)
+        let own = layout()
+        XCTAssertEqual(own.dots, [false, false, false, true], "the ring's dot")
+        XCTAssertEqual(own.width, before.width, "the control keeps its width")
+        XCTAssertEqual(own.images, before.images)
+        page.generalRingSwitch.state = .on
+        send(page.generalRingSwitch)
+        XCTAssertEqual(layout().width, before.width)
     }
 
     /// Empty, the list says in one line how to give an app settings of its own, of every
