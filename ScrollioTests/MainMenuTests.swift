@@ -449,3 +449,179 @@ final class PreferencesPaneSelectionTests: XCTestCase {
         XCTAssertEqual(preferences.sidebar.selectedIdentifier, PANEL_IDENTIFIER.buttons)
     }
 }
+
+/// The places a Settings window showed, for View › Back and Forward (PreferencesHistory): pure.
+final class PreferencesHistoryTests: XCTestCase {
+
+    private let scrolling = PreferencesPlace(pane: "scrolling")
+    private let buttons = PreferencesPlace(pane: "buttons")
+    private let general = PreferencesPlace(pane: "general")
+    private let apps = PreferencesPlace(pane: "application")
+    private let safari = PreferencesPlace(pane: "application", page: "/Applications/Safari.app")
+    private let figma = PreferencesPlace(pane: "application", page: "/Applications/Figma.app")
+
+    private let everything: (PreferencesPlace) -> Bool = { _ in true }
+
+    private func history(_ places: PreferencesPlace...) -> PreferencesHistory {
+        var history = PreferencesHistory()
+        places.forEach { history.visit($0) }
+        return history
+    }
+
+    func testAVisitIsAddedAndDropsWhatWasAhead() {
+        var history = PreferencesHistory()
+        XCTAssertNil(history.current)
+        XCTAssertFalse(history.canStep(.back, exists: everything))
+        XCTAssertFalse(history.canStep(.forward, exists: everything))
+
+        history.visit(scrolling)
+        XCTAssertEqual(history.places, [scrolling])
+        XCTAssertEqual(history.current, scrolling)
+        XCTAssertFalse(history.canStep(.back, exists: everything), "one place is no history")
+        XCTAssertFalse(history.canStep(.forward, exists: everything))
+
+        history.visit(buttons)
+        history.visit(general)
+        XCTAssertEqual(history.places, [scrolling, buttons, general])
+        XCTAssertEqual(history.current, general)
+        XCTAssertEqual(history.step(.back, exists: everything), buttons)
+        XCTAssertEqual(history.step(.back, exists: everything), scrolling)
+        XCTAssertNil(history.step(.back, exists: everything))
+        XCTAssertEqual(history.current, scrolling, "a step that cannot be made changes nothing")
+        XCTAssertEqual(history.step(.forward, exists: everything), buttons)
+        XCTAssertEqual(history.places, [scrolling, buttons, general], "a step adds and drops nothing")
+
+        // A visit from the middle: what was ahead is gone.
+        history.visit(apps)
+        XCTAssertEqual(history.places, [scrolling, buttons, apps])
+        XCTAssertEqual(history.current, apps)
+        XCTAssertFalse(history.canStep(.forward, exists: everything))
+        XCTAssertEqual(history.step(.back, exists: everything), buttons)
+    }
+
+    func testTheSamePlaceTwiceIsOneEntry() {
+        var history = self.history(scrolling, scrolling, buttons, buttons)
+        XCTAssertEqual(history.places, [scrolling, buttons])
+
+        // Also in the middle: what is ahead stays.
+        XCTAssertEqual(history.step(.back, exists: everything), scrolling)
+        history.visit(scrolling)
+        XCTAssertEqual(history.places, [scrolling, buttons])
+        XCTAssertTrue(history.canStep(.forward, exists: everything))
+
+        // A page counts by its app.
+        history.visit(safari)
+        history.visit(safari)
+        XCTAssertEqual(history.places, [scrolling, apps, safari])
+        XCTAssertEqual(history.current, safari)
+    }
+
+    func testAPageAlwaysHasItsListBeforeIt() {
+        // From another pane (a jump: "Show in Safari › Buttons", "Settings for Safari…"):
+        // Back is the list, as the title bar's button, and then the pane the jump came from.
+        var history = self.history(buttons, safari)
+        XCTAssertEqual(history.places, [buttons, apps, safari])
+        XCTAssertEqual(history.step(.back, exists: everything), apps)
+        XCTAssertEqual(history.step(.back, exists: everything), buttons)
+
+        // From the list itself: the list is not added twice.
+        history = self.history(apps, safari)
+        XCTAssertEqual(history.places, [apps, safari])
+
+        // From one app's page to another's.
+        history = self.history(apps, safari, figma)
+        XCTAssertEqual(history.places, [apps, safari, apps, figma])
+        XCTAssertEqual(history.current, figma)
+        XCTAssertEqual(history.step(.back, exists: everything), apps)
+        XCTAssertEqual(history.step(.back, exists: everything), safari)
+        XCTAssertEqual(history.step(.back, exists: everything), apps)
+        XCTAssertNil(history.step(.back, exists: everything))
+
+        // A window that starts on a page.
+        history = self.history(safari)
+        XCTAssertEqual(history.places, [apps, safari])
+        XCTAssertEqual(history.current, safari)
+        XCTAssertEqual(safari.list, apps)
+        XCTAssertEqual(apps.list, apps)
+    }
+
+    func testLeavingAPageToItsListIsAStepBack() {
+        var history = self.history(scrolling, apps, safari)
+        history.visit(apps)
+        XCTAssertEqual(history.places, [scrolling, apps, safari], "the page stays ahead")
+        XCTAssertEqual(history.current, apps)
+        XCTAssertEqual(history.step(.forward, exists: everything), safari, "Forward opens the page again")
+
+        // Left again, and on to another pane: now the page is gone from what is ahead.
+        history.visit(apps)
+        history.visit(general)
+        XCTAssertEqual(history.places, [scrolling, apps, general])
+        XCTAssertFalse(history.canStep(.forward, exists: everything))
+    }
+
+    func testAStepSkipsAGoneAppAndThePlaceOnShow() throws {
+        var gone: Set<String> = []
+        let exists: (PreferencesPlace) -> Bool = { place in place.page.map { !gone.contains($0) } ?? true }
+        var history = self.history(apps, safari, figma, general)
+        XCTAssertEqual(history.places, [apps, safari, apps, figma, general])
+        let all = history.places
+
+        // Safari left the list. Back from Figma's page is the list; before it stand only
+        // Safari's page and the list again, the place on show: no further way back.
+        gone = [try XCTUnwrap(safari.page)]
+        XCTAssertEqual(history.step(.back, exists: exists), figma)
+        XCTAssertEqual(history.step(.back, exists: exists), apps)
+        XCTAssertEqual(history.position, 2)
+        XCTAssertFalse(history.canStep(.back, exists: exists))
+        XCTAssertNil(history.step(.back, exists: exists))
+        XCTAssertEqual(history.position, 2)
+
+        // The app is back (Undo, an import): its page is in the history again.
+        gone = []
+        XCTAssertEqual(history.places, all, "nothing was deleted")
+        XCTAssertEqual(history.step(.back, exists: exists), safari)
+        XCTAssertEqual(history.step(.back, exists: exists), apps)
+        XCTAssertEqual(history.position, 0)
+
+        // Gone again: Forward from the first list passes the page and the same list.
+        gone = [try XCTUnwrap(safari.page)]
+        XCTAssertEqual(history.step(.forward, exists: exists), figma)
+        XCTAssertEqual(history.position, 3)
+        XCTAssertEqual(history.step(.forward, exists: exists), general)
+        XCTAssertFalse(history.canStep(.forward, exists: exists))
+
+        // Every page gone: from General straight to the list.
+        gone = [try XCTUnwrap(safari.page), try XCTUnwrap(figma.page)]
+        XCTAssertEqual(history.step(.back, exists: exists), apps)
+        XCTAssertEqual(history.position, 2)
+        XCTAssertEqual(history.places, all)
+    }
+
+    func testAHundredPlacesAndNeverAPageFirst() {
+        XCTAssertEqual(PreferencesHistory.limit, 100)
+        var history = PreferencesHistory()
+        for index in 0..<150 {
+            history.visit(index % 2 == 0 ? scrolling : buttons)
+        }
+        XCTAssertEqual(history.places.count, 100)
+        XCTAssertEqual(history.current, buttons, "the newest stay")
+        XCTAssertEqual(history.position, 99)
+        XCTAssertEqual(history.places.first, scrolling)
+
+        // The oldest place to go is a list whose page would then stand first: it goes too.
+        history = self.history(apps, safari, general)
+        for index in 0..<98 {
+            history.visit(index % 2 == 0 ? scrolling : buttons)
+        }
+        XCTAssertEqual(history.places.count, 99)
+        XCTAssertEqual(history.places.first, general)
+        XCTAssertFalse(history.places.contains(safari))
+        XCTAssertEqual(history.current, buttons)
+        var steps = 0
+        while history.step(.back, exists: everything) != nil {
+            steps += 1
+        }
+        XCTAssertEqual(steps, 98)
+        XCTAssertEqual(history.current, general)
+    }
+}
