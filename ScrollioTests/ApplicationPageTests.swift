@@ -159,9 +159,10 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// What an app has of its own, as the list and the header say it: the catalog's form
-    /// ("Own %@") with the items joined as the locale joins a list.
+    /// ("Own %@") with the items joined as the app's language joins a list.
     private static func own(_ items: String...) -> String {
-        return String(format: NSLocalizedString("apps-summary-own", comment: ""), ListFormatter.localizedString(byJoining: items))
+        let list = ApplicationPagePart.joinedList(items, locale: ApplicationPagePart.listLocale)
+        return String(format: NSLocalizedString("apps-summary-own", comment: ""), list)
     }
 
     // MARK: - The parts
@@ -440,6 +441,18 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(page.inheritSwitch.state, .on)
         XCTAssertFalse(page.scrollingPart.showsSettings)
         XCTAssertEqual(pane.view.frame.height, short, accuracy: 0.5)
+    }
+
+    /// What an app has of its own is joined in the app's language, not the Mac's region:
+    /// an English app on a Slovenian Mac says "and", never "in".
+    func testTheSummaryJoinsItsListInTheAppsLanguage() {
+        let application = Application(path: Self.calculator)
+        application.inherit = false
+        application.setOwnThumbWheelFunction(.zoom)
+        XCTAssertEqual(ApplicationPagePart.summary(of: application, locale: Locale(identifier: "sl_SI")), "Own: scrolling in thumb wheel")
+        XCTAssertEqual(ApplicationPagePart.summary(of: application, locale: Locale(identifier: "en_SI")), "Own: scrolling and thumb wheel")
+        XCTAssertEqual(ApplicationPagePart.listLocale.identifier, Bundle.main.preferredLocalizations.first)
+        XCTAssertEqual(ApplicationPagePart.summary(of: application), "Own: scrolling and thumb wheel", "the app's own language")
     }
 
     /// The Buttons part's line under the list is a plain sentence that fits two lines, also

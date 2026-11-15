@@ -123,8 +123,10 @@ struct ApplicationPagePart: Equatable {
 
     /// What the app has of its own, in words, for its row in the list and its page's
     /// header, as System Settings › Notifications says it of an app: "Own scrolling, 2
-    /// buttons and ring", "Own ring", "Nothing of its own yet". The parts' order.
-    static func summary(of application: Application) -> String {
+    /// buttons and ring", "Own ring", "Nothing of its own yet". The parts' order. The list
+    /// is joined in the app's own language (`listLocale`), not the Mac's region: an English
+    /// app on a Slovenian Mac says "and", never "in".
+    static func summary(of application: Application, locale: Locale = listLocale) -> String {
         var items: [String] = []
         if !application.inherit {
             items.append(NSLocalizedString("apps-summary-scrolling", comment: ""))
@@ -145,7 +147,20 @@ struct ApplicationPagePart: Equatable {
             items.append(NSLocalizedString("apps-summary-ring", comment: ""))
         }
         guard !items.isEmpty else { return NSLocalizedString("apps-summary-none", comment: "") }
-        return String(format: NSLocalizedString("apps-summary-own", comment: ""), ListFormatter.localizedString(byJoining: items))
+        return String(format: NSLocalizedString("apps-summary-own", comment: ""), joinedList(items, locale: locale))
+    }
+
+    /// The language the app's texts are shown in (its first localization in use), for the
+    /// words a list is joined with.
+    static var listLocale: Locale {
+        return Locale(identifier: Bundle.main.preferredLocalizations.first ?? "en")
+    }
+
+    /// "1 button, gestures and ring": `items` joined as `locale` joins a list.
+    static func joinedList(_ items: [String], locale: Locale) -> String {
+        let formatter = ListFormatter()
+        formatter.locale = locale
+        return formatter.string(from: items) ?? items.joined(separator: ", ")
     }
 }
 
