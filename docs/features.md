@@ -563,14 +563,17 @@ only when you move those controls.
   General say what to do: pause Scrollio first, as removing it from Privacy & Security ›
   Accessibility while it runs can stop the mouse and keyboard, then remove it with −
   and add it again. This usually brings the right back; if the title stays, quit
-  Scrollio and open it again).
-- The icon is dimmed in the same four cases; its tooltip says which.
+  Scrollio and open it again); "Smooth scrolling is off: no display frames" with the
+  pause items (three display links in a row sent no frame; the wheel goes through
+  unsmoothed; quit and reopen Scrollio. The first frame ends it).
+- The icon is dimmed in the same five cases; its tooltip says which.
 - General says the same under its card, always: "Scrollio is on" with "Pause" (until
   you resume), or the
   menu's title with "Resume", "Try Again Now" (with "Pause" while an event tap is kept
   off and comes back by itself, as in the menu, and for "can't send events to apps",
   with a line that says what to do; Permissions then shows its own "Open System
-  Settings") or, for the access, "Open System Settings". The Welcome Guide does not
+  Settings"; and for "no display frames", with a line that says to quit and reopen
+  Scrollio) or, for the access, "Open System Settings". The Welcome Guide does not
   say "Allowed" alone then either: its Accessibility step says the same with an orange
   sign, and its sample page "Not smoothed: Scrollio can't send events".
 - The icon can be hidden (General › Show in menu bar). Opening Scrollio again then shows

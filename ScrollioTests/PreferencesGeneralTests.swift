@@ -390,7 +390,7 @@ final class PreferencesGeneralTests: XCTestCase {
         typealias Status = PreferencesGeneralViewController.RunStatus
         for access in [true, false] {
             for paused in [false, true] {
-                for problem in [nil, StatusMenu.StartProblem.retrying, .tapOff, .cannotPostEvents] {
+                for problem in [nil, StatusMenu.StartProblem.retrying, .tapOff, .cannotPostEvents, .noDisplayFrames] {
                     let status = Status(hasAccess: access, isPaused: paused, startProblem: problem)
                     let menu = StatusMenu.title(hasAccess: access, isPaused: paused, startProblem: problem)
                     let name = "access \(access) paused \(paused) \(String(describing: problem))"
@@ -398,9 +398,11 @@ final class PreferencesGeneralTests: XCTestCase {
                     XCTAssertEqual(status.titleKey, menu?.key ?? "general-status-on", name)
                     // The icon's tooltip says the same, by the same rule.
                     let look = StatusMenu.IconLook(
-                        hasAccess: access, coresActive: problem == .tapOff || problem == .cannotPostEvents, isPaused: paused,
+                        hasAccess: access, coresActive: problem == .tapOff || problem == .cannotPostEvents || problem == .noDisplayFrames,
+                        isPaused: paused,
                         startFailed: problem == .retrying, tapRestartsThrottled: problem == .tapOff,
-                        canPostEvents: problem != .cannotPostEvents
+                        canPostEvents: problem != .cannotPostEvents,
+                        displaySendsFrames: problem != .noDisplayFrames
                     )
                     XCTAssertEqual(look.toolTip == nil, menu == nil, name)
                 }
@@ -587,6 +589,38 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertNil(pane.statusRow.explanation)
         XCTAssertEqual(pane.statusButton.title, "Pause")
         XCTAssertEqual(shownButtons(titled: "Open System Settings", in: pane), [])
+    }
+
+    /// Three display links in a row sent no frame (a fault that stays with the process: "a
+    /// restart fixes it"): the menu's title, a line with the way out, and Pause. It follows
+    /// the poster's notice, and goes with the first frame.
+    func testWithoutDisplayFramesTheRowSaysSoAndOffersPause() throws {
+        install(.notRegistered)
+        let world = World()
+        let pane = try makePane(world)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is on")
+
+        world.startProblem = .noDisplayFrames
+        NotificationCenter.default.post(name: ScrollPoster.displayFramesDidChangeNotification, object: nil)
+        XCTAssertEqual(pane.statusRow.title, "Smooth scrolling is off: no display frames")
+        XCTAssertEqual(pane.statusRow.explanation, "The wheel scrolls without smoothing. Quit and reopen Scrollio.")
+        XCTAssertEqual(pane.statusButton.title, "Pause")
+        XCTAssertEqual(shownButtons(titled: "Open System Settings", in: pane), [], "nothing to do in System Settings")
+        XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+
+        let menu = NSMenu()
+        StatusMenu.build(
+            into: menu,
+            state: StatusMenu.State(hasAccess: true, isPaused: false, showsDiagnostics: false, batteries: [],
+                                    startProblem: .noDisplayFrames),
+            actions: StatusMenuActions()
+        )
+        XCTAssertEqual(pane.statusRow.title, menu.items.first?.title)
+
+        world.startProblem = nil
+        NotificationCenter.default.post(name: ScrollPoster.displayFramesDidChangeNotification, object: nil)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is on")
+        XCTAssertNil(pane.statusRow.explanation)
     }
 
     /// Without the access, the row says so first (also while paused) and leads where the

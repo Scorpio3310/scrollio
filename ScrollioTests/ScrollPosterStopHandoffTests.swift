@@ -704,7 +704,7 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         clock += 0.06
         XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()), "not taken: it goes on raw")
         drainMainQueue()
-        XCTAssertEqual(display.made.count, 2, "replaced at once, whatever the cooldown")
+        XCTAssertEqual(display.made.count, 2, "replaced: the first silence waits for no cooldown")
         let replacement = try XCTUnwrap(display.made.last)
         XCTAssertFalse(silent.isRunning)
         XCTAssertTrue(replacement.isRunning, "running, so that its first frame can tell")
@@ -1048,6 +1048,69 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 
         XCTAssertTrue(poster.recreateDisplayLink(), "not refused")
         XCTAssertEqual(display.made.count, 3)
+    }
+
+    /// A silence that every new link keeps (Mos #1040: "restarting fixes it"): the wheel
+    /// went on raw for hours and nothing but one log line said so. After three new links in
+    /// a row without a frame, smoothing counts as off: the menu bar and General are told
+    /// (`displaySendsFrames`), once. The first frame ends it, and they are told again.
+    func testThreeNewLinksWithoutAFrameSaySmoothScrollingIsOff() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        let sim = SimClock()
+        poster.inputClockForTests = { sim.now }
+        var told = 0
+        let observer = NotificationCenter.default.addObserver(
+            forName: ScrollPoster.displayFramesDidChangeNotification, object: poster, queue: nil
+        ) { _ in told += 1 }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        let start = sim.now
+        let events = stride(from: start + 0.01, to: start + 10, by: 0.05).map { $0 }
+
+        // Links that never send a frame; a replacement every 3 s while the wheel turns.
+        _ = try turnTheWheel(events.filter { $0 < start + 6 }, firstFrame: nil, until: start + 6, sim: sim)
+        XCTAssertEqual(display.made.count, 3, "the first link and two replacements")
+        XCTAssertTrue(poster.displaySendsFrames, "two are not enough")
+        XCTAssertEqual(told, 0)
+        _ = try turnTheWheel(events.filter { $0 >= start + 6 }, firstFrame: nil, until: start + 10, sim: sim)
+        XCTAssertEqual(display.made.count, 5)
+        XCTAssertFalse(poster.displaySendsFrames, "the third replacement without a frame")
+        XCTAssertEqual(told, 1, "told once, not at the fourth")
+        XCTAssertEqual(poster.healthLinesForTests, [ScrollPoster.silentLinkLine(after: 0.1), ScrollPoster.noDisplayFramesLine])
+
+        // A frame: smoothing again, and they are told.
+        poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: sim.now)
+        runMainQueue()
+        XCTAssertTrue(poster.displaySendsFrames)
+        XCTAssertEqual(told, 2)
+        XCTAssertEqual(poster.healthLinesForTests.last, ScrollPoster.displayFramesBackLine)
+        sim.now += 0.01
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
+    }
+
+    /// "No display frames", once said, outlives a pause or a sleep (the cores' stop and
+    /// start forget the silence, not what it showed): the first frame after it ends it.
+    func testNoDisplayFramesLastsUntilAFrameComes() throws {
+        let display = FakeDisplay(for: poster)
+        poster.frameRecorderForTests = { _ in }
+        let sim = SimClock()
+        poster.inputClockForTests = { sim.now }
+        let start = sim.now
+        let events = stride(from: start + 0.01, to: start + 7, by: 0.05).map { $0 }
+        _ = try turnTheWheel(events, firstFrame: nil, until: start + 7, sim: sim)
+        XCTAssertFalse(poster.displaySendsFrames)
+
+        poster.stop()
+        poster.stopKeeper()
+        poster.startKeeper()
+        runMainQueue()
+        XCTAssertFalse(poster.displaySendsFrames, "a resume alone does not show a frame")
+        sim.now += 1
+        XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()), "a fresh start: taken")
+        poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: sim.now)
+        runMainQueue()
+        XCTAssertTrue(poster.displaySendsFrames, "its first frame ends it")
+        XCTAssertGreaterThanOrEqual(display.made.count, 4)
     }
 
     /// While a silent link is not replaced (once per 3 s), it follows the display of each

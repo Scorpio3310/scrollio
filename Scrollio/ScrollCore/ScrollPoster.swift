@@ -801,6 +801,20 @@ class ScrollPoster {
     static let silentLinkLineInterval: CFTimeInterval = 10
     /// The link a silence's end left running is stopped once no wheel event came this long.
     static let silenceEndQuiet: CFTimeInterval = 0.25
+    /// Links made for a silence that sent no frame, in a row (`replaceSilentLink`); a frame
+    /// sets it back to 0 (`frameCameLocked`). Guarded by stateLock.
+    private var silentReplacements = 0
+    /// After this many smoothing counts as off (`displaySendsFrames`): about 6 to 9 s of a
+    /// turning wheel, every new link silent too (Mos #1040: "restarting fixes it").
+    static let silentReplacementsForProblem = 3
+    /// `displaySendsFrames` is false: the next frame sets it back. Guarded by stateLock.
+    private var noFramesShownLocked = false
+    /// false: `silentReplacementsForProblem` links in a row sent no frame. The menu bar and
+    /// General say "Smooth scrolling is off: no display frames" (`StatusMenu.StartProblem
+    /// .noDisplayFrames`) until a frame comes. Main thread.
+    private(set) var displaySendsFrames = true
+    /// Posted (object: the poster) on the main thread when `displaySendsFrames` changed.
+    static let displayFramesDidChangeNotification = Notification.Name("ScrollioDisplayFramesDidChange")
     // CVDisplayLink 刷新率自纠 (issue #958):
     // 显示器唤醒/重连时会先短暂报告过渡刷新率 (如先 60Hz 再升 144Hz), 若重建正好落在这个窗口,
     // 就会把 link 绑到偏低的刷新率, 使平滑滚动只按低帧率绘制 (卡顿), 而现有恢复机制识别不了.
@@ -2154,6 +2168,11 @@ extension ScrollPoster {
         lastSilenceEnd = -.infinity
         lastSilentLinkLine = -.infinity
         silenceLimit = Self.silentLinkLimit
+        os_unfair_lock_lock(&stateLock)
+        silentReplacements = 0
+        noFramesShownLocked = false
+        os_unfair_lock_unlock(&stateLock)
+        displaySendsFrames = true
     }
     /// Stops and forgets the display link, as if none had been made yet.
     func dropDisplayLinkForTests() {
@@ -2436,18 +2455,49 @@ extension ScrollPoster {
         os_unfair_lock_unlock(&stateLock)
         guard silent, create(), let link = poster else { return }
         link.followDisplayUnderPointer()
-        if link.start() == kCVReturnSuccess {
-            noteDisplayLinkStarted()
+        guard link.start() == kCVReturnSuccess else { return }
+        noteDisplayLinkStarted()
+        // One more link without a frame, unless a frame ended the silence meanwhile.
+        os_unfair_lock_lock(&stateLock)
+        if linkIsSilent {
+            silentReplacements += 1
+        }
+        let noFrames = silentReplacements >= Self.silentReplacementsForProblem && !noFramesShownLocked
+        if noFrames {
+            noFramesShownLocked = true
+        }
+        os_unfair_lock_unlock(&stateLock)
+        if noFrames {
+            setDisplaySendsFrames(false)
         }
     }
+
+    /// Says when display links stopped or started sending frames: one line in the `app` log
+    /// and `displayFramesDidChangeNotification`. Main thread.
+    private func setDisplaySendsFrames(_ sends: Bool) {
+        guard sends != displaySendsFrames else { return }
+        displaySendsFrames = sends
+        if sends {
+            logHealth(note: Self.displayFramesBackLine)
+        } else {
+            logHealth(problem: Self.noDisplayFramesLine)
+        }
+        NotificationCenter.default.post(name: Self.displayFramesDidChangeNotification, object: self)
+    }
+    static let noDisplayFramesLine = "ScrollPoster: \(silentReplacementsForProblem) display links in a row sent no "
+        + "frame: smooth scrolling is off until one does (the menu bar and General say so; quitting and reopening "
+        + "Scrollio is the way out)"
+    static let displayFramesBackLine = "ScrollPoster: a display link sends frames again: smooth scrolling is back"
 
     /// A frame came: no wheel event waits for one, and a silent link sends frames again.
     /// Caller holds stateLock (the link's thread).
     /// - Returns: whether this ended a silence.
     func frameCameLocked() -> Bool {
         awaitingFrameSince = nil
-        guard linkIsSilent else { return false }
+        guard linkIsSilent || noFramesShownLocked else { return false }
         linkIsSilent = false
+        silentReplacements = 0
+        noFramesShownLocked = false
         return true
     }
 
@@ -2469,6 +2519,7 @@ extension ScrollPoster {
     ///   scroll's stop would leave it. While the wheel turns it runs on, and the next event is
     ///   smoothed with it; a stop there made that event start it cold, to wait once more.
     private func silenceEnded() {
+        setDisplaySendsFrames(true)
         let now = inputClock()
         lastSilenceEnd = now
         let wait = now - linkStartedAt
@@ -2717,6 +2768,8 @@ extension ScrollPoster {
         os_unfair_lock_lock(&stateLock)
         linkIsSilent = false
         awaitingFrameSince = nil
+        // ("No display frames", once said, stays until a frame comes.)
+        silentReplacements = 0
         os_unfair_lock_unlock(&stateLock)
     }
     /// A display is on again: the link that could not be made while none was on is made now

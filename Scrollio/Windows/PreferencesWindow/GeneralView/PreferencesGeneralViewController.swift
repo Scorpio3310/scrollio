@@ -15,8 +15,9 @@
 //  start and is trying again" with "Try Again" (or "Pause" while an event tap is kept off
 //  and comes back by itself); "Scrollio needs Accessibility access" with "Open System
 //  Settings"; "Scrollio can't send events to apps" with a line that says what to do and
-//  "Pause" (Permissions then has its own "Open System Settings"). With the menu bar icon
-//  hidden this is the way to pause and back. Then
+//  "Pause" (Permissions then has its own "Open System Settings"); "Smooth scrolling is off:
+//  no display frames" with a line that says to quit and reopen Scrollio, and "Pause". With
+//  the menu bar icon hidden this is the way to pause and back. Then
 //  two boxes:
 //  - "Open at login" (with a row to approve it in System Settings while macOS waits for
 //    that) and "Show in menu bar";
@@ -85,15 +86,16 @@ class PreferencesGeneralViewController: NSViewController {
     /// A start that failed, tried at once, as "Try Again Now" of the status-bar menu does.
     var tryAgain: () -> Void = { AppRunController.shared.tryAgainNow() }
     /// Why Scrollio does not work although it has the access and is not paused, by the
-    /// status item's rule (a failed start, an event tap kept off, no right to post events);
-    /// nil while it works.
+    /// status item's rule (a failed start, an event tap kept off, no right to post events, no
+    /// display frames); nil while it works.
     var startProblem: () -> StatusMenu.StartProblem? = {
         let controller = AppRunController.shared
         return StatusMenu.startProblem(
             coresActive: controller.coresActive,
             startFailed: controller.isRetryingStart,
             tapRestartsThrottled: Interceptor.hasThrottledTap,
-            canPostEvents: ScrollPoster.shared.canPostEvents
+            canPostEvents: ScrollPoster.shared.canPostEvents,
+            displaySendsFrames: ScrollPoster.shared.displaySendsFrames
         )
     }
     /// Opens the Welcome Guide.
@@ -609,6 +611,10 @@ class PreferencesGeneralViewController: NSViewController {
             center.addObserver(forName: ScrollPoster.postEventAccessDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 self?.refreshRunStatus()
             },
+            // Display links sent no frame, or one did again: "no display frames".
+            center.addObserver(forName: ScrollPoster.displayFramesDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.refreshRunStatus()
+            },
             // A check started or ended, an update was found or answered, or Sparkle's own
             // question about automatic checks was answered.
             center.addObserver(forName: UpdateCenter.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -750,6 +756,8 @@ class PreferencesGeneralViewController: NSViewController {
             // The cores run: Pause, which the line asks for before Scrollio is removed from
             // the Accessibility list; System Settings is the Permissions row's button.
             case .cannotPostEvents?: action = .pause
+            // The way out (quit and reopen) is in the line; the cores run.
+            case .noDisplayFrames?: action = .pause
             case nil: action = .pause
             }
         }
@@ -771,6 +779,7 @@ class PreferencesGeneralViewController: NSViewController {
             switch title {
             case .paused?: return pauseEnd == nil ? "general-paused-hint" : "general-paused-until-hint"
             case .cannotPostEvents?: return "general-cannot-post-events-hint"
+            case .noDisplayFrames?: return "general-no-display-frames-hint"
             default: return nil
             }
         }

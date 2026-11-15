@@ -111,8 +111,10 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   wake, another user, Pause and a pause that ended by itself, Accessibility access lost
   or back, quit), event taps that
   could not be created or that macOS turned off, restarts, a display link that runs and
-  sends no frames (one line each time; the wheel then goes on unsmoothed until frames
-  come again), macOS not letting Scrollio post events and letting it again (checked at
+  sends no frames (at most one line every 10 seconds; the wheel then goes on unsmoothed
+  until frames come again; after three new links in a row without a frame, one more line,
+  and the menu bar and General say "Smooth scrolling is off: no display frames": quit and
+  reopen Scrollio), macOS not letting Scrollio post events and letting it again (checked at
   each start and wake, every 5 seconds while Scrollio runs and when the Accessibility
   list changes; without it nothing is smoothed and shortcuts may not reach apps; pause
   or quit Scrollio before you remove it from that list), settings that could not be
