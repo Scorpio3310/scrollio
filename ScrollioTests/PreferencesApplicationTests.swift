@@ -51,6 +51,12 @@ final class PreferencesApplicationTests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// The catalog's text for `key`, with `arguments` put in as the app puts them: the
+    /// expected text follows the catalog's wording.
+    private static func catalog(_ key: String, _ arguments: String...) -> String {
+        return String(format: NSLocalizedString(key, comment: ""), arguments: arguments)
+    }
+
     private static func makeStore(_ applications: [Application] = []) -> EnhanceArray<Application> {
         return EnhanceArray<Application>(
             withArray: applications,
@@ -181,7 +187,7 @@ final class PreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(controller.allowlistRow.title, "Change scrolling only in these apps")
         XCTAssertEqual(
             controller.allowlistRow.explanation,
-            "Apps not in the list scroll the way macOS does. Buttons and gestures still work everywhere."
+            Self.catalog("apps-limit-hint")
         )
         XCTAssertEqual(controller.allowlistSwitch.state, .off)
         XCTAssertEqual(controller.allowlistSwitch.identifier, PreferencesApplicationViewController.Identifier.allowlist)
@@ -1078,7 +1084,7 @@ final class PreferencesApplicationTests: XCTestCase {
         send(page.generalRingSwitch)
         XCTAssertNotNil(page.ringController)
         XCTAssertEqual(page.ringPart.triggerRow.explanation, "None in Calculator")
-        XCTAssertEqual(page.generalRingRow.explanation, "While Calculator is in front, the ring below opens.")
+        XCTAssertEqual(page.generalRingRow.explanation, Self.catalog("apps-detail-ring-general-off", "Calculator"))
     }
 
     /// While "Change scrolling only in these apps" is on, a muted line under the app's box
@@ -1198,10 +1204,10 @@ final class PreferencesApplicationTests: XCTestCase {
 
         XCTAssertNil(page.ringSection.titleLabel, "the part's segment names it")
         XCTAssertEqual(page.ringSection.box.visibleRows, [page.ringPart.triggerRow, page.generalRingRow])
-        XCTAssertEqual(page.generalRingRow.title, "Use the general ring")
+        XCTAssertEqual(page.generalRingRow.title, Self.catalog("apps-detail-ring-general"))
         XCTAssertEqual(page.generalRingSwitch.state, .on)
         XCTAssertEqual(page.generalRingSwitch.controlSize, PreferencesGroupedForm.switchControlSize)
-        XCTAssertEqual(page.generalRingRow.explanation, "While Calculator is in front, the general ring opens.")
+        XCTAssertEqual(page.generalRingRow.explanation, Self.catalog("apps-detail-ring-general-on", "Calculator"))
         XCTAssertNil(page.ringController, "no drawing and no rows")
         XCTAssertFalse(allSubviews(of: page.view).contains { $0 is ShortcutRingPreviewView || $0 is ButtonActionPullDown })
         // The section is the part's first box, and the part ends under it.
@@ -1241,7 +1247,7 @@ final class PreferencesApplicationTests: XCTestCase {
         send(page.generalRingSwitch)
         XCTAssertFalse(calculator.usesGeneralRing)
         XCTAssertEqual(calculator.ownRingPlaces, general.places, "a copy of the general ring")
-        XCTAssertEqual(page.generalRingRow.explanation, "While Calculator is in front, the ring below opens.")
+        XCTAssertEqual(page.generalRingRow.explanation, Self.catalog("apps-detail-ring-general-off", "Calculator"))
         XCTAssertEqual(heightChanges, 1)
         let ring = try XCTUnwrap(page.ringController)
         XCTAssertTrue(ring.view.isDescendant(of: page.view))

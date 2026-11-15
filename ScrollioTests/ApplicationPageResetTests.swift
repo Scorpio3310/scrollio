@@ -58,6 +58,12 @@ final class ApplicationPageResetTests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// The catalog's text for `key`, with `arguments` put in as the app puts them: the
+    /// expected text follows the catalog's wording.
+    private static func catalog(_ key: String, _ arguments: String...) -> String {
+        return String(format: NSLocalizedString(key, comment: ""), arguments: arguments)
+    }
+
     /// The Apps pane as the window makes it, with nothing shown on screen.
     private func makePane() -> PreferencesApplicationViewController {
         let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
@@ -612,10 +618,10 @@ final class ApplicationPageResetTests: XCTestCase {
         click(page.buttonsPart.resetToDefaultsButton, undo: undo)
         page.show(.ring)
         let five = ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 5, modifiers: 0, deviceFilter: nil))
-        XCTAssertEqual(page.ringPart.triggerRow.explanation, "\(five), as everywhere")
+        XCTAssertEqual(page.ringPart.triggerRow.explanation, Self.catalog("apps-trigger-everywhere", five))
         undo.undo()
         XCTAssertEqual(page.ringPart.triggerRow.explanation, "None in Calculator")
         undo.redo()
-        XCTAssertEqual(page.ringPart.triggerRow.explanation, "\(five), as everywhere")
+        XCTAssertEqual(page.ringPart.triggerRow.explanation, Self.catalog("apps-trigger-everywhere", five))
     }
 }

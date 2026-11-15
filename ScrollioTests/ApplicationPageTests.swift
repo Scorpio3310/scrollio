@@ -64,6 +64,12 @@ final class ApplicationPageTests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// The catalog's text for `key`, with `arguments` put in as the app puts them: the
+    /// expected text follows the catalog's wording.
+    private static func catalog(_ key: String, _ arguments: String...) -> String {
+        return String(format: NSLocalizedString(key, comment: ""), arguments: arguments)
+    }
+
     private static func makeStore(_ applications: [Application]) -> EnhanceArray<Application> {
         return EnhanceArray<Application>(
             withArray: applications, matchKey: "path", forObserver: { Options.shared.markChanged(.application) }
@@ -1427,7 +1433,7 @@ final class ApplicationPageTests: XCTestCase {
         // The Gestures part: the thumb panel runs the gestures again once its row is gone.
         let thumb = ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: thumbPanel, modifiers: 0, deviceFilter: nil))
         let noButton = "None in Calculator"
-        let generalGestures = "\(thumb), as everywhere"
+        let generalGestures = Self.catalog("apps-trigger-everywhere", thumb)
         remove(0)
         choose(ApplicationPagePart.all.firstIndex(of: .gestures)!, on: page)
         XCTAssertEqual(page.gesturesPart.holdRow.explanation, generalGestures)
@@ -1442,7 +1448,7 @@ final class ApplicationPageTests: XCTestCase {
         remove(copyRow)
         choose(ApplicationPagePart.all.firstIndex(of: .ring)!, on: page)
         let five = ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: 5, modifiers: 0, deviceFilter: nil))
-        let generalRing = "\(five), as everywhere"
+        let generalRing = Self.catalog("apps-trigger-everywhere", five)
         XCTAssertEqual(page.ringPart.triggerRow.explanation, generalRing)
         undo.undo()
         XCTAssertEqual(page.ringPart.triggerRow.explanation, "None in Calculator")
@@ -1673,7 +1679,7 @@ final class ApplicationPageTests: XCTestCase {
         let calculator = addApp(Self.calculator)
         let (_, part) = try gesturesPart()
         XCTAssertTrue(part.generalGesturesRow.isOn)
-        XCTAssertEqual(part.generalGesturesRow.explanation, "While Calculator is in front, the general gestures run.")
+        XCTAssertEqual(part.generalGesturesRow.explanation, Self.catalog("apps-detail-gestures-general-on", "Calculator"))
         XCTAssertNil(part.controls)
         XCTAssertTrue(part.directionRows.isEmpty)
         XCTAssertNil(part.directionsSection)
@@ -1700,7 +1706,7 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertFalse(calculator.usesGeneralGestures)
         XCTAssertEqual(calculator.ownGestures?.actions, Options.shared.gesture.actions)
         XCTAssertEqual(calculator.ownGestures?.invertHorizontal, true)
-        XCTAssertEqual(part.generalGesturesRow.explanation, "While Calculator is in front, the gestures below run.")
+        XCTAssertEqual(part.generalGesturesRow.explanation, Self.catalog("apps-detail-gestures-general-off", "Calculator"))
         let controls = try XCTUnwrap(part.controls)
         XCTAssertEqual(part.directionRows.map(\.title), ["Up", "Down", "Left", "Right", "Click"])
         XCTAssertEqual(part.directionsFold?.title, "Directions")
@@ -1950,7 +1956,7 @@ final class ApplicationPageTests: XCTestCase {
         let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
         Options.shared.buttons.binding = [binding(thumbPanel, gestures), binding(3, "copy")]
         let calculator = addApp(Self.calculator)
-        let general = ["While Calculator is in front, the general gestures run.", "While Calculator is in front, the gestures below run."]
+        let general = [Self.catalog("apps-detail-gestures-general-on", "Calculator"), Self.catalog("apps-detail-gestures-general-off", "Calculator")]
         func title(_ code: UInt16) -> String {
             return ButtonTriggerNaming.title(for: RecordedEvent(type: .mouse, code: code, modifiers: 0, deviceFilter: nil))
         }
@@ -1972,11 +1978,11 @@ final class ApplicationPageTests: XCTestCase {
             send(part.generalGesturesSwitch)
             XCTAssertEqual(switchLines, general, "the switch's line never says it", line: line)
         }
-        try check("\(thumb), as everywhere", .buttonsPane, "Show in Buttons", "the button of Buttons")
+        try check(Self.catalog("apps-trigger-everywhere", thumb), .buttonsPane, "Show in Buttons", "the button of Buttons")
         calculator.setOwnButtonBindings([binding(3, "paste")])
-        try check("\(thumb), as everywhere", .buttonsPane, "Show in Buttons", "another button changed")
+        try check(Self.catalog("apps-trigger-everywhere", thumb), .buttonsPane, "Show in Buttons", "another button changed")
         calculator.setOwnButtonBindings([binding(thumbPanel, gestures)])
-        try check("\(thumb), as everywhere", .buttonsPane, "Show in Buttons", "the same button, also the app's own")
+        try check(Self.catalog("apps-trigger-everywhere", thumb), .buttonsPane, "Show in Buttons", "the same button, also the app's own")
 
         let took = binding(thumbPanel, SystemShortcut.shortcutRing.identifier)
         calculator.setOwnButtonBindings([took])
@@ -1986,7 +1992,7 @@ final class ApplicationPageTests: XCTestCase {
         try check("\(back), only in Calculator", .applicationButtons(ownBack.id), "Show in Calculator", "another button")
         calculator.setOwnButtonBindings([ownBack])
         try check(
-            "\(thumb) as everywhere, \(back) only in Calculator", .applicationButtons(ownBack.id), "Show in Calculator", "both"
+            Self.catalog("apps-trigger-mixed", thumb, back, "Calculator"), .applicationButtons(ownBack.id), "Show in Calculator", "both"
         )
         // Without a button in Buttons, one of the app's own is "only in" it too.
         Options.shared.buttons.binding = []
@@ -2209,7 +2215,7 @@ final class ApplicationPageTests: XCTestCase {
             lines.append(page.generalRingRow.explanation ?? "")
             page.generalRingSwitch.state = page.generalRingSwitch.state == .on ? .off : .on
             send(page.generalRingSwitch)
-            XCTAssertEqual(lines, ["While Calculator is in front, the general ring opens.", "While Calculator is in front, the ring below opens."])
+            XCTAssertEqual(lines, [Self.catalog("apps-detail-ring-general-on", "Calculator"), Self.catalog("apps-detail-ring-general-off", "Calculator")])
             return (part.triggerRow.explanation ?? "", part.shownTrigger?.destination, part.triggerButton.title)
         }
         func title(_ code: UInt16) -> String {
@@ -2237,7 +2243,7 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertTrue(text.hasSuffix(", only in Calculator"), text)
         calculator.setOwnButtonBindings([binding(5, "copy")])
         (text, destination, button) = try shown()
-        XCTAssertEqual([text, button], ["\(title(6)), as everywhere", "Show in Buttons"], "Buttons' button opens it here too")
+        XCTAssertEqual([text, button], [Self.catalog("apps-trigger-everywhere", title(6)), "Show in Buttons"], "Buttons' button opens it here too")
         let byDefault = binding(6, "")
         calculator.setOwnButtonBindings([byDefault])
         (text, destination, button) = try shown()
@@ -2322,7 +2328,7 @@ final class ApplicationPageTests: XCTestCase {
         pane.openApplication(withID: Self.calculator, part: .gestures)
         let page = try XCTUnwrap(pane.detailController)
         let back = RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil)
-        let everywhere = ButtonTriggerNaming.title(for: back) + ", as everywhere"
+        let everywhere = Self.catalog("apps-trigger-everywhere", ButtonTriggerNaming.title(for: back))
         for (part, rule) in [(ApplicationPagePart.gestures, ApplicationTriggerRule.gestureNavigation), (.ring, .shortcutRing)] {
             Options.shared.buttons.binding = []
             page.show(part)
