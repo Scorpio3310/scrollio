@@ -129,8 +129,17 @@ enum ThumbWheelTuning {
     static let followFullStopRest: TimeInterval = 0.15
     /// After an end where a switch is expected (half a Space or more), no swipe begins until
     /// macOS says the Space changed or this long (s) has passed; no change by then: the
-    /// desktop was the first or the last that way.
+    /// desktop was the first or the last that way...
     static let followSpaceChangeTimeout: TimeInterval = 0.5
+    /// ...this long (s) after an end at the rest (part of the way, which macOS settles without
+    /// speed, more slowly than a swipe it was handed at a full Space).
+    static let followSettleSpaceChangeTimeout: TimeInterval = 1.0
+    /// A gate that timed out keeps its swipe this long (s) more: a change meanwhile is logged
+    /// as late ("late +N ms"), none as "no change".
+    static let followLateSpaceChangeWindow: TimeInterval = 1.5
+    /// A change this soon (s) after an end is too soon to be that end's own: while an older
+    /// swipe waits as late, it is the older one's.
+    static let followSpaceChangeTooSoon: TimeInterval = 0.12
     /// Travel kept meanwhile for the next swipe, at most this many units either way (a Space).
     static let followGatePendingCap = 6.0
 }
