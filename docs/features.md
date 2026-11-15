@@ -547,13 +547,18 @@ only when you move those controls.
   the local time) with "Resume Scrollio"; "Scrollio needs
   Accessibility access" with "Allow Accessibility Access…"; "Scrollio couldn't start and
   is trying again" with "Try Again Now" (or, while an event tap is kept off for up to a
-  minute and comes back by itself, with the pause items alone).
-- The icon is dimmed in the same three cases; its tooltip says which.
+  minute and comes back by itself, with the pause items alone); "Scrollio can't send
+  scroll events" with "Open Accessibility Settings…" (macOS does not let Scrollio post
+  events, which happens after some macOS updates while the access still shows as
+  allowed; read when Scrollio starts and after a wake, and every few seconds while it
+  lasts. Scrolling then goes through unsmoothed; removing Scrollio from Privacy &
+  Security › Accessibility and adding it again gives the right back).
+- The icon is dimmed in the same four cases; its tooltip says which.
 - General says the same under its card, always: "Scrollio is on" with "Pause" (until
   you resume), or the
   menu's title with "Resume", "Try Again Now" (with "Pause" while an event tap is kept
-  off and comes back by itself, as in the menu) or, for the access, "Open System
-  Settings".
+  off and comes back by itself, as in the menu) or, for the access and for "can't send
+  scroll events" (with a line that says what to do), "Open System Settings".
 - The icon can be hidden (General › Show in menu bar). Opening Scrollio again then shows
   its settings, or the Welcome Guide while Accessibility access is missing.
 - General also has "Open at login", the state of the Accessibility access (without it

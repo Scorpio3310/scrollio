@@ -21,7 +21,9 @@
 //  Guide; the menu then has only the updater and Quit besides); "Scrollio couldn't start and
 //  is trying again" with "Try Again Now" (a start that failed, `AppRunController`) and
 //  the two pause items, or with the pause items alone (an event tap whose restarts are refused
-//  for a while comes back by itself, `Interceptor`). The menu is built when it opens. Each
+//  for a while comes back by itself, `Interceptor`); "Scrollio can't send scroll events" with
+//  "Open Accessibility Settings…" and the pause items (macOS does not let Scrollio post events,
+//  `ScrollPoster.canPostEvents`: nothing is smoothed). The menu is built when it opens. Each
 //  item says what it does: Pause pauses and Resume resumes, so "Resume Scrollio" in a menu
 //  left open across the end of a pause does not pause again.
 //
@@ -32,7 +34,8 @@
 //
 //  The icon is dimmed while the event handling does not run: paused, the access is missing,
 //  or the access is there but an event tap could not be created or stays off because its
-//  restarts are throttled (AppRunController, Interceptor). Its tooltip says which, in the
+//  restarts are throttled (AppRunController, Interceptor), or macOS does not let Scrollio
+//  post events (ScrollPoster). Its tooltip says which, in the
 //  words and the order of the menu's title (the missing access first, also while paused).
 //
 //  While a Logitech mouse's battery is low and not charging, its percentage stands next to the
@@ -97,6 +100,14 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             ) { [weak self] _ in
                 self?.updateIcon()
             },
+            // macOS stopped or started letting Scrollio post events: "can't send scroll events".
+            NotificationCenter.default.addObserver(
+                forName: ScrollPoster.postEventAccessDidChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.updateIcon()
+            },
             // What the mice report (also when one connects, disconnects or the Logitech
             // sessions stop): the battery next to the icon, and the answers to the battery
             // read made when the menu opened.
@@ -135,7 +146,8 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             isPaused: controller.isPaused,
             startFailed: controller.isRetryingStart,
             tapRestartsThrottled: Interceptor.hasThrottledTap,
-            pauseEnd: controller.pauseEnd
+            pauseEnd: controller.pauseEnd,
+            canPostEvents: ScrollPoster.shared.canPostEvents
         )
         item.button?.appearsDisabled = look.appearsDisabled
         item.button?.toolTip = look.toolTip
@@ -174,7 +186,8 @@ class StatusItemManager: NSMenu, NSMenuDelegate {
             startProblem: StatusMenu.startProblem(
                 coresActive: controller.coresActive,
                 startFailed: controller.isRetryingStart,
-                tapRestartsThrottled: Interceptor.hasThrottledTap
+                tapRestartsThrottled: Interceptor.hasThrottledTap,
+                canPostEvents: ScrollPoster.shared.canPostEvents
             ),
             pauseEnd: controller.pauseEnd
         )
@@ -298,12 +311,21 @@ enum StatusMenu {
         /// An event tap is off and its restarts are refused for up to a minute; it comes
         /// back by itself.
         case tapOff
+        /// The cores run, but macOS does not let Scrollio post events (after some macOS
+        /// updates, while the access still shows as allowed: `ScrollPoster.canPostEvents`).
+        /// Nothing is smoothed; the way out is in System Settings › Privacy & Security ›
+        /// Accessibility.
+        case cannotPostEvents
     }
 
-    /// The run state's start problem, by the icon's rule.
-    static func startProblem(coresActive: Bool, startFailed: Bool, tapRestartsThrottled: Bool) -> StartProblem? {
+    /// The run state's start problem, by the icon's rule. A tap kept off comes first: it
+    /// comes back by itself, and until then nothing reaches the poster anyway.
+    static func startProblem(
+        coresActive: Bool, startFailed: Bool, tapRestartsThrottled: Bool, canPostEvents: Bool = true
+    ) -> StartProblem? {
         if !coresActive && startFailed { return .retrying }
         if coresActive && tapRestartsThrottled { return .tapOff }
+        if coresActive && !canPostEvents { return .cannotPostEvents }
         return nil
     }
 
@@ -312,12 +334,14 @@ enum StatusMenu {
         case paused
         case needsAccess
         case couldNotStart
+        case cannotPostEvents
 
         var key: String {
             switch self {
             case .paused: return "status-menu-title-paused"
             case .needsAccess: return "status-menu-title-needs-access"
             case .couldNotStart: return "status-menu-title-could-not-start"
+            case .cannotPostEvents: return "status-menu-title-cannot-post-events"
             }
         }
     }
@@ -332,7 +356,9 @@ enum StatusMenu {
     static func title(hasAccess: Bool, isPaused: Bool, startProblem: StartProblem?) -> Title? {
         if !hasAccess { return .needsAccess }
         if isPaused { return .paused }
-        if startProblem != nil { return .couldNotStart }
+        if let startProblem {
+            return startProblem == .cannotPostEvents ? .cannotPostEvents : .couldNotStart
+        }
         return nil
     }
 
@@ -465,6 +491,9 @@ enum StatusMenu {
         case pauseFor
         case resume
         case tryAgain
+        /// "Open Accessibility Settings…": System Settings › Privacy & Security ›
+        /// Accessibility, under "Scrollio can't send scroll events".
+        case openAccessibilitySettings
         case settings
         case scrollMonitor
         case diagnostics
@@ -504,6 +533,8 @@ enum StatusMenu {
         case .couldNotStart?:
             let tryAgain: [Item] = state.startProblem == .retrying ? [.tryAgain] : []
             items = [.title(.couldNotStart)] + tryAgain + [.pause, .pauseFor, .separator]
+        case .cannotPostEvents?:
+            items = [.title(.cannotPostEvents), .openAccessibilitySettings, .pause, .pauseFor, .separator]
         case .needsAccess?, nil:
             break
         }
@@ -620,6 +651,8 @@ enum StatusMenu {
             return action("status-menu-resume", #selector(StatusMenuActions.resumeClicked(_:)))
         case .tryAgain:
             return action("status-menu-try-again", #selector(StatusMenuActions.tryAgainClicked(_:)))
+        case .openAccessibilitySettings:
+            return action("status-menu-open-accessibility-settings", #selector(StatusMenuActions.openAccessibilitySettingsClicked(_:)))
         case .settings:
             return action("main-menu-settings", #selector(StatusMenuActions.settingsClicked(_:)), shortcut: ",")
         case .scrollMonitor:
@@ -709,12 +742,14 @@ enum StatusMenu {
         ///   - tapRestartsThrottled: an event tap is off and its restarts are refused for a
         ///     while (Interceptor.hasThrottledTap); the cores count as running meanwhile.
         ///   - pauseEnd: when the pause ends by itself; the tooltip then says until when.
+        ///   - canPostEvents: macOS lets Scrollio post events (ScrollPoster.canPostEvents).
         init(
             hasAccess: Bool, coresActive: Bool, isPaused: Bool, startFailed: Bool = false,
-            tapRestartsThrottled: Bool = false, pauseEnd: Date? = nil
+            tapRestartsThrottled: Bool = false, pauseEnd: Date? = nil, canPostEvents: Bool = true
         ) {
             let problem = StatusMenu.startProblem(
-                coresActive: coresActive, startFailed: startFailed, tapRestartsThrottled: tapRestartsThrottled
+                coresActive: coresActive, startFailed: startFailed, tapRestartsThrottled: tapRestartsThrottled,
+                canPostEvents: canPostEvents
             )
             switch StatusMenu.title(hasAccess: hasAccess, isPaused: isPaused, startProblem: problem) {
             case .needsAccess?:
@@ -730,6 +765,10 @@ enum StatusMenu {
             case .couldNotStart?:
                 appearsDisabled = true
                 toolTip = NSLocalizedString("status-item-could-not-start", comment: "")
+            case .cannotPostEvents?:
+                // The taps run, but no scroll is smoothed: dimmed as well, so that it is seen.
+                appearsDisabled = true
+                toolTip = NSLocalizedString("status-item-cannot-post-events", comment: "")
             case nil:
                 // The access is back and the cores start in a moment (or the Mac sleeps,
                 // another user has it): dimmed, and nothing to say, as the menu has no title.
@@ -759,6 +798,9 @@ final class StatusMenuActions: NSObject {
     var resume: () -> Void = { AppRunController.shared.setPaused(false) }
     /// "Try Again Now": the start that failed, tried at once.
     var tryAgain: () -> Void = { AppRunController.shared.tryAgainNow() }
+    /// "Open Accessibility Settings…": System Settings › Privacy & Security › Accessibility
+    /// (inert under XCTest).
+    var openAccessibilitySettings: () -> Void = IntroductionViewController.openAccessibilityPane
     var showScrollMonitor: () -> Void = {
         WindowManager.shared.showWindow(withIdentifier: WINDOW_IDENTIFIER.monitorWindowController)
     }
@@ -787,6 +829,7 @@ final class StatusMenuActions: NSObject {
     }
     @objc func resumeClicked(_ sender: Any?) { resume() }
     @objc func tryAgainClicked(_ sender: Any?) { tryAgain() }
+    @objc func openAccessibilitySettingsClicked(_ sender: Any?) { openAccessibilitySettings() }
     @objc func batteryClicked(_ sender: Any?) { showMouseSettings() }
     @objc func appSmoothingClicked(_ sender: Any?) {
         guard let app = (sender as? NSMenuItem)?.representedObject as? AppSmoothing.App else { return }

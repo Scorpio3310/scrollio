@@ -3224,6 +3224,38 @@ final class ScrollSystemLogTests: XCTestCase {
         XCTAssertEqual(display.made.first?.isRunning, true)
     }
 
+    /// A display link that runs and sends no frames (Mos #1025, #1040): the wheel event that
+    /// finds it so goes on raw, in the user's direction ("Reverse wheel direction" on here),
+    /// and the log says why. It used to be swallowed, with nothing posted.
+    func testWheelEventWhileTheDisplayLinkSendsNoFrames_goesOnRawInTheUsersDirection() throws {
+        let (display, restore) = scrollTapWithAStandInDisplay()
+        let poster = ScrollPoster.shared
+        var clock = 1_000.0
+        poster.inputClockForTests = { clock }
+        let savedVertical = Options.shared.scroll.reverseVertical
+        defer {
+            // A frame ends the silence: the shared poster is left as it was found.
+            poster.displayLinkCallbackForTests(frameInterval: 1.0 / 60.0, now: clock)
+            poster.inputClockForTests = nil
+            Options.shared.scroll.reverseVertical = savedVertical
+            restore()
+        }
+        Options.shared.scroll.reverse = true
+        Options.shared.scroll.reverseVertical = true
+        var reasons: [ScrollSystemLog.PassthroughReason] = []
+        ScrollSystemLog.passthroughObserverForTests = { reasons.append($0) }
+
+        XCTAssertNil(tap(try wheelEvent(lines: -1)), "taken: its link was just started")
+        clock += 0.15
+        let raw = try wheelEvent(lines: -2)
+        XCTAssertTrue(tap(raw)?.takeUnretainedValue() === raw, "the event goes on")
+        XCTAssertEqual(raw.getIntegerValueField(.scrollWheelEventDeltaAxis1), 2, "unsmoothed, reversed as the user wants it")
+        XCTAssertEqual(raw.getDoubleValueField(.scrollWheelEventPointDeltaAxis1), 20)
+        XCTAssertEqual(reasons, [.silentDisplayLink])
+        XCTAssertEqual(display.made.count, 2, "the link was replaced")
+        XCTAssertFalse(poster.isGliding)
+    }
+
     /// C6 through the tap: a stored Step that is no finite number. The event goes on
     /// unsmoothed and the poster is not fed (it used to take a distance no frame can reach:
     /// nothing moved, the scroll never ended, the display link ran on).

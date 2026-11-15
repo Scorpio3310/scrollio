@@ -390,7 +390,7 @@ final class PreferencesGeneralTests: XCTestCase {
         typealias Status = PreferencesGeneralViewController.RunStatus
         for access in [true, false] {
             for paused in [false, true] {
-                for problem in [nil, StatusMenu.StartProblem.retrying, .tapOff] {
+                for problem in [nil, StatusMenu.StartProblem.retrying, .tapOff, .cannotPostEvents] {
                     let status = Status(hasAccess: access, isPaused: paused, startProblem: problem)
                     let menu = StatusMenu.title(hasAccess: access, isPaused: paused, startProblem: problem)
                     let name = "access \(access) paused \(paused) \(String(describing: problem))"
@@ -398,8 +398,9 @@ final class PreferencesGeneralTests: XCTestCase {
                     XCTAssertEqual(status.titleKey, menu?.key ?? "general-status-on", name)
                     // The icon's tooltip says the same, by the same rule.
                     let look = StatusMenu.IconLook(
-                        hasAccess: access, coresActive: problem == .tapOff, isPaused: paused,
-                        startFailed: problem == .retrying, tapRestartsThrottled: problem == .tapOff
+                        hasAccess: access, coresActive: problem == .tapOff || problem == .cannotPostEvents, isPaused: paused,
+                        startFailed: problem == .retrying, tapRestartsThrottled: problem == .tapOff,
+                        canPostEvents: problem != .cannotPostEvents
                     )
                     XCTAssertEqual(look.toolTip == nil, menu == nil, name)
                 }
@@ -409,6 +410,8 @@ final class PreferencesGeneralTests: XCTestCase {
         XCTAssertEqual(Status(hasAccess: true, isPaused: true, startProblem: .retrying).action, .resume, "then the pause")
         XCTAssertEqual(Status(hasAccess: true, isPaused: false, startProblem: .retrying).action, .tryAgain)
         XCTAssertEqual(Status(hasAccess: true, isPaused: false, startProblem: .tapOff).action, .pause, "it comes back by itself")
+        XCTAssertEqual(Status(hasAccess: true, isPaused: false, startProblem: .cannotPostEvents).action, .allowAccess,
+                       "the way out is in System Settings")
         XCTAssertEqual(Status(hasAccess: true, isPaused: false, startProblem: nil).action, .pause)
 
         // The words are the menu's.
@@ -534,6 +537,46 @@ final class PreferencesGeneralTests: XCTestCase {
         // Paused now: the pause comes before the start problem.
         XCTAssertEqual(pane.statusRow.title, "Scrollio is paused")
         XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+    }
+
+    /// Without the right to post events: the menu's title, a line with what to do, and "Open
+    /// System Settings" (the Accessibility list). It follows the poster's notice.
+    func testWithoutTheRightToPostEventsTheRowSaysSoAndLeadsToSystemSettings() throws {
+        install(.notRegistered)
+        let world = World()
+        let pane = try makePane(world)
+        let runningHeight = pane.view.frame.height
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is on")
+
+        world.startProblem = .cannotPostEvents
+        NotificationCenter.default.post(name: ScrollPoster.postEventAccessDidChangeNotification, object: nil)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio can't send scroll events")
+        XCTAssertEqual(pane.statusRow.explanation,
+                       "Scrolling isn't smooth. In Privacy & Security › Accessibility, remove Scrollio with − and add it again.")
+        XCTAssertEqual(pane.statusButton.title, "Open System Settings")
+        XCTAssertEqual(shownButtons(titled: "Open System Settings", in: pane), [pane.statusButton], "one, under the card")
+        XCTAssertGreaterThan(pane.view.frame.height, runningHeight, "the pane makes room for the line")
+        XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+        click(pane.statusButton)
+        XCTAssertEqual(world.accessibilitySettingsOpened, 1)
+        XCTAssertEqual(world.pauses, 0)
+
+        // The menu bar's title for the same state.
+        let menu = NSMenu()
+        StatusMenu.build(
+            into: menu,
+            state: StatusMenu.State(hasAccess: true, isPaused: false, showsDiagnostics: false, batteries: [],
+                                    startProblem: .cannotPostEvents),
+            actions: StatusMenuActions()
+        )
+        XCTAssertEqual(pane.statusRow.title, menu.items.first?.title)
+
+        // Given back: on again.
+        world.startProblem = nil
+        NotificationCenter.default.post(name: ScrollPoster.postEventAccessDidChangeNotification, object: nil)
+        XCTAssertEqual(pane.statusRow.title, "Scrollio is on")
+        XCTAssertNil(pane.statusRow.explanation)
+        XCTAssertEqual(pane.statusButton.title, "Pause")
     }
 
     /// Without the access, the row says so first (also while paused) and leads where the

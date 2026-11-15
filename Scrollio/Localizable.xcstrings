@@ -11403,6 +11403,54 @@
           }
         }
       }
+    },
+    "status-menu-title-cannot-post-events": {
+      "comment": "Status bar menu: the title while Scrollio runs but macOS does not let it post events, so scrolling is not smoothed (the Post Event right)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio can't send scroll events"
+          }
+        }
+      }
+    },
+    "status-item-cannot-post-events": {
+      "comment": "Menu bar icon tooltip: the same as status-menu-title-cannot-post-events",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio can't send scroll events."
+          }
+        }
+      }
+    },
+    "status-menu-open-accessibility-settings": {
+      "comment": "Status bar menu: the item under \"Scrollio can't send scroll events\"; opens System Settings › Privacy & Security › Accessibility",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Accessibility Settings…"
+          }
+        }
+      }
+    },
+    "general-cannot-post-events-hint": {
+      "comment": "General pane: under \"Scrollio can't send scroll events\" in the row under the card; the way out",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrolling isn't smooth. In Privacy & Security › Accessibility, remove Scrollio with − and add it again."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

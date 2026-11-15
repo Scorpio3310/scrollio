@@ -90,6 +90,9 @@ enum ScrollSystemLog {
         case tapRestarted = "the scroll tap was restarted"
         /// The keeper ended it (`ScrollPoster.healthCheck`; the `app` log says why).
         case keeper = "ended by the keeper"
+        /// Its display link ran and sent no frames (`ScrollPoster.linkSendsFrames`): the wheel
+        /// went on unsmoothed, the distance that waited for frames was dropped.
+        case silentLink = "the display link sent no frames"
         /// Scrollio stopped handling scrolling: Pause, sleep, another user, quit.
         case stopped = "stopped"
     }
@@ -168,6 +171,12 @@ enum ScrollSystemLog {
         case noDisplayLink
         /// Smoothing wanted, but Step or Speed is no finite number (a hand-edited setting).
         case unusableSettings
+        /// Smoothing wanted, but the display link runs and sends no frames
+        /// (`ScrollPoster.linkSendsFrames`), until a frame comes.
+        case silentDisplayLink
+        /// Smoothing wanted, but macOS does not let Scrollio post events
+        /// (`ScrollPoster.canPostEvents`).
+        case noPostEventAccess
 
         var text: String {
             switch self {
@@ -177,6 +186,8 @@ enum ScrollSystemLog {
             case .axisNotSmoothed: return "smoothing is on, but not for this axis"
             case .noDisplayLink: return "no display link"
             case .unusableSettings: return "Step or Speed is not a finite number"
+            case .silentDisplayLink: return "the display link sends no frames"
+            case .noPostEventAccess: return "macOS does not let Scrollio post events"
             }
         }
     }
