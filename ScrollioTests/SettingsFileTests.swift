@@ -2991,9 +2991,8 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
         var offeredNames: [String] = []
         var importAnswer: URL?
         var importPanels = 0
-        /// The folders "Restore…" opened its panel in, and what the user chose there.
-        var restoreFolders: [URL] = []
-        var restoreAnswer: URL?
+        /// What "Show in Finder" of "Restore…" selected in Finder, each time.
+        var revealed: [[URL]] = []
         var presented: [SettingsImportSheetViewController] = []
         var dismissed: [SettingsImportSheetViewController] = []
         var notices: [(text: String, style: Toast.Style)] = []
@@ -3025,10 +3024,7 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
             world.importPanels += 1
             completion(world.importAnswer)
         }
-        pane.chooseBackupFile = { _, folder, completion in
-            world.restoreFolders.append(folder)
-            completion(world.restoreAnswer)
-        }
+        pane.revealInFinder = { world.revealed.append($0) }
         pane.presentSettingsSheet = { sheet, _ in
             _ = sheet.view
             world.presented.append(sheet)
@@ -3043,6 +3039,28 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
         XCTAssertFalse(button.isHiddenOrHasHiddenAncestor, "\(button.title) is hidden", file: file, line: line)
         XCTAssertTrue(button.isEnabled, "\(button.title) is disabled", file: file, line: line)
         XCTAssertTrue(button.sendAction(button.action, to: button.target), button.title, file: file, line: line)
+    }
+
+    /// What "Restore…" lists when it opens: its items without the pull-down's title.
+    private func restoreItems(of pane: PreferencesGeneralViewController) throws -> [NSMenuItem] {
+        let menu = try XCTUnwrap(pane.restoreSettingsPullDown.menu)
+        // As AppKit asks before the menu shows.
+        pane.menuNeedsUpdate(menu)
+        return Array(menu.items.dropFirst())
+    }
+
+    /// Chooses the item titled `title` in "Restore…", as a click in its open menu does.
+    private func chooseInRestore(
+        _ title: String, of pane: PreferencesGeneralViewController, file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        let pullDown = try XCTUnwrap(pane.restoreSettingsPullDown, file: file, line: line)
+        XCTAssertFalse(pullDown.isHiddenOrHasHiddenAncestor, "Restore… is hidden", file: file, line: line)
+        XCTAssertTrue(pullDown.isEnabled, file: file, line: line)
+        let items = try restoreItems(of: pane)
+        let item = try XCTUnwrap(items.first { $0.title == title }, "\(title) in \(items.map(\.title))", file: file, line: line)
+        XCTAssertTrue(item.isEnabled, "\(title) is dimmed", file: file, line: line)
+        let menu = try XCTUnwrap(pullDown.menu)
+        menu.performActionForItem(at: menu.index(of: item))
     }
 
     private func write(_ settings: String, named name: String = "Other Mac.json") throws -> URL {
@@ -3209,20 +3227,31 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
         XCTAssertEqual(previous.title, "Settings from before an import")
         let backup = try XCTUnwrap(own.center.latestBackup())
         XCTAssertEqual(previous.explanation, "Scrollio keeps the last 5. The newest is from \(SettingsFileText.moment(backup.date)).")
-        XCTAssertEqual(pane.restoreSettingsButton.title, "Restore…")
-        XCTAssertTrue(pane.restoreSettingsButton.accessibilityTitleUIElement() as? NSTextField === previous.titleLabel)
+        let pullDown = try XCTUnwrap(pane.restoreSettingsPullDown)
+        XCTAssertTrue(pullDown.pullsDown)
+        XCTAssertEqual(pullDown.title, "Restore…")
+        XCTAssertTrue(previous.controls.contains { $0 === pullDown })
+        XCTAssertEqual(pullDown.accessibilityLabel(), previous.title, "named by its row")
         XCTAssertGreaterThan(pane.view.fittingSize.height, heightBefore, "the pane makes room for the row")
         XCTAssertEqual(pane.settingsFileSection.box.visibleRows.count, 2)
+        // As wide as its title, inside the row.
+        pane.view.layoutSubtreeIfNeeded()
+        XCTAssertLessThan(pullDown.frame.width, 140)
+        XCTAssertLessThanOrEqual(
+            previous.convert(previous.explanationLabel.frame, from: previous).maxX,
+            previous.convert(pullDown.frame, from: pullDown.superview).minX
+        )
 
-        // "Restore…" opens a panel in the folder of the backups; cancelled, nothing happens.
-        click(pane.restoreSettingsButton)
-        XCTAssertEqual(world.restoreFolders.map(\.path), [own.backupFolder.path])
-        XCTAssertTrue(world.presented.last === sheet, "no sheet without a choice")
+        // The menu: the one kept, by its local date and time, then "Show in Finder".
+        XCTAssertEqual(try restoreItems(of: pane).map(\.title), [SettingsFileText.moment(backup.date), "", "Show in Finder"])
+        XCTAssertTrue(try restoreItems(of: pane)[1].isSeparatorItem)
+        try chooseInRestore("Show in Finder", of: pane)
+        XCTAssertEqual(world.revealed, [[backup.url]])
+        XCTAssertTrue(world.presented.last === sheet, "Show in Finder asks nothing")
         XCTAssertEqual(own.options.scroll.speed, 3)
+
         // The chosen backup is asked about with the same sheet.
-        world.restoreAnswer = backup.url
-        click(pane.restoreSettingsButton)
-        XCTAssertEqual(world.restoreFolders.count, 2)
+        try chooseInRestore(SettingsFileText.moment(backup.date), of: pane)
         let restore = try XCTUnwrap(world.presented.last)
         XCTAssertFalse(restore === sheet)
         XCTAssertEqual(restore.titleLabel.stringValue, "Import these settings?")
@@ -3234,20 +3263,74 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
         XCTAssertEqual(pane.showInMenuBarSwitch.state, .on)
         XCTAssertEqual(world.notices.count, 2)
         // And that can be taken back too: the newest backup is what was just replaced,
-        // and the one that was restored is still there.
+        // and the one that was restored is still there, under it.
         let newest = try XCTUnwrap(own.center.latestBackup())
         XCTAssertNotEqual(newest.url.lastPathComponent, backup.url.lastPathComponent)
         XCTAssertEqual(try own.center.read(newest.url).get().scrollNumbers["speed"], 3)
         XCTAssertEqual(own.center.backups.entries().count, 2)
         XCTAssertEqual(previous.explanation, "Scrollio keeps the last 5. The newest is from \(SettingsFileText.moment(newest.date)).")
+        let titles = PreferencesGeneralViewController.restoreTitles(for: [newest.date, backup.date])
+        XCTAssertEqual(try restoreItems(of: pane).map(\.title), titles + ["", "Show in Finder"])
+        XCTAssertEqual(try restoreItems(of: pane).compactMap { $0.representedObject as? URL }, [newest.url, backup.url])
+        // No open panel any more, and its line left the catalog.
+        XCTAssertEqual(
+            NSLocalizedString("general-settings-file-restore-message", comment: ""), "general-settings-file-restore-message"
+        )
+    }
 
-        // The panel "Restore…" shows: one JSON file, in that folder, with what to do.
-        let panel = PreferencesGeneralViewController.makeRestorePanel(folder: own.backupFolder)
-        XCTAssertEqual(panel.directoryURL?.standardizedFileURL.path, own.backupFolder.standardizedFileURL.path)
-        XCTAssertEqual(panel.message, "Choose the settings to go back to. Each file is named by the time (UTC) it was saved.")
-        XCTAssertEqual(panel.allowedContentTypes.map(\.identifier), ["public.json"])
-        XCTAssertFalse(panel.allowsMultipleSelection)
-        XCTAssertEqual(panel.prompt, "Choose")
+    /// "Restore…" lists the kept settings newest first, at most five, each by its local
+    /// date and time; two of the same minute show their seconds. A pick goes through the
+    /// import's sheet, whose Return is Cancel for a file that binds something.
+    func testRestoreListsTheKeptSettingsByTheirLocalDateAndTime() throws {
+        let own = OwnSettings(for: self)
+        own.options.readOptions()
+        let world = World()
+        // Seven imports' backups (the folder keeps five; these are written as they are).
+        let start = Date(timeIntervalSince1970: 1_794_476_527)
+        // An hour, then a day apart, two of them 20 seconds apart.
+        let offsets: [TimeInterval] = [0, 3_600, 86_400, 172_800, 259_200, 259_220, 345_600]
+        for (index, offset) in offsets.enumerated() {
+            let data = Fixture.file(#""speed":"# + "\(index + 1)" + #","buttonBindings":["# + Fixture.scriptBinding + "]")
+            try own.center.backups.write(data, now: start + offset)
+        }
+        let kept = own.center.keptBackups()
+        XCTAssertEqual(kept.count, 5)
+        XCTAssertEqual(kept.map(\.date), offsets.suffix(5).reversed().map { start + $0 }, "newest first")
+        let pane = try makePane(own, world)
+        let items = try restoreItems(of: pane)
+        XCTAssertEqual(items.count, 5 + 2)
+        XCTAssertEqual(items.map(\.title).dropLast(2), ArraySlice(PreferencesGeneralViewController.restoreTitles(for: kept.map(\.date))))
+        XCTAssertEqual(items.compactMap { $0.representedObject as? URL }, kept.map(\.url))
+        XCTAssertTrue(items[5].isSeparatorItem)
+        XCTAssertEqual(items[6].title, "Show in Finder")
+        XCTAssertTrue(items.allSatisfy { $0.keyEquivalent.isEmpty })
+
+        // The titles: the user's date and time; the seconds only where two would read the same.
+        let gb = Locale(identifier: "en_GB")
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let dates = kept.map(\.date)
+        let titles = PreferencesGeneralViewController.restoreTitles(for: dates, locale: gb, timeZone: utc)
+        XCTAssertEqual(titles, [
+            "16 Nov 2026 at 09:42",
+            "15 Nov 2026 at 09:42:27",
+            "15 Nov 2026 at 09:42:07",
+            "14 Nov 2026 at 09:42",
+            "13 Nov 2026 at 09:42",
+        ])
+        XCTAssertEqual(titles[0], SettingsFileText.moment(dates[0], locale: gb, timeZone: utc))
+
+        // A pick: the sheet about that file, and Return is Cancel (it runs a script).
+        try chooseInRestore(PreferencesGeneralViewController.restoreTitles(for: dates)[2], of: pane)
+        let sheet = try XCTUnwrap(world.presented.last)
+        XCTAssertEqual(sheet.titleLabel.stringValue, "Import these settings?")
+        XCTAssertTrue(sheet.detailLabel.stringValue.hasPrefix("“" + kept[2].url.lastPathComponent + "”"))
+        XCTAssertEqual(sheet.closeButton.keyEquivalent, "\r", "Return is Cancel")
+        click(sheet.closeButton)
+        XCTAssertNil(pane.settingsSheet)
+        XCTAssertTrue(own.options.buttons.binding.isEmpty, "nothing imported")
+
+        try chooseInRestore("Show in Finder", of: pane)
+        XCTAssertEqual(world.revealed, [kept.map(\.url)])
     }
 
     /// A pane that opens later finds the backup of an earlier import.
@@ -3255,14 +3338,21 @@ final class PreferencesGeneralSettingsFileTests: XCTestCase {
         let own = OwnSettings(for: self)
         own.options.readOptions()
         _ = try own.center.importSettings(try Fixture.contents(#""speed":3"#)).get()
-        let pane = try makePane(own, World())
+        let world = World()
+        let pane = try makePane(own, world)
         XCTAssertFalse(pane.previousSettingsRow.isHidden)
         XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
-        // The folder was emptied meanwhile: the row goes when the pane is shown again.
+        XCTAssertEqual(try restoreItems(of: pane).count, 1 + 2)
+        // The folder was emptied meanwhile: the menu says so when it opens (nothing to
+        // show in Finder), and the row goes when the pane is shown again.
         try FileManager.default.removeItem(at: own.backupFolder)
+        let items = try restoreItems(of: pane)
+        XCTAssertEqual(items.map(\.title), ["", "Show in Finder"])
+        XCTAssertEqual(items.last?.isEnabled, false, "dimmed")
         pane.viewWillAppear()
         XCTAssertTrue(pane.previousSettingsRow.isHidden)
         XCTAssertEqual(pane.view.frame.size, pane.view.fittingSize)
+        XCTAssertTrue(world.revealed.isEmpty)
     }
 
     /// A file that cannot be used changes nothing, and the sheet says why in plain words.

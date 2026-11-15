@@ -232,11 +232,12 @@ final class PreferencesLocalizationTests: XCTestCase {
         "general-settings-problem-not-settings", "general-settings-problem-newer", "general-settings-problem-damaged",
         "general-settings-problem-empty", "general-settings-problem-write", "general-settings-problem-backup",
         "general-settings-problem-store",
-        "general-settings-file-restore-message",
         "general-settings-problem-not-imported-title", "general-settings-problem-too-many",
         "general-settings-problem-not-stored",
         // The row under the card: whether Scrollio works, and its button.
         "general-status-on", "general-pause", "general-try-again",
+        // "Restore…": the last item under the kept settings.
+        "general-settings-file-show-in-finder",
     ]
 
     /// The window and the kit: the sidebar, the + and − under a list.

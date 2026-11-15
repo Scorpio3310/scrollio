@@ -3813,3 +3813,76 @@ extension PreferencesWindowRenderTests {
         popover.hide()
     }
 }
+
+// MARK: - Round 3 C3
+
+/// Round 3 C3 (`round3-c3-*-<appearance>.png`): General's row under the card in each of
+/// its four states (Scrollio is on with Pause, paused with Resume, a start that failed with
+/// Try Again, the access missing with Open System Settings), and "Restore…" as a pull-down
+/// of the kept settings by local date and time, then "Show in Finder" (the row and its
+/// menu, two backups of the same minute with their seconds).
+extension PreferencesWindowRenderTests {
+
+    func testRenderRound3C3General() throws {
+        let savedAutoLaunch = Options.shared.general.autoLaunch
+        defer {
+            LoginItem.service = InertLoginItemService()
+            Options.shared.general.autoLaunch = savedAutoLaunch
+            LoginItem.service = LoginItem.defaultService
+        }
+        LoginItem.service = InertLoginItemService()
+        let plain: [String: Any] = ["CFBundleShortVersionString": "1.0", "CFBundleVersion": "1"]
+        let cases: [(name: String, access: Bool, paused: Bool, problem: StatusMenu.StartProblem?)] = [
+            ("on", true, false, nil),
+            ("paused", true, true, nil),
+            ("could-not-start", true, false, .retrying),
+            ("needs-access", false, false, nil),
+        ]
+        for item in cases {
+            try renderPane(PANEL_IDENTIFIER.general, name: "round3-c3-general-" + item.name, prepare: { preferences in
+                guard let general = preferences.controller(for: PANEL_IDENTIFIER.general)
+                    as? PreferencesGeneralViewController else { return }
+                general.isAccessGranted = { item.access }
+                general.isPaused = { item.paused }
+                general.startProblem = { item.problem }
+                general.pause = {}
+                general.resume = {}
+                general.tryAgain = {}
+                general.isMenuBarIconHidden = { false }
+                general.bundleInfo = { plain }
+            }, afterLoad: { controller in
+                controller.viewWillAppear()
+            })
+        }
+
+        // Three imports: five backups kept at most, two of them in the same minute.
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ScrollioTests-render-round3-c3-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        let center = SettingsFileCenter()
+        center.backups = SettingsBackups(directory: folder)
+        let start: TimeInterval = 1_794_476_527
+        // A day and an hour later, then two of one minute two days later.
+        let offsets: [TimeInterval] = [0, 90_000, 173_400, 173_420]
+        for offset in offsets {
+            try center.backups.write(Data("{}".utf8), now: Date(timeIntervalSince1970: start + offset))
+        }
+        var shown: PreferencesGeneralViewController?
+        try renderPane(PANEL_IDENTIFIER.general, name: "round3-c3-general-restore", prepare: { preferences in
+            guard let general = preferences.controller(for: PANEL_IDENTIFIER.general)
+                as? PreferencesGeneralViewController else { return }
+            general.isAccessGranted = { true }
+            general.isPaused = { false }
+            general.startProblem = { nil }
+            general.isMenuBarIconHidden = { false }
+            general.bundleInfo = { plain }
+            general.settingsFiles = center
+            shown = general
+        }, afterLoad: { controller in
+            controller.viewWillAppear()
+        })
+        let pullDown = try XCTUnwrap(shown?.restoreSettingsPullDown)
+        XCTAssertEqual(pullDown.title, "Restore…")
+        try round2Menu(try round2Shown(pullDown), name: "round3-c3-restore-menu")
+    }
+}

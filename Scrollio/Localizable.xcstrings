@@ -7216,17 +7216,6 @@
         }
       }
     },
-    "general-settings-file-restore-message": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose the settings to go back to. Each file is named by the time (UTC) it was saved."
-          }
-        }
-      }
-    },
     "general-settings-import-actions-title": {
       "extractionState": "manual",
       "localizations": {
@@ -10905,6 +10894,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Try Again"
+          }
+        }
+      }
+    },
+    "general-settings-file-show-in-finder": {
+      "comment": "General pane: the last item of \"Restore…\", under the kept settings: selects them in Finder",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in Finder"
           }
         }
       }

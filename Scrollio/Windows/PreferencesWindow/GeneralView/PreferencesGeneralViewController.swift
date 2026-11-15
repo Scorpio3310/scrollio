@@ -132,24 +132,12 @@ class PreferencesGeneralViewController: NSViewController {
                 panel.begin(completionHandler: finish)
             }
         }
-    /// Asks which of the settings kept before an import to go back to: an open panel, as
-    /// a sheet on the window, that starts in their folder; nil when cancelled. Under
-    /// XCTest nothing is asked unless a test answers.
-    var chooseBackupFile: (NSWindow?, URL, @escaping (URL?) -> Void) -> Void = AppRuntime.isRunningXCTest
-        ? { _, _, completion in completion(nil) }
-        : { window, folder, completion in
-            let panel = PreferencesGeneralViewController.makeRestorePanel(folder: folder)
-            let finish: (NSApplication.ModalResponse) -> Void = { response in
-                // The panel's sheet goes before the sheet about the file comes.
-                panel.orderOut(nil)
-                completion(response == .OK ? panel.url : nil)
-            }
-            if let window {
-                panel.beginSheetModal(for: window, completionHandler: finish)
-            } else {
-                panel.begin(completionHandler: finish)
-            }
-        }
+    /// "Show in Finder" of "Restore…": the kept settings, selected in Finder. Inert under
+    /// XCTest; tests replace it.
+    var revealInFinder: ([URL]) -> Void = { urls in
+        guard !AppRuntime.isRunningXCTest else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
     /// Shows the sheet about a file (what it holds, or why it cannot be used) on the
     /// pane's window, and takes it away again.
     var presentSettingsSheet: (SettingsImportSheetViewController, NSViewController) -> Void = { sheet, pane in
@@ -200,7 +188,8 @@ class PreferencesGeneralViewController: NSViewController {
     private(set) var importSettingsButton: NSButton!
     /// "Settings from before an import" with "Restore…"; shown while a backup is there.
     private(set) var previousSettingsRow: PreferencesGroupRow!
-    private(set) var restoreSettingsButton: NSButton!
+    /// "Restore…": the kept settings by their local date and time, then "Show in Finder".
+    private(set) var restoreSettingsPullDown: RestorePullDown!
     /// The sheet about a file while it is up.
     private(set) var settingsSheet: SettingsImportSheetViewController?
 
@@ -456,16 +445,15 @@ class PreferencesGeneralViewController: NSViewController {
 
     /// "Settings from before an import" with "Restore…": the backups the imports wrote.
     private func makePreviousSettingsRow() -> PreferencesGroupRow {
-        let button = PreferencesGroupedForm.makePushButton(
-            title: text("general-settings-file-restore"),
-            target: self,
-            action: #selector(restoreSettingsClicked(_:))
-        )
-        restoreSettingsButton = button
+        let pullDown = RestorePullDown()
+        // Read again each time it opens: an import made elsewhere, a folder emptied.
+        pullDown.menu?.delegate = self
+        restoreSettingsPullDown = pullDown
+        fillRestoreMenu(with: [])
         let row = PreferencesGroupRow(
             title: text("general-settings-file-previous"),
             explanation: "",
-            accessory: button
+            accessory: pullDown
         )
         row.isHidden = true
         previousSettingsRow = row
@@ -887,27 +875,59 @@ class PreferencesGeneralViewController: NSViewController {
         return panel
     }
 
-    /// The open panel of "Restore…": one JSON file, starting in the backups' folder.
-    static func makeRestorePanel(folder: URL) -> NSOpenPanel {
-        let panel = makeImportPanel()
-        panel.directoryURL = folder
-        panel.message = NSLocalizedString("general-settings-file-restore-message", comment: "")
-        return panel
-    }
-
     /// Shows "Settings from before an import" while a backup is there, with how many are
-    /// kept and the time of the newest.
+    /// kept and the time of the newest, and lists them in "Restore…".
     func refreshSettingsFileState() {
         guard isViewLoaded else { return }
-        let backup = settingsFiles.latestBackup()
-        if let backup {
+        let kept = settingsFiles.keptBackups()
+        fillRestoreMenu(with: kept)
+        if let newest = kept.first {
             previousSettingsRow.explanation = String(
-                format: text("general-settings-file-previous-hint"), SettingsBackups.keepCount, SettingsFileText.moment(backup.date)
+                format: text("general-settings-file-previous-hint"), SettingsBackups.keepCount, SettingsFileText.moment(newest.date)
             )
         }
-        guard previousSettingsRow.isHidden == (backup != nil) else { return }
-        previousSettingsRow.isHidden = backup == nil
+        guard previousSettingsRow.isHidden == !kept.isEmpty else { return }
+        previousSettingsRow.isHidden = kept.isEmpty
         PreferencesForm.fitToContent(self)
+    }
+
+    /// The titles of "Restore…"'s items, in the order of `dates`: each one's local date
+    /// and time (`SettingsFileText.moment`), with the seconds where two would read the
+    /// same (two imports in one minute). Pure.
+    static func restoreTitles(for dates: [Date], locale: Locale = .current, timeZone: TimeZone = .current) -> [String] {
+        let plain = dates.map { SettingsFileText.moment($0, locale: locale, timeZone: timeZone) }
+        let withSeconds = DateFormatter()
+        withSeconds.locale = locale
+        withSeconds.timeZone = timeZone
+        withSeconds.dateStyle = .medium
+        withSeconds.timeStyle = .medium
+        return zip(dates, plain).map { date, title in
+            plain.filter { $0 == title }.count > 1 ? withSeconds.string(from: date) : title
+        }
+    }
+
+    /// "Restore…" (the pull-down's title), the kept settings newest first, a separator and
+    /// "Show in Finder" (dimmed when nothing is kept).
+    private func fillRestoreMenu(with kept: [SettingsBackups.Entry]) {
+        guard let pullDown = restoreSettingsPullDown, let menu = pullDown.menu else { return }
+        menu.removeAllItems()
+        menu.addItem(NSMenuItem(title: text("general-settings-file-restore"), action: nil, keyEquivalent: ""))
+        for (entry, title) in zip(kept, Self.restoreTitles(for: kept.map(\.date))) {
+            let item = NSMenuItem(title: title, action: #selector(restoreBackupChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = entry.url
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let finder = NSMenuItem(
+            title: text("general-settings-file-show-in-finder"), action: #selector(showBackupsInFinder(_:)), keyEquivalent: ""
+        )
+        finder.target = self
+        // A pull-down gives an item without an action its own, so it is dimmed by hand
+        // (the menu does not enable its items by itself, `RestorePullDown`).
+        finder.isEnabled = !kept.isEmpty
+        menu.addItem(finder)
+        pullDown.synchronizeTitleAndSelectedItem()
     }
 
     @objc func exportSettingsClicked(_ sender: NSButton) {
@@ -934,15 +954,20 @@ class PreferencesGeneralViewController: NSViewController {
         }
     }
 
-    @objc func restoreSettingsClicked(_ sender: NSButton) {
-        guard let folder = settingsFiles.backupFolder() else {
+    /// One of the kept settings, chosen in "Restore…": asked about with the import's sheet.
+    @objc func restoreBackupChosen(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        offerImport(of: url)
+    }
+
+    /// "Show in Finder": the kept settings, selected in their folder.
+    @objc func showBackupsInFinder(_ sender: NSMenuItem) {
+        let urls = settingsFiles.keptBackups().map(\.url)
+        guard !urls.isEmpty else {
             refreshSettingsFileState()
             return
         }
-        chooseBackupFile(view.window, folder) { [weak self] url in
-            guard let self, let url else { return }
-            self.offerImport(of: url)
-        }
+        revealInFinder(urls)
     }
 
     /// Reads the file and shows the sheet about it: what it holds, with "Import", or why
@@ -1034,5 +1059,44 @@ extension PreferencesGeneralViewController {
         showInMenuBarRow.isOn = !isMenuBarIconHidden()
         // The approval row came or went.
         PreferencesForm.fitToContent(self)
+    }
+}
+
+// MARK: - Restore…
+
+extension PreferencesGeneralViewController: NSMenuDelegate {
+
+    /// "Restore…" is opening: the kept settings as they are now.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === restoreSettingsPullDown?.menu else { return }
+        refreshSettingsFileState()
+    }
+
+    /// "Restore…": a pull-down as wide as its title (its menu is wider, with the dates).
+    final class RestorePullDown: NSPopUpButton {
+
+        init() {
+            super.init(frame: .zero, pullsDown: true)
+            let menu = NSMenu()
+            menu.autoenablesItems = false
+            self.menu = menu
+            translatesAutoresizingMaskIntoConstraints = false
+            setContentHuggingPriority(.required, for: .horizontal)
+            setContentCompressionResistancePriority(.required, for: .horizontal)
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("RestorePullDown is built in code")
+        }
+
+        override var intrinsicContentSize: NSSize {
+            let size = super.intrinsicContentSize
+            // A cell with the title alone: how wide the pull-down is with this title.
+            let probe = NSPopUpButtonCell(textCell: "", pullsDown: true)
+            probe.font = font
+            probe.controlSize = controlSize
+            probe.addItem(withTitle: menu?.items.first?.title ?? "")
+            return NSSize(width: ceil(probe.cellSize.width), height: size.height)
+        }
     }
 }
