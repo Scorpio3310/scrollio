@@ -57,6 +57,9 @@ struct LogiDivertLedger: Equatable {
         didSet {
             unacknowledged.formIntersection(diverted)
             heldBack.formIntersection(diverted)
+            if !refusedInARow.isEmpty {
+                refusedInARow = refusedInARow.filter { diverted.contains($0.key) }
+            }
         }
     }
     /// Controls Scrollio wrote since their GetControlReporting query went out: the answer
@@ -74,6 +77,23 @@ struct LogiDivertLedger: Equatable {
     /// does not see the control, and the pass that ends the re-read writes it again, once
     /// per re-read (a discovery, or the Buttons pane at most every 10 s).
     private(set) var heldBack: Set<UInt16> = []
+    /// Per control: how many diverts of Scrollio's in a row the mouse did not take, each held
+    /// back and written again. An echo of the divert or a give-back starts it again. At
+    /// `refusalsWorthALine` one line goes to the log; a binding the mouse refuses every
+    /// time is otherwise written again at every re-read with no word.
+    private(set) var refusedInARow: [UInt16: Int] = [:]
+    static let refusalsWorthALine = 3
+
+    /// Where the ledger's lines go: the `logi` category of the system log. Tests set their own.
+    static var log: (String) -> Void = { LogiSystemLog.note($0) }
+
+    /// The line for a divert the mouse did not take `times` times in a row.
+    static func keepsRefusingLine(cid: UInt16, times: Int) -> String {
+        return String(format: "Button 0x%04X ", cid) + LogiCIDDirectory.name(forCID: cid)
+            + ": the mouse did not take its divert \(times) times in a row (no echo by the time the buttons "
+            + "were checked); it is written again each time Scrollio checks the buttons, and until the mouse "
+            + "takes it the button does what it does without Scrollio"
+    }
 
     // MARK: - Writes and queries, in the order they are sent
 
@@ -147,20 +167,30 @@ struct LogiDivertLedger: Equatable {
         pendingAcks.removeAll()
         unacknowledged.removeAll()
         heldBack.removeAll()
+        refusedInARow.removeAll()
     }
 
     // MARK: - Echoes of Scrollio's own writes
 
     /// A SetControlReporting of Scrollio is on its way (the session calls this right before
-    /// `noteWrite`). Until its echo comes, a divert is not known to be taken.
+    /// `noteWrite`). Until its echo comes, a divert is not known to be taken. A divert of a
+    /// control held back is the one the mouse did not take, written again.
     mutating func expectAck(cid: UInt16, flags: UInt8, targetCID: UInt16, now: Date) {
         pendingAcks.expect(cid: cid, flags: flags, targetCID: targetCID, now: now)
         switch Self.divert(statedBy: flags) {
         case true?:
+            if heldBack.contains(cid) {
+                let refused = (refusedInARow[cid] ?? 0) + 1
+                refusedInARow[cid] = refused
+                if refused == Self.refusalsWorthALine {
+                    Self.log(Self.keepsRefusingLine(cid: cid, times: refused))
+                }
+            }
             unacknowledged.insert(cid)
         case false?:
             unacknowledged.remove(cid)
             heldBack.remove(cid)
+            refusedInARow[cid] = nil
         case nil:
             break
         }
@@ -180,9 +210,11 @@ struct LogiDivertLedger: Equatable {
             return false
         }
         let givenBackSince = pendingAcks.entries[cid]?.contains { Self.divert(statedBy: $0.flags) == false } ?? false
-        if Self.divert(statedBy: flags) == true, !givenBackSince, unacknowledged.remove(cid) != nil,
-           heldBack.remove(cid) != nil {
-            lastApplied.insert(cid)
+        if Self.divert(statedBy: flags) == true, !givenBackSince, unacknowledged.remove(cid) != nil {
+            refusedInARow[cid] = nil
+            if heldBack.remove(cid) != nil {
+                lastApplied.insert(cid)
+            }
         }
         return true
     }

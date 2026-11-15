@@ -3,6 +3,21 @@ import XCTest
 
 final class LogiDivertReconciliationTests: XCTestCase {
 
+    /// The ledger's lines, here instead of the system log.
+    private var ledgerLines: [String] = []
+    private var realLedgerLog: ((String) -> Void)?
+
+    override func setUp() {
+        super.setUp()
+        realLedgerLog = LogiDivertLedger.log
+        LogiDivertLedger.log = { [weak self] in self?.ledgerLines.append($0) }
+    }
+
+    override func tearDown() {
+        if let log = realLedgerLog { LogiDivertLedger.log = log }
+        super.tearDown()
+    }
+
     func testQueriedMissingDivertIsRemovedFromAppliedAndDivertedCIDs() {
         let result = LogiDeviceSession.reconciledDivertStateForTests(
             lastApplied: [0x0053, 0x0056],
@@ -666,6 +681,56 @@ final class LogiDivertReconciliationTests: XCTestCase {
         removed.pass(bindings: [])
         XCTAssertEqual(removed.ledger.heldBack, [gesture])
         XCTAssertEqual(removed.ledger.toGiveBack, [gesture])
+    }
+
+    /// A divert the mouse refuses every time is written again at every re-read and the button
+    /// does what it does without Scrollio. After the third refusal in a row one `logi` line
+    /// says so (the toast of 1.1.0 is gone); an echo or a give-back starts the count again.
+    func testADivertTheMouseKeepsRefusingIsNamedOnceInTheLog() {
+        let gesture: UInt16 = 0x00C3
+        var slot = ModelledSlot()
+        slot.pass(bindings: [gesture])          // refused, and every write after it
+        for _ in 0..<2 {
+            slot.now += 12
+            slot.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        }
+        XCTAssertEqual(ledgerLines, [], "two refusals in a row are no line's worth yet")
+        slot.now += 12
+        slot.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        XCTAssertEqual(ledgerLines, [LogiDivertLedger.keepsRefusingLine(cid: gesture, times: 3)])
+        XCTAssertTrue(ledgerLines.first?.contains("0x00C3 Gesture") ?? false, "\(ledgerLines)")
+        slot.now += 12
+        slot.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        XCTAssertEqual(ledgerLines.count, 1, "one line, not one per re-read")
+        XCTAssertEqual(slot.writes.count, 5, "written again all the same")
+
+        // The mouse takes it: the count starts again.
+        slot.echo(gesture, divert: true)
+        slot.now += 12
+        slot.reRead(controls: [gesture], divertedOnTheMouse: [gesture], bindings: [gesture])
+        slot.write(gesture, divert: false)
+        slot.write(gesture, divert: true)       // refused again, three times
+        slot.ledger.lastApplied = [gesture]
+        for _ in 0..<3 {
+            slot.now += 12
+            slot.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        }
+        XCTAssertEqual(ledgerLines.count, 2)
+
+        // A give-back in between starts it again too.
+        var givenBack = ModelledSlot()
+        givenBack.pass(bindings: [gesture])
+        for _ in 0..<2 {
+            givenBack.now += 12
+            givenBack.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        }
+        givenBack.pass(bindings: [])
+        givenBack.pass(bindings: [gesture])
+        for _ in 0..<2 {
+            givenBack.now += 12
+            givenBack.reRead(controls: [gesture], divertedOnTheMouse: [], bindings: [gesture])
+        }
+        XCTAssertEqual(ledgerLines.count, 2)
     }
 
     /// Two mice on one receiver, both with a gesture button. The session keeps a ledger per
