@@ -474,8 +474,10 @@ only when you move those controls.
   menu's title with "Resume", "Try Again Now" or, for the access, "Open System Settings".
 - The icon can be hidden (General › Show in menu bar). Opening Scrollio again then shows
   its settings, or the Welcome Guide while Accessibility access is missing.
-- General also has "Open at login", the state of the Accessibility access, the
-  [updates](#updates) and the [settings file](#settings-file).
+- General also has "Open at login", the state of the Accessibility access (without it
+  "Not allowed." with an orange sign; the way to System Settings is the row under the
+  card's, the one "Open System Settings" on the pane), the [updates](#updates) and the
+  [settings file](#settings-file).
 - The Welcome Guide (at the first launch, and General › Welcome Guide) ends with
   "Scrollio is ready": "Open at login" and three rows that lead on, each with the
   sidebar's symbol and a line, to Buttons ("Give any button its own action."), Gestures

@@ -4417,7 +4417,7 @@
       }
     },
     "general-accessibility-hint-not-allowed": {
-      "comment": "General pane, Accessibility row while access is missing: the status and what the permission is for in one line under the title (an orange sign and \"Open System Settings\" stand on the right)",
+      "comment": "General pane, Accessibility row while access is missing: the status and what the permission is for in one line under the title (an orange sign stands on the right; the row under the card offers “Open System Settings”)",
       "extractionState": "manual",
       "localizations": {
         "en": {

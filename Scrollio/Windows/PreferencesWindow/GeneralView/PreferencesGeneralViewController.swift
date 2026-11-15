@@ -752,6 +752,7 @@ class PreferencesGeneralViewController: NSViewController {
         guard isViewLoaded else { return }
         let status = RunStatus(hasAccess: isAccessGranted(), isPaused: isPaused(), startProblem: startProblem())
         runStatus = status
+        syncAccessButton()
         let title = text(status.titleKey)
         let explanation = status.explanationKey.map(text)
         let buttonTitle = text(status.buttonKey)
@@ -836,13 +837,23 @@ class PreferencesGeneralViewController: NSViewController {
         accessibilityStatusIcon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         accessibilityStatusIcon.contentTintColor = hasAccess ? .systemGreen : .systemOrange
         accessibilityStatusLabel.stringValue = text(hasAccess ? "general-accessibility-allowed" : "general-accessibility-not-allowed")
-        // Without access the words are in the row's line, and the sign alone stands by the button.
+        // Without access the words are in the row's line, and the sign stands alone.
         accessibilityStatusLabel.isHidden = !hasAccess
-        openAccessibilitySettingsButton.isHidden = hasAccess
+        syncAccessButton()
         let explanation = text(hasAccess ? "general-accessibility-hint" : "general-accessibility-hint-not-allowed")
         if accessibilityRow.explanation != explanation {
             accessibilityRow.explanation = explanation
         }
+        PreferencesForm.fitToContent(self)
+    }
+
+    /// One "Open System Settings" on General: while the row under the card offers it (the
+    /// access is missing, which it says first), the Accessibility row keeps its sign and its
+    /// "Not allowed." line and shows no button of its own.
+    private func syncAccessButton() {
+        let hidden = hasAccess || runStatus.action == .allowAccess
+        guard openAccessibilitySettingsButton.isHidden != hidden else { return }
+        openAccessibilitySettingsButton.isHidden = hidden
         PreferencesForm.fitToContent(self)
     }
 
