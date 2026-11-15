@@ -470,7 +470,7 @@ final class ApplicationPageResetTests: XCTestCase {
         part.reloadRows()
         XCTAssertTrue(part.resetToDefaultsButton.isEnabled)
         part.addOwnThumbWheel()
-        part.setOwnThumbWheelFunction(.zoom)
+        calculator.setOwnThumbWheelFunction(.zoom)
         let own = calculator.ownButtonBindings
         part.syncViewWithOptions()
         pane.reloadRows()
