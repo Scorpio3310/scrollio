@@ -625,3 +625,444 @@ final class PreferencesHistoryTests: XCTestCase {
         XCTAssertEqual(history.current, general)
     }
 }
+
+/// Back and Forward in a Settings window (the history of PreferencesSplitViewController),
+/// and the pane items of the View menu. The window is the app's, with its content rebuilt
+/// around the test's own stores, and is never shown: the Apps pane is told by hand that it
+/// left the window (`viewDidDisappear`), as PreferencesApplicationTests does.
+final class PreferencesNavigationTests: XCTestCase {
+
+    private static let calculator = "/System/Applications/Calculator.app"
+    private static let calculatorProgram = "/System/Applications/Calculator.app/Contents/MacOS/Calculator"
+    private static let textEdit = "/System/Applications/TextEdit.app"
+    private static let calculatorApp = AppSmoothing.App(name: "Calculator", bundlePath: calculator, executablePath: calculatorProgram)
+
+    private static let scrolling = PreferencesPlace(pane: PANEL_IDENTIFIER.scrolling)
+    private static let buttons = PreferencesPlace(pane: PANEL_IDENTIFIER.buttons)
+    private static let general = PreferencesPlace(pane: PANEL_IDENTIFIER.general)
+    private static let apps = PreferencesPlace(pane: PANEL_IDENTIFIER.application)
+    private static let calculatorPage = PreferencesPlace(pane: PANEL_IDENTIFIER.application, page: calculator)
+    private static let textEditPage = PreferencesPlace(pane: PANEL_IDENTIFIER.application, page: textEdit)
+
+    private var originalApplications: EnhanceArray<Application>!
+    private var pageDefaults: TestDefaults!
+
+    private var windowController: PreferencesWindowController!
+    private var window: NSWindow!
+    private var preferences: PreferencesSplitViewController!
+    private var apps: PreferencesApplicationViewController!
+
+    override func setUp() {
+        super.setUp()
+        originalApplications = Options.shared.application.applications
+        // A fresh container, so the tests never edit the one they restore.
+        Options.shared.application.applications = Self.makeStore([
+            Application(path: Self.calculator), Application(path: Self.textEdit),
+        ])
+        pageDefaults = TestDefaults.makeStore(for: self)
+    }
+
+    override func tearDown() {
+        windowController?.close()
+        windowController = nil
+        window = nil
+        preferences = nil
+        apps = nil
+        Options.shared.application.applications = originalApplications
+        originalApplications = nil
+        pageDefaults = nil
+        super.tearDown()
+    }
+
+    // MARK: - Helpers
+
+    private static func makeStore(_ applications: [Application]) -> EnhanceArray<Application> {
+        return EnhanceArray<Application>(
+            withArray: applications,
+            matchKey: "path",
+            forObserver: { Options.shared.markChanged(.application) }
+        )
+    }
+
+    /// The Settings window as the app makes it, remembering its pane in `defaults` (nil:
+    /// nothing is remembered).
+    private func makeWindow(defaults: UserDefaults? = nil) throws {
+        let storyboard = NSStoryboard(name: "Main", bundle: Bundle(for: PreferencesSplitViewController.self))
+        windowController = try XCTUnwrap(
+            storyboard.instantiateController(withIdentifier: WINDOW_IDENTIFIER.preferencesWindowController) as? PreferencesWindowController
+        )
+        window = try XCTUnwrap(windowController.window)
+        preferences = PreferencesSplitViewController(storyboard: storyboard, uiStateDefaults: defaults)
+        apps = try XCTUnwrap(preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)
+        apps.uiStateDefaults = pageDefaults.defaults
+        windowController.contentViewController = preferences
+        windowController.configure(window, remembersFrame: false)
+        preferences.updateWindowTitle()
+        window.contentView?.layoutSubtreeIfNeeded()
+    }
+
+    /// What a click on a sidebar row does: the table changes its selection and tells its
+    /// delegate. (In a window on screen the Apps pane hears that it left; here it is told.)
+    private func choose(_ pane: String, file: StaticString = #filePath, line: UInt = #line) throws {
+        let leavesApps = preferences.selectedPaneIdentifier == PANEL_IDENTIFIER.application && pane != PANEL_IDENTIFIER.application
+        let row = try XCTUnwrap(preferences.sidebar.row(for: pane), file: file, line: line)
+        preferences.sidebar.tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        if leavesApps {
+            apps.viewDidDisappear()
+        }
+        XCTAssertEqual(preferences.selectedPaneIdentifier, pane, file: file, line: line)
+    }
+
+    /// View › Back or Forward.
+    @discardableResult
+    private func step(_ direction: PreferencesHistory.Direction) -> Bool {
+        let wasApps = preferences.selectedPaneIdentifier == PANEL_IDENTIFIER.application
+        let stepped = preferences.step(direction)
+        if wasApps, preferences.selectedPaneIdentifier != PANEL_IDENTIFIER.application {
+            apps.viewDidDisappear()
+        }
+        return stepped
+    }
+
+    /// The list of apps as it is stored.
+    private func storedApplications() throws -> NSArray {
+        let data = try XCTUnwrap(Options.shared.application.applications.json())
+        return try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? NSArray)
+    }
+
+    private var showsBackButton: Bool {
+        return window.toolbar?.items.contains { $0.itemIdentifier == PreferencesWindowController.backItemIdentifier } ?? false
+    }
+
+    /// The window shows this pane, on its first page.
+    private func assertShows(pane: String, title: String, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(preferences.selectedPaneIdentifier, pane, file: file, line: line)
+        XCTAssertEqual(preferences.sidebar.selectedIdentifier, pane, file: file, line: line)
+        XCTAssertTrue(preferences.host.currentController === preferences.controller(for: pane), file: file, line: line)
+        XCTAssertNil(apps.detailController, file: file, line: line)
+        XCTAssertEqual(window.title, title, file: file, line: line)
+        XCTAssertFalse(showsBackButton, file: file, line: line)
+        XCTAssertFalse(preferences.canGoBack, file: file, line: line)
+    }
+
+    /// The window shows the page of the app stored under `path`.
+    private func assertShowsPage(of path: String, title: String, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(preferences.selectedPaneIdentifier, PANEL_IDENTIFIER.application, file: file, line: line)
+        XCTAssertEqual(preferences.sidebar.selectedIdentifier, PANEL_IDENTIFIER.application, file: file, line: line)
+        XCTAssertEqual(apps.detailController?.application.path, path, file: file, line: line)
+        XCTAssertEqual(window.title, title, file: file, line: line)
+        XCTAssertTrue(showsBackButton, file: file, line: line)
+        XCTAssertTrue(preferences.canGoBack, file: file, line: line)
+    }
+
+    private func key(_ characters: String, keyCode: UInt16, modifiers: NSEvent.ModifierFlags = []) throws -> NSEvent {
+        return try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: 0, context: nil,
+            characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
+        ))
+    }
+
+    // MARK: - Panes
+
+    func testANewWindowHasNoHistory() throws {
+        try makeWindow()
+        XCTAssertEqual(preferences.history.places, [Self.scrolling], "where it opened")
+        XCTAssertEqual(preferences.shownPlace, Self.scrolling)
+        XCTAssertFalse(preferences.canStepBack)
+        XCTAssertFalse(preferences.canStepForward)
+        XCTAssertFalse(step(.back))
+        XCTAssertFalse(step(.forward))
+        assertShows(pane: "scrolling", title: "Scrolling")
+
+        // The pane on show, asked for again, is no new place.
+        XCTAssertTrue(preferences.selectPane(withIdentifier: "scrolling"))
+        XCTAssertFalse(preferences.canStepBack)
+    }
+
+    func testBackAndForwardGoThroughThePanesShown() throws {
+        let defaults = TestDefaults.make(for: self)
+        let remembered = PreferencesSplitViewController.selectedPaneDefaultsKey
+        try makeWindow(defaults: defaults)
+        try choose("buttons")
+        try choose("general")
+        XCTAssertEqual(preferences.history.places, [Self.scrolling, Self.buttons, Self.general])
+        XCTAssertTrue(preferences.canStepBack)
+        XCTAssertFalse(preferences.canStepForward)
+
+        XCTAssertTrue(step(.back))
+        assertShows(pane: "buttons", title: "Buttons")
+        XCTAssertEqual(defaults.string(forKey: remembered), "buttons", "remembered as any pane shown")
+        XCTAssertTrue(preferences.canStepForward)
+        XCTAssertTrue(step(.back))
+        assertShows(pane: "scrolling", title: "Scrolling")
+        XCTAssertEqual(defaults.string(forKey: remembered), "scrolling")
+        XCTAssertFalse(preferences.canStepBack)
+        XCTAssertFalse(step(.back))
+        assertShows(pane: "scrolling", title: "Scrolling")
+
+        XCTAssertTrue(step(.forward))
+        assertShows(pane: "buttons", title: "Buttons")
+        XCTAssertTrue(step(.forward))
+        assertShows(pane: "general", title: "General")
+        XCTAssertEqual(defaults.string(forKey: remembered), "general")
+        XCTAssertFalse(step(.forward))
+        XCTAssertEqual(preferences.history.places, [Self.scrolling, Self.buttons, Self.general], "steps add nothing")
+
+        // A pane chosen after going back: what was ahead is gone.
+        XCTAssertTrue(step(.back))
+        try choose("mouse")
+        XCTAssertFalse(preferences.canStepForward)
+        XCTAssertEqual(preferences.history.places, [Self.scrolling, Self.buttons, PreferencesPlace(pane: "mouse")])
+        XCTAssertTrue(step(.back))
+        assertShows(pane: "buttons", title: "Buttons")
+    }
+
+    // MARK: - An app's page
+
+    func testBackFromAnotherPaneOpensTheAppsPageAgain() throws {
+        try makeWindow()
+        try choose("application")
+        apps.openApplication(withID: Self.calculator)
+        assertShowsPage(of: Self.calculator, title: "Calculator")
+        try choose("general")
+        XCTAssertNil(apps.detailController, "leaving Apps closes the page")
+        XCTAssertEqual(preferences.history.places, [Self.scrolling, Self.apps, Self.calculatorPage, Self.general])
+
+        // Back: the page again, with the app's name and the title bar's back button.
+        XCTAssertTrue(step(.back))
+        assertShowsPage(of: Self.calculator, title: "Calculator")
+        XCTAssertTrue(window.firstResponder === apps.detailController?.view, "Esc works straight away, as when the page is opened")
+        // Then the list, then the pane before.
+        XCTAssertTrue(step(.back))
+        assertShows(pane: "application", title: "Apps")
+        XCTAssertEqual(apps.list.selectedID, AnyHashable(Self.calculator), "the app stays selected, as after the title bar's button")
+        XCTAssertTrue(step(.back))
+        assertShows(pane: "scrolling", title: "Scrolling")
+        XCTAssertFalse(preferences.canStepBack)
+
+        // And forward again, the same places.
+        XCTAssertTrue(step(.forward))
+        assertShows(pane: "application", title: "Apps")
+        XCTAssertTrue(step(.forward))
+        assertShowsPage(of: Self.calculator, title: "Calculator")
+        XCTAssertTrue(step(.forward))
+        assertShows(pane: "general", title: "General")
+        XCTAssertFalse(preferences.canStepForward)
+        XCTAssertEqual(preferences.history.places, [Self.scrolling, Self.apps, Self.calculatorPage, Self.general])
+    }
+
+    func testTheTitleBarsButtonEscAndTheMenuLeaveAPageTheSameWay() throws {
+        try makeWindow()
+        try choose("application")
+        apps.openApplication(withID: Self.calculator)
+        let places = [Self.scrolling, Self.apps, Self.calculatorPage]
+        XCTAssertEqual(preferences.history.places, places)
+
+        let ways: [(name: String, leave: () throws -> Void)] = [
+            ("the title bar's button", { self.windowController.goBack(nil) }),
+            ("Esc", { try XCTUnwrap(self.apps.detailController).view.keyDown(with: try self.key("\u{1b}", keyCode: 53)) }),
+            ("the page's ⌘[", {
+                XCTAssertTrue(try XCTUnwrap(self.apps.detailController).view.performKeyEquivalent(with: try self.key("[", keyCode: 33, modifiers: .command)))
+            }),
+            ("View › Back", { XCTAssertTrue(self.preferences.step(.back)) }),
+            ("View › Apps", { XCTAssertTrue(self.preferences.showPaneFromMenu(PANEL_IDENTIFIER.application)) }),
+        ]
+        for way in ways {
+            assertShowsPage(of: Self.calculator, title: "Calculator")
+            try way.leave()
+            assertShows(pane: "application", title: "Apps")
+            XCTAssertEqual(preferences.shownPlace, Self.apps, way.name)
+            XCTAssertEqual(preferences.history.places, places, "\(way.name): the page stays ahead")
+            XCTAssertTrue(preferences.canStepBack, way.name)
+            XCTAssertTrue(preferences.canStepForward, way.name)
+            // Forward opens the page again.
+            XCTAssertTrue(step(.forward), way.name)
+        }
+        assertShowsPage(of: Self.calculator, title: "Calculator")
+        XCTAssertFalse(preferences.canStepForward)
+    }
+
+    func testAJumpToAnAppsPagePassesTheListOnTheWayBack() throws {
+        try makeWindow()
+        try choose("buttons")
+        // "Show in Calculator › Buttons", an Undo that shows where it acts.
+        let calculator = try XCTUnwrap(apps.applications.first { $0.path == Self.calculator })
+        XCTAssertNotNil(preferences.bringForward(pageOf: calculator, part: .buttons))
+        assertShowsPage(of: Self.calculator, title: "Calculator")
+        XCTAssertEqual(preferences.history.places, [Self.scrolling, Self.buttons, Self.apps, Self.calculatorPage])
+
+        // Back on an app's page is the list, as the title bar's button; then where the jump came from.
+        XCTAssertTrue(step(.back))
+        assertShows(pane: "application", title: "Apps")
+        XCTAssertTrue(step(.back))
+        assertShows(pane: "buttons", title: "Buttons")
+
+        // "Settings for Calculator…" of the menu bar, from General; and from one app's page to another's.
+        try choose("general")
+        PreferencesApplicationViewController.showSettings(for: Self.calculatorApp, in: preferences)
+        let textEdit = try XCTUnwrap(apps.applications.first { $0.path == Self.textEdit })
+        XCTAssertNotNil(preferences.bringForward(pageOf: textEdit, part: .ring))
+        assertShowsPage(of: Self.textEdit, title: "TextEdit")
+        XCTAssertEqual(
+            preferences.history.places,
+            [Self.scrolling, Self.buttons, Self.general, Self.apps, Self.calculatorPage, Self.apps, Self.textEditPage]
+        )
+        XCTAssertTrue(step(.back))
+        assertShows(pane: "application", title: "Apps")
+        XCTAssertTrue(step(.back))
+        assertShowsPage(of: Self.calculator, title: "Calculator")
+        XCTAssertTrue(step(.back))
+        assertShows(pane: "application", title: "Apps")
+        XCTAssertTrue(step(.back))
+        assertShows(pane: "general", title: "General")
+    }
+
+    func testAPageOfARemovedAppIsSkipped() throws {
+        try makeWindow()
+        try choose("application")
+        apps.openApplication(withID: Self.calculator)
+        try choose("general")
+        let places = [Self.scrolling, Self.apps, Self.calculatorPage, Self.general]
+        XCTAssertEqual(preferences.history.places, places)
+
+        // The app leaves the list (removed in the pane, or by an import).
+        let stored = Options.shared.application.applications
+        let position = try XCTUnwrap((0..<stored.count).first { stored.get(by: $0)?.path == Self.calculator })
+        let calculator = try XCTUnwrap(stored.get(by: position))
+        stored.remove(at: position)
+
+        XCTAssertTrue(step(.back))
+        assertShows(pane: "application", title: "Apps")
+        XCTAssertTrue(step(.back))
+        assertShows(pane: "scrolling", title: "Scrolling")
+        XCTAssertTrue(step(.forward))
+        assertShows(pane: "application", title: "Apps")
+        XCTAssertTrue(step(.forward), "past the page that cannot be shown")
+        assertShows(pane: "general", title: "General")
+        XCTAssertEqual(preferences.history.places, places, "nothing was deleted")
+
+        // It comes back (Undo, an import): its page is a place again.
+        stored.insert(calculator, at: position)
+        XCTAssertTrue(step(.back))
+        assertShowsPage(of: Self.calculator, title: "Calculator")
+    }
+
+    func testThePartOfAPageIsNotHistory() throws {
+        try makeWindow()
+        try choose("application")
+        apps.openApplication(withID: Self.calculator, part: .buttons)
+        let places = [Self.scrolling, Self.apps, Self.calculatorPage]
+        XCTAssertEqual(preferences.history.places, places)
+
+        // Another part of the page is the same place.
+        let page = try XCTUnwrap(apps.detailController)
+        page.show(.ring)
+        XCTAssertEqual(page.shownPart, .ring)
+        XCTAssertEqual(preferences.history.places, places)
+        XCTAssertFalse(preferences.canStepForward)
+        XCTAssertEqual(ApplicationPagePart.remembered(in: pageDefaults.defaults), .ring)
+
+        // A step opens the page on the part shown last, as any way to the page does, and
+        // writes nothing about parts.
+        try choose("general")
+        ApplicationPagePart.gestures.remember(in: pageDefaults.defaults)
+        let before = pageDefaults.defaults.persistentDomain(forName: pageDefaults.suiteName).map { $0 as NSDictionary }
+        XCTAssertTrue(step(.back))
+        assertShowsPage(of: Self.calculator, title: "Calculator")
+        XCTAssertEqual(apps.detailController?.shownPart, .gestures)
+        XCTAssertEqual(
+            pageDefaults.defaults.persistentDomain(forName: pageDefaults.suiteName).map { $0 as NSDictionary },
+            before
+        )
+    }
+
+    // MARK: - The View menu's panes
+
+    func testAppsFromTheMenuOnAnAppsPageShowsTheList() throws {
+        try makeWindow()
+        // A pane's item shows that pane.
+        XCTAssertTrue(preferences.showPaneFromMenu("general"))
+        assertShows(pane: "general", title: "General")
+        XCTAssertTrue(preferences.showPaneFromMenu("application"))
+        assertShows(pane: "application", title: "Apps")
+        XCTAssertEqual(preferences.history.places, [Self.scrolling, Self.general, Self.apps])
+
+        // On an app's page, "Apps" is the list.
+        apps.openApplication(withID: Self.textEdit)
+        assertShowsPage(of: Self.textEdit, title: "TextEdit")
+        XCTAssertTrue(preferences.showPaneFromMenu("application"))
+        assertShows(pane: "application", title: "Apps")
+        XCTAssertTrue(window.firstResponder === apps.list, "as after the title bar's button")
+        XCTAssertTrue(preferences.canStepForward, "Forward opens the page again")
+
+        // The pane on show: nothing new, as for any way to it.
+        XCTAssertTrue(preferences.showPaneFromMenu("application"))
+        XCTAssertEqual(preferences.history.places, [Self.scrolling, Self.general, Self.apps, Self.textEditPage])
+        XCTAssertEqual(preferences.shownPlace, Self.apps)
+
+        XCTAssertFalse(preferences.showPaneFromMenu("no-such-pane"))
+        assertShows(pane: "application", title: "Apps")
+    }
+
+    /// A window opened on a place someone asked for (a row of the Welcome Guide, the battery
+    /// line, "Settings for Safari…", a pane's item) has no way back to the pane it remembered.
+    func testAWindowOpenedOnAPlaceStartsThere() throws {
+        let defaults = TestDefaults.make(for: self)
+        defaults.set("mouse", forKey: PreferencesSplitViewController.selectedPaneDefaultsKey)
+        try makeWindow(defaults: defaults)
+        XCTAssertEqual(preferences.history.places, [PreferencesPlace(pane: "mouse")])
+
+        // What MainMenuManager.showPreferencesWindow does with a window it made.
+        XCTAssertTrue(preferences.selectPane(withIdentifier: "application"))
+        XCTAssertTrue(preferences.canStepBack)
+        preferences.startHistoryHere()
+        XCTAssertEqual(preferences.history.places, [Self.apps])
+        XCTAssertFalse(preferences.canStepBack)
+        XCTAssertFalse(preferences.canStepForward)
+
+        // "Settings for Calculator…" then opens the page: Back is the list, and no further.
+        PreferencesApplicationViewController.showSettings(for: Self.calculatorApp, in: preferences)
+        assertShowsPage(of: Self.calculator, title: "Calculator")
+        XCTAssertEqual(preferences.history.places, [Self.apps, Self.calculatorPage])
+        XCTAssertTrue(step(.back))
+        assertShows(pane: "application", title: "Apps")
+        XCTAssertFalse(preferences.canStepBack)
+
+        // Started on a page, the list is still the way back.
+        XCTAssertTrue(step(.forward))
+        preferences.startHistoryHere()
+        XCTAssertEqual(preferences.history.places, [Self.apps, Self.calculatorPage])
+        XCTAssertEqual(preferences.shownPlace, Self.calculatorPage)
+    }
+
+    /// The history is in memory: going through the window writes the remembered pane, as
+    /// before, and nothing else; a new window knows nothing of the last one's places.
+    func testTheHistoryStoresNothing() throws {
+        let store = TestDefaults.makeStore(for: self)
+        let applicationsBefore = try storedApplications()
+        try makeWindow(defaults: store.defaults)
+        try choose("application")
+        apps.openApplication(withID: Self.calculator)
+        try choose("general")
+        XCTAssertTrue(step(.back))
+        XCTAssertTrue(step(.back))
+        XCTAssertTrue(step(.back))
+        XCTAssertTrue(step(.forward))
+        XCTAssertTrue(step(.forward))
+        assertShowsPage(of: Self.calculator, title: "Calculator")
+
+        let written = try XCTUnwrap(store.defaults.persistentDomain(forName: store.suiteName))
+        XCTAssertEqual(Array(written.keys), [PreferencesSplitViewController.selectedPaneDefaultsKey])
+        XCTAssertEqual(written[PreferencesSplitViewController.selectedPaneDefaultsKey] as? String, "application")
+        XCTAssertNil(pageDefaults.defaults.persistentDomain(forName: pageDefaults.suiteName), "nothing about an app's page")
+        XCTAssertEqual(try storedApplications(), applicationsBefore, "the list of apps as it was")
+
+        // The next window: where the last one was left, with no way back.
+        windowController.close()
+        try makeWindow(defaults: store.defaults)
+        XCTAssertEqual(preferences.history.places, [Self.apps])
+        XCTAssertNil(apps.detailController)
+        XCTAssertFalse(preferences.canStepBack)
+        XCTAssertFalse(preferences.canStepForward)
+    }
+}

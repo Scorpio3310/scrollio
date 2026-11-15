@@ -82,6 +82,23 @@ struct PreferencesPane: Equatable {
         PreferencesPane(identifier: PANEL_IDENTIFIER.general, symbolName: "gearshape.fill", tileColor: Tile.gray, startsGroup: true),
     ]
 
+    /// The pane's name, as the sidebar and the window's title show it. Read from the string
+    /// catalog by the pane's identifier, so the View menu can name the panes before any
+    /// pane's controller exists (`MainMenuTests` holds the two equal).
+    var title: String {
+        return NSLocalizedString(Self.titleKeys[identifier] ?? identifier, comment: "")
+    }
+
+    private static let titleKeys: [String: String] = [
+        PANEL_IDENTIFIER.scrolling: "scrolling-tab-title",
+        PANEL_IDENTIFIER.buttons: "buttons-tab-title",
+        GesturesPreferencesViewController.tabIdentifier: "gestures-tab-title",
+        RingPreferencesViewController.tabIdentifier: "ring-tab-title",
+        MousePreferencesViewController.tabIdentifier: "mouse-tab-title",
+        PANEL_IDENTIFIER.application: "apps-tab-title",
+        PANEL_IDENTIFIER.general: "general-tab-title",
+    ]
+
     /// Panes that were merged into another, by the identifier a window may still remember:
     /// About is the card on top of General now.
     static let mergedIdentifiers: [String: String] = ["about": PANEL_IDENTIFIER.general]
@@ -125,6 +142,14 @@ protocol PreferencesPaneWithSubpage: AnyObject {
     func leaveSubpage()
     /// The pane calls it when a page was opened or left.
     var onSubpageChange: (() -> Void)? { get set }
+    /// What names the page on show in the window's history (Apps: the open app's stored
+    /// path); nil while the pane shows its first page. Kept in memory only.
+    var subpageToken: String? { get }
+    /// Whether the pane still has the page `token` names (Apps: an app with that path is
+    /// on the list).
+    func hasSubpage(_ token: String) -> Bool
+    /// Opens the page `token` names; nothing when it is gone.
+    func showSubpage(_ token: String)
 }
 
 final class PreferencesSplitViewController: NSSplitViewController, PreferencesSidebarDelegate {
@@ -145,6 +170,11 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
 
     private let controllers: [String: NSViewController]
     private(set) var selectedPaneIdentifier: String?
+    /// The places this window showed, for View › Back and Forward. In memory only: it goes
+    /// with the window, and nothing of it is stored.
+    private(set) var history = PreferencesHistory()
+    /// Set while a step through the history is being shown: what it shows is no new visit.
+    private var isShowingStep = false
 
     init(
         panes: [PreferencesPane] = PreferencesPane.all,
@@ -165,7 +195,10 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
         self.host = PreferencesPaneHostViewController(liesUnderSidebar: paneLiesUnderSidebar)
         super.init(nibName: nil, bundle: nil)
         for case let pane as PreferencesPaneWithSubpage in controllers.values {
-            pane.onSubpageChange = { [weak self] in self?.updateWindowTitle() }
+            pane.onSubpageChange = { [weak self] in
+                self?.recordVisit()
+                self?.updateWindowTitle()
+            }
         }
     }
 
@@ -274,6 +307,7 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
         if selectedPaneIdentifier != identifier {
             selectedPaneIdentifier = identifier
             host.show(controller)
+            recordVisit()
             updateWindowTitle()
             keepKeyboardFocus()
         } else {
@@ -294,6 +328,81 @@ final class PreferencesSplitViewController: NSSplitViewController, PreferencesSi
         guard let window = view.window, window.firstResponder === window || window.firstResponder == nil else { return }
         window.makeFirstResponder(sidebar.tableView)
     }
+
+    // MARK: - Back and Forward
+
+    /// The place on show: the pane, and the page open inside it.
+    var shownPlace: PreferencesPlace? {
+        guard let pane = selectedPaneIdentifier else { return nil }
+        return PreferencesPlace(pane: pane, page: (controllers[pane] as? PreferencesPaneWithSubpage)?.subpageToken)
+    }
+
+    /// The pane on show, or the page inside it, may have changed: the history takes the
+    /// place, unless a step through it is what changed it.
+    private func recordVisit() {
+        guard !isShowingStep, let place = shownPlace else { return }
+        history.visit(place)
+    }
+
+    /// Whether a place of the history can still be shown: its pane is there, and its page's
+    /// app is on the list.
+    private func exists(_ place: PreferencesPlace) -> Bool {
+        guard let controller = controllers[place.pane] else { return false }
+        guard let page = place.page else { return true }
+        return (controller as? PreferencesPaneWithSubpage)?.hasSubpage(page) ?? false
+    }
+
+    /// Whether View › Back has a place to go to.
+    var canStepBack: Bool {
+        return history.canStep(.back, exists: exists)
+    }
+
+    /// Whether View › Forward has one.
+    var canStepForward: Bool {
+        return history.canStep(.forward, exists: exists)
+    }
+
+    /// View › Back and Forward: shows the nearest place that way which still exists, its
+    /// pane (remembered as the last open one, like any pane shown) and then its page, or
+    /// the pane's first page. False when there is none. A step registers no Undo and writes
+    /// nothing but the remembered pane.
+    @discardableResult
+    func step(_ direction: PreferencesHistory.Direction) -> Bool {
+        _ = view
+        guard let place = history.step(direction, exists: exists) else { return false }
+        isShowingStep = true
+        defer { isShowingStep = false }
+        show(place.pane, remember: true)
+        if let pane = controllers[place.pane] as? PreferencesPaneWithSubpage {
+            if let page = place.page {
+                pane.showSubpage(page)
+            } else if pane.subpageToken != nil {
+                pane.leaveSubpage()
+            }
+        }
+        return true
+    }
+
+    /// A pane's item of the View menu: the pane at its top, on its first page ("Apps"
+    /// chosen on an app's page shows the list). False when there is no such pane.
+    @discardableResult
+    func showPaneFromMenu(_ identifier: String) -> Bool {
+        guard selectPane(withIdentifier: identifier) else { return false }
+        if let pane = controllers[identifier] as? PreferencesPaneWithSubpage, pane.subpageToken != nil {
+            pane.leaveSubpage()
+        }
+        return true
+    }
+
+    /// A window that was opened on a place someone asked for (a row of the Welcome Guide,
+    /// the battery line, "Settings for Safari…", a pane's item of the View menu) starts its
+    /// history there, not at the pane it remembered.
+    func startHistoryHere() {
+        history = PreferencesHistory()
+        recordVisit()
+    }
+
+    // MARK: - A page inside a pane
 
     /// The page of the pane on show that one goes back from (an app's page under Apps);
     /// nil while the pane shows its first page. Another pane's open page does not count:

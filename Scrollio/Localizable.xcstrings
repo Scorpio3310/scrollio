@@ -10945,6 +10945,54 @@
           }
         }
       }
+    },
+    "scrolling-tab-title": {
+      "comment": "View menu: the Scrolling pane, named as the sidebar names it",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrolling"
+          }
+        }
+      }
+    },
+    "buttons-tab-title": {
+      "comment": "View menu: the Buttons pane, named as the sidebar names it",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buttons"
+          }
+        }
+      }
+    },
+    "apps-tab-title": {
+      "comment": "View menu: the Apps pane, named as the sidebar names it",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps"
+          }
+        }
+      }
+    },
+    "general-tab-title": {
+      "comment": "View menu: the General pane, named as the sidebar names it",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "General"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

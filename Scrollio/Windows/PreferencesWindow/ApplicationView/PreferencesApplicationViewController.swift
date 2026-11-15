@@ -1013,4 +1013,22 @@ extension PreferencesApplicationViewController: PreferencesPaneWithSubpage {
     func leaveSubpage() {
         showList(focusList: true)
     }
+
+    /// The open app's stored path, for the window's history (in memory only).
+    var subpageToken: String? {
+        return detailController?.application.path
+    }
+
+    func hasSubpage(_ token: String) -> Bool {
+        return applications.contains { $0.path == token }
+    }
+
+    /// The page of the app stored under `token`, on the part shown last (nothing is
+    /// remembered: no part is asked for).
+    func showSubpage(_ token: String) {
+        _ = view
+        reloadRows()
+        guard let application = applications.first(where: { $0.path == token }), let id = rowID(for: application) else { return }
+        openApplication(withID: id)
+    }
 }
