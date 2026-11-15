@@ -875,6 +875,60 @@ final class ThumbWheelFollowTests: XCTestCase {
         XCTAssertEqual(roll.unlistedSwipes.total, beginTimes.count - 8)
     }
 
+    /// How long each swipe was open: from its begin to its end or cancel (seconds).
+    private var swipeLifetimes: [Double] {
+        var lifetimes: [Double] = []
+        var began: Double?
+        for (index, call) in dock.calls.enumerated() {
+            switch call {
+            case .begin:
+                began = dock.times[index]
+            case .end, .cancel:
+                if let start = began { lifetimes.append(dock.times[index] - start) }
+                began = nil
+            case .update, .spaceChanged:
+                break
+            }
+        }
+        return lifetimes
+    }
+
+    /// A hard roll at 0.7× (40 events of 12 lines, 16 ms apart), the Space changing 250 ms
+    /// after each end: every swipe after the first begins with the travel kept at the gate,
+    /// half a Space or more on, and the wheel is past the chain point a frame later. None is
+    /// ended sooner than 150 ms after its begin: each is shown sliding.
+    func testAChainedSwipeIsShownFor150Milliseconds_aHardRoll() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .desktops, speed: 0.7, followsWheel: true)
+        changeTheSpace(after: 0.25)
+        for index in 0..<40 { try turn(at: Double(index) * 0.016, lines: -12) }
+        rig.advance(to: 505)
+        XCTAssertGreaterThanOrEqual(beginCount, 3, "\(dock.calls)")
+        let lifetimes = swipeLifetimes
+        XCTAssertEqual(lifetimes.count, beginCount)
+        XCTAssertTrue(lifetimes.allSatisfy { $0 >= ThumbWheelTuning.followFullStopRest - 1e-6 }, "\(lifetimes)")
+        assertEveryBeginFollowsASpaceChange()
+        XCTAssertEqual(rig.lines.first?.swipes.first?.ending, .chained)
+    }
+
+    /// At 1.85×, two small ticks let in by one hard event (−0.10, −0.10, then −12 lines):
+    /// a full Space and past the chain point in one frame. The swipe is not begun and ended
+    /// in one turn of the main queue: it ends 150 ms after its begin.
+    func testAChainedSwipeIsShownFor150Milliseconds_oneHardEvent() throws {
+        Options.shared.thumbWheel = ThumbWheelSettings(function: .desktops, speed: 1.85, followsWheel: true)
+        try turn(at: 0, lines: -1, fixed: -0.1)
+        try turn(at: 0.03, lines: -1, fixed: -0.1)
+        try turn(at: 0.05, lines: -12)
+        rig.advance(to: 500.05)
+        XCTAssertEqual(beginCount, 1)
+        XCTAssertTrue(dock.terminals.isEmpty, "begun and ended in one turn: \(dock.calls)")
+        rig.advance(to: 500.05 + 0.149)
+        XCTAssertTrue(dock.terminals.isEmpty, "\(dock.calls)")
+        rig.advance(to: 500.05 + 0.15 + 1.0 / 60)
+        XCTAssertEqual(dock.terminals, [.end(0)])
+        XCTAssertEqual(try XCTUnwrap(dock.updates.last), Self.space, accuracy: 1e-9)
+        XCTAssertTrue(swipeLifetimes.allSatisfy { $0 >= ThumbWheelTuning.followFullStopRest - 1e-6 }, "\(swipeLifetimes)")
+    }
+
     /// A stop while the stroke waits at the gate: nothing scheduled runs, nothing is sent
     /// later, a Space change afterwards begins nothing, and the line says so.
     func testAStopAtTheGateRunsNothingLater() throws {

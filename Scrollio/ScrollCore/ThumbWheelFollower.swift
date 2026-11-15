@@ -14,8 +14,10 @@
 //  runs (`InteractiveGestureSession`, fed with the wheel's units in place of points): at
 //  most one Space either way. A swipe ends in one of three ways:
 //  - At a full Space (`followFullShare`) with the wheel still turning that way: once the
-//    travel past that point reaches `followChainOverflowUnits`, it ends at once, at the full
-//    Space with no speed ("chained"), so the next desktop can come in this stroke.
+//    travel past that point reaches `followChainOverflowUnits`, it ends, at the full Space
+//    with no speed ("chained"), so the next desktop can come in this stroke; not sooner
+//    than `followFullStopRest` after its begin, so a swipe begun at a full Space (travel
+//    kept at the gate, one hard event) is shown sliding, never begun and ended at once.
 //  - At a full Space with the wheel still for `followFullStopRest`: it ends then ("full
 //    stop"), not only at the rest. A swipe begun after the wheel stopped (with travel kept
 //    at the gate) counts that time from its begin, and the rest does not end it sooner
@@ -342,7 +344,7 @@ final class ThumbWheelFollower {
 
     /// One display frame of the stroke: the travel so far goes to the swipe, the desktop
     /// eases toward where it should stand, and a swipe at a full Space with the wheel still
-    /// turning that way ends.
+    /// turning that way ends, once it was shown for `followFullStopRest`.
     private func frame() {
         guard state == .following else { return }
         lastFrameAt = clock()
@@ -354,7 +356,11 @@ final class ThumbWheelFollower {
             synthesizer.update(progress: shown)
         }
         if swipeNumber != 0, isAtFullSpace {
-            if overflow + ThumbWheelTuning.thresholdSlack >= ThumbWheelTuning.followChainOverflowUnits {
+            // Not sooner than `followFullStopRest` after its begin: a swipe begun at or near a
+            // full Space (travel kept at the gate, one hard event) is shown sliding first. A
+            // wheel that stops meanwhile is the full stop's look.
+            if overflow + ThumbWheelTuning.thresholdSlack >= ThumbWheelTuning.followChainOverflowUnits,
+               clock() + 1e-9 >= swipeBeganAt + ThumbWheelTuning.followFullStopRest {
                 endAtFullSpace(.chained)
                 return
             }
