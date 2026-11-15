@@ -89,6 +89,8 @@ final class ThumbWheelFollower {
         var spaceChangedAfter: TimeInterval?
         /// The change came after the gate's timeout, while the swipe waited as a late record.
         var late = false
+        /// Scrollio stopped (`cancel`) while the swipe waited for its change.
+        var stopped = false
     }
 
     /// What `add` did with an event.
@@ -278,12 +280,14 @@ final class ThumbWheelFollower {
     /// Scrollio stopped handling the wheel: the swipe is cancelled at once (the main queue
     /// may not run again before the stop is over), the gate forgotten, nothing scheduled runs.
     func cancel() {
-        if let record = lateRecord {
+        if var record = lateRecord {
             lateRecord = nil
+            record.swipe.stopped = true
             tellLate(record)
         }
-        if let gate {
+        if var gate {
             self.gate = nil
+            gate.swipe.stopped = true
             tell(gate.tag, gate.swipe)
         }
         guard state != .idle else { return }

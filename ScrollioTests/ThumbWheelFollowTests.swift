@@ -875,8 +875,18 @@ final class ThumbWheelFollowTests: XCTestCase {
         XCTAssertEqual(dock.calls, afterStop)
         XCTAssertEqual(rig.engine.follower.state, .idle)
         XCTAssertFalse(rig.hasPendingWork)
-        XCTAssertEqual(rig.lines.flatMap(\.swipes).map(\.ending), [.chained])
-        XCTAssertNil(rig.lines.first?.swipes.first?.spaceChangedAfter)
+        XCTAssertEqual(rig.lines.flatMap(\.swipes).map(ScrollSystemLog.swipeMessage), ["1.00 chained stopped"],
+                       "stopped, not \"no change\": the wait for the Space was cut short")
+
+        // A swipe that waits as late, stopped as well.
+        var late = 10.0
+        while late < 11 { try turn(at: late); late += 0.05 }
+        rig.advance(to: 511.1)
+        XCTAssertEqual(rig.engine.follower.state, .following, "timed out, the stroke rolls on")
+        rig.engine.reset()
+        rig.advance(to: 515)
+        XCTAssertEqual(rig.lines.last?.swipes.first.map(ScrollSystemLog.swipeMessage), "1.00 chained stopped")
+        XCTAssertFalse(rig.hasPendingWork)
     }
 
     /// The follower hears of a Space change from the workspace's notification, on the main
