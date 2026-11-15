@@ -244,17 +244,26 @@ struct ThumbWheelStepper: Equatable {
     ///   - travel: the event's travel toward "next" (`travel(...)`).
     ///   - function: the function the wheel runs now.
     ///   - now: the event's time (s, any monotonic clock).
+    ///   - heldSince: the travel is a batch the stray-tick filter confirmed (held events
+    ///     and the one that confirmed them): the time of the first held one
+    ///     (`ThumbWheelTickFilter.Result.heldSince`). Nil: one event's own travel.
     /// - Returns: the steps to run: positive toward "next", negative toward "previous", 0 none;
     ///   never more than `maxStepsPerEvent` either way.
-    mutating func feed(travel: Double, function: ThumbWheelFunction, at now: TimeInterval) -> Int {
+    mutating func feed(travel: Double, function: ThumbWheelFunction, at now: TimeInterval,
+                       heldSince: TimeInterval? = nil) -> Int {
         // Another function (changed in the middle of a roll) starts afresh.
         if function != self.function {
             reset()
             self.function = function
         }
         guard let stepping = function.stepping else { return 0 }
-        // A rest drops the carried travel; the next step is a first one again.
-        if let last = lastEventAt, now - last >= stepping.rest {
+        // A rest drops the carried travel; the next step is a first one again. It is
+        // measured to where the thumb took the wheel again: a stroke that begins with a
+        // held tick began at that tick, not at the event that confirmed it up to
+        // `tickWindow` later (else a re-grip of 0.45 to 0.6 s counted as a rest, and the
+        // stroke before it was lost).
+        let resumedAt = min(heldSince ?? now, now)
+        if let last = lastEventAt, resumedAt - last >= stepping.rest {
             carried = 0
             stepped = false
         }

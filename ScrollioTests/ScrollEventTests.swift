@@ -751,6 +751,19 @@ final class ThumbWheelStepperTests: XCTestCase {
                        "after a rest the next step needs 3 again, not 5")
     }
 
+    /// A batch the stray-tick filter confirmed (held ticks and the event that confirmed them)
+    /// began at its first held tick: the rest is measured there, not up to 0.45 s later.
+    func testRest_isMeasuredAtTheFirstHeldEventOfAConfirmedBatch() {
+        var regrip = ThumbWheelStepper()
+        XCTAssertEqual(run(&regrip, [-1, -1], .tabs), [0, 0])
+        XCTAssertEqual(regrip.feed(travel: 2, function: .tabs, at: 0.05 + 0.65, heldSince: 0.05 + 0.55), 1,
+                       "held 0.55 s after the last event, confirmed at 0.65 s: no rest, 2 + 2 reach the first 3")
+        var rested = ThumbWheelStepper()
+        XCTAssertEqual(run(&rested, [-1, -1], .tabs), [0, 0])
+        XCTAssertEqual(rested.feed(travel: 2, function: .tabs, at: 0.05 + 0.7, heldSince: 0.05 + 0.6), 0, "held from 0.6 s on: a rest")
+        XCTAssertEqual(rested.carried, 2)
+    }
+
     /// Each function has its own rest: 0.3 s for back / forward (two quick strokes are two
     /// steps), 0.6 s for the others (a slow roll's gaps reach 0.4 s, a re-grip 0.6 s).
     func testRest_isPerFunction() {
@@ -887,15 +900,15 @@ final class ThumbWheelTickFilterTests: XCTestCase {
         XCTAssertTrue(filter.holds)
         XCTAssertEqual(filter.filter(travel: -0.7, lines: -0.2, at: 10.3), Result(travel: 0, held: true, dropped: 0),
                        "0.3 line in two events: still held")
-        XCTAssertEqual(filter.filter(travel: -1, lines: -0.1, at: 10.4), Result(travel: -2.7, held: false, dropped: 0),
-                       "the third applies all")
+        XCTAssertEqual(filter.filter(travel: -1, lines: -0.1, at: 10.4), Result(travel: -2.7, held: false, dropped: 0, heldSince: 10),
+                       "the third applies all, and says since when they were held")
         XCTAssertFalse(filter.holds)
         XCTAssertEqual(filter.filter(travel: -1, lines: -0.1, at: 10.45), Result(travel: -1, held: false, dropped: 0),
                        "inside the roll a small event the same way applies at once")
 
         var half = ThumbWheelTickFilter()
         _ = half.filter(travel: -1, lines: -0.1, at: 0)
-        XCTAssertEqual(half.filter(travel: -1, lines: -0.4, at: 0.1), Result(travel: -2, held: false, dropped: 0),
+        XCTAssertEqual(half.filter(travel: -1, lines: -0.4, at: 0.1), Result(travel: -2, held: false, dropped: 0, heldSince: 0),
                        "half a line in two events applies both")
     }
 
@@ -926,12 +939,12 @@ final class ThumbWheelTickFilterTests: XCTestCase {
         _ = filter.filter(travel: -1, lines: -1, at: 0)
         XCTAssertEqual(filter.filter(travel: 1, lines: 0.1, at: 0.1), Result(travel: 0, held: true, dropped: 0))
         XCTAssertEqual(filter.filter(travel: 1, lines: 0.1, at: 0.2), Result(travel: 0, held: true, dropped: 0))
-        XCTAssertEqual(filter.filter(travel: 1, lines: 0.1, at: 0.3), Result(travel: 3, held: false, dropped: 0))
+        XCTAssertEqual(filter.filter(travel: 1, lines: 0.1, at: 0.3), Result(travel: 3, held: false, dropped: 0, heldSince: 0.1))
 
         var turned = ThumbWheelTickFilter()
         _ = turned.filter(travel: -1, lines: -1, at: 0)
         _ = turned.filter(travel: 1, lines: 0.1, at: 0.1)
-        XCTAssertEqual(turned.filter(travel: 1, lines: 2, at: 0.15), Result(travel: 2, held: false, dropped: 0))
+        XCTAssertEqual(turned.filter(travel: 1, lines: 2, at: 0.15), Result(travel: 2, held: false, dropped: 0, heldSince: 0.1))
 
         var stray = ThumbWheelTickFilter()
         _ = stray.filter(travel: -1, lines: -1, at: 0)
@@ -947,7 +960,7 @@ final class ThumbWheelTickFilterTests: XCTestCase {
         XCTAssertEqual(filter.filter(travel: -1, lines: -0.1, at: 0), Result(travel: 0, held: true, dropped: 0))
         XCTAssertEqual(filter.filter(travel: -1, lines: -0.1, at: 0.46), Result(travel: 0, held: true, dropped: 1))
         XCTAssertEqual(filter.filter(travel: -1, lines: -0.1, at: 0.6), Result(travel: 0, held: true, dropped: 0))
-        XCTAssertEqual(filter.filter(travel: -1, lines: -0.1, at: 0.9), Result(travel: -3, held: false, dropped: 0),
+        XCTAssertEqual(filter.filter(travel: -1, lines: -0.1, at: 0.9), Result(travel: -3, held: false, dropped: 0, heldSince: 0.46),
                        "the third within 0.45 s of the first held")
         XCTAssertEqual(filter.filter(travel: 1, lines: 0.1, at: 1), Result(travel: 0, held: true, dropped: 0))
         XCTAssertEqual(filter.filter(travel: 1, lines: 0.1, at: 1.2), Result(travel: 0, held: true, dropped: 0))
@@ -1488,6 +1501,26 @@ final class ThumbWheelEngineTests: XCTestCase {
                 counts.append(steps)
             }
             XCTAssertEqual(counts, [2, 2, 2], "\(strokes)")
+        }
+    }
+
+    /// 0.7×, a re-grip that begins with a tick of 0.10 line, as the owner's do: 9 events, a
+    /// pause, then −0.1, −1, −1, −1. Two desktops after 280 to 580 ms: the pause is measured
+    /// to the tick, where the thumb took the wheel again, not to the event that confirms it
+    /// 94 ms later (0.52 s then counted as a rest of 0.6 s and dropped what the first
+    /// stroke had carried). After 0.62 s it is a rest: the second stroke alone is no desktop.
+    func testDesktops_aRegripThatBeginsWithAHeldTick_isARestOnlyFrom600Milliseconds() throws {
+        for (pause, desktops) in [(0.28, 2), (0.47, 2), (0.52, 2), (0.58, 2), (0.62, 1)] {
+            let rig = Rig()
+            let settings = ThumbWheelSettings(function: .desktops, speed: 0.7)
+            var steps = 0
+            var time = 0.0
+            for _ in 0..<9 { steps += rig.turn(lines: -1, at: time, settings: settings); time += 0.094 }
+            time += pause - 0.094
+            for lines in [-0.1, -1, -1, -1] { steps += rig.turn(lines: lines, at: time, settings: settings); time += 0.094 }
+            rig.advance(to: 510)
+            XCTAssertEqual(steps, desktops, "pause \(pause)")
+            XCTAssertEqual(rig.performed.count, desktops, "pause \(pause): every desktop ran")
         }
     }
 

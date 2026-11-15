@@ -317,7 +317,7 @@ final class ThumbWheelEngine {
                 )
                 tick = tickFilter.filter(travel: travel, lines: lines, at: time)
                 if tick.travel != 0 {
-                    steps = stepper.feed(travel: tick.travel, function: settings.function, at: time)
+                    steps = stepper.feed(travel: tick.travel, function: settings.function, at: time, heldSince: tick.heldSince)
                 }
             }
         }

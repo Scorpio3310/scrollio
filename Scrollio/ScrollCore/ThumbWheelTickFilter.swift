@@ -16,7 +16,10 @@
 //     it: it is held.
 //  The held events apply, with the one that confirms them, once the events that way within
 //  the window (from the first held) make `tickSmallLines` in all, or at the
-//  `tickConfirmingEvents`th of them; until then a further one that way is held too.
+//  `tickConfirmingEvents`th of them; until then a further one that way is held too. What
+//  is confirmed is handed over as one batch with the time of its first held event: the
+//  thumb took the wheel then, so the stepper measures its rest there, not at the event
+//  that confirmed it.
 //  3. Everything else applies at once. Held events are dropped when an event comes the
 //     other way, or once the first is older than the window; held travel is never
 //     subtracted.
@@ -38,6 +41,9 @@ struct ThumbWheelTickFilter: Equatable {
         var held: Bool
         /// Held events this event dropped (an older one that went the other way, or expired).
         var dropped: Int
+        /// The event confirmed held ones, and `travel` is theirs and its own: the time of
+        /// the first of them. Nil: the event applies alone, is held, or does nothing.
+        var heldSince: TimeInterval? = nil
 
         static let nothing = Result(travel: 0, held: false, dropped: 0)
     }
@@ -79,9 +85,10 @@ struct ThumbWheelTickFilter: Equatable {
                 }
                 // Confirmed: the held events and this one apply.
                 let all = heldTravel
+                let since = heldAt
                 forgetHeld()
                 applied(direction, at: time)
-                return Result(travel: all, held: false, dropped: 0)
+                return Result(travel: all, held: false, dropped: 0, heldSince: since)
             } else {
                 dropped += dropHeld()
             }
