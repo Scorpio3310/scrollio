@@ -5,7 +5,8 @@
 //  Between the stepper and the actions: the steps of a function with a pacing run no faster
 //  than its interval. The system handles volume keys slowly: two presses per event at speed 3
 //  (about 100 a second) queued up, and the volume display moved on for seconds after the hand
-//  had stopped (the owner's second log, 2026-11-11). A step runs at once when none ran within
+//  had stopped (the owner's second log, 2026-11-11); the Dock stacks or drops ⌃→ sent faster
+//  than it slides a desktop. A step runs at once when none ran within
 //  the interval, else it waits; one waiting step runs each interval; at most `maxWaiting` wait
 //  and more are dropped, so the action stops soon after the hand does.
 //
@@ -24,12 +25,14 @@ struct ThumbWheelPacing: Equatable {
 
 extension ThumbWheelFunction {
 
-    /// Nil: the function's steps run at once, as the stepper decides them (zoom, tabs,
-    /// desktops and back / forward feel right that way, the owner says).
+    /// Nil: the function's steps run at once, as the stepper decides them (zoom, tabs and
+    /// back / forward feel right that way, the owner says). Desktops are paced since one roll
+    /// can move several (`ThumbWheelTuning.desktopsPacing`).
     var pacing: ThumbWheelPacing? {
         switch self {
         case .volume: return ThumbWheelTuning.volumePacing
-        case .scroll, .zoom, .tabs, .desktops, .backForward: return nil
+        case .desktops: return ThumbWheelTuning.desktopsPacing
+        case .scroll, .zoom, .tabs, .backForward: return nil
         }
     }
 }

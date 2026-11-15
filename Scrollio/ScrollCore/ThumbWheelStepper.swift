@@ -55,18 +55,33 @@ enum ThumbWheelTuning {
     static let zoom = ThumbWheelStepping(first: 3, next: 5, accelerates: true, rest: 0.6)
     /// Tabs: a slow roll of 5 to 9 events gives 1 to 2 tabs, a flick of 10 events 2.
     static let tabs = ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.6)
-    /// Desktops and back / forward: one stroke of 3 to 14 events gives one step, 15 events two;
-    /// a second quick stroke after 0.3 s of rest steps again after 3 events.
-    static let desktops = ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3)
+    /// Desktops: the first desktop after 3 events, each further one after 5 more, so one long
+    /// roll moves several (at 0.7× steps at events 5, 12, 19; with "next" 12 the second
+    /// needed four times the first, and the owner's rolls of 16 to 18 events gave one). Their
+    /// pacing (`desktopsPacing`) keeps the Dock from stacking switches. A second quick stroke
+    /// after 0.3 s of rest steps again after 3 events.
+    static let desktops = ThumbWheelStepping(first: 3, next: 5, accelerates: false, rest: 0.3)
+    /// Back / forward: one stroke of 3 to 14 events gives one step, 15 events two.
     static let backForward = ThumbWheelStepping(first: 3, next: 12, accelerates: false, rest: 0.3)
 
     /// Volume's pacing (`ThumbWheelPacer`): at most one step each 50 ms, at most 3 waiting.
     /// From the owner's second log (2026-11-11): at speed 3 two volume key presses per event,
     /// about 100 a second, queued up in the system, and the volume display moved on for seconds
     /// after the hand stopped. 20 steps a second sweep the whole range (16 steps) in under a
-    /// second; with 3 waiting the volume stops within 150 ms of the hand. The other functions
-    /// have no pacing: their steps feel right at once.
+    /// second; with 3 waiting the volume stops within 150 ms of the hand. Zoom, tabs and back /
+    /// forward have no pacing: their steps feel right at once.
     static let volumePacing = ThumbWheelPacing(interval: 0.05, maxWaiting: 3)
+    /// Switch Desktops in steps: at most one desktop each 250 ms (the Dock's slide; ⌃→ sent
+    /// faster than it slides is stacked or dropped), one waiting at most, so after the hand
+    /// stops at most one more desktop comes, within 250 ms.
+    static let desktopsPacing = ThumbWheelPacing(interval: 0.25, maxWaiting: 1)
+
+    /// The stray-tick filter (`ThumbWheelTickFilter`), for every function but Scroll Sideways:
+    /// an event of fewer lines than this is small, and a small one at a start or against the
+    /// roll waits for a second event within `tickWindow` (s). The ticks where the thumb takes
+    /// the wheel again are about 0.1 line (the owner's log, 2026-11-14/15).
+    static let tickSmallLines = 0.5
+    static let tickWindow: TimeInterval = 0.45
 
     /// A pause this long (s) ends a roll for the log: its line is written.
     static let logRollRest: TimeInterval = 0.6
@@ -77,6 +92,9 @@ enum ThumbWheelTuning {
     /// During a long roll a log line is written at least this often (s), and at most this
     /// often apart from the line at its end.
     static let logInterval: TimeInterval = 2.0
+    /// A function roll's trace line (`ScrollSystemLog.thumbWheelTraceMessage`) lists this many
+    /// events at most (the engine's buffers are reserved once for them).
+    static let traceEntries = 128
     /// A roll's line is due but steps still wait to run: the look comes again after at least
     /// this long (s), so it never spins on the main queue.
     static let pendingRecheck: TimeInterval = 0.01
@@ -101,6 +119,20 @@ enum ThumbWheelTuning {
     static let followEasePerFrame = 0.5
     /// Closer than this (progress) it stands where the wheel put it.
     static let followEaseSnap = 0.002
+    /// A swipe this close to a full Space (a share of one) is at a full Space...
+    static let followFullShare = 0.98
+    /// ...and ends at once (so the next desktop can come in the same stroke) once the wheel
+    /// has turned on that way this many units past that point (a quarter of a Space)...
+    static let followChainOverflowUnits = 1.5
+    /// ...or once the wheel has been still this long (s): a full swipe is committed at the
+    /// hand's stop, not only at the rest.
+    static let followFullStopRest: TimeInterval = 0.15
+    /// After an end where a switch is expected (half a Space or more), no swipe begins until
+    /// macOS says the Space changed or this long (s) has passed; no change by then: the
+    /// desktop was the first or the last that way.
+    static let followSpaceChangeTimeout: TimeInterval = 0.5
+    /// Travel kept meanwhile for the next swipe, at most this many units either way (a Space).
+    static let followGatePendingCap = 6.0
 }
 
 extension ThumbWheelFunction {

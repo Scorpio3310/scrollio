@@ -70,7 +70,10 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   or stopped. (With one touch a scroll's line comes a fifth of a second later than its
   last frame: the touch rests that long, and a turn of the wheel in that time is still
   the same scroll.) Also one `thumb wheel:` line per roll of
-  the sideways wheel, and at
+  the sideways wheel (with Follow the wheel, each swipe: how far it went, how it ended
+  and how long the Space took to change, or "no change"; for any action, the stray
+  ticks it held and dropped), for now followed by a `thumb wheel trace:` line for a roll
+  that runs an action (each event's gap in ms and its lines, 128 at most), and at
   most one line per reason every 3 seconds while wheel events are let through unsmoothed
   (trackpad events, a remote desktop, smoothing off for that event or that axis, no
   display link, a Step or Speed that is not a number).

@@ -3350,7 +3350,7 @@ final class ScrollSystemLogTests: XCTestCase {
         roll.travel = 14
         XCTAssertEqual(
             ScrollSystemLog.thumbWheelMessage(for: roll),
-            "thumb wheel: 14 events in 620 ms (longest gap 85 ms), lines -9, fixed -9.40 (largest 1.25), points -212 (largest 31), 1 direction change, not continuous, switch tabs x1.00, travel 14.0: 3 steps next, 1 previous"
+            "thumb wheel: 14 events in 620 ms (longest gap 85 ms), lines -9, fixed -9.40 (largest 1.25), points -212 (largest 31), 1 direction change, not continuous, switch tabs x1.00, travel 14.0: 3 steps next, 1 previous; ticks held 0, dropped 0"
         )
 
         var one = ScrollSystemLog.ThumbWheelRoll(id: 2, settings: .default, at: 5)
@@ -3369,14 +3369,14 @@ final class ScrollSystemLogTests: XCTestCase {
         XCTAssertEqual(swapped.pendingSteps, 1, "one still to run: not counted")
         XCTAssertEqual(
             ScrollSystemLog.thumbWheelMessage(for: swapped),
-            "thumb wheel: 3 events in 80 ms (longest gap 50 ms), lines 0, fixed 1.25 (largest 2.25), points -16 (largest 31), 1 direction change, partly continuous (1 of 3), volume x1.50 swapped, travel 4.5: 1 step previous"
+            "thumb wheel: 3 events in 80 ms (longest gap 50 ms), lines 0, fixed 1.25 (largest 2.25), points -16 (largest 31), 1 direction change, partly continuous (1 of 3), volume x1.50 swapped, travel 4.5: 1 step previous; ticks held 0, dropped 0"
         )
         swapped.stepsRan(2)
-        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: swapped).hasSuffix(": 2 steps next, 1 previous"))
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: swapped).hasSuffix(": 2 steps next, 1 previous; ticks held 0, dropped 0"))
         swapped.pendingSteps = 13
         swapped.stepsDropped(12)
         XCTAssertEqual(swapped.pendingSteps, 1)
-        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: swapped).hasSuffix("volume x1.50 swapped, travel 4.5: 2 steps next, 1 previous, 12 dropped"),
+        XCTAssertTrue(ScrollSystemLog.thumbWheelMessage(for: swapped).hasSuffix("volume x1.50 swapped, travel 4.5: 2 steps next, 1 previous, 12 dropped; ticks held 0, dropped 0"),
                       "the steps the pacer dropped, only when there are any")
         XCTAssertEqual(
             ThumbWheelFunction.allCases.map(\.logName),

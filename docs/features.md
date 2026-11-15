@@ -324,12 +324,23 @@ wheel.
   each action keeps its own (Volume can be turned around without Switch Desktops). The
   one "Swap direction" of 1.0.5 and before gives every action its value; 1.0.5 reads the
   chosen action's.
-- Follow the wheel, for Switch Desktops (off by default): instead of a step per stroke
-  the desktops slide with the wheel like a trackpad swipe, as Gestures' "Follow the
-  hand", at most one desktop per stroke, and settle when the wheel rests (about half a
-  second): half a desktop or more goes on to the next one, less goes back. While a
-  gesture's swipe runs the wheel waits; a gesture that starts one takes over. Where macOS
-  cannot be sent a swipe, the desktops go in steps.
+- Switch Desktops goes in steps: the first desktop after a short turn, each further one
+  after a little more, so one long roll moves several. At most one desktop comes each
+  quarter of a second, and after the hand stops at most one more.
+- Follow the wheel, for Switch Desktops (off by default): instead of steps the desktops
+  slide with the wheel like a trackpad swipe, as Gestures' "Follow the hand". One swipe
+  goes one desktop at most; turned on past a full desktop it ends there, and once macOS
+  has switched the next swipe begins with what was turned meanwhile, so one long roll
+  moves several desktops, as quick trackpad swipes do. A swipe at a full desktop also
+  ends when the wheel stops for a moment (0.15 s); one that went part of the way settles
+  when the wheel rests (about half a second): half a desktop or more goes on to the next
+  one, less goes back. No swipe begins while the last one settles. At the first or the
+  last desktop (macOS did not switch) the wheel stops trying that way until it rests.
+  While a gesture's swipe runs the wheel waits; a gesture that starts one takes over.
+  Where macOS cannot be sent a swipe, the desktops go in steps.
+- For every action but Scroll Sideways, a single small tick of the wheel (where the
+  thumb lets go of it or takes it again) does nothing on its own: the next tick that way
+  counts it, one the other way drops it. A deliberate turn back acts one tick later.
 - Speed: how far a sideways scroll goes, how little of a turn each step needs, or how far
   a turn slides the desktop.
 - The Thumb wheel row's menu in Buttons ends with "Thumb Wheel Settings…", which opens
