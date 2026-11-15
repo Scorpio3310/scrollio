@@ -38,6 +38,18 @@ it for the people who use the app, and give the version its part before you tag 
 - **Thumb wheel, your way round.** Each thumb wheel action has its own "Reverse
   direction", and Switch Desktops can follow the wheel like a trackpad swipe.
 
+- **Pause for a while.** In the menu bar, "Pause For" under "Pause Scrollio" pauses
+  Scrollio for 15 minutes or an hour; the menu and General say until when, and Scrollio
+  starts again by itself.
+- **Edit the ring where you see it.** Click a place in the Shortcut Ring's drawing to
+  choose its shortcut right there; a secondary click swaps two places, names and icons
+  included, or clears one.
+- **See which apps differ.** Scrolling, Buttons, Gestures and Shortcut Ring each end with
+  a line such as "Different in Safari and Figma"; click a name to open that app's page
+  there.
+- **A View menu for Settings.** ⌘1 to ⌘7 open Scrolling, Buttons, Gestures, Shortcut Ring,
+  Mouse, Apps and General; Back (⌘[) and Forward (⌘]) go through the places you looked at.
+
 ### Changed
 
 - **The wheel starts the right way round.** A new installation follows macOS's Natural
@@ -96,6 +108,13 @@ it for the people who use the app, and give the version its part before you tag 
   opens that app's page in Apps, or offers "Add Safari" there.
 - **Mouse starts with your mouse.** With a Logitech mouse, Mouse starts with "Let Scrollio
   manage this mouse" and that mouse's settings; "All mice (macOS)" comes last.
+- **Freeze pointer says what really happens.** While "Let the mouse track the gesture"
+  keeps the pointer still, "Freeze pointer during a gesture" reads on and is dimmed, with
+  the reason.
+- **A free Gesture button or Thumb panel says what it is good for** in Buttons ("Good for
+  Gestures or the Shortcut Ring."), until a button does it.
+- **Speeds read one way.** Scrolling, the thumb wheel and Gestures write a speed as "1.0×"
+  or "1.25×".
 - **The thumb wheel reaches the next desktop.** Switch Desktops moves a desktop every few
   notches of one roll (at most one each quarter second), Follow the wheel chains swipes so
   one long roll moves several desktops, and a single stray tick of the wheel does nothing.
