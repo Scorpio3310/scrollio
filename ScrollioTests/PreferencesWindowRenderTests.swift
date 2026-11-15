@@ -4180,6 +4180,7 @@ private final class Round3C1MenuSheet: NSView {
                 }
                 y += Self.rowHeight
             }
+        }
     }
 }
 
