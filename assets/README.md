@@ -8,8 +8,9 @@ images belong in `Scrollio/Assets.xcassets`, and the app icon is `Scrollio/AppIc
 
 - `app-icon.png`: the app icon, from the `AppIcon.icns` of a build.
 - `<pane>-light.png` and `<pane>-dark.png` (`scrolling`, `buttons`, `gestures`, `mouse`,
-  `welcome-guide`): the panes and a Welcome Guide step, light and dark, at 2x. They are
-  drawn by `PreferencesWindowRenderTests.testRenderReadmePictures` and
+  `ring`, `app`, `welcome-guide`): the panes, Safari's page in Apps on its own Shortcut
+  Ring (`app`) and a Welcome Guide step, light and dark, at 2x. They are drawn by
+  `PreferencesWindowRenderTests.testRenderReadmePictures` and
   `WelcomeGuideRenderTests.testRenderReadmePicture`, which write them as
   `readme-<pane>-<appearance>.png` when `TEST_RUNNER_SCROLLIO_SHOTS_DIR` is set; the
   first of the two says how to render them with the numbers in US format. Only the

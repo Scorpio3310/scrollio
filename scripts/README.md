@@ -13,8 +13,9 @@ Repeatable automation.
 - `release.sh`: builds the app for other people's Macs, from a commit tagged `v<version>`:
   a universal Release build, stripped, signed with the Developer ID certificate, notarized
   by Apple and packed into `build/release/Scrollio-<version>.dmg`, with the debug symbols
-  next to it in `Scrollio-<version>.dSYM.zip` (keep it, do not publish it). The image
-  gets its name only after the last check. It installs nothing. `--check` stops before
+  next to it in `Scrollio-<version>.dSYM.zip` (keep it, do not publish it). It refuses a
+  build that still writes the thumb wheel trace. The image gets its name only after the
+  last check. It installs nothing. `--check` stops before
   the notarization, so nothing is uploaded, and needs no tag. It also makes the release
   an update: the build gets its update feed, Sparkle's helper programs are signed with
   the Developer ID, and the finished image is signed with the update key and described
