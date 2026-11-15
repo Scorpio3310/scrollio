@@ -3,7 +3,8 @@
 //  Mos
 //
 //  Safety timers that must also fire while a menu is open: the keepers and restarts of the
-//  event taps, the recovery of AppRunController, the keeper and rate checks of the display
+//  event taps, the recovery of AppRunController and the end of a pause that ends by itself,
+//  the keeper and rate checks of the display
 //  link. `Timer.scheduledTimer` adds a timer in the default run-loop mode only; while the
 //  status-bar menu is open, a pull-down tracks or a modal panel runs, the main run loop runs
 //  in another mode and such a timer waits until they close. An event tap that macOS turned
