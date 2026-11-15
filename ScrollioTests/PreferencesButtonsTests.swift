@@ -3192,7 +3192,7 @@ final class PreferencesButtonsTests: XCTestCase {
     /// pull-down, its menu and on the card: what the button then does in parentheses only
     /// where that is certain (a standard button pressed by itself), its sentence in the
     /// tooltip and no line; a button whose effect is not certain says "Does what the mouse
-    /// does on its own."; a key keeps its line. Where the press does
+    /// does on its own."; a key "Does what the key does on its own.". Where the press does
     /// not pass through it reads "No Action": ⌥ Forward runs the action of its twin under
     /// the Logitech code, and the plain Logitech Forward is caught for ⌥ and does nothing.
     /// A plain mouse (no drawing) and an MX Master's "Other buttons and keys" alike;
@@ -3217,7 +3217,7 @@ final class PreferencesButtonsTests: XCTestCase {
             nil,
             "A press runs Copy.",
             "Does what the mouse does on its own.",
-            "Choose what this button does.",
+            "Does what the key does on its own.",
             "Scrollio keeps it for another row, so a press does nothing.",
             nil,
             nil,
@@ -3271,7 +3271,7 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(ButtonsMousePart.pointerSpeed.defaultEffectKey, nil, "known from Logitech's description only")
     }
 
-    // MARK: - "Default" only where a press passes through (round 2 fix Y1, Y2)
+    // MARK: - "Default" only where a press passes through (round 2 fix Y1, Y2, Y5)
 
     /// A row without an action says what a press of it really does, by the input side's
     /// ranking and its catch of a Logitech control: ⌥ Back while plain Back runs Mission
@@ -3360,6 +3360,18 @@ final class PreferencesButtonsTests: XCTestCase {
         XCTAssertEqual(
             keys.filter { $0.type == .mouse }.map(\.code), [back, 1006], "not an app that uses the Scrolling settings"
         )
+    }
+
+    /// A key without an action passes its press through: "Default", "Does what the key does
+    /// on its own.", not a call to choose something.
+    func testAKeyWithoutAnActionSaysItDoesWhatItDoes() throws {
+        let key = binding(40, modifiers: control, type: .keyboard)
+        let pane = makePane([key])
+        let row = try XCTUnwrap(pane.row(for: key.id))
+        XCTAssertEqual(shown(row.pullDown), "Default")
+        XCTAssertEqual(row.explanation, "Does what the key does on its own.")
+        XCTAssertEqual(row.note?.kind, .noAction)
+        XCTAssertEqual(row.note?.tone, .plain)
     }
 
     // MARK: - "Show in Buttons" lands on the row its line names (Q13)

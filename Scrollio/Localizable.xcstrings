@@ -10872,6 +10872,18 @@
           }
         }
       }
+    },
+    "buttons-default-key-own": {
+      "comment": "Buttons pane: the line of a key without an action (\"Default\"): its press goes on to the app as it came",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Does what the key does on its own."
+          }
+        }
+      }
     }
   },
   "version": "1.1"

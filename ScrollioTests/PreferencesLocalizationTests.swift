@@ -126,7 +126,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-default-mode-shift", "buttons-default-own", "buttons-list-other",
         "buttons-default-with", "buttons-default-effect-back", "buttons-default-effect-forward", "buttons-default-effect-middle",
         "buttons-trigger-choice-recorded-replaces",
-        "buttons-default-runs-another", "buttons-default-caught",
+        "buttons-default-runs-another", "buttons-default-caught", "buttons-default-key-own",
     ]
 
     /// Gestures pane and its gesture controls.

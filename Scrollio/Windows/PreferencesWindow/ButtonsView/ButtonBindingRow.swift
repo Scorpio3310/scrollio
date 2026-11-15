@@ -11,7 +11,7 @@
 //  pull-down reads "Default" where its press passes through: where what the button then
 //  does is certain the pull-down says it ("Default (Back)", its sentence in the tooltip) and
 //  the row has no line; elsewhere a button's line says "Does what the mouse does on its
-//  own." (a key's, what to do). Where the press does not pass
+//  own." (a key's, "Does what the key does on its own."). Where the press does not pass
 //  through (`ButtonDefaultOutcome`) it reads "No Action", and the line says why: "A press
 //  runs Mission Control." or "Scrollio keeps it for another row, so a press does
 //  nothing.".
@@ -34,7 +34,7 @@ struct ButtonRowNote: Equatable {
         case shortcutRing
         /// A scroll action works while the button is held.
         case holdAction
-        /// A key without an action ("Default"): what to do.
+        /// A key without an action ("Default"): it does what it does by itself.
         case noAction
         /// A button the Mac knows only by its number ("Button 5"): where it is, the mouse
         /// tells when "+" records it.
@@ -180,7 +180,7 @@ struct ButtonRowNote: Equatable {
     /// The line of a row without an action, by what a press does (`outcome`; nil: it
     /// passes through). Another row's action runs: "A press runs Mission Control.". Nothing
     /// happens: "Scrollio keeps it for another row, so a press does nothing.". It
-    /// passes through ("Default"): a key what to do; a button nothing
+    /// passes through ("Default"): a key does what it does by itself; a button nothing
     /// where what it then does is certain (the pull-down says it, "Default (Back)", and its
     /// tooltip has the sentence), else "Does what the mouse does on its own.".
     static func defaultLine(
@@ -194,12 +194,12 @@ struct ButtonRowNote: Equatable {
             return ButtonRowNote(kind: .doesNothing, text: text("buttons-default-caught"))
         case .passes(let effect):
             if trigger.type == .keyboard {
-                return ButtonRowNote(kind: .noAction, text: text("buttons-note-no-action"))
+                return ButtonRowNote(kind: .noAction, text: text("buttons-default-key-own"))
             }
             return effect == nil ? ButtonRowNote(kind: .defaultAction, text: text("buttons-default-own")) : nil
         case nil:
             if trigger.type == .keyboard {
-                return ButtonRowNote(kind: .noAction, text: text("buttons-note-no-action"))
+                return ButtonRowNote(kind: .noAction, text: text("buttons-default-key-own"))
             }
             guard ButtonsMousePart.defaultEffect(of: trigger, part: part, isCaught: false) == nil else { return nil }
             return ButtonRowNote(kind: .defaultAction, text: text("buttons-default-own"))
