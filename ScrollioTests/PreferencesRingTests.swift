@@ -585,6 +585,64 @@ final class PreferencesRingTests: XCTestCase {
         XCTAssertFalse(ShortcutRingBindingSummary(bindings: [binding(.mouse, 3, action: "copy")]).hasTrigger)
     }
 
+    /// The mouse never tracks what opens the ring (that button always has another job
+    /// than Gesture Navigation), so the ring's own Freeze switch decides for every hold:
+    /// "Let the mouse track the gesture" changes nothing about it, in the pane or in an
+    /// app's own ring.
+    func testTheRingsFreezeIgnoresTracking() throws {
+        let savedGesture = Options.shared.gesture
+        let savedBindings = Options.shared.buttons.binding
+        defer {
+            Options.shared.gesture = savedGesture
+            Options.shared.buttons.binding = savedBindings
+        }
+        func binding(_ code: UInt16, _ action: String, modifiers: UInt = 0) -> ButtonBinding {
+            return ButtonBinding(
+                triggerEvent: RecordedEvent(type: .mouse, code: code, modifiers: modifiers, deviceFilter: nil),
+                systemShortcutName: action, isEnabled: true
+            )
+        }
+        let ring = SystemShortcut.shortcutRing.identifier
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        let gestureButton = LogiCenter.shared.scrollioCode(for: .gesture)
+        let thumbPanel = LogiCenter.shared.scrollioCode(for: .thumbPanel)
+        let option = UInt(CGEventFlags.maskAlternate.rawValue)
+        // The ring on its own button, and on the gesture button with ⌥.
+        let bindings = [binding(gestureButton, gestures), binding(thumbPanel, ring)]
+        let shared = [binding(gestureButton, gestures), binding(gestureButton, ring, modifiers: option)]
+        XCTAssertEqual(
+            LogiUsageBootstrap.gestureTrackingCodes(deviceTracking: true, bindings: bindings, scrollHotkeyCodes: []), [gestureButton],
+            "never the button that opens the ring"
+        )
+        XCTAssertEqual(LogiUsageBootstrap.gestureTrackingCodes(deviceTracking: true, bindings: shared, scrollHotkeyCodes: []), [])
+
+        Options.shared.gesture.deviceTracking = true
+        Options.shared.buttons.binding = bindings
+        Options.shared.ring.freezePointer = false
+        let controller = makeController()
+        let toggle = try XCTUnwrap(controller.freezeToggle as? NSSwitch)
+        XCTAssertEqual(toggle.state, .off, "the stored value")
+        XCTAssertTrue(toggle.isEnabled)
+        XCTAssertTrue(controller.freezeRow.isEnabled)
+        XCTAssertEqual(controller.freezeRow.explanation, NSLocalizedString("ring-freeze-pointer-hint", comment: ""))
+        toggle.state = .on
+        controller.freezeToggled(toggle)
+        XCTAssertTrue(Options.shared.ring.freezePointer)
+
+        // An app's own ring: its own switch, the same.
+        let notes = Application(path: "/System/Applications/Notes.app")
+        notes.setUsesGeneralRing(false, general: Options.shared.ring)
+        notes.setOwnRingFreezePointer(false)
+        let own = RingPreferencesViewController(application: notes)
+        own.bindingSummary = { [unowned self] in self.summary }
+        _ = own.view
+        let ownToggle = try XCTUnwrap(own.freezeToggle as? NSSwitch)
+        XCTAssertEqual(ownToggle.state, .off)
+        XCTAssertTrue(ownToggle.isEnabled)
+        XCTAssertTrue(own.freezeRow.isEnabled)
+        XCTAssertEqual(own.freezeRow.explanation, NSLocalizedString("ring-freeze-pointer-hint", comment: ""))
+    }
+
     // MARK: Texts
 
     /// Every explanation of the pane is plain sentences that fit two lines where it

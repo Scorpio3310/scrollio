@@ -3,16 +3,23 @@ import XCTest
 
 /// The "Logitech mouse" box of the Gestures tab: two switches bound to the shared gesture
 /// settings. The box shows when a connected mouse can do at least one of them (a switch
-/// it cannot do is disabled and says why); without such a mouse a muted line says what
-/// is needed. While the mouse has its haptics off because the user switched them off
-/// under Mouse, a muted line under the box says so and leads there. Capabilities come from
-/// fixtures; no HID device is touched. (The section lived in the Mouse tab before.)
+/// it cannot do is disabled and says why); without such a mouse the pane ends with
+/// "Behavior" (no line asks for a Logitech mouse). While the mouse has its haptics off
+/// because the user switched them off under Mouse, a muted line under the box says so and
+/// leads there. While the mouse tracks every button that runs the gestures, it holds the
+/// pointer itself: "Freeze pointer during a gesture" reads on and dimmed, with the reason,
+/// and its stored value stays (`MouseGesturePointerHolder`). Capabilities and bindings come
+/// from fixtures; no HID device is touched. (The section lived in the Mouse tab before.)
 final class LogiGestureSectionTests: XCTestCase {
 
     private var savedGesture = MouseGestureSettings.default
     private var savedMouse = LogiMouseSettings.default
     private var support = MouseGestureDeviceSupport.none
     private var refreshCount = 0
+    /// The bindings a press goes by wherever the pane's gestures run, and the keys of
+    /// Scrolling › While you hold a key: what "Freeze pointer" goes by.
+    private var bindingSets: [[ButtonBinding]] = []
+    private var holdKeys: [ScrollHotkey] = []
 
     override func setUp() {
         super.setUp()
@@ -22,6 +29,8 @@ final class LogiGestureSectionTests: XCTestCase {
         Options.shared.logiMouse = .default
         support = .none
         refreshCount = 0
+        bindingSets = []
+        holdKeys = []
     }
 
     override func tearDown() {
@@ -37,10 +46,25 @@ final class LogiGestureSectionTests: XCTestCase {
             refresh: { [weak self] in self?.refreshCount += 1 }
         )
         controller.bindingSummary = { MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: true) }
+        controller.gestureBindingSets = { [weak self] in self?.bindingSets ?? [] }
+        controller.holdKeysThatCatch = { [weak self] in self?.holdKeys ?? [] }
         _ = controller.view
         controller.reload()
         return controller
     }
+
+    /// The gesture button of an MX Master (a Logitech control) and the standard Back button.
+    private static let gestureButton: UInt16 = 1000 + 0x00C3
+    private static let backButton: UInt16 = 3
+
+    private func binding(
+        _ code: UInt16, _ action: String = SystemShortcut.mouseGestureNavigation.identifier, modifiers: UInt = 0, enabled: Bool = true
+    ) -> ButtonBinding {
+        let trigger = RecordedEvent(type: .mouse, code: code, modifiers: modifiers, displayComponents: ["Button"], deviceFilter: nil)
+        return ButtonBinding(triggerEvent: trigger, systemShortcutName: action, isEnabled: enabled)
+    }
+
+    private let master4 = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
 
     private func send(_ control: NSControl) {
         XCTAssertTrue(control.sendAction(control.action, to: control.target))
@@ -107,14 +131,36 @@ final class LogiGestureSectionTests: XCTestCase {
 
     // MARK: - Controls
 
-    func testWithoutASupportingMouseALineSaysWhatIsNeeded() {
+    /// Without a mouse that can, the pane ends with "Behavior" and "Reset to Defaults": no
+    /// line tells every other user to connect a Logitech mouse.
+    func testNoLineAsksForALogitechMouse() {
         Options.shared.gesture.deviceTracking = true
         let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
 
         XCTAssertTrue(controller.logitechSection.isHidden)
-        XCTAssertFalse(controller.logitechNeedsLabel.superview?.isHidden ?? true)
-        XCTAssertEqual(controller.logitechNeedsLabel.stringValue, text("gestures-logitech-needs"))
-        XCTAssertTrue(controller.logitechNeedsLabel.stringValue.contains("MX Master"))
+        XCTAssertTrue(controller.hapticsOffNote.isHidden)
+        let shown = controller.sections.filter { !$0.isHidden }
+        XCTAssertTrue(shown.last === controller.footer)
+        XCTAssertTrue(shown.dropLast().last === controller.behaviourSection, "Behavior is the last box")
+        func frame(_ view: NSView) -> NSRect {
+            controller.view.convert(view.alignmentRect(forFrame: view.frame), from: view.superview)
+        }
+        // The root view is not flipped: lower on screen means a smaller y.
+        XCTAssertEqual(
+            frame(controller.behaviourSection).minY - frame(controller.footer).maxY, PreferencesGroupedForm.sectionSpacing, accuracy: 0.5
+        )
+        let visibleTexts = Self.allSubviews(of: controller.view)
+            .filter { !$0.isHiddenOrHasHiddenAncestor }
+            .compactMap { ($0 as? NSTextField)?.stringValue }
+        XCTAssertFalse(visibleTexts.contains { $0.contains("Logitech") || $0.contains("MX Master") }, "\(visibleTexts)")
+        XCTAssertEqual(text("gestures-logitech-needs"), "gestures-logitech-needs", "the key is gone from the catalog")
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+        // Freeze is Scrollio's to hold: no mouse tracks anything.
+        XCTAssertEqual(controller.pointerHolder, .scrollio)
+        XCTAssertTrue(controller.freezeRow.isEnabled)
+        XCTAssertEqual(controller.freezeRow.explanation, text("gesture-freeze-pointer-hint"))
+        XCTAssertTrue(controller.freezeRow.reservedExplanations.isEmpty, "the row is as it always was")
         // The rules still apply to the hidden switches, and the stored choices stay
         // untouched for when a mouse connects.
         XCTAssertFalse(controller.deviceTrackingSwitch.isEnabled)
@@ -131,7 +177,6 @@ final class LogiGestureSectionTests: XCTestCase {
         let controller = makeController()
 
         XCTAssertFalse(controller.logitechSection.isHidden)
-        XCTAssertTrue(controller.logitechNeedsLabel.superview?.isHidden ?? false)
         XCTAssertTrue(controller.deviceTrackingSwitch.isEnabled)
         XCTAssertTrue(controller.hapticsSwitch.isEnabled)
         XCTAssertEqual(controller.deviceTrackingRow.explanation, text("mouse-gesture-device-tracking-hint"))
@@ -280,7 +325,6 @@ final class LogiGestureSectionTests: XCTestCase {
 
         XCTAssertFalse(controller.logitechSection.isHidden)
         XCTAssertFalse(controller.hapticsOffNote.isHidden)
-        XCTAssertTrue(controller.logitechNeedsLabel.superview?.isHidden ?? false)
         XCTAssertEqual(controller.hapticsOffLabel.stringValue, "Haptic feedback is off under Mouse.")
         XCTAssertEqual(controller.openMouseButton.title, NSLocalizedString("gestures-open-mouse", comment: ""))
         XCTAssertEqual(controller.openMouseButton.controlSize, .small)
@@ -338,7 +382,6 @@ final class LogiGestureSectionTests: XCTestCase {
         NotificationCenter.default.post(name: LogiCenter.gestureStateChanged, object: nil)
         XCTAssertTrue(controller.logitechSection.isHidden)
         XCTAssertTrue(controller.hapticsOffNote.isHidden)
-        XCTAssertFalse(controller.logitechNeedsLabel.superview?.isHidden ?? true)
     }
 
     func testOpenMouseShowsTheMousePane() throws {
@@ -372,12 +415,272 @@ final class LogiGestureSectionTests: XCTestCase {
         XCTAssertEqual(preferences.sidebar.selectedIdentifier, MousePreferencesViewController.tabIdentifier)
     }
 
+    // MARK: - Who holds the pointer
+
+    private typealias Holder = MouseGesturePointerHolder
+
+    private func holder(
+        tracking: Bool = true, canTrack: Bool = true, _ sets: [[ButtonBinding]], holdKeys: [ScrollHotkey] = []
+    ) -> Holder {
+        return Holder.make(deviceTracking: tracking, mouseCanTrack: canTrack, bindingSets: sets, holdKeys: holdKeys)
+    }
+
+    /// A hold the mouse tracks never reads the Freeze switch (`InputProcessor`), and the
+    /// mouse is asked to track a Logitech button only while Gesture Navigation is all it
+    /// does (`LogiUsageBootstrap.gestureTrackingCodes`).
+    func testWhoHoldsThePointerTable() {
+        let gesture = Self.gestureButton
+        let ring = SystemShortcut.shortcutRing.identifier
+        let command = UInt(CGEventFlags.maskCommand.rawValue)
+
+        // "Let the mouse track the gesture" is off, or no connected mouse can.
+        XCTAssertEqual(holder(tracking: false, [[binding(gesture)]]), .scrollio)
+        XCTAssertEqual(holder(canTrack: false, [[binding(gesture)]]), .scrollio)
+        // No button runs the gestures; a plain button is never tracked.
+        XCTAssertEqual(holder([[]]), .scrollio)
+        XCTAssertEqual(holder([]), .scrollio)
+        XCTAssertEqual(holder([[binding(Self.backButton)]]), .scrollio)
+        // A Logitech button that only runs the gestures (also with modifier keys).
+        XCTAssertEqual(holder([[binding(gesture)]]), .mouse)
+        XCTAssertEqual(holder([[binding(gesture), binding(gesture, modifiers: command)]]), .mouse)
+        // The same button with a second action, or as a key of While you hold a key.
+        XCTAssertEqual(holder([[binding(gesture), binding(gesture, SystemShortcut.copy.identifier, modifiers: command)]]), .scrollio)
+        XCTAssertEqual(holder([[binding(gesture)]], holdKeys: [ScrollHotkey(type: .mouse, code: gesture)]), .scrollio)
+        XCTAssertEqual(holder([[binding(gesture)]], holdKeys: [ScrollHotkey(type: .keyboard, code: gesture)]), .mouse, "a key is no button")
+        // A Logitech button and a plain one.
+        XCTAssertEqual(holder([[binding(gesture), binding(Self.backButton)]]), .mouseForSome)
+        // A disabled binding runs nothing: it is neither tracked nor in the way.
+        XCTAssertEqual(holder([[binding(gesture), binding(Self.backButton, enabled: false)]]), .mouse)
+        XCTAssertEqual(holder([[binding(gesture, enabled: false)]]), .scrollio)
+        XCTAssertEqual(holder([[binding(gesture), binding(gesture, SystemShortcut.copy.identifier, modifiers: command, enabled: false)]]), .mouse)
+
+        // An app whose own binding gives the button the ring: no gesture runs there, so
+        // wherever one runs the mouse holds the pointer.
+        let general = [binding(gesture)]
+        XCTAssertEqual(holder([general, [binding(gesture, ring)]]), .mouse)
+        // An app that adds a button the mouse does not track.
+        XCTAssertEqual(holder([general, general + [binding(Self.backButton)]]), .mouseForSome)
+        // Only an app's own (Logitech) button runs the gestures.
+        XCTAssertEqual(holder([[], [binding(gesture)]]), .mouse)
+
+        // What the switch shows, and the line under it.
+        XCTAssertTrue(Holder.mouse.showsFreeze(stored: false))
+        XCTAssertFalse(Holder.mouse.isFreezeEditable)
+        for other in [Holder.scrollio, .mouseForSome] {
+            XCTAssertFalse(other.showsFreeze(stored: false))
+            XCTAssertTrue(other.showsFreeze(stored: true))
+            XCTAssertTrue(other.isFreezeEditable)
+        }
+        XCTAssertEqual(
+            [Holder.scrollio, .mouse, .mouseForSome].map(\.freezeHintKey), Holder.freezeHintKeys
+        )
+        XCTAssertEqual(text("gesture-freeze-pointer-mouse-holds"),
+                       "The mouse holds the pointer still while “Let the mouse track the gesture” is on.")
+        XCTAssertEqual(text("gesture-freeze-pointer-mouse-holds-some"),
+                       "For buttons the mouse does not track. It holds the pointer still for the ones it tracks.")
+        XCTAssertTrue(text("mouse-gesture-device-tracking").hasPrefix("Let the mouse track the gesture"), "the line names the switch")
+    }
+
+    /// The pane's sets: Buttons' bindings, and with the own buttons merged over them for
+    /// each listed app that has some and runs the general gestures.
+    func testThePanesBindingSetsAreButtonsAndTheAppsThatRunTheseGestures() {
+        let general = [binding(Self.gestureButton)]
+        let withOwnButton = Application(path: "/Applications/Figma.app")
+        withOwnButton.setOwnButtonBindings([binding(Self.backButton)])
+        let withOwnGestures = Application(path: "/Applications/Safari.app")
+        withOwnGestures.setOwnButtonBindings([binding(Self.backButton)])
+        withOwnGestures.setUsesGeneralGestures(false, general: .default)
+        let plain = Application(path: "/Applications/Notes.app")
+
+        let sets = Holder.paneBindingSets(general: general, applications: [withOwnButton, withOwnGestures, plain])
+        XCTAssertEqual(sets.count, 2)
+        XCTAssertEqual(sets.first, general)
+        XCTAssertEqual(sets.last?.map(\.triggerEvent.code), [Self.gestureButton, Self.backButton])
+    }
+
+    func testFreezeReadsOnAndDimmedWhileTheMouseHoldsThePointer() {
+        support = master4
+        bindingSets = [[binding(Self.gestureButton)]]
+        Options.shared.gesture.deviceTracking = true
+        Options.shared.gesture.freezePointer = false
+        let controller = makeController()
+        let toggle = controller.controls.freezeToggle
+
+        XCTAssertEqual(controller.pointerHolder, .mouse)
+        XCTAssertTrue(MouseGestureSettingsControls.isOn(toggle), "the pointer does stay still")
+        XCTAssertFalse(toggle.isEnabled)
+        XCTAssertFalse(controller.freezeRow.isEnabled)
+        XCTAssertEqual(controller.freezeRow.title, "Freeze pointer during a gesture")
+        XCTAssertEqual(controller.freezeRow.explanation, text("gesture-freeze-pointer-mouse-holds"))
+        XCTAssertEqual(controller.freezeRow.explanationLabel.textColor, PreferencesGroupedForm.explanationColor(enabled: false))
+        // VoiceOver hears the switch by its row and the reason as its help.
+        XCTAssertEqual(toggle.accessibilityLabel(), "Freeze pointer during a gesture")
+        XCTAssertEqual(toggle.accessibilityHelp(), text("gesture-freeze-pointer-mouse-holds"))
+        // The preview's pointer stays still, as the switch says.
+        XCTAssertTrue(controller.previewScene.gesture.freezePointer)
+        // Nothing was stored, and a dimmed switch sends nothing.
+        XCTAssertFalse(Options.shared.gesture.freezePointer)
+        // The other rows are as ever.
+        XCTAssertTrue(controller.invertRow.isEnabled)
+        XCTAssertTrue(controller.deviceTrackingSwitch.isEnabled)
+        XCTAssertEqual(controller.deviceTrackingSwitch.state, .on)
+    }
+
+    func testTheShownFreezeIsNeverStored() {
+        support = master4
+        bindingSets = [[binding(Self.gestureButton)]]
+        Options.shared.gesture.deviceTracking = true
+        Options.shared.gesture.freezePointer = false
+        let controller = makeController()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        controller.paneUndoManager = undo
+        let controls = controller.controls!
+        XCTAssertTrue(MouseGestureSettingsControls.isOn(controls.freezeToggle))
+
+        // Other rows write their own values; the stored Freeze stays off through each.
+        set(try! XCTUnwrap(controls.invertToggle as? NSSwitch), on: true)
+        XCTAssertFalse(Options.shared.gesture.freezePointer)
+        controls.modeControl.selectedSegment = 1
+        send(controls.modeControl)
+        XCTAssertEqual(Options.shared.gesture.mode, .interactive)
+        XCTAssertFalse(Options.shared.gesture.freezePointer)
+        controller.trackingSpeedSlider.doubleValue = 2
+        send(controller.trackingSpeedSlider)
+        XCTAssertEqual(Options.shared.gesture.trackingSpeed, 2)
+        XCTAssertFalse(Options.shared.gesture.freezePointer)
+        XCTAssertTrue(MouseGestureSettingsControls.isOn(controls.freezeToggle))
+        XCTAssertFalse(controls.freezeToggle.isEnabled)
+
+        // "Reset to Defaults" stores a new installation's values (Freeze on, tracking off):
+        // the switch shows the stored value again and can be changed.
+        let before = Options.shared.gesture
+        undo.beginUndoGrouping()
+        send(controller.resetToDefaultsButton)
+        undo.endUndoGrouping()
+        XCTAssertEqual(Options.shared.gesture, .default)
+        XCTAssertEqual(controller.pointerHolder, .scrollio)
+        XCTAssertTrue(controls.freezeToggle.isEnabled)
+        XCTAssertTrue(MouseGestureSettingsControls.isOn(controls.freezeToggle))
+        XCTAssertEqual(controller.freezeRow.explanation, text("gesture-freeze-pointer-hint"))
+
+        // Undo brings back what was stored, Freeze off among it, not what the switch showed.
+        undo.undo()
+        XCTAssertEqual(Options.shared.gesture, before)
+        XCTAssertFalse(Options.shared.gesture.freezePointer)
+        XCTAssertEqual(controller.pointerHolder, .mouse)
+        XCTAssertTrue(MouseGestureSettingsControls.isOn(controls.freezeToggle))
+        XCTAssertFalse(controls.freezeToggle.isEnabled)
+
+        // Tracking off again: the stored value shows, and the switch is a choice again.
+        set(controller.deviceTrackingSwitch, on: false)
+        XCTAssertEqual(controller.pointerHolder, .scrollio)
+        XCTAssertFalse(MouseGestureSettingsControls.isOn(controls.freezeToggle))
+        XCTAssertTrue(controls.freezeToggle.isEnabled)
+        XCTAssertTrue(controller.freezeRow.isEnabled)
+        XCTAssertEqual(controller.freezeRow.explanation, text("gesture-freeze-pointer-hint"))
+        XCTAssertFalse(controller.previewScene.gesture.freezePointer)
+        set(try! XCTUnwrap(controls.freezeToggle as? NSSwitch), on: true)
+        XCTAssertTrue(Options.shared.gesture.freezePointer)
+
+        // The mouse leaves while tracking is on: Scrollio holds the pointer, by the switch.
+        Options.shared.gesture.freezePointer = false
+        set(controller.deviceTrackingSwitch, on: true)
+        XCTAssertEqual(controller.pointerHolder, .mouse)
+        support = .none
+        NotificationCenter.default.post(name: LogiCenter.gestureStateChanged, object: nil)
+        XCTAssertEqual(controller.pointerHolder, .scrollio)
+        XCTAssertFalse(MouseGestureSettingsControls.isOn(controls.freezeToggle))
+        XCTAssertTrue(controls.freezeToggle.isEnabled)
+    }
+
+    func testFreezeStaysAChoiceWhileOnlySomeButtonsAreTracked() {
+        support = master4
+        bindingSets = [[binding(Self.gestureButton), binding(Self.backButton)]]
+        Options.shared.gesture.deviceTracking = true
+        Options.shared.gesture.freezePointer = false
+        let controller = makeController()
+        let toggle = try! XCTUnwrap(controller.controls.freezeToggle as? NSSwitch)
+
+        XCTAssertEqual(controller.pointerHolder, .mouseForSome)
+        XCTAssertEqual(toggle.state, .off, "the stored value: it decides for the Back button")
+        XCTAssertTrue(toggle.isEnabled)
+        XCTAssertTrue(controller.freezeRow.isEnabled)
+        XCTAssertEqual(controller.freezeRow.explanation, text("gesture-freeze-pointer-mouse-holds-some"))
+        XCTAssertEqual(toggle.accessibilityHelp(), text("gesture-freeze-pointer-mouse-holds-some"))
+        XCTAssertFalse(controller.previewScene.gesture.freezePointer)
+
+        set(toggle, on: true)
+        XCTAssertTrue(Options.shared.gesture.freezePointer)
+        XCTAssertEqual(toggle.state, .on)
+        XCTAssertEqual(controller.freezeRow.explanation, text("gesture-freeze-pointer-mouse-holds-some"))
+
+        // The Back button goes (an Undo in Buttons, a change there): only the tracked one is left.
+        Options.shared.gesture.freezePointer = false
+        bindingSets = [[binding(Self.gestureButton)]]
+        controller.reload()
+        XCTAssertEqual(controller.pointerHolder, .mouse)
+        XCTAssertEqual(toggle.state, .on)
+        XCTAssertFalse(toggle.isEnabled)
+    }
+
+    /// While a connected mouse can track, the row keeps room for each of its lines, so it
+    /// never changes its height under "Let the mouse track the gesture", and each line fits
+    /// two lines of the box. Without such a mouse the row is as it always was.
+    func testTheFreezeRowKeepsItsHeightInTwoLines() {
+        support = master4
+        Options.shared.gesture.deviceTracking = true
+        let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
+        let row = try! XCTUnwrap(controller.freezeRow)
+        XCTAssertEqual(row.reservedExplanations, Holder.freezeHintKeys.map(text))
+
+        let label = row.explanationLabel
+        let oneLine = NSTextField(labelWithString: "Ag")
+        oneLine.font = label.font
+        let lineHeight = oneLine.fittingSize.height
+        var heights: [CGFloat] = []
+        var paneHeights: [CGFloat] = []
+        let cases: [[[ButtonBinding]]] = [[], [[binding(Self.gestureButton)]], [[binding(Self.gestureButton), binding(Self.backButton)]]]
+        for sets in cases {
+            bindingSets = sets
+            controller.reload()
+            controller.view.layoutSubtreeIfNeeded()
+            XCTAssertEqual(row.explanation, text(controller.pointerHolder.freezeHintKey))
+            heights.append(row.frame.height)
+            paneHeights.append(controller.view.frame.height)
+            let measure = NSTextField(wrappingLabelWithString: label.stringValue)
+            measure.font = label.font
+            measure.preferredMaxLayoutWidth = label.preferredMaxLayoutWidth
+            XCTAssertLessThanOrEqual(measure.fittingSize.height, 2 * lineHeight + 0.5, "\(controller.pointerHolder): two lines at most")
+            XCTAssertFalse(controller.view.hasAmbiguousLayout)
+        }
+        XCTAssertEqual(Set([Holder.scrollio, .mouse, .mouseForSome].map(\.freezeHintKey)).count, 3)
+        XCTAssertEqual(Set(heights).count, 1, "\(heights)")
+        XCTAssertEqual(Set(paneHeights).count, 1, "\(paneHeights)")
+
+        // Tracking switched off and on again: the same height.
+        set(controller.deviceTrackingSwitch, on: false)
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(row.frame.height, heights[0])
+        XCTAssertEqual(row.explanation, text("gesture-freeze-pointer-hint"))
+
+        // The mouse leaves: one line, and no room kept for more.
+        support = .none
+        controller.reload()
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertTrue(row.reservedExplanations.isEmpty)
+        XCTAssertLessThan(row.frame.height, heights[0])
+        XCTAssertLessThanOrEqual(label.frame.height, lineHeight + 0.5)
+        XCTAssertEqual(controller.view.frame.size, controller.view.fittingSize)
+    }
+
     // MARK: - Strings
 
     private static let locales = PreferencesLocalizationTests.locales
 
     private static let keys = [
-        "gestures-logitech-header", "gestures-logitech-needs",
+        "gestures-logitech-header", "gesture-freeze-pointer-mouse-holds", "gesture-freeze-pointer-mouse-holds-some",
         "mouse-gesture-device-tracking", "mouse-gesture-device-tracking-hint",
         "mouse-gesture-device-tracking-unavailable",
         "mouse-gesture-haptics", "mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable",

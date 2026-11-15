@@ -10,7 +10,10 @@
 //  of every direction and of Click, a box with how a gesture behaves (invert, freeze,
 //  swipe speed) and, when a connected mouse can do it, a box with what a Logitech mouse
 //  does itself; under it, while the mouse has its haptics off because the user switched
-//  them off under Mouse, a muted line that says so and leads there ("Show in Mouse"). Last,
+//  them off under Mouse, a muted line that says so and leads there ("Show in Mouse").
+//  While that mouse tracks every button that runs the gestures, it holds the pointer
+//  itself: "Freeze pointer during a gesture" then reads on, dimmed, with the reason
+//  (`MouseGesturePointerHolder`; the stored value stays and shows again afterwards). Last,
 //  "Reset to Defaults", as in the Scrolling pane (`PreferencesPaneReset`): every gesture
 //  setting of a new installation; the button to hold is a binding of Buttons and stays.
 //  Mode, actions, invert and freeze come from MouseGestureSettingsControls, the rows from
@@ -55,7 +58,6 @@ final class GesturesPreferencesViewController: NSViewController {
         static let trackingSpeed = MouseGestureSettingsControls.Identifier.trackingSpeed
         static let deviceTracking = MouseGestureSettingsControls.Identifier.deviceTracking
         static let haptics = MouseGestureSettingsControls.Identifier.haptics
-        static let logitechNeeds = NSUserInterfaceItemIdentifier("gestures-logitech-needs")
         static let hapticsOffNote = NSUserInterfaceItemIdentifier("gestures-haptics-off-note")
         static let openMouse = NSUserInterfaceItemIdentifier("gestures-open-mouse")
         static let reset = NSUserInterfaceItemIdentifier("gestures-reset")
@@ -71,6 +73,15 @@ final class GesturesPreferencesViewController: NSViewController {
     var bindingSummary: () -> MouseGestureBindingSummary = { .current }
     /// What the pane shows of it now: "Show in Buttons" goes where the row says.
     private var shownSummary: MouseGestureBindingSummary?
+    /// The bindings a press goes by wherever these gestures run (Buttons', and with each
+    /// app's own merged over them): which of them the mouse tracks decides what "Freeze
+    /// pointer" shows (`MouseGesturePointerHolder`). Tests and screenshots replace it.
+    var gestureBindingSets: () -> [[ButtonBinding]] = { MouseGesturePointerHolder.paneBindingSets() }
+    /// The keys of Scrolling › While you hold a key the mouse is asked for: such a button
+    /// is never tracked. Tests and screenshots replace it.
+    var holdKeysThatCatch: () -> [ScrollHotkey] = { ButtonDefaultOutcome.holdKeysThatCatch() }
+    /// Who holds the pointer during a gesture, as the Freeze row shows it.
+    private(set) var pointerHolder = MouseGesturePointerHolder.scrollio
     /// "Show in Buttons": shows the Buttons pane, with the row of the button that runs
     /// Gesture Navigation selected when one does. Tests replace it.
     var openButtonsPane: (() -> Void)?
@@ -110,14 +121,13 @@ final class GesturesPreferencesViewController: NSViewController {
     private(set) var directionsHintLabel: NSTextField!
     /// "Directions": the line on how a gesture is made and the box of rows.
     private(set) var directionsSection: PreferencesDisclosureSection!
-    /// "Behavior": invert, freeze and the swipe speed. Its box is followed by the muted
-    /// line on what a Logitech mouse adds while none is connected.
+    /// "Behavior": invert, freeze and the swipe speed.
     private(set) var behaviourSection: PreferencesDisclosureSection!
     private(set) var invertRow: PreferencesGroupRow!
     private(set) var freezeRow: PreferencesGroupRow!
     private(set) var trackingSpeedRow: PreferencesSliderRow!
-    /// "Logitech mouse": shown when a connected mouse supports one of its options; the
-    /// muted line under the boxes says what is needed otherwise.
+    /// "Logitech mouse": shown when a connected mouse supports one of its options; without
+    /// one the pane ends with "Behavior".
     private(set) var logitechSection: PreferencesDisclosureSection!
     private(set) var logitechBox: PreferencesGroupBox!
     private(set) var deviceTrackingRow: PreferencesSwitchRow!
@@ -126,7 +136,6 @@ final class GesturesPreferencesViewController: NSViewController {
     private(set) var hapticsOffNote: NSView!
     private(set) var hapticsOffLabel: NSTextField!
     private(set) var openMouseButton: NSButton!
-    private(set) var logitechNeedsLabel: NSTextField!
     /// "Reset to Defaults" under everything else: all of `MouseGestureSettings` as a new
     /// installation has it. Not the button to hold.
     private(set) var resetToDefaults: PreferencesPaneReset!
@@ -198,22 +207,20 @@ final class GesturesPreferencesViewController: NSViewController {
         let logitech = PreferencesDisclosureSection(title: text("gestures-logitech-header"), body: logitechBox)
         logitechSection = logitech
         for section in [directions, behaviour, logitech] {
-            // (The muted lines and the spacing follow the section: `reload`.)
+            // (The muted line and the spacing follow the section: `reload`.)
             section.onExpandedChange = { [weak self] _ in self?.reload() }
         }
         hapticsOffNote = makeHapticsOffNote()
-        logitechNeedsLabel = Self.makeNote(text("gestures-logitech-needs"), identifier: Identifier.logitechNeeds)
-        let logitechNeeds = Self.inset(logitechNeedsLabel)
         resetToDefaults = makeReset()
         footer = PreferencesGroupFooter(trailing: [resetToDefaults.button])
 
-        sections = [preview, first, directions, behaviour, logitech, hapticsOffNote, logitechNeeds, footer]
+        sections = [preview, first, directions, behaviour, logitech, hapticsOffNote, footer]
         PreferencesGroupedForm.add(sections, to: content)
         contentStack = content
-        // The titled sections keep a section's room above them (`add`). The muted lines sit
-        // close under the boxes (only one of them shows: one needs the Logitech box, the
-        // other its absence, and each folds with its box). The footer keeps its room above
-        // whichever view shows last: a muted line (here) or a section (`reload`).
+        // The titled sections keep a section's room above them (`add`): without the Logitech
+        // box that is the footer's room under "Behavior". The muted line sits close under
+        // the Logitech box and folds with it. The footer keeps its room above whichever
+        // view shows last: the muted line (here) or a section (`reload`).
         content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: first)
         content.setCustomSpacing(PreferencesGroupedForm.sectionSpacing, after: hapticsOffNote)
 
@@ -328,19 +335,22 @@ final class GesturesPreferencesViewController: NSViewController {
         MouseGestureRows.show(gesture, presentation: presentation, in: trackingSpeedRow)
 
         gestureSupport = deviceSource.support()
+        // While the mouse tracks every button that runs the gestures, it holds the pointer
+        // itself: the switch reads on, dimmed, with the reason. The stored value stays.
+        pointerHolder = MouseGesturePointerHolder.make(
+            deviceTracking: gesture.deviceTracking, mouseCanTrack: gestureSupport.deviceTracking,
+            bindingSets: gestureBindingSets(), holdKeys: holdKeysThatCatch()
+        )
+        MouseGestureRows.show(
+            pointerHolder, stored: gesture.freezePointer, keepsRoom: gestureSupport.deviceTracking,
+            in: freezeRow, toggle: controls.freezeToggle
+        )
         let rules = MouseGestureControlRules(support: gestureSupport, hapticsOnUnderMouse: Options.shared.logiMouse.hapticsOn)
         logitechSection.isHidden = !rules.showsOptions
-        // A muted line shows with the box it follows, and folds with it.
+        // The muted line shows with the box it follows, and folds with it.
         let showsHapticsOffNote = rules.showsOptions && rules.showsHapticsOffNote && logitechSection.showsBody
-        let showsLogitechNeeds = !rules.showsOptions && behaviourSection.showsBody
         hapticsOffNote.isHidden = !showsHapticsOffNote
-        logitechNeedsLabel.superview?.isHidden = !showsLogitechNeeds
-        // A muted line sits close under its box; a titled section or the footer keeps the
-        // room above it.
-        contentStack.setCustomSpacing(
-            showsLogitechNeeds ? PreferencesGroupedForm.noteSpacing : PreferencesGroupedForm.sectionSpacing,
-            after: behaviourSection
-        )
+        // The muted line sits close under its box; the footer keeps the room above it.
         contentStack.setCustomSpacing(
             showsHapticsOffNote ? PreferencesGroupedForm.noteSpacing : PreferencesGroupedForm.sectionSpacing,
             after: logitechSection
@@ -354,12 +364,14 @@ final class GesturesPreferencesViewController: NSViewController {
 
     // MARK: - Preview
 
-    /// What the preview shows: the settings in effect and the row pointed at.
+    /// What the preview shows: the settings in effect and the row pointed at. Its pointer
+    /// stays still as the Freeze switch shows it (also while the mouse holds it).
     var previewScene: GesturePreviewScene {
         var gesture = Options.shared.gesture
         if let controls {
             gesture.mode = controls.modePresentation.selectedMode
         }
+        gesture.freezePointer = pointerHolder.showsFreeze(stored: gesture.freezePointer)
         return GesturePreviewScene(gesture: gesture, focus: hoveredSlot ?? focusedSlot)
     }
 
@@ -612,32 +624,5 @@ final class GesturesPreferencesViewController: NSViewController {
         let row = MouseGestureRows.haptics(target: self, action: #selector(hapticsToggled(_:)))
         hapticsRow = row
         return row
-    }
-
-    /// A muted line under the boxes.
-    private static func makeNote(_ string: String, identifier: NSUserInterfaceItemIdentifier) -> NSTextField {
-        let label = NSTextField(wrappingLabelWithString: string)
-        label.identifier = identifier
-        label.font = PreferencesGroupedForm.explanationFont
-        label.textColor = PreferencesGroupedForm.explanationColor(enabled: true)
-        label.isSelectable = false
-        label.preferredMaxLayoutWidth = boxWidth - 2 * PreferencesGroupedForm.rowHorizontalInset
-        label.translatesAutoresizingMaskIntoConstraints = false
-        return label
-    }
-
-    /// `label` inset like the text of the rows above it.
-    private static func inset(_ label: NSTextField) -> NSView {
-        let inset = PreferencesGroupedForm.rowHorizontalInset
-        let holder = NSView()
-        holder.translatesAutoresizingMaskIntoConstraints = false
-        holder.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: holder.topAnchor),
-            label.bottomAnchor.constraint(equalTo: holder.bottomAnchor),
-            label.leadingAnchor.constraint(equalTo: holder.leadingAnchor, constant: inset),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: holder.trailingAnchor, constant: -inset),
-        ])
-        return holder
     }
 }

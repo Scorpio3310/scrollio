@@ -4,6 +4,8 @@
 //  Pure helpers for the Gestures tab: what the connected mice can do for Gesture
 //  Navigation, which Logitech options are shown and enabled and what the stored button
 //  bindings mean for the tab. Kept free of views so the rules can be unit tested.
+//  Also who keeps the pointer still during a hold (`MouseGesturePointerHolder`): what
+//  "Freeze pointer during a gesture" shows while the mouse tracks the gesture itself.
 //
 
 import Foundation
@@ -151,5 +153,88 @@ struct MouseGestureBindingSummary: Equatable {
             applications: ApplicationTriggerRule.storedApplications,
             isLogitechCode: { LogiCenter.shared.isLogiCode($0) }
         )
+    }
+}
+
+/// Who keeps the pointer still while a button that runs Gesture Navigation is held, by the
+/// settings (what Scrollio asks of the mouse, `LogiUsageBootstrap.gestureTrackingCodes`;
+/// whether the mouse took it is known only to the Logitech layer). A hold the mouse tracks
+/// never reads "Freeze pointer during a gesture": the mouse reports the movement itself and
+/// the pointer stays where it is (`InputProcessor`). So the switch must not read off, as if
+/// the pointer moved, while every such button is tracked. Pure.
+enum MouseGesturePointerHolder: Equatable {
+    /// Scrollio, by the switch: the mouse tracks no button that runs the gestures.
+    case scrollio
+    /// The mouse, whatever the switch says: it tracks every button that runs the gestures.
+    case mouse
+    /// The mouse for the buttons it tracks; for the others the switch decides.
+    case mouseForSome
+
+    /// - Parameters:
+    ///   - deviceTracking: "Let the mouse track the gesture" that counts for the sets.
+    ///   - mouseCanTrack: a connected mouse can track a button's hold itself
+    ///     (`MouseGestureDeviceSupport.deviceTracking`).
+    ///   - bindingSets: the bindings a press goes by, one set per case: the Buttons pane's,
+    ///     and those of each app whose own buttons count (`ApplicationButtons.merged`).
+    ///   - holdKeys: the keys of Scrolling › While you hold a key the mouse is asked for
+    ///     (`ButtonDefaultOutcome.holdKeysThatCatch`): such a button is never tracked.
+    static func make(
+        deviceTracking: Bool, mouseCanTrack: Bool, bindingSets: [[ButtonBinding]], holdKeys: [ScrollHotkey]
+    ) -> MouseGesturePointerHolder {
+        guard deviceTracking, mouseCanTrack else { return .scrollio }
+        let holdCodes = Set(holdKeys.filter { $0.type == .mouse }.map(\.code))
+        var tracked = false
+        var untracked = false
+        for bindings in bindingSets {
+            let codes = LogiUsageBootstrap.gestureTrackingCodes(deviceTracking: true, bindings: bindings, scrollHotkeyCodes: holdCodes)
+            for binding in bindings where ApplicationTriggerRule.gestureNavigation.takes(binding) {
+                if codes.contains(binding.triggerEvent.code) {
+                    tracked = true
+                } else {
+                    untracked = true
+                }
+            }
+        }
+        guard tracked else { return .scrollio }
+        return untracked ? .mouseForSome : .mouse
+    }
+
+    /// What the switch shows for the stored value: on while the mouse holds the pointer.
+    /// Never stored.
+    func showsFreeze(stored: Bool) -> Bool {
+        return self == .mouse || stored
+    }
+
+    /// The switch can be changed: its value decides something.
+    var isFreezeEditable: Bool {
+        return self != .mouse
+    }
+
+    /// The line under "Freeze pointer during a gesture".
+    var freezeHintKey: String {
+        switch self {
+        case .scrollio: return "gesture-freeze-pointer-hint"
+        case .mouse: return "gesture-freeze-pointer-mouse-holds"
+        case .mouseForSome: return "gesture-freeze-pointer-mouse-holds-some"
+        }
+    }
+
+    /// Every line `freezeHintKey` can be, so the row can keep room for the longest while a
+    /// connected mouse can track (`MouseGestureRows.show`).
+    static let freezeHintKeys = [
+        "gesture-freeze-pointer-hint", "gesture-freeze-pointer-mouse-holds", "gesture-freeze-pointer-mouse-holds-some",
+    ]
+
+    /// The binding sets the Gestures pane's switch is about: the Buttons pane's (every app
+    /// without buttons of its own), and for each listed app with buttons of its own that
+    /// runs the general gestures, those with its own merged over them. An app that runs its
+    /// own gestures has its own switch (its Gestures part).
+    static func paneBindingSets(
+        general: [ButtonBinding] = Options.shared.buttons.binding,
+        applications: [Application] = ApplicationTriggerRule.storedApplications
+    ) -> [[ButtonBinding]] {
+        return [general] + applications
+            .filter { $0.hasOwnButtons && $0.usesGeneralGestures }
+            .map { ApplicationButtons.merged(general: general, own: $0.ownButtonBindings) }
     }
 }

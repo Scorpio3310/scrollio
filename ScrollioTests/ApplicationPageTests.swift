@@ -2292,6 +2292,97 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertTrue(switchLines.allSatisfy { $0.hasSuffix(".") })
     }
 
+    /// The own set's "Freeze pointer during a gesture" reads on and dimmed, with the
+    /// reason, while the mouse holds the pointer itself in this app: by the app's own "Let
+    /// the mouse track the gesture" (not the pane's) and by the buttons that run the
+    /// gestures with the app in front (Buttons' with the app's own merged over them). The
+    /// stored value stays the app's and shows again afterwards.
+    func testAnAppsFreezeFollowsItsOwnTrackingAndButtons() throws {
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        let gestureButton = LogiCenter.shared.scrollioCode(for: .gesture)
+        Options.shared.buttons.binding = [binding(gestureButton, gestures)]
+        Options.shared.gesture.deviceTracking = true
+        let calculator = addApp(Self.calculator)
+        calculator.setUsesGeneralGestures(false, general: Options.shared.gesture)
+        calculator.changeOwnGestures {
+            $0.freezePointer = false
+            $0.deviceTracking = false
+        }
+        var mice = MouseGestureDeviceSupport(deviceTracking: true, haptics: true)
+        let (_, part) = try gesturesPart()
+        part.deviceSource = MouseGestureDeviceSource(support: { mice }, refresh: {})
+        part.syncViewWithOptions()
+        let controls = try XCTUnwrap(part.controls)
+        let row = try XCTUnwrap(part.freezeRow)
+        let toggle = try XCTUnwrap(controls.freezeToggle as? NSSwitch)
+        let tracking = try XCTUnwrap(part.deviceTrackingRow).toggle
+        func text(_ key: String) -> String { NSLocalizedString(key, comment: "") }
+        XCTAssertEqual(row.reservedExplanations, MouseGesturePointerHolder.freezeHintKeys.map(text), "a mouse can track: the row keeps its height")
+
+        // The pane's tracking is on, the app's own is off: Scrollio holds the pointer here.
+        XCTAssertEqual(part.pointerHolder, .scrollio)
+        XCTAssertEqual(toggle.state, .off)
+        XCTAssertTrue(toggle.isEnabled)
+        XCTAssertEqual(row.explanation, text("gesture-freeze-pointer-hint"))
+
+        // The app's own tracking on: the mouse holds it for the one button there is.
+        tracking.state = .on
+        send(tracking)
+        XCTAssertEqual(calculator.ownGestures?.deviceTracking, true)
+        XCTAssertEqual(part.pointerHolder, .mouse)
+        XCTAssertEqual(toggle.state, .on)
+        XCTAssertFalse(toggle.isEnabled)
+        XCTAssertFalse(row.isEnabled)
+        XCTAssertEqual(row.explanation, text("gesture-freeze-pointer-mouse-holds"))
+        XCTAssertEqual(toggle.accessibilityHelp(), text("gesture-freeze-pointer-mouse-holds"))
+        XCTAssertEqual(calculator.ownGestures?.freezePointer, false, "the app's stored value stays")
+        XCTAssertTrue(Options.shared.gesture.freezePointer, "and the pane's")
+        XCTAssertTrue(part.invertRow?.isEnabled ?? false)
+
+        // The pane's tracking does not count here.
+        Options.shared.gesture.deviceTracking = false
+        part.syncViewWithOptions()
+        XCTAssertEqual(part.pointerHolder, .mouse)
+        XCTAssertFalse(toggle.isEnabled)
+
+        // The app adds a button of its own that the mouse does not track: a choice again,
+        // for that button.
+        calculator.setOwnButtonBindings([binding(3, gestures)])
+        part.syncViewWithOptions()
+        XCTAssertEqual(part.pointerHolder, .mouseForSome)
+        XCTAssertEqual(toggle.state, .off)
+        XCTAssertTrue(toggle.isEnabled)
+        XCTAssertEqual(row.explanation, text("gesture-freeze-pointer-mouse-holds-some"))
+        toggle.state = .on
+        send(toggle)
+        XCTAssertEqual(calculator.ownGestures?.freezePointer, true)
+        XCTAssertEqual(toggle.state, .on)
+        XCTAssertTrue(toggle.isEnabled)
+        calculator.changeOwnGestures { $0.freezePointer = false }
+
+        // The app gives the Gesture button another job and runs the gestures on Back: no
+        // button is tracked here.
+        calculator.setOwnButtonBindings([binding(gestureButton, "copy"), binding(3, gestures)])
+        part.syncViewWithOptions()
+        XCTAssertEqual(part.pointerHolder, .scrollio)
+        XCTAssertEqual(toggle.state, .off)
+        XCTAssertTrue(toggle.isEnabled)
+        XCTAssertEqual(row.explanation, text("gesture-freeze-pointer-hint"))
+
+        // Back to Buttons' button alone, then the mouse leaves: the stored value shows.
+        calculator.setOwnButtonBindings([])
+        part.syncViewWithOptions()
+        XCTAssertEqual(part.pointerHolder, .mouse)
+        XCTAssertEqual(toggle.state, .on)
+        mice = .none
+        NotificationCenter.default.post(name: LogiCenter.gestureStateChanged, object: nil)
+        XCTAssertEqual(part.pointerHolder, .scrollio)
+        XCTAssertEqual(toggle.state, .off)
+        XCTAssertTrue(toggle.isEnabled)
+        XCTAssertTrue(row.reservedExplanations.isEmpty, "no mouse that can track: the row as it always was")
+        XCTAssertEqual(calculator.ownGestures?.freezePointer, false)
+    }
+
     // MARK: - The Shortcut Ring part
 
     /// "Button or key", the part's first row, counts the app's own buttons: the ring opens

@@ -1033,17 +1033,6 @@
         }
       }
     },
-    "gestures-logitech-needs": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connect a Logitech MX Master to let the mouse track gestures, with haptic feedback on the MX Master 4."
-          }
-        }
-      }
-    },
     "mouse-battery-about": {
       "extractionState": "manual",
       "localizations": {
@@ -10942,6 +10931,30 @@
           "stringUnit": {
             "state": "translated",
             "value": "Add %@"
+          }
+        }
+      }
+    },
+    "gesture-freeze-pointer-mouse-holds": {
+      "comment": "Gestures pane and an app's Gestures part: under \"Freeze pointer during a gesture\" while the switch reads on and is dimmed, because the mouse tracks every button that runs the gestures; the quoted name is the switch of the Logitech mouse box (mouse-gesture-device-tracking)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The mouse holds the pointer still while “Let the mouse track the gesture” is on."
+          }
+        }
+      }
+    },
+    "gesture-freeze-pointer-mouse-holds-some": {
+      "comment": "Gestures pane and an app's Gestures part: under \"Freeze pointer during a gesture\" while the mouse tracks some of the buttons that run the gestures and not others; the switch then decides for the others only",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For buttons the mouse does not track. It holds the pointer still for the ones it tracks."
           }
         }
       }

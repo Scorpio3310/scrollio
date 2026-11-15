@@ -2487,7 +2487,7 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 ("slider", gestures.trackingSpeedSlider),
                 ("segmented", gestures.controls.modeControl),
                 ("pop-up", gestures.controls.actionPopUp(for: .left)),
-                ("note", gestures.logitechNeedsLabel),
+                ("note", gestures.directionsHintLabel),
             ]
             for (label, view) in controls {
                 lines.append("\(appearanceName.rawValue) \(label): \(type(of: view)) allowsVibrancy \(view.allowsVibrancy) enabled \((view as? NSControl)?.isEnabled ?? true)")

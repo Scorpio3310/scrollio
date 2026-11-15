@@ -143,10 +143,11 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gesture-tracking-speed-slower", "gesture-tracking-speed-faster",
         "gestures-gesture-button", "gestures-gesture-button-none", "gestures-gesture-button-bound", "gestures-gesture-button-one",
         "gestures-trigger-choice-record", "gestures-undo-choose-button", "gestures-directions-header", "gestures-directions-hint",
-        "gestures-behaviour-header", "gestures-logitech-header", "gestures-logitech-needs",
+        "gestures-behaviour-header", "gestures-logitech-header",
         "mouse-gesture-device-tracking", "mouse-gesture-device-tracking-hint", "mouse-gesture-device-tracking-unavailable",
         "mouse-gesture-haptics", "mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable",
         "gestures-haptics-off-under-mouse", "gestures-open-mouse", "gestures-undo-reset",
+        "gesture-freeze-pointer-mouse-holds", "gesture-freeze-pointer-mouse-holds-some",
     ]
 
     /// Apps pane and an app's page.

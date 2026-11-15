@@ -10,7 +10,10 @@
 //  track the gesture", "Pulse when a gesture locks in"), the last there while a connected
 //  mouse can do one of them, as in the pane. They run while the app is in front
 //  (`MouseGestureChoice`). In "Follow the hand" the Left and Right rows say so and the
-//  speed applies, as the pane's do, by the app's own mode. The button to hold is a binding
+//  speed applies, as the pane's do, by the app's own mode; "Freeze pointer" reads on and
+//  dimmed while the mouse holds the pointer itself here, by the app's own tracking switch
+//  and the buttons that run the gestures in it (`MouseGesturePointerHolder`). The button
+//  to hold is a binding
 //  of Buttons, or of the app's Buttons part: the first row, "Button to hold", says which
 //  one runs the gestures with the app in front ("Gesture button, as everywhere", "Back
 //  button, only in Figma", "None in Figma", `ApplicationTriggerRow`), and its button goes
@@ -61,6 +64,15 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     /// What the connected mice can do: the "Logitech mouse" section shows as the Gestures
     /// pane's does. Tests replace it.
     var deviceSource: MouseGestureDeviceSource = .live
+    /// The bindings a press goes by while the app is in front (Buttons' with the app's own
+    /// merged over them): which of them the mouse tracks decides what the own set's "Freeze
+    /// pointer" shows (`MouseGesturePointerHolder`). Tests replace it.
+    var gestureBindingSets: () -> [[ButtonBinding]]
+    /// The keys of Scrolling › While you hold a key the mouse is asked for: such a button
+    /// is never tracked. Tests replace it.
+    var holdKeysThatCatch: () -> [ScrollHotkey] = { ButtonDefaultOutcome.holdKeysThatCatch() }
+    /// Who holds the pointer during a gesture in this app, as the Freeze row shows it.
+    private(set) var pointerHolder = MouseGesturePointerHolder.scrollio
     /// "Show in Mouse": shows the Mouse pane. Tests replace it.
     var openMousePane: (() -> Void)?
     /// "Show in Buttons" of "Button to hold": the Buttons pane, the gesture button's row
@@ -131,6 +143,9 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
             ApplicationTriggerRule.gestureNavigation
                 .bindings(general: Options.shared.buttons.binding, own: application.ownButtonBindings)
                 .contains { LogiCenter.shared.isLogiCode($0.triggerEvent.code) }
+        }
+        gestureBindingSets = { [application] in
+            [ApplicationButtons.merged(general: Options.shared.buttons.binding, own: application.ownButtonBindings)]
         }
         super.init(nibName: nil, bundle: nil)
     }
@@ -276,7 +291,12 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         if syncHapticsOffNote() {
             remeasures = remeasures || view.superview != nil
         }
+        // (The Freeze row keeps room for its lines only while a mouse can track.)
+        let keptRoom = freezeRow?.reservedExplanations.isEmpty
         showOwnValues()
+        if freezeRow?.reservedExplanations.isEmpty != keptRoom {
+            remeasures = remeasures || view.superview != nil
+        }
         return remeasures
     }
 
@@ -368,7 +388,10 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     /// Puts the app's own values into the rows that are not the controls' own: the Left and
     /// Right rows are dimmed while the desktop follows the hand (the app's own mode), as in
     /// the Gestures pane, their pull-downs say so (`MouseGestureSettingsControls`); the
-    /// speed applies only then; a Logitech mouse's switches as the connected mice allow.
+    /// speed applies only then; a Logitech mouse's switches as the connected mice allow;
+    /// "Freeze pointer" reads on and dimmed while the mouse holds the pointer itself, by
+    /// the app's own "Let the mouse track the gesture" and the buttons that run the
+    /// gestures while it is in front (the stored value stays).
     private func showOwnValues() {
         guard let controls else { return }
         let presentation = controls.modePresentation
@@ -380,8 +403,20 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         if let trackingSpeedRow {
             MouseGestureRows.show(settings, presentation: presentation, in: trackingSpeedRow)
         }
+        let support = deviceSource.support()
+        if let freezeRow {
+            pointerHolder = MouseGesturePointerHolder.make(
+                deviceTracking: settings.deviceTracking, mouseCanTrack: support.deviceTracking,
+                bindingSets: gestureBindingSets(), holdKeys: holdKeysThatCatch()
+            )
+            MouseGestureRows.show(
+                pointerHolder, stored: settings.freezePointer, keepsRoom: support.deviceTracking,
+                in: freezeRow, toggle: controls.freezeToggle
+            )
+        }
         if let deviceTrackingRow, let hapticsRow {
-            MouseGestureRows.show(settings, rules: logitechRules, deviceTracking: deviceTrackingRow, haptics: hapticsRow)
+            let rules = MouseGestureControlRules(support: support, hapticsOnUnderMouse: Options.shared.logiMouse.hapticsOn)
+            MouseGestureRows.show(settings, rules: rules, deviceTracking: deviceTrackingRow, haptics: hapticsRow)
         }
     }
 

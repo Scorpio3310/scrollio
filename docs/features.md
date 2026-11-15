@@ -164,7 +164,11 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   slides the desktops with your hand, like a trackpad swipe. "Follow the hand" uses a
   private macOS interface; where it is missing, the mode is not available.
 - "Freeze pointer during a gesture" keeps the pointer where it is while you hold the
-  button.
+  button. While the mouse tracks every button that runs the gestures itself ("Let the
+  mouse track the gesture"), the mouse holds the pointer still whatever the switch says:
+  it then reads on, dimmed, with the reason, and shows your own choice again afterwards
+  (the stored value never changes). With some buttons tracked and others not, the switch
+  decides for the others and says so.
 - An app can have gestures of its own. Its page in Apps (add the app there, or open it
   in the list) has a "Gestures" part. "Use settings from Gestures" is on for every app;
   turn it off and the app gets everything of the Gestures pane but the button to hold,
