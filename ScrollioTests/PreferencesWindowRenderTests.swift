@@ -4908,3 +4908,65 @@ private final class Round4D6Outline: NSView {
         circle.stroke()
     }
 }
+
+// MARK: - QA fix F2
+
+/// QA fix F2 (`qafix-f2-*-<appearance>.png`): the recorder's popover where nothing can be
+/// recorded (no Accessibility access, or the tap could not be made: B6, X7), its small line
+/// while Scrollio is paused, for a listed button without an action and for a row's own
+/// button (B1); and Buttons on an MX Master 4 with the shortened lines of the ring and of a
+/// key that has Gesture Navigation, each in two lines (B7).
+extension PreferencesWindowRenderTests {
+
+    func testRenderQAFixF2Recorder() throws {
+        func text(_ key: String) -> String {
+            return NSLocalizedString(key, comment: "")
+        }
+        func render(_ popover: KeyPopover, _ name: String) throws {
+            let view = try XCTUnwrap(popover.testingContentView)
+            view.layoutSubtreeIfNeeded()
+            view.setFrameSize(view.fittingSize)
+            try renderInPopoverMaterial(view, name: "qafix-f2-recorder-\(name)")
+            popover.hide()
+        }
+        // (A view without a window: the popover's content is made, nothing opens.)
+        let anchor = NSView(frame: NSRect(x: 0, y: 0, width: 24, height: 22))
+        let notices = [
+            ("no-access", "status-menu-title-needs-access", "key-recorder-needs-access-hint"),
+            ("could-not-start", "key-recorder-could-not-start", "key-recorder-try-again"),
+        ]
+        for (name, title, detail) in notices {
+            let popover = KeyPopover()
+            popover.announce = { _ in }
+            popover.showNotice(at: anchor, title: text(title), detail: text(detail))
+            try render(popover, name)
+        }
+        let lines: [(name: String, keys: [String], status: KeyPreview.Status, hint: String)] = [
+            ("paused", [KeyPreview.WAITING_WORDING], .recording, text("key-recorder-paused")),
+            ("in-list", ["Gesture button"], .duplicate, text("buttons-recorder-in-list")),
+            ("own-button", ["Back button"], .duplicate, text("buttons-recorder-own-button")),
+        ]
+        for line in lines {
+            let popover = KeyPopover()
+            popover.announce = { _ in }
+            popover.testingPrepareContent(waitingHint: KeyRecordingMode.combination.waitingHint)
+            popover.keyPreview.update(from: line.keys, status: line.status)
+            popover.showRefusalHint(line.hint)
+            try render(popover, line.name)
+        }
+    }
+
+    func testRenderQAFixF2ButtonsNotes() throws {
+        let ring = SystemShortcut.shortcutRing.identifier
+        let gestures = SystemShortcut.mouseGestureNavigation.identifier
+        Options.shared.buttons.binding = [
+            round2Binding(LogiCenter.shared.scrollioCode(for: .gesture), ring),
+            round2Binding(3, gestures),
+            round2Binding(49, ring, modifiers: .maskControl, type: .keyboard),
+            round2Binding(41, gestures, modifiers: .maskCommand, type: .keyboard),
+        ]
+        try renderButtons(name: "qafix-f2-buttons-notes", source: round2Source("MX Master 4")) { buttons in
+            XCTAssertEqual(buttons.row(for: ButtonsMousePart.gesture)?.explanation, "Opens the ring. Set its shortcuts under Shortcut Ring.")
+        }
+    }
+}
