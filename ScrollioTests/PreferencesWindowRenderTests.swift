@@ -3783,7 +3783,8 @@ extension PreferencesWindowRenderTests {
     /// Safari's Buttons part on an MX Master 4: ⌥ Back of its own (in other apps ⌥ Back
     /// runs Back's Mission Control), ⌥ Gesture (in other apps caught for ⌃ Gesture: "No
     /// Action"), its own "Default" on the standard Forward while the Logitech one is caught
-    /// for ⌥ Forward ("No Action": the press never reaches it), and the thumb wheel's
+    /// for ⌥ Forward ("Default (Forward)": a press nothing takes goes on as the standard
+    /// button), and the thumb wheel's
     /// function ("In other apps: Default (Scroll Sideways)"); and a row's menu.
     func testRenderRound2FixYAppButtons() throws {
         let stored = Options.shared.application.applications
@@ -3824,9 +3825,9 @@ extension PreferencesWindowRenderTests {
         })
         let shown = try XCTUnwrap(part)
         XCTAssertEqual(shown.rows.map(\.explanation), [
-            "In other apps: Mission Control", "In other apps: No\u{A0}Action", "In other apps: No\u{A0}Action",
+            "In other apps: Mission Control", "In other apps: No\u{A0}Action", "In other apps: Default\u{A0}(Forward)",
         ])
-        XCTAssertEqual(shown.rows.last?.pullDown.menu?.items.first?.title, "No Action")
+        XCTAssertEqual(shown.rows.last?.pullDown.menu?.items.first?.title, "Default (Forward)")
         XCTAssertEqual(shown.thumbWheelRow?.explanation, "In other apps: Default\u{A0}(Scroll\u{A0}Sideways)")
         try round2Menu(try round2Shown(try XCTUnwrap(shown.rows.first).pullDown), name: "round2-fix-y-menu-app-row")
     }
