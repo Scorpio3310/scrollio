@@ -149,6 +149,31 @@ struct ApplicationPagePart: Equatable {
     }
 }
 
+// MARK: - The first rows' push button
+
+extension ApplicationTriggerRow {
+
+    /// The widest the push button of the Gestures and Shortcut Ring parts' first rows gets:
+    /// "Show in <app>" with a long name is cut short (the whole of it in its tooltip), and
+    /// the row's line keeps its room.
+    static let buttonMaxWidth: CGFloat = 200
+
+    /// Makes `button` such a push button: no wider than `buttonMaxWidth`.
+    static func limitWidth(of button: NSButton) {
+        button.lineBreakMode = .byTruncatingTail
+        button.widthAnchor.constraint(lessThanOrEqualToConstant: buttonMaxWidth).isActive = true
+    }
+
+    /// Shows `title` on `button`, with the whole of it in the tooltip while it is cut short.
+    static func show(_ title: String, on button: NSButton) {
+        if button.title != title {
+            button.title = title
+        }
+        let cut = (button.cell?.cellSize.width ?? 0) > buttonMaxWidth
+        button.toolTip = cut ? title : nil
+    }
+}
+
 // MARK: - Scrolling
 
 /// "Use settings from Scrolling" and, while it is off, the Scrolling settings editing the
@@ -350,7 +375,7 @@ final class ApplicationScrollingPartViewController: NSViewController, Applicatio
 /// this app), which open while the app is in front. What opens the ring is a binding of
 /// Buttons, or of the app's Buttons part: the first row, "Button or key", says which one
 /// opens it with the app in front ("Thumb panel, as everywhere", "None in Figma",
-/// `ApplicationTriggerRow`), and its button goes there ("Show in Buttons", "Show Buttons")
+/// `ApplicationTriggerRow`), and its button goes there ("Show in Buttons", "Show in Figma")
 /// or, with none, records one that opens it only in this app ("Set Up…").
 ///
 /// For an app with suggested shortcuts (`ShortcutRingSuggestions`) the ring the switch
@@ -387,7 +412,7 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
     /// "Show in Buttons" of "Button or key": the Buttons pane, the row of what opens the
     /// ring selected. Tests replace it.
     var openButtonsPane: (() -> Void)?
-    /// "Show Buttons" of "Button or key": the app's Buttons part, the row with this id
+    /// "Show in Figma" of "Button or key": the app's Buttons part, the row with this id
     /// selected (the page sets it).
     var showApplicationButtons: ((UUID) -> Void)?
     /// "Set Up…" of "Button or key": records a button or key at the push button that opens
@@ -472,6 +497,7 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
             title: NSLocalizedString("ring-trigger-set-up", comment: ""), target: self, action: #selector(triggerButtonClicked(_:))
         )
         trigger.identifier = Identifier.triggerButton
+        ApplicationTriggerRow.limitWidth(of: trigger)
         triggerButton = trigger
         triggerRow = PreferencesGroupRow(title: NSLocalizedString("ring-trigger", comment: ""), explanation: "", accessory: trigger)
         let reset = PreferencesPaneReset(
@@ -539,10 +565,9 @@ final class ApplicationRingPartViewController: NSViewController, ApplicationPage
         // (What opens it here is a binding of Buttons or of the app's Buttons part.)
         let trigger = ApplicationTriggerRow.make(.shortcutRing, application: application, general: Options.shared.buttons.binding)
         shownTrigger = trigger
-        let title = NSLocalizedString(trigger.destination == .setUp ? "ring-trigger-set-up" : trigger.buttonTitleKey, comment: "")
-        if triggerButton.title != title {
-            triggerButton.title = title
-        }
+        ApplicationTriggerRow.show(
+            trigger.buttonTitle(applicationName: application.getName(), setUpKey: "ring-trigger-set-up"), on: triggerButton
+        )
         if triggerRow.explanation != trigger.text {
             remeasures = remeasures || view.superview != nil
             triggerRow.explanation = trigger.text

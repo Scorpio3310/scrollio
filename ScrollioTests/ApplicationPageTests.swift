@@ -1576,7 +1576,7 @@ final class ApplicationPageTests: XCTestCase {
     /// "Button to hold", the part's first row: which button runs Gesture Navigation with
     /// the app in front, by the rule the pane counts by, and where its button leads: Buttons'
     /// button "as everywhere" (Show in Buttons), one of the app's own "only in" it (Show
-    /// Buttons, that row), none (Set Up…; Show Buttons when a row of the app's own took
+    /// in Calculator, that row), none (Set Up…; Show in Calculator when a row of the app's own took
     /// Buttons' button). The switch's line is the plain one in every case.
     func testTheGesturesPartsFirstRowSaysWhichButtonRunsTheGesturesHere() throws {
         let gestures = SystemShortcut.mouseGestureNavigation.identifier
@@ -1613,17 +1613,17 @@ final class ApplicationPageTests: XCTestCase {
 
         let took = binding(thumbPanel, SystemShortcut.shortcutRing.identifier)
         calculator.setOwnButtonBindings([took])
-        try check("None in Calculator", .applicationButtons(took.id), "Show Buttons", "the app's own row took it: that row")
+        try check("None in Calculator", .applicationButtons(took.id), "Show in Calculator", "the app's own row took it: that row")
         let ownBack = binding(3, gestures)
         calculator.setOwnButtonBindings([took, ownBack])
-        try check("\(back), only in Calculator", .applicationButtons(ownBack.id), "Show Buttons", "another button")
+        try check("\(back), only in Calculator", .applicationButtons(ownBack.id), "Show in Calculator", "another button")
         calculator.setOwnButtonBindings([ownBack])
         try check(
-            "\(thumb) as everywhere, \(back) only in Calculator", .applicationButtons(ownBack.id), "Show Buttons", "both"
+            "\(thumb) as everywhere, \(back) only in Calculator", .applicationButtons(ownBack.id), "Show in Calculator", "both"
         )
         // Without a button in Buttons, one of the app's own is "only in" it too.
         Options.shared.buttons.binding = []
-        try check("\(back), only in Calculator", .applicationButtons(ownBack.id), "Show Buttons", "only the app's own")
+        try check("\(back), only in Calculator", .applicationButtons(ownBack.id), "Show in Calculator", "only the app's own")
         // A key never runs the gestures; nor does anything, with none anywhere.
         calculator.setOwnButtonBindings([binding(40, gestures, modifiers: UInt(CGEventFlags.maskCommand.rawValue), type: .keyboard)])
         try check("None in Calculator", .setUp, "Set Up…", "a key")
@@ -1658,7 +1658,7 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// The first row's buttons go where its line says: "Show in Buttons" to the Buttons
-    /// pane, "Show Buttons" to the app's Buttons part with that row selected, "Set Up…"
+    /// pane, "Show in Calculator" to the app's Buttons part with that row selected, "Set Up…"
     /// records a mouse button at the push button that runs the gestures only in this app
     /// (a key is refused, a row with "Default" takes it), and the row says so at once. What
     /// Set Up… recorded has its Undo in the window's Edit menu ("Change Button to Hold"),
@@ -1711,7 +1711,7 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(added.systemShortcutName, gestures, "for this app only")
         XCTAssertTrue(Options.shared.buttons.binding.isEmpty, "Buttons untouched")
         XCTAssertEqual(part.holdRow.explanation?.hasSuffix(", only in Calculator"), true, "the row says it at once")
-        XCTAssertEqual(part.holdButton.title, "Show Buttons")
+        XCTAssertEqual(part.holdButton.title, "Show in Calculator")
         XCTAssertNil(buttons.waitingHint(recorder, mode: .combination), "\"Record a Button or Key…\" asks as ever")
 
         // Edit › Undo takes the new row away again, and the row says so; Redo puts it back.
@@ -1722,9 +1722,9 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(part.holdButton.title, "Set Up…")
         undo.redo()
         XCTAssertEqual(calculator.ownButtonBindings, [added])
-        XCTAssertEqual(part.holdButton.title, "Show Buttons")
+        XCTAssertEqual(part.holdButton.title, "Show in Calculator")
 
-        // Show Buttons: the app's Buttons part, that row selected.
+        // Show in Calculator: the app's Buttons part, that row selected.
         send(part.holdButton)
         XCTAssertEqual(page.shownPart, .buttons)
         XCTAssertEqual(buttons.list.selectedID, AnyHashable(added.id))
@@ -1761,6 +1761,35 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(panes, 1)
     }
 
+    /// "Show in <app>" of the Gestures and Shortcut Ring parts' first rows names the app; a
+    /// long name is cut short, with all of it in the tooltip, so the row's line keeps its
+    /// room; a short one has no tooltip.
+    func testTheFirstRowsShowInTheAppIsCutShortForALongName() throws {
+        let long = addApp(Self.calculator)
+        long.displayName = "An Application With A Remarkably Long Name For Its Kind"
+        long.setOwnButtonBindings([
+            binding(3, SystemShortcut.mouseGestureNavigation.identifier), binding(4, SystemShortcut.shortcutRing.identifier),
+        ])
+        let pane = makePane()
+        _ = makeWindow(for: pane)
+        pane.openApplication(withID: Self.calculator, part: .gestures)
+        let page = try XCTUnwrap(pane.detailController)
+        for part in [ApplicationPagePart.gestures, .ring] {
+            page.show(part)
+            page.view.layoutSubtreeIfNeeded()
+            let row: PreferencesGroupRow = part == .gestures ? page.gesturesPart.holdRow : page.ringPart.triggerRow
+            let button: NSButton = part == .gestures ? page.gesturesPart.holdButton : page.ringPart.triggerButton
+            XCTAssertEqual(button.title, "Show in \(long.displayName!)", part.id)
+            XCTAssertEqual(button.toolTip, button.title, part.id)
+            XCTAssertLessThanOrEqual(button.frame.width, ApplicationTriggerRow.buttonMaxWidth + 0.5, part.id)
+            XCTAssertGreaterThan(row.explanationLabel.frame.width, 200, part.id)
+        }
+        long.displayName = "Notes"
+        page.syncViewWithOptions()
+        XCTAssertEqual(page.ringPart.triggerButton.title, "Show in Notes")
+        XCTAssertNil(page.ringPart.triggerButton.toolTip)
+    }
+
     /// The switch's lines are plain sentences, and the first row's lines fit two lines, also
     /// for an app with a long name.
     func testTheGesturesPartsLinesFitTwoLines() throws {
@@ -1795,7 +1824,7 @@ final class ApplicationPageTests: XCTestCase {
 
     /// "Button or key", the part's first row, counts the app's own buttons: the ring opens
     /// by Buttons' button, by a button or key of the app's own only, or nothing opens it
-    /// here (a row of its own took Buttons' button: Show Buttons; else Set Up…). The
+    /// here (a row of its own took Buttons' button: Show in Calculator; else Set Up…). The
     /// switch's line is the plain one in every case.
     func testTheRingPartsFirstRowSaysWhatOpensTheRingWithTheAppInFront() throws {
         let ring = SystemShortcut.shortcutRing.identifier
@@ -1825,14 +1854,14 @@ final class ApplicationPageTests: XCTestCase {
         let own = binding(6, ring)
         calculator.setOwnButtonBindings([own])
         (text, destination, button) = try shown()
-        XCTAssertEqual([text, button], ["\(title(6)), only in Calculator", "Show Buttons"], "only in this app")
+        XCTAssertEqual([text, button], ["\(title(6)), only in Calculator", "Show in Calculator"], "only in this app")
         XCTAssertEqual(destination, .applicationButtons(own.id))
 
         Options.shared.buttons.binding = [binding(6, ring)]
         let copy = binding(6, "copy")
         calculator.setOwnButtonBindings([copy])
         (text, destination, button) = try shown()
-        XCTAssertEqual([text, button], ["None in Calculator", "Show Buttons"], "the ring's button does something else here")
+        XCTAssertEqual([text, button], ["None in Calculator", "Show in Calculator"], "the ring's button does something else here")
         XCTAssertEqual(destination, .applicationButtons(copy.id))
         let controlSpace = binding(49, ring, modifiers: UInt(CGEventFlags.maskControl.rawValue), type: .keyboard)
         calculator.setOwnButtonBindings([copy, controlSpace])
@@ -1893,7 +1922,7 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertTrue(Options.shared.buttons.binding.isEmpty)
         XCTAssertEqual(page.shownPart, .ring)
         XCTAssertEqual(part.triggerRow.explanation?.hasSuffix(", only in Calculator"), true)
-        XCTAssertEqual(part.triggerButton.title, "Show Buttons")
+        XCTAssertEqual(part.triggerButton.title, "Show in Calculator")
 
         XCTAssertEqual(undo.undoActionName, "Change What Opens the Ring")
         undo.undo()
@@ -1902,7 +1931,7 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(part.triggerButton.title, "Set Up…")
         undo.redo()
         XCTAssertEqual(calculator.ownButtonBindings.map(\.systemShortcutName), [ring])
-        XCTAssertEqual(part.triggerButton.title, "Show Buttons")
+        XCTAssertEqual(part.triggerButton.title, "Show in Calculator")
 
         var panes = 0
         part.openButtonsPane = { panes += 1 }
