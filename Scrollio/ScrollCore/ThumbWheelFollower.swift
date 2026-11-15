@@ -203,7 +203,8 @@ final class ThumbWheelFollower {
     /// A gate that timed out, for `followLateSpaceChangeWindow` more: a change meanwhile is
     /// its swipe's, late, unless a newer gate is closed (then it is that gate's).
     private var lateRecord: Gate?
-    /// Swipe endings told after the late record's, so the roll's line lists them in order.
+    /// Swipe endings of the late record's own roll, told after its, so the roll's line lists
+    /// them in order.
     private var queuedEnds: [(tag: Int, swipe: Swipe)] = []
     /// `add` or `endStroke(at:)` runs (the tap callback): endings are told on the main queue.
     private var inTapCallback = false
@@ -594,9 +595,11 @@ final class ThumbWheelFollower {
         }
     }
 
-    /// Tells the roll's line a swipe's ending; behind a late record, once that one's is told.
+    /// Tells the roll's line a swipe's ending. One of the late record's own roll waits behind
+    /// it, so that roll's line lists its swipes in order; another roll's is told at once (its
+    /// line does not wait for an older roll's late swipe).
     private func tell(_ tag: Int, _ swipe: Swipe) {
-        if lateRecord != nil {
+        if let lateRecord, lateRecord.tag == tag {
             queuedEnds.append((tag, swipe))
         } else {
             deliver(tag, swipe)

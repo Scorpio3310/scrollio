@@ -696,9 +696,11 @@ final class ThumbWheelFollowTests: XCTestCase {
         XCTAssertEqual(endTimes.count, 2)
         try turn(at: 7, lines: 2, busy: true)
         rig.advance(to: 510)
-        let line = try XCTUnwrap(rig.lines.dropFirst().first)
+        // (The roll of the event at 7 s is another one: its line does not wait for these.)
+        let line = try XCTUnwrap(rig.lines.first { $0.swipes.count == 2 && $0.events > 10 }, "\(rig.lines.map(ScrollSystemLog.followMessage))")
         XCTAssertTrue(ScrollSystemLog.followMessage(for: line).hasPrefix("swipes 1.00 chained no change, 1.00 chained no change"),
                       ScrollSystemLog.followMessage(for: line))
+        XCTAssertTrue(rig.lines.contains { ScrollSystemLog.followMessage(for: $0).hasPrefix("swipes 0.17 ended") }, "the roll of the event that found them")
     }
 
     /// The Space changes 0.55 s after a chained end, after the gate's timeout, while the
@@ -1087,6 +1089,38 @@ final class ThumbWheelFollowTests: XCTestCase {
         rig.advance(to: 510.6)
         XCTAssertEqual(dock.terminals, [.end(0)], "ended by its rest, not kept alive")
         XCTAssertEqual(follower.state, .idle)
+        follower.cancel()
+    }
+
+    /// A swipe that waits as late holds back only the later endings of its own roll (their
+    /// order in its line): a later roll's swipe is told when it ended, not when the older
+    /// swipe's 1.5 s are over.
+    func testALaterRollsEndingDoesNotWaitBehindAnOlderLateSwipe() {
+        let follower = bareFollower()
+        var told: [(tag: Int, swipe: String, at: Double)] = []
+        follower.onSwipeEnd = { [unowned self] tag, swipe in
+            told.append((tag, ScrollSystemLog.swipeMessage(swipe), self.rig.now - 500))
+        }
+        // Roll 1: chained at about 0.35 s, no Space change: it waits as late until about 2.35 s.
+        for index in 0..<8 {
+            rig.advance(to: 500 + Double(index) * 0.05)
+            _ = follower.add(1, at: rig.now, seenAt: rig.now, tag: 1)
+        }
+        rig.advance(to: 501.4)
+        XCTAssertEqual(follower.state, .idle)
+        XCTAssertTrue(told.isEmpty, "waits for a late change: \(told)")
+        // Roll 2: a third of a Space the other way, ended at its rest (1.9 s).
+        for time in [501.4, 501.45] {
+            rig.advance(to: time)
+            _ = follower.add(-1, at: rig.now, seenAt: rig.now, tag: 2)
+        }
+        rig.advance(to: 502)
+        XCTAssertEqual(told.map(\.tag), [2], "\(told)")
+        XCTAssertEqual(told.first?.swipe, "0.33 ended")
+        XCTAssertEqual(told.first?.at ?? 0, 1.9, accuracy: 1e-6)
+        rig.advance(to: 503)
+        XCTAssertEqual(told.map(\.tag), [2, 1])
+        XCTAssertEqual(told.last?.swipe, "1.00 chained no change")
         follower.cancel()
     }
 
