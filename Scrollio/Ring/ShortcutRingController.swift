@@ -815,6 +815,12 @@ final class ShortcutRingController {
                         face, owner: self.owner, centre: centre, screen: self.screen, lit: self.session.lit, takesClicks: true
                     )
                     self.isShown = true
+                    // The panel never takes the focus, so VoiceOver would never hear whose
+                    // ring this is: an app's own ring says it once ("Shortcut Ring for
+                    // Safari"), before any place it lights.
+                    if case .app = self.owner {
+                        self.environment.announce(self.owner.accessibilityLabel)
+                    }
                 }
                 // A hand that stopped between the dead zone and twice of it lights its
                 // place the moment the first moments are over, not at the timer's next look.
