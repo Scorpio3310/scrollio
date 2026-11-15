@@ -294,6 +294,10 @@ enum ScrollSystemLog {
         /// Steps decided but not run yet (on the main queue, or waiting in the pacer). Not in
         /// the line: a step that never runs (dropped by a stop) is not counted.
         var pendingSteps = 0
+        /// The stray-tick filter (`ThumbWheelTickFilter`): events it held, and held events it
+        /// dropped (the other way came, or they grew older than its window).
+        var ticksHeld = 0
+        var ticksDropped = 0
         /// Follow the wheel: how its strokes ended (`ThumbWheelFollower.Outcome`), the
         /// furthest a swipe went (a share of one desktop), and the strokes not ended yet
         /// (the line waits for them, as for steps).
@@ -341,6 +345,12 @@ enum ScrollSystemLog {
             }
             lastEventAt = time
             lastSeenAt = seenAt ?? time
+        }
+
+        /// What the stray-tick filter made of one of the roll's events.
+        mutating func ticksFiltered(_ tick: ThumbWheelTickFilter.Result) {
+            if tick.held { ticksHeld += 1 }
+            ticksDropped += tick.dropped
         }
 
         /// Steps ran (positive toward "next").

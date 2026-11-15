@@ -864,6 +864,86 @@ final class ThumbWheelStepperTests: XCTestCase {
     }
 }
 
+/// The stray-tick filter: a single small tick at a start or against the roll waits for a
+/// second event and does nothing alone (the owner's log, 2026-11-14/15: ticks of about 0.1
+/// line where the thumb takes the wheel again).
+final class ThumbWheelTickFilterTests: XCTestCase {
+
+    private typealias Result = ThumbWheelTickFilter.Result
+
+    func testNumbers() {
+        XCTAssertEqual(ThumbWheelTuning.tickSmallLines, 0.5)
+        XCTAssertEqual(ThumbWheelTuning.tickWindow, 0.45)
+    }
+
+    /// A small first event is held; a second one the same way within the window applies both.
+    func testStart_aSmallFirstEventWaitsForASecond() {
+        var filter = ThumbWheelTickFilter()
+        XCTAssertEqual(filter.filter(travel: -1, lines: -0.1, at: 10), Result(travel: 0, held: true, dropped: 0))
+        XCTAssertTrue(filter.holds)
+        XCTAssertEqual(filter.filter(travel: -0.7, lines: -0.2, at: 10.3), Result(travel: -1.7, held: false, dropped: 0))
+        XCTAssertFalse(filter.holds)
+        XCTAssertEqual(filter.filter(travel: -1, lines: -0.1, at: 10.35), Result(travel: -1, held: false, dropped: 0),
+                       "inside the roll a small event the same way applies at once")
+    }
+
+    /// An event of half a line or more applies at once, at a start or against the roll.
+    func testALargeEventAppliesAtOnce() {
+        var filter = ThumbWheelTickFilter()
+        XCTAssertEqual(filter.filter(travel: -1, lines: -0.5, at: 0), Result(travel: -1, held: false, dropped: 0))
+        XCTAssertEqual(filter.filter(travel: 1, lines: 2, at: 0.05), Result(travel: 1, held: false, dropped: 0), "a deliberate turn back")
+    }
+
+    /// A small event against what was applied within the window is held; a second one that
+    /// way applies both. An event the roll's way drops it (never subtracted).
+    func testReversal_confirmedByASecondEvent_droppedByTheRollsWay() {
+        var filter = ThumbWheelTickFilter()
+        _ = filter.filter(travel: -1, lines: -1, at: 0)
+        XCTAssertEqual(filter.filter(travel: 1, lines: 0.1, at: 0.1), Result(travel: 0, held: true, dropped: 0))
+        XCTAssertEqual(filter.filter(travel: 1, lines: 0.1, at: 0.2), Result(travel: 2, held: false, dropped: 0))
+
+        var stray = ThumbWheelTickFilter()
+        _ = stray.filter(travel: -1, lines: -1, at: 0)
+        XCTAssertEqual(stray.filter(travel: 1, lines: 0.1, at: 0.1), Result(travel: 0, held: true, dropped: 0))
+        XCTAssertEqual(stray.filter(travel: -1, lines: -0.1, at: 0.2), Result(travel: -1, held: false, dropped: 1),
+                       "the roll goes on: the tick is dropped, not subtracted")
+    }
+
+    /// A held event older than the window is dropped; the new one is judged on its own.
+    func testAHeldEventExpiresAfterTheWindow() {
+        var filter = ThumbWheelTickFilter()
+        XCTAssertEqual(filter.filter(travel: -1, lines: -0.1, at: 0), Result(travel: 0, held: true, dropped: 0))
+        XCTAssertEqual(filter.filter(travel: -1, lines: -0.1, at: 0.46), Result(travel: 0, held: true, dropped: 1))
+        XCTAssertEqual(filter.filter(travel: -1, lines: -0.1, at: 0.9), Result(travel: -2, held: false, dropped: 0),
+                       "within 0.45 s of the one held")
+        var late = ThumbWheelTickFilter()
+        _ = late.filter(travel: -1, lines: -0.1, at: 0)
+        XCTAssertEqual(late.filter(travel: -1, lines: -3, at: 0.5), Result(travel: -1, held: false, dropped: 1),
+                       "a large one applies alone")
+    }
+
+    /// A held event of the other sign is dropped when a small one comes, which is held in turn.
+    func testAHeldEventOfTheOtherSignIsDropped() {
+        var filter = ThumbWheelTickFilter()
+        _ = filter.filter(travel: -1, lines: -0.1, at: 0)
+        XCTAssertEqual(filter.filter(travel: 1, lines: 0.1, at: 0.1), Result(travel: 0, held: true, dropped: 1))
+        XCTAssertEqual(filter.heldTravel, 1)
+    }
+
+    func testDropHeldAndReset() {
+        var filter = ThumbWheelTickFilter()
+        XCTAssertEqual(filter.dropHeld(), 0)
+        _ = filter.filter(travel: -1, lines: -1, at: 0)
+        _ = filter.filter(travel: 1, lines: 0.1, at: 0.1)
+        XCTAssertEqual(filter.dropHeld(), 1)
+        XCTAssertFalse(filter.holds)
+        _ = filter.filter(travel: 1, lines: 0.1, at: 0.15)
+        XCTAssertEqual(filter.reset(), 1)
+        XCTAssertEqual(filter, ThumbWheelTickFilter())
+        XCTAssertEqual(filter.filter(travel: 0, lines: 0, at: 1), .nothing, "no travel: nothing to hold")
+    }
+}
+
 /// The pacer between the stepper and volume's actions: the system does not keep up with
 /// volume keys faster than about 20 a second (the owner's second log, 2026-11-11).
 final class ThumbWheelPacerTests: XCTestCase {
@@ -1289,6 +1369,104 @@ final class ThumbWheelEngineTests: XCTestCase {
         XCTAssertGreaterThan(line.droppedSteps, 0)
         XCTAssertEqual(line.stepsNext + line.droppedSteps, decided, "every step ran or was counted as dropped")
         XCTAssertFalse(roll.hasPendingWork)
+    }
+
+    // MARK: Stray ticks
+
+    /// 1×, 9 events toward the next desktop and 8 back, all of 0.1 line: two desktops each
+    /// way. The first event of each way is held and applied with the second.
+    func testDesktops_smallTicksBothWays_twoEachWay_theFirstOfEachWayHeld() throws {
+        let rig = Rig()
+        let settings = ThumbWheelSettings(function: .desktops)
+        var forward = 0
+        for index in 0..<9 {
+            forward += rig.turn(lines: -0.1, at: Double(index) * 0.094, settings: settings)
+            if index == 0 { XCTAssertTrue(rig.engine.tickFilter.holds, "the first is held") }
+        }
+        var back = 0
+        for index in 9..<17 {
+            back += rig.turn(lines: 0.1, at: Double(index) * 0.094, settings: settings)
+            if index == 9 { XCTAssertTrue(rig.engine.tickFilter.holds, "the first back is held") }
+            if index == 10 { XCTAssertFalse(rig.engine.tickFilter.holds, "applied with the second") }
+        }
+        XCTAssertEqual(forward, 2)
+        XCTAssertEqual(back, -2)
+        rig.advance(to: 510)
+        XCTAssertEqual(rig.performed.map(\.action), [
+            .named("moveSpaceRight"), .named("moveSpaceRight"), .named("moveSpaceLeft"), .named("moveSpaceLeft"),
+        ])
+        let line = try XCTUnwrap(rig.lines.first)
+        XCTAssertEqual(line.ticksHeld, 2)
+        XCTAssertEqual(line.ticksDropped, 0)
+    }
+
+    /// 0.7×, a re-grip: 9 events, a pause of 280, 320 or 470 ms with one tick of 0.10 line
+    /// the other way in it, 9 more: two desktops every time, the tick dropped.
+    func testDesktops_aRegripWithAStrayTick_twoDesktopsWhateverThePause() throws {
+        for pause in [0.28, 0.32, 0.47] {
+            let rig = Rig()
+            let settings = ThumbWheelSettings(function: .desktops, speed: 0.7)
+            var steps = 0
+            var time = 0.0
+            for _ in 0..<9 { steps += rig.turn(lines: -1, at: time, settings: settings); time += 0.094 }
+            time -= 0.094
+            steps += rig.turn(lines: 0.1, at: time + pause / 2, settings: settings)
+            time += pause
+            for _ in 0..<9 { steps += rig.turn(lines: -1, at: time, settings: settings); time += 0.094 }
+            rig.advance(to: 510)
+            XCTAssertEqual(steps, 2, "pause \(pause)")
+            XCTAssertEqual(rig.performed.map(\.action), [.named("moveSpaceRight"), .named("moveSpaceRight")], "pause \(pause)")
+            XCTAssertEqual(rig.lines.map(\.ticksDropped), [1], "pause \(pause)")
+            XCTAssertEqual(rig.lines.map(\.ticksHeld), [1], "pause \(pause)")
+        }
+    }
+
+    /// A roll of 15 lines toward the next desktop, then one tick of 0.10 line the other way
+    /// 0.7 s later (where the thumb lets go): no desktop back, at 0.7× and at 3× (where one
+    /// tick reaches the first threshold alone).
+    func testDesktops_aLoneTickAfterARoll_runsNothing() throws {
+        for speed in [0.7, 3.0] {
+            let rig = Rig()
+            let settings = ThumbWheelSettings(function: .desktops, speed: speed)
+            for index in 0..<6 { rig.turn(lines: -2.5, at: Double(index) * 0.05, settings: settings) }
+            XCTAssertEqual(rig.turn(lines: 0.1, at: 0.25 + 0.7, settings: settings), 0, "x\(speed)")
+            rig.advance(to: 510)
+            XCTAssertFalse(rig.performed.contains { $0.action == .named("moveSpaceLeft") }, "x\(speed)")
+            let tick = try XCTUnwrap(rig.lines.last)
+            XCTAssertEqual(rig.lines.count, 2, "the tick is a roll of its own")
+            XCTAssertEqual(tick.events, 1)
+            XCTAssertEqual(tick.ticksHeld, 1, "x\(speed)")
+            XCTAssertEqual(tick.ticksDropped, 1, "x\(speed)")
+            XCTAssertEqual(tick.stepsNext + tick.stepsPrevious, 0)
+        }
+    }
+
+    /// Volume at 3×: one tick the other way inside a roll that turns it up does not turn it down.
+    func testVolume_atSpeed3_aStrayTickInsideARollDoesNotTurnItDown() throws {
+        let rig = Rig()
+        let settings = ThumbWheelSettings(function: .volume, speed: 3)
+        for index in 0..<10 {
+            rig.turn(lines: -5, at: Double(index) * 0.05, settings: settings)
+            if index == 4 { rig.turn(lines: 0.1, at: Double(index) * 0.05 + 0.02, settings: settings) }
+        }
+        rig.advance(to: 510)
+        XCTAssertFalse(rig.performed.isEmpty)
+        XCTAssertTrue(rig.performed.allSatisfy { $0.action == .volume(.up) }, "\(rig.performed)")
+        XCTAssertEqual(rig.lines.first?.ticksDropped, 1)
+    }
+
+    /// A stop drops a held tick: it does not act afterwards, and it is counted.
+    func testReset_dropsAHeldTick() {
+        let rig = Rig()
+        let settings = ThumbWheelSettings(function: .tabs, speed: 3)
+        rig.turn(lines: -0.1, at: 0, settings: settings)
+        XCTAssertTrue(rig.engine.tickFilter.holds)
+        rig.engine.reset()
+        XCTAssertFalse(rig.engine.tickFilter.holds)
+        XCTAssertEqual(rig.lines.first?.ticksDropped, 1)
+        XCTAssertEqual(rig.turn(lines: -0.1, at: 0.1, settings: settings), 0, "held again: the first one is gone")
+        rig.advance(to: 510)
+        XCTAssertEqual(rig.performed, [])
     }
 
     /// A stop (Pause, sleep, lost access) with volume steps waiting: none of them runs, then or

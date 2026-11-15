@@ -76,6 +76,13 @@ enum ThumbWheelTuning {
     /// stops at most one more desktop comes, within 250 ms.
     static let desktopsPacing = ThumbWheelPacing(interval: 0.25, maxWaiting: 1)
 
+    /// The stray-tick filter (`ThumbWheelTickFilter`), for every function but Scroll Sideways:
+    /// an event of fewer lines than this is small, and a small one at a start or against the
+    /// roll waits for a second event within `tickWindow` (s). The ticks where the thumb takes
+    /// the wheel again are about 0.1 line (the owner's log, 2026-11-14/15).
+    static let tickSmallLines = 0.5
+    static let tickWindow: TimeInterval = 0.45
+
     /// A pause this long (s) ends a roll for the log: its line is written.
     static let logRollRest: TimeInterval = 0.6
     /// A pause this long (s) ends a turn: the next event looks at the app in front again

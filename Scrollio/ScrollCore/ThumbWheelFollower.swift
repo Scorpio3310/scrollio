@@ -77,6 +77,9 @@ final class ThumbWheelFollower {
     private(set) var state = State.idle
     /// A stroke is under way (following, or waiting for its rest).
     var isInStroke: Bool { return state != .idle }
+    /// An event can be taken: a stroke is under way, or a swipe can be made here (else the
+    /// desktops go in steps).
+    var canFollow: Bool { return state != .idle || synthesizer.isAvailable }
 
     /// The swipe of the stroke; nil until its first look on the main queue.
     private var session: InteractiveGestureSession?

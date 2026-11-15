@@ -4,7 +4,9 @@
 //
 //  The sideways wheel's own settings (Options.thumbWheel) in the scroll tap. ScrollCore hands
 //  over every sideways wheel event (`ScrollCore.isSidewaysWheelEvent`); while the wheel runs a
-//  function, the event feeds the stepper, and the steps it decides run their actions on the
+//  function, the event passes the stray-tick filter (`ThumbWheelTickFilter`: a single small
+//  tick at a start or against the roll waits for a second event, and does nothing alone),
+//  then feeds the stepper, and the steps it decides run their actions on the
 //  main queue, never inside the tap callback. A function with a pacing (volume, desktops in
 //  steps) runs them through `ThumbWheelPacer`: one at once, the others one per interval, a few
 //  waiting at most (the system does not keep up with volume keys, the Dock with ⌃→); the others
@@ -166,6 +168,10 @@ final class ThumbWheelEngine {
     var frontApplication: () -> ShortcutRingChoice.FrontApp? = { .current() }
 
     private(set) var stepper = ThumbWheelStepper()
+    /// Holds a small stray tick until a second event confirms it (every function but Scroll
+    /// Sideways, in steps and in Follow the wheel), and the function it filters for.
+    private(set) var tickFilter = ThumbWheelTickFilter()
+    private var tickFilterFunction: ThumbWheelFunction?
     /// The roll whose events still come.
     private(set) var roll: Roll?
     /// A roll ended in the middle (a setting changed): written once its steps have run.
@@ -268,21 +274,24 @@ final class ThumbWheelEngine {
     func handle(_ event: ThumbWheelEvent, settings: ThumbWheelSettings, flipped: Bool) -> Int {
         let seenAt = clock()
         let time = event.timestamp == 0 ? seenAt : Double(event.timestamp) * secondsPerTimestampUnit
+        // The roll first: one that rested or whose settings changed ends before this event.
+        openRoll(settings: settings, at: time, seenAt: seenAt)
+        let lines = ThumbWheelStepper.lines(lineDelta: event.lineDelta, fixedDelta: event.fixedDelta, pointDelta: event.pointDelta)
         var steps = 0
         var travel = 0.0
+        var tick = ThumbWheelTickFilter.Result.nothing
         var newStroke = false
-        var follows = false
-        if settings.followsWheelNow {
+        if settings.followsWheelNow && follower.canFollow {
             travel = ThumbWheelFollower.travel(
                 lineDelta: event.lineDelta, fixedDelta: event.fixedDelta, pointDelta: event.pointDelta,
                 flipped: flipped, speed: settings.speed
             )
-            if case .yes(let begins) = follower.add(travel, at: time, seenAt: seenAt) {
-                follows = true
+            // A held tick reaches neither the stepper nor the swipe.
+            tick = tickFilter.filter(travel: travel, lines: lines, at: time)
+            if tick.travel != 0, case .yes(let begins) = follower.add(tick.travel, at: time, seenAt: seenAt) {
                 newStroke = begins
             }
-        }
-        if !follows {
+        } else {
             // Another function, or Follow the wheel switched off in the middle of a stroke
             // (or no swipe can be made here: the desktops go in steps).
             if follower.isInStroke { follower.endStroke(at: time) }
@@ -291,10 +300,15 @@ final class ThumbWheelEngine {
                     lineDelta: event.lineDelta, fixedDelta: event.fixedDelta, pointDelta: event.pointDelta,
                     flipped: flipped, speed: settings.speed, function: settings.function
                 )
-                steps = stepper.feed(travel: travel, function: settings.function, at: time)
+                tick = tickFilter.filter(travel: travel, lines: lines, at: time)
+                if tick.travel != 0 {
+                    steps = stepper.feed(travel: tick.travel, function: settings.function, at: time)
+                }
             }
         }
-        record(event, settings: settings, travel: travel, at: time, seenAt: seenAt)
+        roll?.add(event, travel: travel, at: time, seenAt: seenAt)
+        roll?.ticksFiltered(tick)
+        scheduleRollLook()
         if newStroke {
             roll?.pendingSwipes += 1
             strokeRollID = roll?.id
@@ -371,10 +385,22 @@ final class ThumbWheelEngine {
         roll?.stepsDropped(pacer.dropWaiting())
     }
 
-    private func record(_ event: ThumbWheelEvent, settings: ThumbWheelSettings, travel: Double, at time: TimeInterval, seenAt: TimeInterval) {
-        if let open = roll, open.hasRested(at: time) || !open.matches(settings) {
-            // Its look has not come yet, or a setting changed in the middle of the roll: the
-            // roll ends here. Its line is written after the callback, once its steps ran.
+    /// The roll an event at `time` belongs to: the open one, unless the wheel rested or a
+    /// setting changed (then it ends here; its line is written after the callback, once its
+    /// steps ran), else a new one.
+    private func openRoll(settings: ThumbWheelSettings, at time: TimeInterval, seenAt: TimeInterval) {
+        let rested = roll?.hasRested(at: time) ?? false
+        if rested {
+            // A tick still held is older than the filter's window: the rested roll's, dropped.
+            roll?.ticksDropped += tickFilter.dropHeld()
+        }
+        if settings.function != tickFilterFunction {
+            // Another function starts the filter afresh.
+            roll?.ticksDropped += tickFilter.reset()
+            tickFilterFunction = settings.function
+        }
+        if let open = roll, rested || !open.matches(settings) {
+            // Its look has not come yet, or a setting changed in the middle of the roll.
             endOpenRoll()
         }
         if roll == nil {
@@ -383,11 +409,12 @@ final class ThumbWheelEngine {
             // (The log says when the settings were an app's own, never which app.)
             roll?.isAppsOwn = turn?.own != nil
         }
-        roll?.add(event, travel: travel, at: time, seenAt: seenAt)
-        if !checkScheduled {
-            checkScheduled = true
-            schedule(ThumbWheelTuning.logRollRest) { [weak self] in self?.checkRoll() }
-        }
+    }
+
+    private func scheduleRollLook() {
+        guard !checkScheduled else { return }
+        checkScheduled = true
+        schedule(ThumbWheelTuning.logRollRest) { [weak self] in self?.checkRoll() }
     }
 
     private func endOpenRoll() {
@@ -436,10 +463,14 @@ final class ThumbWheelEngine {
     /// only while a roll is open: nothing keeps running while the wheel is still.
     func checkRoll() {
         checkScheduled = false
-        guard let open = roll else { return }
+        guard var open = roll else { return }
         let now = clock()
         let due = open.lineDueAt
         if now >= due && !open.isWaiting {
+            if now >= open.lastSeenAt + ThumbWheelTuning.logRollRest {
+                // The wheel rested: a tick still held is the roll's, dropped.
+                open.ticksDropped += tickFilter.dropHeld()
+            }
             roll = nil
             writeLog(open)
             return
@@ -468,6 +499,8 @@ final class ThumbWheelEngine {
         generation &+= 1
         turn = nil
         stepper.reset()
+        roll?.ticksDropped += tickFilter.reset()
+        tickFilterFunction = nil
         dropWaitingSteps()
         pacer = ThumbWheelPacer()
         pacedFunction = nil

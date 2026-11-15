@@ -277,6 +277,31 @@ final class ThumbWheelFollowTests: XCTestCase {
                       ScrollSystemLog.thumbWheelMessage(for: line))
     }
 
+    /// A lone tick of 0.10 line 0.7 s after a stroke (where the thumb lets go of the wheel)
+    /// begins no swipe: the stray-tick filter holds it, and it is dropped.
+    func testALoneTickAfterAStrokeBeginsNoSwipe() throws {
+        for time in [0, 0.05, 0.1, 0.15] { try turn(at: time) }
+        rig.advance(to: 501)
+        XCTAssertEqual(dock.calls.filter { $0 == .begin }.count, 1)
+        for lines: Int64 in [1, -1] {
+            let start = lines > 0 ? 0.15 + 0.7 : 4.0
+            rig.advance(to: 500 + start)
+            let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 0, wheel2: 0, wheel3: 0))
+            event.setIntegerValueField(.scrollWheelEventDeltaAxis2, value: lines)
+            event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: Double(lines) * 0.1)
+            event.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: Double(lines))
+            event.setIntegerValueField(.eventSourceUnixProcessID, value: 0)
+            event.setIntegerValueField(.eventTargetUnixProcessID, value: 1)
+            event.timestamp = ThumbWheelEngineTests.Rig.timestamp(start)
+            XCTAssertNil(ScrollCore.shared.scrollEventCallBack(CGEventTapProxy(bitPattern: 1)!, .scrollWheel, event, nil), "swallowed")
+            rig.advance(to: 500 + start + 2)
+            XCTAssertEqual(dock.calls.filter { $0 == .begin }.count, 1, "no swipe for the tick \(lines)")
+            XCTAssertEqual(rig.lines.last?.ticksHeld, 1)
+            XCTAssertEqual(rig.lines.last?.ticksDropped, 1)
+        }
+        XCTAssertTrue(rig.performed.isEmpty)
+    }
+
     /// Turned back to where it began: the swipe is cancelled (the same rule as Follow the
     /// hand's); turned the other way it slides toward the previous desktop; a long turn
     /// stops at one Space.
