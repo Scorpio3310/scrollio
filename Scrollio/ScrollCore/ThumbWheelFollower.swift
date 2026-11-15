@@ -7,12 +7,13 @@
 //  them slide with the hand, and settle when the wheel rests. One long roll moves several
 //  desktops, as quick trackpad swipes chain.
 //
-//  A stroke is the wheel's events until it rests for `ThumbWheelTuning.followRest`. Its
-//  first event begins a dock swipe (`DockSwipeSynthesizer`), each event moves it on in the
-//  turn's direction (one event is one unit, up to two on a fast turn, × the speed;
-//  `followUnitsPerSpace` units are one Space). The swipe itself is the one "Follow the hand"
-//  runs (`InteractiveGestureSession`, fed with the wheel's units in place of points): at
-//  most one Space either way. A swipe ends in one of three ways:
+//  A stroke is the wheel's events until it rests for `ThumbWheelTuning.followRest` (a tick
+//  the stray-tick filter holds is no event of the stroke, but the wheel moved: the rest
+//  counts from it, `touch`). Its first event begins a dock swipe (`DockSwipeSynthesizer`),
+//  each event moves it on in the turn's direction (one event is one unit, up to two on a
+//  fast turn, × the speed; `followUnitsPerSpace` units are one Space). The swipe itself is
+//  the one "Follow the hand" runs (`InteractiveGestureSession`, fed with the wheel's units
+//  in place of points): at most one Space either way. A swipe ends in one of three ways:
 //  - At a full Space (`followFullShare`) with the wheel still turning that way: once the
 //    travel past that point reaches `followChainOverflowUnits`, it ends, at the full Space
 //    with no speed ("chained"), so the next desktop can come in this stroke; not sooner
@@ -150,6 +151,10 @@ final class ThumbWheelFollower {
     private var lastEventAt: TimeInterval = 0
     /// When the callback saw the last event, on `clock`.
     private var lastSeenAt: TimeInterval = 0
+    /// When the wheel last moved in the stroke, on the same two clocks: its last event, or a
+    /// tick the stray-tick filter has held since (`touch`). The stroke's rest counts from it.
+    private var lastMovedAt: TimeInterval = 0
+    private var lastMovedSeenAt: TimeInterval = 0
     /// Where the wheel has put the desktop, and where the Dock was told it is (progress).
     private var target = 0.0
     private var shown = 0.0
@@ -252,7 +257,7 @@ final class ThumbWheelFollower {
         }
         if hasRested(before: time) {
             // The rest's look has not come yet (the main queue was busy): the stroke ended.
-            finishStroke(at: lastEventAt + ThumbWheelTuning.followRest)
+            finishStroke(at: lastMovedAt + ThumbWheelTuning.followRest)
         }
         var newStroke = false
         if state == .idle {
@@ -263,6 +268,8 @@ final class ThumbWheelFollower {
         eventTag = tag
         lastEventAt = time
         lastSeenAt = seenAt
+        lastMovedAt = time
+        lastMovedSeenAt = seenAt
         if travel.isFinite, travel != 0 {
             switch state {
             case .following:
@@ -283,7 +290,17 @@ final class ThumbWheelFollower {
     /// stroke has no rest of its own: it waits for the gate (`restDueAt`).
     private func hasRested(before time: TimeInterval) -> Bool {
         guard state != .idle, state != .gated else { return false }
-        return time >= lastEventAt + ThumbWheelTuning.followRest
+        return time >= lastMovedAt + ThumbWheelTuning.followRest
+    }
+
+    /// A tick the stray-tick filter holds, in the tap callback (it reaches neither `add` nor
+    /// the swipe): the wheel moves, so a stroke under way does not rest yet. Nothing else:
+    /// no travel, no stroke begins with it, and the full stop of a swipe at a full Space is
+    /// not put off.
+    func touch(at time: TimeInterval, seenAt: TimeInterval) {
+        guard state != .idle, !hasRested(before: time) else { return }
+        lastMovedAt = time
+        lastMovedSeenAt = seenAt
     }
 
     /// The turn no longer follows the wheel (its settings changed in the middle): the stroke
@@ -292,7 +309,7 @@ final class ThumbWheelFollower {
         guard state != .idle else { return }
         inTapCallback = true
         defer { inTapCallback = false }
-        finishStroke(at: max(time, lastEventAt))
+        finishStroke(at: max(time, lastMovedAt))
     }
 
     /// Scrollio stopped handling the wheel: the swipe is cancelled at once (the main queue
@@ -652,13 +669,13 @@ final class ThumbWheelFollower {
     /// does not rest before the gate's timeout: the travel it kept begins the next swipe
     /// when the gate opens.
     private var restDueAt: TimeInterval {
-        let rest = lastSeenAt + ThumbWheelTuning.followRest
+        let rest = lastMovedSeenAt + ThumbWheelTuning.followRest
         if state == .gated, let gate { return max(rest, gate.endedAt + gate.timeout) }
         guard swipeNumber != 0 else { return rest }
         return max(rest, swipeBeganAt + ThumbWheelTuning.followFullStopRest)
     }
 
-    /// The wheel has rested since its last event: the stroke ends; else look again then.
+    /// The wheel has rested since it last moved: the stroke ends; else look again then.
     private func lookForRest() {
         guard state != .idle else { return }
         if let gate, clock() + 1e-9 >= gate.endedAt + gate.timeout {
@@ -670,7 +687,7 @@ final class ThumbWheelFollower {
             // A swipe at a full Space ends as a full stop (due by then), whichever of the two
             // looks comes first.
             if state == .following, swipeNumber != 0, isAtFullSpace { lookForFullStop() }
-            finishStroke(at: lastEventAt + ThumbWheelTuning.followRest)
+            finishStroke(at: lastMovedAt + ThumbWheelTuning.followRest)
         } else {
             scheduleRestLook()
         }

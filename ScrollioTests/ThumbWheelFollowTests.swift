@@ -1025,6 +1025,71 @@ final class ThumbWheelFollowTests: XCTestCase {
         XCTAssertFalse(rig.hasPendingWork)
     }
 
+    /// A tick the stray-tick filter holds keeps the stroke alive. After two events (a third
+    /// of a Space) the wheel turns slowly back, a tick of 0.10 line every 240 ms: the filter
+    /// holds every one (too far apart to confirm each other), so none moves the desktop.
+    /// But the wheel moves: the stroke rests 0.45 s after the last tick, not before.
+    func testAHeldTickKeepsTheStrokeAlive() throws {
+        try turn(at: 0)
+        try turn(at: 0.05)
+        for time in [0.3, 0.54, 0.78, 1.02] { try turn(at: time, lines: 1, fixed: 0.1) }
+        rig.advance(to: 501.02 + 0.449)
+        XCTAssertTrue(dock.terminals.isEmpty, "rested while the wheel moved: \(dock.calls)")
+        XCTAssertEqual(beginCount, 1)
+        XCTAssertEqual(try XCTUnwrap(dock.updates.last), 2 * Self.space / 6, accuracy: 1e-9, "a held tick moves nothing")
+        rig.advance(to: 501.02 + 0.45)
+        XCTAssertEqual(dock.terminals, [.end(0)], "0.45 s after the last tick")
+        rig.advance(to: 505)
+        XCTAssertEqual(rig.lines.flatMap(\.swipes).map(ScrollSystemLog.swipeMessage), ["0.33 ended"])
+        XCTAssertEqual(rig.lines.map(\.ticksHeld), [4])
+    }
+
+    /// A follower of its own on the rig's clock and queue, with the fake Dock's swipe, fed
+    /// by hand (the engine's own stays idle).
+    private func bareFollower() -> ThumbWheelFollower {
+        let follower = ThumbWheelFollower(spaceChanges: nil)
+        follower.synthesizer = synthesizer
+        follower.screen = rig.engine.follower.screen
+        follower.schedule = rig.engine.schedule
+        follower.clock = rig.engine.clock
+        return follower
+    }
+
+    /// `touch` moves the rest of a stroke under way and nothing else: it begins no stroke,
+    /// it does not put off the full stop of a swipe at a full Space, and a stroke whose rest
+    /// has passed (the main queue was busy: its look has not come) is not brought back.
+    func testATouchMovesTheRestAndNothingElse() {
+        let follower = bareFollower()
+        follower.touch(at: 500, seenAt: 500)
+        XCTAssertEqual(follower.state, .idle, "no stroke begins with a held tick")
+        rig.advance(to: 501)
+        XCTAssertTrue(dock.calls.isEmpty)
+        XCTAssertFalse(rig.hasPendingWork)
+
+        // At a full Space: the full stop comes 150 ms after the last event that moved it.
+        for index in 0..<6 {
+            rig.advance(to: 502 + Double(index) * 0.05)
+            _ = follower.add(1, at: rig.now, seenAt: rig.now)
+        }
+        rig.advance(to: 502.35)
+        follower.touch(at: 502.35, seenAt: 502.35)
+        rig.advance(to: 502.4)
+        XCTAssertEqual(dock.terminals, [.end(0)], "the full stop, 150 ms after the sixth event")
+        follower.cancel()
+
+        // The rest has passed while the main queue was busy: the stroke is over.
+        dock.calls = []
+        rig.advance(to: 510)
+        _ = follower.add(1, at: 510, seenAt: 510)
+        rig.advance(to: 510.1)
+        rig.now = 510.6
+        follower.touch(at: 510.6, seenAt: 510.6)
+        rig.advance(to: 510.6)
+        XCTAssertEqual(dock.terminals, [.end(0)], "ended by its rest, not kept alive")
+        XCTAssertEqual(follower.state, .idle)
+        follower.cancel()
+    }
+
     /// A stop while the stroke waits at the gate: nothing scheduled runs, nothing is sent
     /// later, a Space change afterwards begins nothing, and the line says so.
     func testAStopAtTheGateRunsNothingLater() throws {
