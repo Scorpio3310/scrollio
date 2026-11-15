@@ -1239,15 +1239,23 @@ final class AppRunControllerTests: XCTestCase {
         controller.start()
         let poster = ScrollPoster.shared
         let saved = poster.postEventAccess
+        // The right is read off the main thread and its answer applied on it.
+        func settle() {
+            let settled = expectation(description: "read and applied")
+            ScrollPoster.postEventAccessQueue.async { DispatchQueue.main.async { settled.fulfill() } }
+            wait(for: [settled], timeout: 2)
+        }
         defer {
             poster.postEventAccess = saved
             poster.checkPostEventAccess()
+            settle()
             XCTAssertTrue(poster.canPostEvents)
         }
         XCTAssertNil(StatusItemManager.liveState(of: controller).startProblem)
 
         poster.postEventAccess = { false }
         poster.checkPostEventAccess()
+        settle()
         XCTAssertEqual(StatusItemManager.liveState(of: controller).startProblem, .cannotPostEvents)
         // Paused, the cores do not run: the pause is what the menu says.
         controller.setPaused(true)

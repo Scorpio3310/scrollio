@@ -735,10 +735,18 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 
     // MARK: - The right to post events
 
-    /// After some macOS updates the system drops every event Scrollio posts, and posting
-    /// says nothing: the Post Event right is gone while the Accessibility access shows as
-    /// allowed. The right is read when the cores start (launch, wake, resume: they start the
-    /// keeper); without it nothing is smoothed and the wheel goes on raw.
+    /// The right to post events is read off the main thread and its answer applied on it:
+    /// waits for the reads asked for so far and their answers.
+    private func settlePostEventAccess() {
+        let settled = expectation(description: "the right was read and its answer applied")
+        ScrollPoster.postEventAccessQueue.async { DispatchQueue.main.async { settled.fulfill() } }
+        wait(for: [settled], timeout: 2)
+    }
+
+    /// Without the Post Event right the system drops every event Scrollio posts, and
+    /// posting says nothing, while the Accessibility access may show as allowed. The right is
+    /// read when the cores start (launch, wake, resume: they start the keeper) and at each
+    /// look of the keeper; without it nothing is smoothed and the wheel goes on raw.
     func testWithoutTheRightToPostEventsNothingIsSmoothed() throws {
         let display = FakeDisplay(for: poster)
         poster.frameRecorderForTests = { _ in }
@@ -749,9 +757,15 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
         let observer = NotificationCenter.default.addObserver(
             forName: ScrollPoster.postEventAccessDidChangeNotification, object: poster, queue: nil
         ) { _ in told += 1 }
-        defer { NotificationCenter.default.removeObserver(observer) }
+        defer {
+            NotificationCenter.default.removeObserver(observer)
+            poster.stopKeeper()
+        }
 
         poster.startKeeper()
+        // Read off the main thread: the answer is not there before the main thread has it.
+        XCTAssertTrue(poster.canPostEvents)
+        settlePostEventAccess()
 
         XCTAssertEqual(asked, 1, "read when the cores start")
         XCTAssertFalse(poster.canPostEvents)
@@ -765,20 +779,65 @@ final class ScrollPosterDisplayLinkTests: XCTestCase {
 
         // The keeper reads it again while it is missing: nothing new, nothing said.
         poster.healthCheckForTests()
+        settlePostEventAccess()
         XCTAssertEqual(asked, 2)
         XCTAssertEqual(told, 1)
         XCTAssertEqual(poster.healthLinesForTests.count, 1)
         // Given back (Scrollio removed from the Accessibility list and added again): smoothing again.
         allowed = true
         poster.healthCheckForTests()
+        settlePostEventAccess()
         XCTAssertTrue(poster.canPostEvents)
         XCTAssertEqual(told, 2)
         XCTAssertEqual(poster.healthLinesForTests.last, ScrollPoster.postEventAccessBackLine)
         XCTAssertTrue(poster.smooth(event: try wheelEvent(), input: input()))
         XCTAssertTrue(poster.isGliding)
-        // With the right there the keeper does not ask at every look.
+
+        // With the right there the keeper still asks at each look: taken away while
+        // Scrollio runs, the glide ends and the next event goes on raw (it was taken, and
+        // its frames dropped, until the next wake or resume).
+        allowed = false
         poster.healthCheckForTests()
-        XCTAssertEqual(asked, 3)
+        settlePostEventAccess()
+        XCTAssertEqual(asked, 4)
+        XCTAssertFalse(poster.canPostEvents)
+        XCTAssertEqual(told, 3)
+        XCTAssertFalse(poster.isGliding, "the glide ends: its frames would be dropped")
+        XCTAssertFalse(poster.smooth(event: try wheelEvent(), input: input()))
+        XCTAssertEqual(poster.notTakenReason, .noPostEventAccess)
+    }
+
+    /// macOS posts `com.apple.accessibility.api` when the Accessibility list changes
+    /// (Scrollio removed and added again): the right is read again a moment later while
+    /// the cores run, not only at the keeper's next look; while they are stopped, not.
+    func testAChangedAccessibilityListReadsTheRightAgainWhileTheCoresRun() {
+        var asked = 0
+        poster.postEventAccess = { asked += 1; return true }
+        func waitPastTheDelay() {
+            let past = expectation(description: "past the delay")
+            DispatchQueue.main.asyncAfter(deadline: .now() + AppDelegate.accessibilityCheckDelay + 0.2) { past.fulfill() }
+            wait(for: [past], timeout: 3)
+            settlePostEventAccess()
+        }
+
+        XCTAssertNil(poster.accessibilityListObserver)
+        poster.accessibilityListDidChange()
+        waitPastTheDelay()
+        XCTAssertEqual(asked, 0, "the cores do not run: their start reads it")
+
+        poster.startKeeper()
+        defer { poster.stopKeeper() }
+        settlePostEventAccess()
+        XCTAssertEqual(asked, 1)
+        XCTAssertNotNil(poster.accessibilityListObserver, "the notification is listened to")
+        poster.accessibilityListDidChange()
+        waitPastTheDelay()
+        XCTAssertEqual(asked, 2)
+
+        poster.stopKeeper()
+        poster.accessibilityListDidChange()
+        waitPastTheDelay()
+        XCTAssertEqual(asked, 2)
     }
 
     /// Under XCTest the right is never asked of macOS: the default says yes.
