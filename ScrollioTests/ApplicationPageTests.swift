@@ -1378,6 +1378,36 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(served, [true], "the menu opened once, and the main queue went on behind it")
     }
 
+    /// The part follows the mouse (QA B8): one that connects while the part shows is in
+    /// the "+" menu and in the rows' pictures at once, and one that leaves is gone. The
+    /// part read the mouse only when it was shown, so "+" offered no "Your Mouse" section
+    /// and no thumb wheel until another part had been shown.
+    func testThePartFollowsTheMouseThatConnectsOrLeaves() throws {
+        let calculator = addApp(Self.calculator)
+        calculator.setOwnButtonBindings([binding(3, "copy")])
+        let (_, part) = try buttonsPart()
+        var name: String?
+        part.deviceSource = mouse(nil)
+        part.deviceSource.deviceName = { name }
+        part.reloadRows()
+        XCTAssertEqual(part.mouse, .generic)
+        XCTAssertFalse(part.makeAddMenu().items.contains { $0.title == "Thumb wheel" })
+
+        name = "MX Master 3S"
+        NotificationCenter.default.post(name: LogiCenter.mouseStateChanged, object: nil)
+        XCTAssertEqual(part.mouse, .mxMaster3, "the mouse that connected")
+        XCTAssertEqual(part.rows.first?.mouse, .mxMaster3, "in the rows' pictures too")
+        let menu = part.makeAddMenu()
+        XCTAssertTrue(menu.items.contains { $0.isSectionHeader && $0.title == Self.catalog("apps-buttons-add-mouse") })
+        XCTAssertTrue(menu.items.contains { $0.title == "Thumb wheel" })
+
+        // What the mouse says about its buttons changed (a session came or went).
+        name = nil
+        NotificationCenter.default.post(name: LogiCenter.sessionChanged, object: nil)
+        XCTAssertEqual(part.mouse, .generic)
+        XCTAssertFalse(part.makeAddMenu().items.contains { $0.title == "Thumb wheel" })
+    }
+
     /// A button with modifier keys that Buttons has no binding of its own for runs the
     /// binding without them everywhere: its new row starts with that action, as its
     /// "Everywhere" line says, so nothing changes until another one is chosen.

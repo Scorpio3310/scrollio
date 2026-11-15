@@ -155,6 +155,8 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
     private var pendingActionAdded: (() -> Void)?
     private let recorder = KeyRecorder()
     private let resolver = ActionDisplayResolver()
+    /// Hear of the mouse that connects or leaves while the part exists.
+    private var mouseObservers: [NSObjectProtocol] = []
 
     init(application: Application) {
         self.application = application
@@ -167,6 +169,9 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
 
     deinit {
         openTargetPopover?.hide()
+        for observer in mouseObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     // MARK: - Lifecycle
@@ -233,6 +238,23 @@ final class ApplicationButtonsViewController: NSViewController, ApplicationPageP
         view = root
         recorder.delegate = self
         reloadRows()
+        observeMouse()
+    }
+
+    /// The part follows the mouse as the Buttons pane does: one that connects or leaves
+    /// while the part exists changes the rows' pictures and names and what "+" offers (the
+    /// "Your Mouse" section, the thumb wheel) at once. The part read the mouse only when
+    /// it was shown: "+" offered a mouse that had left, or none of the one that had come.
+    private func observeMouse() {
+        let center = NotificationCenter.default
+        mouseObservers.append(center.addObserver(forName: LogiCenter.sessionChanged, object: nil, queue: .main) { [weak self] _ in
+            self?.reloadRows()
+        })
+        // (Sent for every change of a mouse's state, its battery too: only another mouse.)
+        mouseObservers.append(center.addObserver(forName: LogiCenter.mouseStateChanged, object: nil, queue: .main) { [weak self] _ in
+            guard let self, MouseArtworkModel.model(forDeviceName: self.deviceSource.deviceName()) != self.mouse else { return }
+            self.reloadRows()
+        })
     }
 
     /// The line under the list: with rows, that every other button works as set in Buttons
