@@ -1861,6 +1861,64 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(panes, 1)
     }
 
+    /// Edit › Undo and Redo of a change made elsewhere while an app's page is open on its
+    /// Gestures or Shortcut Ring part: the Gestures or Shortcut Ring pane's choice of the
+    /// button (`TriggerChooser`) and a row's action in the Buttons pane. The part's first row
+    /// says at once what does it now, and its button goes there.
+    func testTheFirstRowsFollowAnUndoOfAChangeMadeInAnotherPane() throws {
+        addApp(Self.calculator)
+        let pane = makePane()
+        let window = makeWindow(for: pane)
+        let undo = try XCTUnwrap(window.undoManager)
+        undo.groupsByEvent = false
+        pane.openApplication(withID: Self.calculator, part: .gestures)
+        let page = try XCTUnwrap(pane.detailController)
+        let back = RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil)
+        let everywhere = ButtonTriggerNaming.title(for: back) + ", as everywhere"
+        for (part, rule) in [(ApplicationPagePart.gestures, ApplicationTriggerRule.gestureNavigation), (.ring, .shortcutRing)] {
+            Options.shared.buttons.binding = []
+            page.show(part)
+            page.syncViewWithOptions()
+            func row() -> [String] {
+                let row = part == .gestures ? page.gesturesPart.holdRow! : page.ringPart.triggerRow!
+                let button = part == .gestures ? page.gesturesPart.holdButton! : page.ringPart.triggerButton!
+                return [row.explanation ?? "", button.title]
+            }
+            XCTAssertEqual(row(), ["None in Calculator", "Set Up…"], "\(rule)")
+
+            // The pane's choice: the back button does it; the page shows it when it opens.
+            let choice = TriggerChooser(rule: rule)
+            choice.deviceSource = mouse("MX Master 3S")
+            choice.undoManager = { undo }
+            undo.beginUndoGrouping()
+            choice.choose(back)
+            undo.endUndoGrouping()
+            page.syncViewWithOptions()
+            XCTAssertEqual(row(), [everywhere, "Show in Buttons"], "\(rule)")
+            undo.undo()
+            XCTAssertEqual(row(), ["None in Calculator", "Set Up…"], "\(rule): Undo of the choice")
+            undo.redo()
+            XCTAssertEqual(row(), [everywhere, "Show in Buttons"], "\(rule): Redo of the choice")
+
+            // The Buttons pane: the back button gets another action there.
+            let buttons = PreferencesButtonsViewController()
+            buttons.deviceSource = mouse("MX Master 3S")
+            buttons.paneUndoManager = undo
+            _ = buttons.view
+            let id = try XCTUnwrap(Options.shared.buttons.binding.first?.id)
+            undo.beginUndoGrouping()
+            buttons.setAction(of: id, toShortcutNamed: "copy")
+            undo.endUndoGrouping()
+            page.syncViewWithOptions()
+            XCTAssertEqual(row(), ["None in Calculator", "Set Up…"], "\(rule)")
+            undo.undo()
+            XCTAssertEqual(row(), [everywhere, "Show in Buttons"], "\(rule): Undo in Buttons")
+            undo.redo()
+            XCTAssertEqual(row(), ["None in Calculator", "Set Up…"], "\(rule): Redo in Buttons")
+            undo.removeAllActions()
+        }
+    }
+
     /// The switch's lines and the first row's lines fit two lines, also for an app with a
     /// long name; the switch keeps room for the longer of its two lines, so switching never
     /// moves what is below.

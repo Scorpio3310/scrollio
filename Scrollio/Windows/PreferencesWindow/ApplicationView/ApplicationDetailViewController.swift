@@ -18,7 +18,8 @@
 //  its thumb wheel's speed and swap), its own buttons and thumb wheel action, its
 //  `gestures` and its `ring`. The Apps pane puts the page in place of the list and takes
 //  it away again; the page tells it when its height changed (the part, or the part's
-//  content).
+//  content). An Undo or Redo of a change made in another pane that changes the bindings
+//  of Buttons shows the part again (what its first row says follows them).
 //
 
 import Cocoa
@@ -98,6 +99,10 @@ final class ApplicationDetailViewController: NSViewController {
     private(set) var shownPart: ApplicationPagePart
     /// Each part's controller, by the part's id: made with the page.
     private(set) var partControllers: [String: ApplicationPagePartController] = [:]
+    /// The bindings of Buttons the part shown was last shown with: an Undo or Redo of a
+    /// change made in another pane (Buttons, or the Gestures or Shortcut Ring pane's choice
+    /// of the button) that changed them shows the part again.
+    private var shownGeneralBindings: [ButtonBinding] = []
 
     var scrollingPart: ApplicationScrollingPartViewController! {
         return partControllers[ApplicationPagePart.scrolling.id] as? ApplicationScrollingPartViewController
@@ -143,6 +148,10 @@ final class ApplicationDetailViewController: NSViewController {
 
     required init?(coder: NSCoder) {
         fatalError("ApplicationDetailViewController is built in code")
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     override func loadView() {
@@ -267,6 +276,30 @@ final class ApplicationDetailViewController: NSViewController {
         put(shownPart)
         showOwnSettings()
         root.setFrameSize(root.fittingSize)
+        // An Undo or Redo in another pane can change what the first rows of the Gestures
+        // and Shortcut Ring parts say (and the Buttons part's lines): they follow.
+        for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+            NotificationCenter.default.addObserver(self, selector: #selector(undoManagerDidChange(_:)), name: name, object: nil)
+        }
+    }
+
+    /// An Undo or Redo ran: while the page is in a window and the bindings of Buttons are
+    /// not the ones the part shown was shown with, the part shows them, and the app's box
+    /// and dots follow. (Undo of the app's own buttons shows itself; see
+    /// `ApplicationButtonsViewController.showUndoableChange`.)
+    @objc private func undoManagerDidChange(_ notification: Notification) {
+        guard isViewLoaded, view.window != nil else { return }
+        let general = Options.shared.buttons.binding
+        guard !Self.sameBindings(general, shownGeneralBindings) else { return }
+        shownGeneralBindings = general
+        shownController?.syncViewWithOptions()
+        showOwnSettings()
+    }
+
+    /// The same bindings, stored the same way (also where a numbered button is said to be,
+    /// which its name follows).
+    private static func sameBindings(_ a: [ButtonBinding], _ b: [ButtonBinding]) -> Bool {
+        return a.count == b.count && zip(a, b).allSatisfy { ButtonRowChange.isSame($0, $1) }
     }
 
     override func viewWillAppear() {
@@ -350,6 +383,7 @@ final class ApplicationDetailViewController: NSViewController {
         }
         partControl.selectedSegment = parts.firstIndex(of: part) ?? 0
         guard controller.view.superview !== partContainer else { return }
+        shownGeneralBindings = Options.shared.buttons.binding
         controller.syncViewWithOptions()
         let partView = controller.view
         partContainer.addSubview(partView)
@@ -383,6 +417,7 @@ final class ApplicationDetailViewController: NSViewController {
             title = name
             headerRow.title = name
         }
+        shownGeneralBindings = Options.shared.buttons.binding
         for controller in partControllers.values {
             controller.syncViewWithOptions()
         }
