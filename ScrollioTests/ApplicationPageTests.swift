@@ -172,10 +172,9 @@ final class ApplicationPageTests: XCTestCase {
     }
 
     /// What an app has of its own, as the list and the header say it: the catalog's form
-    /// ("Own %@") with the items joined as the app's language joins a list.
+    /// ("Own %@") with the items joined as every list of the window is.
     private static func own(_ items: String...) -> String {
-        let list = ApplicationPagePart.joinedList(items, locale: ApplicationPagePart.listLocale)
-        return String(format: NSLocalizedString("apps-summary-own", comment: ""), list)
+        return String(format: NSLocalizedString("apps-summary-own", comment: ""), InterfaceList.joined(items))
     }
 
     // MARK: - The parts
@@ -858,16 +857,36 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertLessThanOrEqual(thumbWheelNote.fittingSize.height, twoLines)
     }
 
-    /// What an app has of its own is joined in the app's language, not the Mac's region:
-    /// an English app on a Slovenian Mac says "and", never "in".
-    func testTheSummaryJoinsItsListInTheAppsLanguage() {
+    /// Every list of the window is joined one way (`InterfaceList`): in the app's language
+    /// with the Mac's region. An English app on a Mac set to Slovenian says "and", never
+    /// "in", with the comma before it that English has in Slovenia (as in the United States;
+    /// the region's English decides: in the United Kingdom there is none). The summary of
+    /// four kinds, a trigger line and a list of buttons.
+    func testEveryListIsJoinedInTheAppsLanguageWithTheMacsRegion() {
+        let mac = InterfaceList.macLocale
+        defer { InterfaceList.macLocale = mac }
         let application = Application(path: Self.calculator)
         application.inherit = false
-        application.setOwnThumbWheelFunction(.zoom)
-        XCTAssertEqual(ApplicationPagePart.summary(of: application, locale: Locale(identifier: "sl_SI")), "Own: scrolling in thumb wheel")
-        XCTAssertEqual(ApplicationPagePart.summary(of: application, locale: Locale(identifier: "en_SI")), "Own: scrolling and thumb wheel")
-        XCTAssertEqual(ApplicationPagePart.listLocale.identifier, Bundle.main.preferredLocalizations.first)
-        XCTAssertEqual(ApplicationPagePart.summary(of: application), "Own: scrolling and thumb wheel", "the app's own language")
+        application.setOwnButtonBindings([binding(3, "missionControl"), binding(4, "missionControl")])
+        application.setUsesGeneralGestures(false, general: .default)
+        application.setUsesGeneralRing(false, general: .default)
+        XCTAssertEqual(ApplicationPagePart.summary(of: application, locale: Locale(identifier: "sl_SI")), "Own: scrolling, 2 buttons, gestures in ring",
+                       "a locale handed in is the one used")
+        let rule = ApplicationTriggers(applicationNames: ["Figma", "Safari"], triggerTitles: ["Thumb panel", "Back button"])
+
+        InterfaceList.macLocale = { Locale(identifier: "sl_SI") }
+        XCTAssertEqual(InterfaceList.locale.language.languageCode, .english)
+        XCTAssertEqual(InterfaceList.locale.region, .slovenia)
+        XCTAssertEqual(ApplicationPagePart.summary(of: application), "Own: scrolling, 2 buttons, gestures, and ring")
+        XCTAssertEqual(rule.text, "Only in Figma and Safari: Thumb panel and Back button")
+        XCTAssertEqual(InterfaceList.joined(["Back button", "Forward button", "Middle button"]), "Back button, Forward button, and Middle button")
+
+        InterfaceList.macLocale = { Locale(identifier: "en_GB") }
+        XCTAssertEqual(ApplicationPagePart.summary(of: application), "Own: scrolling, 2 buttons, gestures and ring")
+        XCTAssertEqual(rule.text, "Only in Figma and Safari: Thumb panel and Back button")
+
+        InterfaceList.macLocale = { Locale(identifier: "en_US") }
+        XCTAssertEqual(ApplicationPagePart.summary(of: application), "Own: scrolling, 2 buttons, gestures, and ring")
     }
 
     /// The Buttons part's line under the list is a plain sentence that fits two lines, also

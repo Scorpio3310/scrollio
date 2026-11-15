@@ -166,18 +166,18 @@ struct ApplicationTriggers: Equatable {
             let pairs = zip(applicationNames, appTriggerTitles).map { name, titles in
                 String(
                     format: NSLocalizedString("apps-trigger-app-with", comment: ""),
-                    name, ListFormatter.localizedString(byJoining: titles)
+                    name, InterfaceList.joined(titles)
                 )
             }
             return String(
                 format: NSLocalizedString("apps-trigger-only-in-each", comment: ""),
-                whereText(ListFormatter.localizedString(byJoining: pairs))
+                whereText(InterfaceList.joined(pairs))
             )
         }
         return String(
             format: NSLocalizedString("apps-trigger-only-in", comment: ""),
-            whereText(ListFormatter.localizedString(byJoining: applicationNames)),
-            ListFormatter.localizedString(byJoining: triggerTitles)
+            whereText(InterfaceList.joined(applicationNames)),
+            InterfaceList.joined(triggerTitles)
         )
     }
 
@@ -284,7 +284,7 @@ struct ApplicationTriggerRow: Equatable {
             for title in titles(bindings.map(\.triggerEvent)) where !unique.contains(title) {
                 unique.append(title)
             }
-            return ListFormatter.localizedString(byJoining: unique)
+            return InterfaceList.joined(unique)
         }
         guard let first = onlyHere.first else {
             let text = String(format: NSLocalizedString("apps-trigger-everywhere", comment: ""), joined(shared))

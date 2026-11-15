@@ -107,7 +107,7 @@ struct ShortcutRingBindingSummary: Equatable {
             return NSLocalizedString(isKey ? "ring-trigger-one-key" : "ring-trigger-one", comment: "")
         }
         if hasTrigger {
-            let triggers = ListFormatter.localizedString(byJoining: triggerTitles)
+            let triggers = InterfaceList.joined(triggerTitles)
             return String(format: NSLocalizedString("ring-trigger-bound", comment: ""), triggers)
         }
         if let onlyInApps {
