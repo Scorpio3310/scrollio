@@ -8,7 +8,7 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
-## Unreleased
+## 1.1.0
 
 **Every app gets its own:** buttons, gestures and a Shortcut Ring for each app, with
 suggested shortcuts for 100 of them.
