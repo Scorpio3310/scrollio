@@ -253,9 +253,14 @@ extension Options {
     func readOptions() {
         // 配置项如果不存在则尝试用当前设置(默认设置)保存一次
         if defaults.object(forKey: OptionItem.General.OptionsExist) == nil {
-            let isFresh = Self.isFreshInstallation(defaults)
-            saveOptions()
-            if isFresh { seedWheelDirectionFromTheSystem() }
+            if Self.isFreshInstallation(defaults) {
+                saveOptions()
+                seedWheelDirectionFromTheSystem()
+            } else if writesToDefaults {
+                // Settings that lost the mark (every save writes it): the mark only, so the
+                // stored direction is read as it is, not written over.
+                defaults.set("optionsExist", forKey: OptionItem.General.OptionsExist)
+            }
         }
         // 锁定
         readingOptionsLock = true
