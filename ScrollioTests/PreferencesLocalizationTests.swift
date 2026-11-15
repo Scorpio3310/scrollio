@@ -319,7 +319,6 @@ final class PreferencesLocalizationTests: XCTestCase {
     static let ringKeys = [
         "shortcutRing", "ring-menu-tooltip", "ring-tab-title",
         "ring-trigger", "ring-trigger-none", "ring-trigger-bound", "ring-trigger-choice-record", "ring-undo-choose-trigger", "ring-trigger-apps",
-        "ring-trigger-one", "ring-trigger-one-key",
         "ring-trigger-set-up", "ring-freeze-pointer", "ring-freeze-pointer-hint",
         "ring-trigger-one", "ring-trigger-one-key", "ring-trigger-named",
         "ring-places-header", "ring-places-hint",
