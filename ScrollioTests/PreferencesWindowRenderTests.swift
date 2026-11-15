@@ -3677,3 +3677,73 @@ extension PreferencesWindowRenderTests {
         popover.hide()
     }
 }
+
+// MARK: - Round 2 fix X
+
+extension PreferencesWindowRenderTests {
+
+    /// What the round 2 fixes X change (`r2-fix-x-<case>-<appearance>.png`), an app's page:
+    /// `macos`, Left to macOS: the Thumb wheel box alone, without Speed while it scrolls
+    /// sideways; `macos-tabs`, the same with Switch Tabs, Speed there; `limit-picked-macos`,
+    /// the limit on, the page opened on Own Settings and Left to macOS picked: the line above
+    /// the parts faded out, its room kept; `limit-cjk`, an app named 微信 with the limit on:
+    /// its name whole in the line; `ring-long-mixed`, an app with a 45-character name whose
+    /// ring opens with a button as in other apps and two of its own: the first row's line
+    /// cut to two lines, with its semicolon.
+    func testRenderRound2FixX() throws {
+        let stored = Options.shared.application.applications
+        addTeardownBlock { Options.shared.application.applications = stored }
+        func page(
+            _ name: String, part: ApplicationPagePart = .scrolling, limit: Bool = false,
+            app make: @escaping () -> Application, after: ((ApplicationDetailViewController) -> Void)? = nil
+        ) throws {
+            Options.shared.application.allowlist = limit
+            let defaults = uiDefaults(advanced: false)
+            var path = ""
+            try renderPane(PANEL_IDENTIFIER.application, name: "r2-fix-x-\(name)", prepare: { preferences in
+                // A new entry for each appearance: a pick changes it.
+                let app = make()
+                path = app.path
+                Options.shared.application.applications = EnhanceArray<Application>(withArray: [app], matchKey: "path")
+                (preferences.controller(for: PANEL_IDENTIFIER.application) as? PreferencesApplicationViewController)?
+                    .uiStateDefaults = defaults
+            }, afterLoad: { controller in
+                let pane = controller as? PreferencesApplicationViewController
+                pane?.openApplication(withID: path, part: part)
+                if let page = pane?.detailController {
+                    after?(page)
+                }
+            })
+        }
+        func safari(_ choice: ApplicationScrollingChoice, function: ThumbWheelFunction? = nil) -> Application {
+            let safari = Application(path: "/Applications/Safari.app")
+            safari.setUsesScrollingSettings(choice == .sameAsScrolling, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
+            if choice == .leftToMacOS {
+                safari.scroll.smooth = false
+                safari.scroll.reversesWheel = false
+            }
+            safari.setOwnThumbWheelFunction(function)
+            return safari
+        }
+        try page("macos", app: { safari(.leftToMacOS) })
+        try page("macos-tabs", app: { safari(.leftToMacOS, function: .tabs) })
+        try page("limit-picked-macos", limit: true, app: { safari(.ownSettings) }) { page in
+            page.scrollingChoicePopUp.selectItem(withTag: ApplicationScrollingChoice.leftToMacOS.rawValue)
+            page.scrollingPart.choiceChanged(page.scrollingChoicePopUp)
+        }
+        try page("limit-cjk", limit: true, app: {
+            let weChat = Application(path: "/Applications/WeChat.app")
+            weChat.displayName = "微信"
+            weChat.setUsesScrollingSettings(false, scrolling: Options.shared.scroll, thumbWheel: Options.shared.thumbWheel)
+            return weChat
+        })
+        let ring = SystemShortcut.shortcutRing.identifier
+        Options.shared.buttons.binding = [binding(5, ring)]
+        try page("ring-long-mixed", part: .ring, app: {
+            let long = Application(path: "/Applications/Remarkably Long Application.app")
+            long.displayName = "Remarkably Long Application Name For Its Kind"
+            long.setOwnButtonBindings([self.binding(3, ring), self.binding(4, ring)])
+            return long
+        })
+    }
+}
