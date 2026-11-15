@@ -1414,6 +1414,43 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertTrue(button.isEnabled)
     }
 
+    /// "Undo Reset" is offered only while a click would do it. After a reset, the choice of
+    /// the button to hold is a step Edit › Undo takes back first, and a binding of Buttons:
+    /// the gesture settings are still the defaults. The offer ends with it. Regression: the
+    /// button went on reading "Undo Reset", and a click did nothing but turn it into a
+    /// greyed "Reset to Defaults".
+    func testAnotherUndoStepAfterAResetEndsTheUndoOffer() throws {
+        Options.shared.gesture = changedGesture
+        let before = Options.shared.gesture
+        let (controller, undo) = makeControllerWithUndo()
+        var bindings: [ButtonBinding] = []
+        let chooser = try XCTUnwrap(controller.triggerChooser)
+        chooser.bindings = { bindings }
+        chooser.store = { bindings = $0 }
+        chooser.deviceSource = ButtonsDeviceSource(
+            captureStatus: { _ in .normal }, deviceName: { nil }, isBusy: { false }, refresh: {}, warnBluetoothButton: { _ in }
+        )
+        let button = controller.resetToDefaultsButton
+        click(button, undo)
+        XCTAssertEqual(button.title, "Undo Reset")
+
+        undo.beginUndoGrouping()
+        chooser.choose(RecordedEvent(type: .mouse, code: 3, modifiers: 0, deviceFilter: nil))
+        undo.endUndoGrouping()
+        XCTAssertEqual(bindings.map(\.systemShortcutName), [SystemShortcut.mouseGestureNavigation.identifier])
+        XCTAssertEqual(undo.undoActionName, "Change Button to Hold")
+        XCTAssertEqual(Options.shared.gesture, .default, "the gesture settings are untouched")
+        XCTAssertFalse(controller.resetToDefaults.offersUndo, "a click would not take the reset back")
+        XCTAssertEqual(button.title, "Reset to Defaults")
+        XCTAssertFalse(button.isEnabled, "nothing differs from the defaults")
+
+        // Edit › Undo still takes back both, in their order.
+        undo.undo()
+        XCTAssertTrue(bindings.isEmpty)
+        undo.undo()
+        XCTAssertEqual(Options.shared.gesture, before)
+    }
+
     // MARK: - Strings
 
     func testEveryLocaleTranslatesTheGesturesTab() {

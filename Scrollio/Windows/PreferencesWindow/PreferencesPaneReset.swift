@@ -153,13 +153,23 @@ final class PreferencesPaneReset: NSObject {
     }
 
     /// The pane has put the stored settings into its rows: a setting that moved off the
-    /// defaults again (or a reset that was undone) ends the offer.
+    /// defaults again (or a reset that was undone) ends the offer. So does another step
+    /// that Edit › Undo would now take back first (the choice of the button to hold, "Set
+    /// Up…": a binding of Buttons, so the settings are still the defaults): the button
+    /// takes back the reset alone (`undoReset`), and must not offer what a click would not do.
     func settingsDidChange() {
-        if offersUndo, hasSettingsToReset {
+        if offersUndo, hasSettingsToReset || !resetIsNextToUndo {
             endUndoOffer()
         } else {
             updateButton()
         }
+    }
+
+    /// The reset is what Edit › Undo takes back now: its step is on top of the Undo stack
+    /// (a step registered in the event still running counts as on top).
+    private var resetIsNextToUndo: Bool {
+        guard let undo = undoManager() else { return false }
+        return undo.canUndo && undo.undoActionName == undoActionName
     }
 
     // MARK: - "Undo Reset", offered after a reset
@@ -187,11 +197,13 @@ final class PreferencesPaneReset: NSObject {
     }
 
     /// "Undo Reset": what Edit › Undo does. Only the reset itself is taken back: with
-    /// anything else on top of the Undo stack the button does nothing.
+    /// anything else on top of the Undo stack the button does nothing (and offers nothing
+    /// once the pane showed its settings again, `settingsDidChange`).
     private func undoReset() {
         let undo = undoManager()
+        let isNext = resetIsNextToUndo
         endUndoOffer()
-        guard let undo, undo.canUndo, undo.undoActionName == undoActionName else { return }
+        guard let undo, isNext else { return }
         undo.undo()
     }
 
