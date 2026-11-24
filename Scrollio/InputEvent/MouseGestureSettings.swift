@@ -9,6 +9,9 @@
 //
 //  Stored as one JSON entry (UserDefaults key "mouseGestureSettings"): the actions' keys
 //  ("upAction" … "clickAction", and "upLabel" … only where a label is) beside the others.
+//  "actionsFollowHand" (a JSON boolean) is written only while that switch is on, so an
+//  entry with it off is written as before, and an older version, which ignores the name,
+//  reads a newer entry as its own. Do not rename the keys.
 //
 
 import Foundation
@@ -18,7 +21,8 @@ enum MouseGestureMode: String, Codable, Equatable {
     /// One action per hold, once the movement passes the activation distance.
     case discrete
     /// Sideways movement drives an interactive Spaces swipe that follows the hand; up, down
-    /// and click keep their discrete actions.
+    /// and click keep their discrete actions, unless `actionsFollowHand` lets Up and Down
+    /// follow too (`DockFollow.swift`).
     case interactive
 }
 
@@ -72,6 +76,17 @@ struct MouseGestureSettings: Codable, Equatable {
     /// Haptic cues on mice that have them (MX Master 4): a light pulse when a gesture locks
     /// in, a stronger one when a "follow the hand" swipe is released towards a switch.
     var hapticFeedback: Bool
+    /// "Up and Down follow the hand too" (experimental, off by default): in "Follow the
+    /// hand", an Up or Down direction whose action shows a view of the Dock (Mission
+    /// Control, Show Desktop, Apps) opens it with the hand instead of running once, where
+    /// this Mac can (`followPlan(for:availability:)`). Kept, and not used, while the mode
+    /// is "One action per hold".
+    var actionsFollowHand: Bool
+
+    /// The switch counts: it is on and the mode is "Follow the hand".
+    var actionsFollowNow: Bool {
+        return mode == .interactive && actionsFollowHand
+    }
 
     static let `default` = MouseGestureSettings(
         actions: .default,
@@ -90,7 +105,8 @@ struct MouseGestureSettings: Codable, Equatable {
         mode: MouseGestureMode = .discrete,
         trackingSpeed: Double = MouseGestureSettings.defaultTrackingSpeed,
         deviceTracking: Bool = false,
-        hapticFeedback: Bool = true
+        hapticFeedback: Bool = true,
+        actionsFollowHand: Bool = false
     ) {
         self.init(
             actions: GestureActions(
@@ -105,7 +121,8 @@ struct MouseGestureSettings: Codable, Equatable {
             mode: mode,
             trackingSpeed: trackingSpeed,
             deviceTracking: deviceTracking,
-            hapticFeedback: hapticFeedback
+            hapticFeedback: hapticFeedback,
+            actionsFollowHand: actionsFollowHand
         )
     }
 
@@ -116,7 +133,8 @@ struct MouseGestureSettings: Codable, Equatable {
         mode: MouseGestureMode = .discrete,
         trackingSpeed: Double = MouseGestureSettings.defaultTrackingSpeed,
         deviceTracking: Bool = false,
-        hapticFeedback: Bool = true
+        hapticFeedback: Bool = true,
+        actionsFollowHand: Bool = false
     ) {
         self.actions = actions
         self.invertHorizontal = invertHorizontal
@@ -125,10 +143,11 @@ struct MouseGestureSettings: Codable, Equatable {
         self.trackingSpeed = Self.clampedTrackingSpeed(trackingSpeed)
         self.deviceTracking = deviceTracking
         self.hapticFeedback = hapticFeedback
+        self.actionsFollowHand = actionsFollowHand
     }
 
     private enum CodingKeys: String, CodingKey {
-        case invertHorizontal, freezePointer, mode, trackingSpeed, deviceTracking, hapticFeedback
+        case invertHorizontal, freezePointer, mode, trackingSpeed, deviceTracking, hapticFeedback, actionsFollowHand
     }
 
     /// Missing keys fall back to the defaults, so older or partial data still loads.
@@ -150,10 +169,15 @@ struct MouseGestureSettings: Codable, Equatable {
         deviceTracking = storedTracking ?? fallback.deviceTracking
         let storedHaptics = (try? c.decodeIfPresent(Bool.self, forKey: .hapticFeedback)) ?? nil
         hapticFeedback = storedHaptics ?? fallback.hapticFeedback
+        // The follow switch: missing (every entry from before it), or anything that is no
+        // JSON boolean, is off and takes nothing with it.
+        let storedFollow = (try? c.decodeIfPresent(Bool.self, forKey: .actionsFollowHand)) ?? nil
+        actionsFollowHand = storedFollow ?? fallback.actionsFollowHand
     }
 
     /// The actions first, in the order they were always written, then the rest: an entry
-    /// without a label is written as before.
+    /// without a label is written as before. The follow switch is written only while on:
+    /// off, the entry holds the names it always held.
     func encode(to encoder: Encoder) throws {
         try actions.encode(to: encoder)
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -163,6 +187,9 @@ struct MouseGestureSettings: Codable, Equatable {
         try c.encode(trackingSpeed, forKey: .trackingSpeed)
         try c.encode(deviceTracking, forKey: .deviceTracking)
         try c.encode(hapticFeedback, forKey: .hapticFeedback)
+        if actionsFollowHand {
+            try c.encode(true, forKey: .actionsFollowHand)
+        }
     }
 
     /// Keeps the speed inside `trackingSpeedRange`; a non-finite value becomes the default.

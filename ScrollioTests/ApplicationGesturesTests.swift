@@ -81,8 +81,9 @@ final class ApplicationGesturesStorageTests: XCTestCase {
         let gestures = try XCTUnwrap(stored[0]["gestures"] as? [String: Any])
         XCTAssertEqual(Set(gestures.keys), [
             "inherit", "upAction", "upLabel", "downAction", "leftAction", "rightAction", "clickAction", "invertHorizontal",
-            "mode", "trackingSpeed", "freezePointer", "deviceTracking", "hapticFeedback",
+            "mode", "trackingSpeed", "freezePointer", "deviceTracking", "hapticFeedback", "actionsFollowHand",
         ])
+        XCTAssertEqual(gestures["actionsFollowHand"] as? Bool, false, "copied from the general gestures")
         XCTAssertEqual(gestures["mode"] as? String, "interactive")
         XCTAssertEqual(gestures["trackingSpeed"] as? Double, 2.5)
         XCTAssertEqual(gestures["freezePointer"] as? Bool, false)
@@ -258,6 +259,84 @@ final class ApplicationGesturesStorageTests: XCTestCase {
         XCTAssertEqual(again.gestures, notes.gestures)
         XCTAssertFalse(again.usesGeneralGestures)
     }
+
+    // MARK: "Up and Down follow the hand too"
+
+    private func storedGestures(of application: Application) throws -> [String: Any] {
+        let stored = try XCTUnwrap(try JSONSerialization.jsonObject(with: JSONEncoder().encode(application)) as? [String: Any])
+        return try XCTUnwrap(stored["gestures"] as? [String: Any])
+    }
+
+    /// A set from before the switch has none: it runs the general choice, whatever that is
+    /// at the time, and is written as it was. Nothing changes for it with the update.
+    func testASetFromBeforeTheFollowSwitchRunsTheGeneralChoiceAndIsWrittenAsBefore() throws {
+        let json = #"{"path":"/Applications/Notes.app","gestures":{"inherit":false,"upAction":"copy","invertHorizontal":true,"#
+            + #""mode":"interactive","trackingSpeed":2,"freezePointer":true,"deviceTracking":false,"hapticFeedback":true}}"#
+        let notes = try JSONDecoder().decode(Application.self, from: Data(json.utf8))
+        XCTAssertNil(notes.ownGestures?.actionsFollowHand)
+        var general = MouseGestureSettings.default
+        XCTAssertFalse(notes.gesturesThatRun(general: general).actionsFollowHand, "off, as the update leaves everybody")
+        general.actionsFollowHand = true
+        XCTAssertTrue(notes.gesturesThatRun(general: general).actionsFollowHand, "the general choice, live")
+        XCTAssertTrue(notes.gesturesThatRun(general: general).actionsFollowNow, "in the app's own mode")
+        XCTAssertEqual(Set(try storedGestures(of: notes).keys), [
+            "inherit", "upAction", "downAction", "leftAction", "rightAction", "clickAction", "invertHorizontal",
+            "mode", "trackingSpeed", "freezePointer", "deviceTracking", "hapticFeedback",
+        ], "written as before")
+    }
+
+    /// The app's own switch is a JSON boolean beside the others: on or off is the app's
+    /// (an off under a general on must be storable), and it comes back as it was stored.
+    func testAnAppsOwnFollowSwitchIsStoredOnOrOffAndComesBack() throws {
+        var general = MouseGestureSettings.default
+        general.mode = .interactive
+        general.actionsFollowHand = true
+        let notes = Application(path: notesPath)
+        notes.setUsesGeneralGestures(false, general: general)
+        XCTAssertEqual(notes.ownGestures?.actionsFollowHand, true, "a set the switch makes copies it, as the rest")
+        XCTAssertEqual(notes.ownGestures, ApplicationGestures(inherit: false, copying: general))
+        XCTAssertEqual(notes.gesturesThatRun(general: .default), general, "the copy runs, not the general gestures of later")
+
+        notes.changeOwnGestures { $0.actionsFollowHand = false }
+        XCTAssertFalse(notes.gesturesThatRun(general: general).actionsFollowHand, "the app's off under the general on")
+        let off = try storedGestures(of: notes)
+        let storedOff = try XCTUnwrap(off["actionsFollowHand"] as? NSNumber)
+        XCTAssertEqual(CFGetTypeID(storedOff), CFBooleanGetTypeID(), "a JSON boolean")
+        XCTAssertFalse(storedOff.boolValue)
+
+        let data = try XCTUnwrap(list([notes]).json())
+        let back = try XCTUnwrap(try EnhanceArray<Application>(withData: data, matchKey: "path").get(by: notesPath))
+        XCTAssertEqual(back.gestures, notes.gestures)
+        XCTAssertEqual(back.ownGestures?.actionsFollowHand, false)
+
+        back.changeOwnGestures { $0.actionsFollowHand = true }
+        XCTAssertEqual(try storedGestures(of: back)["actionsFollowHand"] as? Bool, true)
+        XCTAssertTrue(back.gesturesThatRun(general: .default).actionsFollowHand, "the app's on under the general off")
+        XCTAssertTrue(back.gesturesThatRun(general: .default).actionsFollowNow, "in the app's own mode")
+
+        // A copy of the general gestures with the switch off says off, and keeps saying so.
+        let calculator = Application(path: calculatorPath)
+        calculator.setUsesGeneralGestures(false, general: .default)
+        XCTAssertEqual(calculator.ownGestures?.actionsFollowHand, false)
+        XCTAssertFalse(calculator.gesturesThatRun(general: general).actionsFollowHand)
+    }
+
+    /// One value that cannot be read is the general one; it never takes the set with it.
+    func testAnAppsFollowSwitchThatIsNoBooleanIsTheGeneralChoice() throws {
+        for value in [#""on""#, "1", "null", "{}", "[]"] {
+            let json = #"{"path":"/Applications/Notes.app","gestures":{"inherit":false,"upAction":"copy","mode":"interactive","#
+                + #""actionsFollowHand":"# + value + "}}"
+            let notes = try JSONDecoder().decode(Application.self, from: Data(json.utf8))
+            let own = try XCTUnwrap(notes.ownGestures, value)
+            XCTAssertNil(own.actionsFollowHand, value)
+            XCTAssertEqual(own.mode, .interactive, value)
+            XCTAssertEqual(own.actions.up.action, "copy", value)
+            var general = MouseGestureSettings.default
+            general.actionsFollowHand = true
+            XCTAssertTrue(notes.gesturesThatRun(general: general).actionsFollowHand, value)
+            XCTAssertNil(try storedGestures(of: notes)["actionsFollowHand"], "\(value): not written until the app's page sets one")
+        }
+    }
 }
 
 // MARK: - Which gestures a hold runs
@@ -318,6 +397,27 @@ final class MouseGestureChoiceTests: XCTestCase {
         let calculator = choice(FrontApp(bundlePath: calculatorPath, executablePath: calculatorProgram))
         XCTAssertTrue(calculator.isAppsOwn, "stored by its program, as a running app is added")
         XCTAssertEqual(calculator.settings.actions.up.action, "paste")
+    }
+
+    /// "Up and Down follow the hand too" is the app's own for its holds: off in the app
+    /// under a general on, and the other way round; another app gets the general choice.
+    func testAnAppsOwnFollowSwitchCountsForItsHolds() throws {
+        general.actionsFollowHand = true
+        let notesInFront = FrontApp(bundlePath: notesPath, executablePath: nil)
+        XCTAssertEqual(try XCTUnwrap(applications.get(by: notesPath)).ownGestures?.actionsFollowHand, false,
+                       "copied when the set was made, from the defaults")
+        XCTAssertFalse(choice(notesInFront).settings.actionsFollowHand)
+        XCTAssertTrue(choice(nil).settings.actionsFollowHand, "another app: the general choice")
+        XCTAssertTrue(choice(nil).settings.actionsFollowNow)
+
+        general.actionsFollowHand = false
+        let entry = try XCTUnwrap(applications.get(by: notesPath))
+        entry.changeOwnGestures { own in
+            own.mode = .interactive
+            own.actionsFollowHand = true
+        }
+        XCTAssertTrue(choice(notesInFront).settings.actionsFollowNow)
+        XCTAssertFalse(choice(nil).settings.actionsFollowHand)
     }
 
     func testEveryOtherAppGetsTheGeneralGestures() {

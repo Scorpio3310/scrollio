@@ -9,11 +9,11 @@
 //  An app has a whole set of its own or none: everything of the Gestures pane but the
 //  button to hold. The five actions (each direction and the click, a recorded key
 //  combination with its name and icon), "Invert left and right", the mode (one action per
-//  hold or follow the hand), the swipe speed, "Freeze pointer during a gesture" and what a
-//  Logitech mouse does ("Let the mouse track the gesture", "Pulse when a gesture locks
-//  in"). The button that runs Gesture Navigation is a binding, of Buttons or of the app's
-//  own buttons (`ApplicationButtons`); whichever started a hold, it runs the set of the
-//  app in front: its own, else the general one.
+//  hold or follow the hand), "Up and Down follow the hand too", the swipe speed, "Freeze
+//  pointer during a gesture" and what a Logitech mouse does ("Let the mouse track the
+//  gesture", "Pulse when a gesture locks in"). The button that runs Gesture Navigation is
+//  a binding, of Buttons or of the app's own buttons (`ApplicationButtons`); whichever
+//  started a hold, it runs the set of the app in front: its own, else the general one.
 //
 //  Stored with the app's entry, under "gestures", in the names of the general gesture
 //  settings (`GestureActions`, `MouseGestureSettings`):
@@ -42,6 +42,11 @@
 //    speed that is no number) is the general value, whatever it is at the time: such a
 //    set ran the general ones until now and goes on doing so, until the app's page sets
 //    one. Such a set is written as before. A speed is kept in the general range.
+//  - "actionsFollowHand" ("Up and Down follow the hand too", a JSON boolean) is the same
+//    kind of value: a set the switch makes copies the general one, on or off (an off of
+//    the app's own must stand under a general on); a set from before it has none, and a
+//    missing one, or one that is no boolean, is the general value at the time. An older
+//    version ignores the name.
 //  Do not rename the keys.
 //
 
@@ -64,6 +69,8 @@ struct ApplicationGestures: Codable, Equatable {
     var freezePointer: Bool?
     var deviceTracking: Bool?
     var hapticFeedback: Bool?
+    /// "Up and Down follow the hand too", the app's own; nil: the general value counts.
+    var actionsFollowHand: Bool?
 
     init(inherit: Bool, actions: GestureActions, invertHorizontal: Bool) {
         self.inherit = inherit
@@ -80,6 +87,7 @@ struct ApplicationGestures: Codable, Equatable {
         freezePointer = general.freezePointer
         deviceTracking = general.deviceTracking
         hapticFeedback = general.hapticFeedback
+        actionsFollowHand = general.actionsFollowHand
     }
 
     /// `general` with this set in it: the five actions and the invert switch, and every
@@ -93,11 +101,13 @@ struct ApplicationGestures: Codable, Equatable {
         if let freezePointer { settings.freezePointer = freezePointer }
         if let deviceTracking { settings.deviceTracking = deviceTracking }
         if let hapticFeedback { settings.hapticFeedback = hapticFeedback }
+        if let actionsFollowHand { settings.actionsFollowHand = actionsFollowHand }
         return settings
     }
 
     private enum CodingKeys: String, CodingKey {
         case inherit, invertHorizontal, mode, trackingSpeed, freezePointer, deviceTracking, hapticFeedback
+        case actionsFollowHand
     }
 
     init(from decoder: Decoder) throws {
@@ -113,6 +123,7 @@ struct ApplicationGestures: Codable, Equatable {
         freezePointer = (try? c.decodeIfPresent(Bool.self, forKey: .freezePointer)) ?? nil
         deviceTracking = (try? c.decodeIfPresent(Bool.self, forKey: .deviceTracking)) ?? nil
         hapticFeedback = (try? c.decodeIfPresent(Bool.self, forKey: .hapticFeedback)) ?? nil
+        actionsFollowHand = (try? c.decodeIfPresent(Bool.self, forKey: .actionsFollowHand)) ?? nil
     }
 
     /// A set without the values of the pane's rest is written as before.
@@ -126,6 +137,7 @@ struct ApplicationGestures: Codable, Equatable {
         try c.encodeIfPresent(freezePointer, forKey: .freezePointer)
         try c.encodeIfPresent(deviceTracking, forKey: .deviceTracking)
         try c.encodeIfPresent(hapticFeedback, forKey: .hapticFeedback)
+        try c.encodeIfPresent(actionsFollowHand, forKey: .actionsFollowHand)
     }
 }
 
