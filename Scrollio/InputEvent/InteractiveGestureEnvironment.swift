@@ -9,8 +9,14 @@
 import Cocoa
 
 struct InteractiveGestureScreen: Equatable {
+    /// The height of a screen that does not say its own (the fallback screen's).
+    static let defaultHeight: CGFloat = 900
+
     /// Width in points.
     var width: CGFloat
+    /// Height in points: the scale of the motions that follow the hand up and down
+    /// (`DockSwipeGeometry.followTravel`). With a default, for a screen made from its width.
+    var height: CGFloat = InteractiveGestureScreen.defaultHeight
     /// Spaces on this display; nil when unknown.
     var spaceCount: Int?
     /// Duration of one display refresh.
@@ -26,7 +32,9 @@ struct InteractiveGestureEnvironment {
     /// The block must never run inside the caller's stack: callers are event tap callbacks.
     var schedule: (TimeInterval, @escaping () -> Void) -> Void
 
-    static let fallbackScreen = InteractiveGestureScreen(width: 1440, spaceCount: nil, frameDuration: 1.0 / 60.0)
+    static let fallbackScreen = InteractiveGestureScreen(
+        width: 1440, height: InteractiveGestureScreen.defaultHeight, spaceCount: nil, frameDuration: 1.0 / 60.0
+    )
 
     static let system = InteractiveGestureEnvironment(
         screen: { systemScreen() },
@@ -55,6 +63,7 @@ struct InteractiveGestureEnvironment {
         let displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
         return InteractiveGestureScreen(
             width: screen.frame.width,
+            height: screen.frame.height,
             spaceCount: displayID.flatMap { DockSwipeGeometry.spaceCount(forDisplay: $0) },
             frameDuration: frameDuration
         )

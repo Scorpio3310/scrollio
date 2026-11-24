@@ -690,6 +690,26 @@ enum DockSwipeGeometry {
         return trackingSpeed * progressPerSpace(spaceCount: spaceCount) / spaceWidth
     }
 
+    // MARK: Mission Control, Show Desktop, Apps (the vertical motion and the pinch)
+
+    /// Points of hand travel that take `target` from nothing to whole at Swipe speed 1: a
+    /// share of the height of the screen under the pointer, kept within bounds, and shorter
+    /// for Apps (`DockFollowTuning`). There are no Spaces on these motions: no count and no
+    /// separator. A height that is no number counts as the default screen's.
+    static func followTravel(for target: DockFollowTarget, screenHeight: CGFloat) -> CGFloat {
+        let height = screenHeight.isFinite ? screenHeight : InteractiveGestureScreen.defaultHeight
+        let range = DockFollowTuning.travelRange
+        let travel = min(max(DockFollowTuning.travelScreenShare * height, range.lowerBound), range.upperBound)
+        return travel * DockFollowTuning.travelFactor(for: target)
+    }
+
+    /// Progress per point of hand travel towards `target` at the given Swipe speed: the
+    /// speed over the travel (full progress is `DockFollowTuning.fullProgress`). Always
+    /// positive: the direction is the target's `sign`.
+    static func followProgressPerPoint(for target: DockFollowTarget, screenHeight: CGFloat, trackingSpeed: Double) -> Double {
+        return trackingSpeed * DockFollowTuning.fullProgress / Double(followTravel(for: target, screenHeight: screenHeight))
+    }
+
     private typealias MainConnection = @convention(c) () -> Int32
     private typealias CopyManagedDisplaySpaces = @convention(c) (Int32) -> Unmanaged<CFArray>?
 

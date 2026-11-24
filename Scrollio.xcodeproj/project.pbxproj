@@ -58,6 +58,7 @@
 		1A5E00000000000000000502 /* ScrollioTests/MouseGestureInteractiveModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000501 /* ScrollioTests/MouseGestureInteractiveModeTests.swift */; };
 		1A5E00000000000000000302 /* ScrollioTests/InteractiveGestureSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000301 /* ScrollioTests/InteractiveGestureSessionTests.swift */; };
 		1A5E00000000000000000402 /* ScrollioTests/DockSwipeSynthesizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000401 /* ScrollioTests/DockSwipeSynthesizerTests.swift */; };
+		BA4C043E6A9F4A6E2786EF5F /* ScrollioTests/DockFollowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF470E726278416FF17021B /* ScrollioTests/DockFollowTests.swift */; };
 		1A5E00000000000000000202 /* ScrollioTests/PreferencesLocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5E00000000000000000201 /* ScrollioTests/PreferencesLocalizationTests.swift */; };
 		0BE5A296253A119C006D61C0 /* DGCharts in Frameworks */ = {isa = PBXBuildFile; productRef = 0BE5A295253A119C006D61C0 /* DGCharts */; };
 		5BA2C1E00000000000000A02 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 5BA2C1E00000000000000A01 /* Sparkle */; };
@@ -199,6 +200,7 @@
 		1A5E00000000000000000501 /* ScrollioTests/MouseGestureInteractiveModeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/MouseGestureInteractiveModeTests.swift; sourceTree = SOURCE_ROOT; };
 		1A5E00000000000000000301 /* ScrollioTests/InteractiveGestureSessionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/InteractiveGestureSessionTests.swift; sourceTree = SOURCE_ROOT; };
 		1A5E00000000000000000401 /* ScrollioTests/DockSwipeSynthesizerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/DockSwipeSynthesizerTests.swift; sourceTree = SOURCE_ROOT; };
+		4EF470E726278416FF17021B /* ScrollioTests/DockFollowTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/DockFollowTests.swift; sourceTree = SOURCE_ROOT; };
 		1A5E00000000000000000201 /* ScrollioTests/PreferencesLocalizationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollioTests/PreferencesLocalizationTests.swift; sourceTree = SOURCE_ROOT; };
 		0B2C591D2F7ADB79003D88C9 /* Debug.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = Debug.xctestplan; sourceTree = "<group>"; };
 		22142DA01E25344E00E4BFBF /* Scrollio Debug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Scrollio Debug.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -375,6 +377,7 @@
 				1A5E00000000000000000501 /* ScrollioTests/MouseGestureInteractiveModeTests.swift */,
 				1A5E00000000000000000301 /* ScrollioTests/InteractiveGestureSessionTests.swift */,
 				1A5E00000000000000000401 /* ScrollioTests/DockSwipeSynthesizerTests.swift */,
+				4EF470E726278416FF17021B /* ScrollioTests/DockFollowTests.swift */,
 				1A5E00000000000000000201 /* ScrollioTests/PreferencesLocalizationTests.swift */,
 				B2C3D4E5F6A7B8C9D0E1F201 /* ScrollioTests/ButtonUtilsCacheTests.swift */,
 				C4E5F6A7B8C9D0E1F3020201 /* ScrollioTests/ButtonCapturePresentationStatusTests.swift */,
@@ -649,6 +652,7 @@
 				1A5E00000000000000000502 /* ScrollioTests/MouseGestureInteractiveModeTests.swift in Sources */,
 				1A5E00000000000000000302 /* ScrollioTests/InteractiveGestureSessionTests.swift in Sources */,
 				1A5E00000000000000000402 /* ScrollioTests/DockSwipeSynthesizerTests.swift in Sources */,
+				BA4C043E6A9F4A6E2786EF5F /* ScrollioTests/DockFollowTests.swift in Sources */,
 				1A5E00000000000000000202 /* ScrollioTests/PreferencesLocalizationTests.swift in Sources */,
 				B2C3D4E5F6A7B8C9D0E1F200 /* ScrollioTests/ButtonUtilsCacheTests.swift in Sources */,
 				C3D4E5F6A7B8C9D0E1F30200 /* ScrollioTests/InputProcessorTests.swift in Sources */,
