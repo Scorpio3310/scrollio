@@ -308,6 +308,23 @@ final class DockGestureSwitchesTests: XCTestCase {
         XCTAssertEqual(changes, 2)
     }
 
+    /// The switches are read where the Spaces shortcuts are: when Scrollio starts, and when
+    /// it becomes active or System Settings goes to the background. Were one of the two
+    /// calls lost, a gesture switched off in System Settings would count as on for good and
+    /// its hold would do nothing, with no word. Read from the source.
+    func testTheSwitchesAreReadAtTheStartAndWhenTheyMayHaveChanged() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("Scrollio/AppDelegate.swift"), encoding: .utf8)
+        let code = source.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.hasPrefix("//") }
+        let reads = code.indices.filter { code[$0] == "DockGestureSwitches.reload()" }
+        XCTAssertEqual(reads.count, 2)
+        for read in reads where read > 0 {
+            XCTAssertEqual(code[read - 1], "SystemShortcut.reloadSystemShortcuts()", "beside the Spaces shortcuts")
+        }
+    }
+
     /// Nothing of the Mac's own settings is read while the tests run, and nothing of the
     /// Dock's is ever written. Read from the source (calling the reader to see that it
     /// reads nothing would be the very read if the line were ever lost): the one call
