@@ -3,7 +3,9 @@
 //  Mos
 //
 //  Synthesizes the "dock swipe" a trackpad or Magic Mouse sends to the Dock to switch
-//  Spaces, so a held mouse button can drag the desktop and let it follow the hand.
+//  Spaces, so a held mouse button can drag the desktop and let it follow the hand. The
+//  same event with another motion opens Mission Control (vertical) and Show Desktop or
+//  Launchpad / Apps (the pinch).
 //
 //  A swipe is a stream of CGEvents of type 30 posted to the session event tap:
 //  began -> changed ... -> ended | cancelled. Progress is cumulative from the start of the
@@ -11,12 +13,13 @@
 //
 //  - "fields" (macOS 26 and older): private CGEvent fields
 //        110      gesture HID type      23 (dock swipe)
-//        123/165  motion                1 horizontal, 2 vertical
+//        123/165  motion                1 horizontal, 2 vertical, 3 pinch
 //        119/139  motion                the same value as float32 bits read as a double
-//        124      progress              double, positive = next Space
+//        124      progress              double, positive = next Space (horizontal)
 //        135      progress              float32 bits stored in an integer
 //        132/134  phase                 1 began, 2 changed, 4 ended, 8 cancelled
-//        136      natural scrolling     1 when the system preference is on
+//        136      natural scrolling     1 when the system preference is on (horizontal);
+//                                       always 1 for the other two motions
 //        129/130  velocity              only on ended / cancelled
 //    followed by an empty companion event of type 29.
 //
@@ -27,12 +30,22 @@
 //        (23 << 16) | 5   flavor = 3 (dock primary)
 //        (23 << 16) | 2   progress
 //        child IOHIDEvent type 9 with (9 << 16) | 0 and | 1 = velocity, on ended / cancelled
-//    Values are 16.16 fixed point. Progress is in device coordinates: the Dock applies the
-//    natural-scrolling preference itself (on: negative = next Space).
+//    Values are 16.16 fixed point. Progress is in device coordinates: for the horizontal
+//    motion the Dock applies the natural-scrolling preference itself (on: negative = next
+//    Space).
 //
-//  Scrollio's own convention, used by every type below: positive progress and velocity move
-//  towards the next Space (the one on the right). The natural-scrolling preference is
-//  folded in when the event is built, so callers never see it.
+//  Scrollio's own convention, used by every type below. Horizontal: positive progress and
+//  velocity move towards the next Space (the one on the right); the natural-scrolling
+//  preference is folded in when the event is built, so callers never see it. Vertical and
+//  pinch: positive progress opens Mission Control (vertical) and Show Desktop (pinch), and
+//  negative is the other end of the motion (App Exposé; Launchpad / Apps). On these two
+//  the preference plays no part: a swipe up is Mission Control whatever the scrolling
+//  direction, so the event is built as a trackpad with natural scrolling sends it. "hid":
+//  the device value is Scrollio's value. "fields": field 124 is Scrollio's value turned
+//  over, with field 136 = 1 (with the flag off the Dock reads a pinch's release velocity
+//  backwards before macOS 26). The velocity always carries the sign of the progress.
+//  (Derived from Mac Mouse Fix and, for "fields", an older second implementation; only
+//  the "hid" layout can be seen on a Mac that runs macOS 27.)
 //
 //  Own implementation written from the documented constants. References for the event
 //  format and its pitfalls: Mac Mouse Fix (Noah Nuebling; TouchSimulator.m and the
@@ -44,13 +57,20 @@ import Cocoa
 // MARK: - Frames
 
 enum DockSwipeAxis: Int, Equatable {
-    /// Switches between Spaces.
+    /// Switches between Spaces. Positive: towards the next Space.
     case horizontal = 1
-    /// Mission Control / App Exposé.
+    /// Mission Control (positive) / App Exposé (negative).
     case vertical = 2
-    /// Show Desktop / Launchpad (Apps from macOS 26 on): the spread and the pinch with the
-    /// thumb and three fingers.
+    /// Show Desktop (positive: the spread) / Launchpad, Apps from macOS 26 on (negative:
+    /// the pinch with the thumb and three fingers).
     case pinch = 3
+
+    /// Whether the system's natural-scrolling preference turns this motion. Sideways it
+    /// does: the desktops move as content does. The other two have one fixed direction (up
+    /// is Mission Control whatever the preference), so it is not consulted for them.
+    var followsScrollingPreference: Bool {
+        return self == .horizontal
+    }
 }
 
 enum DockSwipePhase: UInt32, Equatable {
@@ -62,7 +82,8 @@ enum DockSwipePhase: UInt32, Equatable {
     var isTerminal: Bool { self == .ended || self == .cancelled }
 }
 
-/// One event of a swipe in Scrollio's convention (positive = towards the next Space).
+/// One event of a swipe in Scrollio's convention (positive = towards the next Space,
+/// Mission Control or Show Desktop, by the axis).
 struct DockSwipeFrame: Equatable {
     var phase: DockSwipePhase
     var axis: DockSwipeAxis
@@ -139,12 +160,18 @@ enum DockSwipeEventEncoding {
     /// Event types Scrollio posts for a swipe. None of Scrollio's own event taps listens to them.
     static let ownEventTypes: [UInt32] = [gestureCompanionEventType, dockControlEventType]
 
-    /// macOS 26 and older: positive progress = next Space, whatever the scrolling preference;
-    /// the preference only travels along as a flag.
+    /// macOS 26 and older. Horizontal: positive progress = next Space, whatever the
+    /// scrolling preference; the preference only travels along as a flag. Vertical and
+    /// pinch: Scrollio's value turned over (progress and velocity alike) with the flag
+    /// always set, as a trackpad with natural scrolling sends them.
     static func fieldValues(for frame: DockSwipeFrame, naturalScrolling: Bool) -> DockSwipeFieldValues {
         let motion = Int64(frame.axis.rawValue)
         let motionAsDouble = Double(Float(bitPattern: UInt32(frame.axis.rawValue)))
         let phase = Int64(frame.phase.rawValue)
+        let followsPreference = frame.axis.followsScrollingPreference
+        // The horizontal values go out untouched, bit for bit.
+        let progress = followsPreference ? frame.progress : turnedOver(frame.progress)
+        let velocity = followsPreference ? frame.velocity : turnedOver(frame.velocity)
 
         var values = DockSwipeFieldValues()
         values.integers[fieldHIDType] = Int64(hidDockSwipeType)
@@ -154,22 +181,30 @@ enum DockSwipeEventEncoding {
         values.integers[fieldMotionAlias] = motion
         values.doubles[fieldMotionFloatBits] = motionAsDouble
         values.doubles[fieldMotionFloatBitsAlias] = motionAsDouble
-        values.doubles[fieldProgress] = frame.progress
-        values.integers[fieldProgressFloatBits] = Int64(Float(frame.progress).bitPattern)
-        values.integers[fieldNaturalScrolling] = naturalScrolling ? 1 : 0
+        values.doubles[fieldProgress] = progress
+        values.integers[fieldProgressFloatBits] = Int64(Float(progress).bitPattern)
+        values.integers[fieldNaturalScrolling] = (followsPreference ? naturalScrolling : true) ? 1 : 0
         if frame.phase.isTerminal {
-            values.doubles[fieldVelocityX] = frame.velocity
-            values.doubles[fieldVelocityY] = frame.velocity
+            values.doubles[fieldVelocityX] = velocity
+            values.doubles[fieldVelocityY] = velocity
         }
         return values
     }
 
-    /// macOS 27 and newer: device coordinates. With natural scrolling on, the Dock moves
-    /// the desktop with the fingers, so a negative value brings in the next Space; with it
-    /// off the meaning flips. Scrollio undoes that here, so its own sign never depends on the
-    /// preference. (Derived from Mac Mouse Fix; to be confirmed on real hardware.)
+    /// The value with the other sign; a zero stays a plain zero (field 135 carries the
+    /// bits, and "nothing moved" must not read as a negative number there).
+    static func turnedOver(_ value: Double) -> Double {
+        return 0 - value
+    }
+
+    /// macOS 27 and newer: device coordinates. Horizontal: with natural scrolling on, the
+    /// Dock moves the desktop with the fingers, so a negative value brings in the next
+    /// Space; with it off the meaning flips. Scrollio undoes that here, so its own sign
+    /// never depends on the preference. Vertical and pinch: the device value is Scrollio's
+    /// value (up, and the spread, are positive), whatever the preference.
+    /// (Derived from Mac Mouse Fix; to be confirmed on real hardware.)
     static func hidValues(for frame: DockSwipeFrame, naturalScrolling: Bool) -> DockSwipeHIDValues {
-        let deviceSign: Double = naturalScrolling ? -1 : 1
+        let deviceSign: Double = frame.axis.followsScrollingPreference && naturalScrolling ? -1 : 1
         return DockSwipeHIDValues(
             eventFlags: frame.phase.rawValue << hidPhaseShift,
             motion: frame.axis.rawValue,
@@ -420,7 +455,8 @@ final class DockSwipeSynthesizer {
         return isActive && swipeNumber == number
     }
 
-    /// Cumulative progress; positive = towards the next Space.
+    /// Cumulative progress; positive = towards the next Space (horizontal), Mission Control
+    /// (vertical) or Show Desktop (pinch).
     func update(progress: Double) {
         guard isActive else { return }
         driver.update(progress)
@@ -433,7 +469,8 @@ final class DockSwipeSynthesizer {
         driver.end(velocity)
     }
 
-    /// Returns to the Space the swipe started on. Safe to call when idle.
+    /// Returns to what the swipe started from (the Space it began on; the desktop, or the
+    /// view that was showing). Safe to call when idle.
     func cancel() {
         guard isActive else { return }
         isActive = false
@@ -481,6 +518,7 @@ private final class DockSwipeSystemPoster {
         cancelResends()
         self.axis = axis
         // Read once per swipe: a change mid-swipe must not flip the direction under the hand.
+        // (Only the horizontal motion uses it.)
         naturalScrolling = Self.isNaturalScrollingEnabled()
         hasPostedBegan = false
         lastProgress = 0

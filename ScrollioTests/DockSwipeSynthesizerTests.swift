@@ -143,7 +143,194 @@ final class DockSwipeSynthesizerTests: XCTestCase {
         XCTAssertEqual(Encoding.hidVelocityYField, 0x0009_0001)
     }
 
+    // MARK: - Mission Control (vertical) and the pinch: a fixed sign
+
+    func testTheThreeMotionsAreTheHIDGestureMotions() {
+        XCTAssertEqual(DockSwipeAxis.horizontal.rawValue, 1)
+        XCTAssertEqual(DockSwipeAxis.vertical.rawValue, 2, "Mission Control / App Exposé")
+        XCTAssertEqual(DockSwipeAxis.pinch.rawValue, 3, "the HID \"scale\" motion: Show Desktop / Launchpad")
+    }
+
+    /// Scrollio's own sign on these two axes: positive opens Mission Control (vertical) and
+    /// Show Desktop (pinch). In the "fields" layout that is the value turned over with the
+    /// flag set, as a trackpad with natural scrolling sends it, whatever the preference is.
+    func testFieldValuesOfAVerticalAndAPinchFrameIgnoreTheScrollingPreference() {
+        let motions: [(DockSwipeAxis, Int64, Double)] = [
+            (.vertical, 2, 2.802596928649634e-45),
+            (.pinch, 3, 4.203895392974451e-45),
+        ]
+        for (axis, motion, motionAsDouble) in motions {
+            let frame = DockSwipeFrame(phase: .changed, axis: axis, progress: 0.25)
+            for naturalScrolling in [true, false] {
+                let values = Encoding.fieldValues(for: frame, naturalScrolling: naturalScrolling)
+                let name = "\(axis), natural scrolling \(naturalScrolling)"
+                // The whole of it, so that nothing of another motion leaks in.
+                XCTAssertEqual(values.integers, [
+                    110: 23,
+                    132: 2, 134: 2,
+                    123: motion, 165: motion,
+                    135: 3_196_059_648, // the bits of Float(-0.25)
+                    136: 1,
+                ], name)
+                XCTAssertEqual(values.doubles, [119: motionAsDouble, 139: motionAsDouble, 124: -0.25], name)
+            }
+        }
+    }
+
+    /// The other end of each axis (App Exposé; Launchpad / Apps) is the negative progress.
+    func testFieldValuesOfTheOtherEndOfAVerticalAndAPinchFrame() {
+        for axis in [DockSwipeAxis.vertical, .pinch] {
+            let values = Encoding.fieldValues(
+                for: DockSwipeFrame(phase: .changed, axis: axis, progress: -0.5), naturalScrolling: false
+            )
+            XCTAssertEqual(values.doubles[124], 0.5, "\(axis)")
+            XCTAssertEqual(values.integers[135], 1_056_964_608, "\(axis): the bits of Float(0.5)")
+            XCTAssertEqual(values.integers[136], 1, "\(axis)")
+        }
+    }
+
+    /// The velocity carries the sign of the progress, so it is turned over with it.
+    func testFieldValuesOfTerminalVerticalAndPinchFrames() {
+        for naturalScrolling in [true, false] {
+            let ended = Encoding.fieldValues(
+                for: DockSwipeFrame(phase: .ended, axis: .pinch, progress: 0.5, velocity: 1.5),
+                naturalScrolling: naturalScrolling
+            )
+            XCTAssertEqual(ended.integers[132], 4)
+            XCTAssertEqual(ended.integers[134], 4)
+            XCTAssertEqual(ended.integers[123], 3)
+            XCTAssertEqual(ended.doubles[124], -0.5)
+            XCTAssertEqual(ended.integers[135], 3_204_448_256, "the bits of Float(-0.5)")
+            XCTAssertEqual(ended.integers[136], 1)
+            XCTAssertEqual(ended.doubles[129], -1.5)
+            XCTAssertEqual(ended.doubles[130], -1.5)
+
+            let cancelled = Encoding.fieldValues(
+                for: DockSwipeFrame(phase: .cancelled, axis: .vertical, progress: 0.3125),
+                naturalScrolling: naturalScrolling
+            )
+            XCTAssertEqual(cancelled.integers[132], 8)
+            XCTAssertEqual(cancelled.doubles[124], -0.3125)
+            XCTAssertEqual(cancelled.integers[135], 3_198_156_800, "the bits of Float(-0.3125)")
+            XCTAssertEqual(cancelled.doubles[129], 0)
+            XCTAssertEqual(cancelled.doubles[130], 0)
+        }
+    }
+
+    /// Nothing moved yet: a plain zero, not a negative one (field 135 carries the bits).
+    func testAVerticalOrPinchFrameAtTheStartIsAPlainZero() throws {
+        for axis in [DockSwipeAxis.vertical, .pinch] {
+            let values = Encoding.fieldValues(
+                for: DockSwipeFrame(phase: .cancelled, axis: axis, progress: 0), naturalScrolling: true
+            )
+            XCTAssertEqual(values.integers[135], 0, "\(axis)")
+            XCTAssertEqual(try XCTUnwrap(values.doubles[124]).sign, .plus, "\(axis)")
+            XCTAssertEqual(try XCTUnwrap(values.doubles[129]).sign, .plus, "\(axis)")
+        }
+    }
+
+    /// The "hid" layout carries Scrollio's value as it is on these two axes: the Dock does
+    /// not turn them with the scrolling preference, and Scrollio does not either.
+    func testHIDValuesOfAVerticalAndAPinchFrameIgnoreTheScrollingPreference() {
+        for (axis, motion) in [(DockSwipeAxis.vertical, 2), (.pinch, 3)] {
+            for naturalScrolling in [true, false] {
+                let name = "\(axis), natural scrolling \(naturalScrolling)"
+                let changed = Encoding.hidValues(
+                    for: DockSwipeFrame(phase: .changed, axis: axis, progress: 0.3125), naturalScrolling: naturalScrolling
+                )
+                XCTAssertEqual(changed, DockSwipeHIDValues(
+                    eventFlags: 2 << 24, motion: motion, flavor: 3, progress: 0.3125, velocity: nil
+                ), name)
+
+                let ended = Encoding.hidValues(
+                    for: DockSwipeFrame(phase: .ended, axis: axis, progress: -0.5, velocity: -1.5),
+                    naturalScrolling: naturalScrolling
+                )
+                XCTAssertEqual(ended, DockSwipeHIDValues(
+                    eventFlags: 4 << 24, motion: motion, flavor: 3, progress: -0.5, velocity: -1.5
+                ), name)
+
+                let wild = Encoding.hidValues(
+                    for: DockSwipeFrame(phase: .ended, axis: axis, progress: 1e9, velocity: -.infinity),
+                    naturalScrolling: naturalScrolling
+                )
+                XCTAssertEqual(wild.progress, 32_000, name)
+                XCTAssertEqual(wild.velocity, 0, name)
+            }
+        }
+    }
+
+    /// Only sideways asks for the scrolling preference: the desktops move as content does.
+    func testOnlyTheSidewaysMotionFollowsTheScrollingPreference() {
+        XCTAssertTrue(DockSwipeAxis.horizontal.followsScrollingPreference)
+        XCTAssertFalse(DockSwipeAxis.vertical.followsScrollingPreference)
+        XCTAssertFalse(DockSwipeAxis.pinch.followsScrollingPreference)
+    }
+
     // MARK: - Built events (never posted)
+
+    func testFieldsEventOfAVerticalAndAPinchFrameCarriesTheFixedSign() throws {
+        let factory = DockSwipeEventFactory(layout: .fields, bridge: nil)
+        for (axis, motion) in [(DockSwipeAxis.vertical, Int64(2)), (.pinch, Int64(3))] {
+            let frame = DockSwipeFrame(phase: .ended, axis: axis, progress: 0.25, velocity: 1.5)
+            let events = try XCTUnwrap(factory.makeEvents(for: frame, naturalScrolling: false))
+            XCTAssertEqual(events.map { $0.type.rawValue }, [30, 29])
+            for event in events {
+                XCTAssertEqual(event.getIntegerValueField(.eventSourceUserData), ScrollioEventMarker.syntheticCustom)
+            }
+            let event = events[0]
+            func integer(_ field: UInt32) -> Int64 { event.getIntegerValueField(DockSwipeEventFactory.field(field)) }
+            func double(_ field: UInt32) -> Double { event.getDoubleValueField(DockSwipeEventFactory.field(field)) }
+            XCTAssertEqual(integer(110), 23, "\(axis)")
+            XCTAssertEqual(integer(123), motion, "\(axis)")
+            XCTAssertEqual(integer(132), 4, "\(axis)")
+            XCTAssertEqual(double(124), -0.25, "\(axis)")
+            XCTAssertEqual(integer(136), 1, "\(axis): the flag is set whatever the preference")
+            XCTAssertEqual(double(129), -1.5, "\(axis)")
+        }
+    }
+
+    /// The macOS 27 event of the two motions, built with the real symbols and read back.
+    /// Skipped where the private symbols do not exist.
+    func testHIDEventOfAVerticalAndAPinchFrameCarriesTheMotionAndTheSign() throws {
+        guard let bridge = DockSwipeHIDBridge.load() else {
+            throw XCTSkip("IOKit / SkyLight symbols for the attached IOHIDEvent are missing")
+        }
+        guard let reader = HIDEventReader() else {
+            throw XCTSkip("IOHIDEvent read-back symbols are missing")
+        }
+        let factory = DockSwipeEventFactory(layout: .hid, bridge: bridge)
+        for (axis, motion) in [(DockSwipeAxis.vertical, 2), (.pinch, 3)] {
+            let changed = try XCTUnwrap(factory.makeEvents(
+                for: DockSwipeFrame(phase: .changed, axis: axis, progress: 0.3125), naturalScrolling: true
+            ))
+            XCTAssertEqual(changed.count, 1)
+            XCTAssertEqual(changed[0].type.rawValue, 30)
+            let changedHID = try XCTUnwrap(reader.copyHIDEvent(changed[0]))
+            defer { reader.release(changedHID) }
+            XCTAssertEqual(reader.type(changedHID), 23)
+            XCTAssertEqual(reader.flags(changedHID), 2 << 24)
+            XCTAssertEqual(reader.integer(changedHID, Encoding.hidDockSwipeMotionField), motion)
+            XCTAssertEqual(reader.integer(changedHID, Encoding.hidDockSwipeFlavorField), 3)
+            XCTAssertEqual(reader.double(changedHID, Encoding.hidDockSwipeProgressField), 0.3125, "\(axis): not turned over")
+            XCTAssertEqual(reader.children(changedHID).count, 0)
+
+            let ended = try XCTUnwrap(factory.makeEvents(
+                for: DockSwipeFrame(phase: .ended, axis: axis, progress: 0.5, velocity: 1.5), naturalScrolling: true
+            ))
+            let endedHID = try XCTUnwrap(reader.copyHIDEvent(ended[0]))
+            defer { reader.release(endedHID) }
+            XCTAssertEqual(reader.flags(endedHID), 4 << 24)
+            XCTAssertEqual(reader.double(endedHID, Encoding.hidDockSwipeProgressField), 0.5)
+            let children = reader.children(endedHID)
+            XCTAssertEqual(children.count, 1)
+            if let velocity = children.first {
+                XCTAssertEqual(reader.type(velocity), 9)
+                XCTAssertEqual(reader.double(velocity, Encoding.hidVelocityXField), 1.5)
+                XCTAssertEqual(reader.double(velocity, Encoding.hidVelocityYField), 1.5)
+            }
+        }
+    }
 
     func testFieldsEventCarriesTypeMarkerAndFields() throws {
         let factory = DockSwipeEventFactory(layout: .fields, bridge: nil)
