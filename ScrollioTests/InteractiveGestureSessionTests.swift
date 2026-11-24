@@ -917,6 +917,15 @@ final class InteractiveGestureSessionTests: XCTestCase {
         XCTAssertEqual(down.followedChannel?.motion, .pinch)
         XCTAssertEqual(down.followedChannel?.sign, -1)
 
+        // A caller that cannot show the motion it was told to begin cancels the hold: the
+        // direction stays readable (to run its action once instead) and nothing follows.
+        var refused = Session(configuration: defaults, startTime: 0)
+        XCTAssertEqual(refused.move(deltaX: 0, deltaY: 60, at: 0.01).first, .begin(.pinch))
+        XCTAssertEqual(refused.cancel(), [.cancel])
+        XCTAssertEqual(refused.followedDirection, .down)
+        XCTAssertEqual(refused.move(deltaX: 0, deltaY: 60, at: 0.02), [])
+        XCTAssertEqual(refused.release(pendingDeltaX: 0, pendingDeltaY: 60, at: 0.03), [])
+
         // A jolt down, then to the left: the swipe follows left.
         var sideways = Session(configuration: defaults, startTime: 0)
         _ = sideways.move(deltaX: 0, deltaY: 9, at: 0.01)
