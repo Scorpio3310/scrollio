@@ -46,8 +46,11 @@ import Cocoa
 enum DockSwipeAxis: Int, Equatable {
     /// Switches between Spaces.
     case horizontal = 1
-    /// Mission Control / App Exposé. Not driven yet.
+    /// Mission Control / App Exposé.
     case vertical = 2
+    /// Show Desktop / Launchpad (Apps from macOS 26 on): the spread and the pinch with the
+    /// thumb and three fingers.
+    case pinch = 3
 }
 
 enum DockSwipePhase: UInt32, Equatable {
