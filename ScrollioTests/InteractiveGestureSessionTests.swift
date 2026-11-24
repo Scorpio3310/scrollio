@@ -338,6 +338,19 @@ final class InteractiveGestureSessionTests: XCTestCase {
         XCTAssertEqual(Array(result.commands.dropLast()), [.begin(.horizontal), .update(0.6)])
     }
 
+    /// Not in the table above: sideways, a swipe pulled back goes on through its start and
+    /// brings in the Space on the other side. A session that stopped at the start would
+    /// pass every other case.
+    func testASidewaysSwipeGoesThroughItsStartToTheSpaceOnTheOtherSide() {
+        let result = run([.move(-50, 0, at: 0.0), .move(150, 0, at: 0.2), .release(at: 0.2)])
+        assertCommands(
+            result.commands,
+            // 0.15 of progress back in the 80 ms before the release.
+            [.begin(.horizontal), .update(0.05), .update(-0.1), .end(velocity: -1.875)],
+            "through the start"
+        )
+    }
+
     // MARK: - Invariants
 
     /// Deterministic generator (SplitMix64), so a failure can be replayed from its seed.
