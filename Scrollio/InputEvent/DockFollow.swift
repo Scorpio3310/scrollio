@@ -115,3 +115,236 @@ enum DockFollowTuning {
         }
     }
 }
+
+// MARK: - The Dock's own switches
+
+/// The Dock's switches for its trackpad gestures (System Settings › Trackpad › More
+/// Gestures). A swipe whose gesture is switched off there is ignored by the Dock, silently,
+/// so such a direction must run its action once instead. Read only: Scrollio never writes
+/// one of them, never restarts the Dock, and reads nothing else of the Dock's settings.
+struct DockGestureSwitches: Equatable {
+    var missionControl: Bool
+    var showDesktop: Bool
+    var launchpad: Bool
+
+    static let allOn = DockGestureSwitches(missionControl: true, showDesktop: true, launchpad: true)
+
+    /// The three names in the Dock's settings. (A fourth, for App Exposé, is not read:
+    /// Scrollio drives nothing towards it.)
+    enum Key: String, CaseIterable {
+        case missionControl = "showMissionControlGestureEnabled"
+        case showDesktop = "showDesktopGestureEnabled"
+        case launchpad = "showLaunchpadGestureEnabled"
+    }
+
+    /// The Dock's settings.
+    static let domain = "com.apple.dock"
+
+    init(missionControl: Bool, showDesktop: Bool, launchpad: Bool) {
+        self.missionControl = missionControl
+        self.showDesktop = showDesktop
+        self.launchpad = launchpad
+    }
+
+    /// Pure: the three switches from what is stored under their names.
+    init(reading value: (Key) -> Any?) {
+        self.init(
+            missionControl: Self.isOn(value(.missionControl)),
+            showDesktop: Self.isOn(value(.showDesktop)),
+            launchpad: Self.isOn(value(.launchpad))
+        )
+    }
+
+    /// A stored "false" (or the number 0) is off. A missing name counts as on (macOS has
+    /// these gestures on until someone turns one off, and a Mac without a trackpad has no
+    /// place to do that), and so does anything else: the values are another app's data and
+    /// may be anything.
+    static func isOn(_ value: Any?) -> Bool {
+        guard let number = value as? NSNumber else { return true }
+        return number.boolValue
+    }
+
+    /// Whether the switch that governs `target` on macOS `majorVersion` is on. Since macOS
+    /// 26 there is no switch for Launchpad's successor: the Show Desktop one stands for
+    /// both ends of the pinch.
+    func allows(_ target: DockFollowTarget, majorVersion: Int) -> Bool {
+        switch target {
+        case .missionControl: return missionControl
+        case .showDesktop: return showDesktop
+        case .apps: return majorVersion >= 26 ? showDesktop : launchpad
+        }
+    }
+
+    // MARK: Reading
+
+    /// Where a name's value comes from; a test gives its own.
+    static var read: (Key) -> Any? = DockGestureSwitches.systemValue
+
+    /// One value of the Dock's settings, by name. Nothing else of them is asked for (the
+    /// whole domain would hold the Dock's apps and folders).
+    static func systemValue(_ key: Key) -> Any? {
+        // Under XCTest nothing of the Mac's own settings is read: every switch counts as on.
+        guard !AppRuntime.isRunningXCTest else { return nil }
+        return CFPreferencesCopyAppValue(key.rawValue as CFString, domain as CFString)
+    }
+
+    /// What the switches said when they were last read (`reload`); all on before that.
+    /// What is stored is what System Settings wrote, which the running Dock normally
+    /// follows; it is a strong hint, not the Dock's own word. Main thread.
+    private(set) static var current = DockGestureSwitches.allOn
+
+    /// Posted (no object) when a read found the switches changed: the Gestures pane says
+    /// which views open with the hand on this Mac.
+    static let didChangeNotification = Notification.Name("ScrollioDockGestureSwitchesDidChange")
+
+    /// Reads the three switches again: when Scrollio starts, when it becomes active and
+    /// when System Settings goes to the background, where a switch may just have been
+    /// changed (`AppDelegate`, beside the Spaces shortcuts). Never from an event tap's
+    /// callback: a hold takes `current`. Main thread.
+    static func reload() {
+        let found = DockGestureSwitches(reading: read)
+        guard found != current else { return }
+        current = found
+        NotificationCenter.default.post(name: didChangeNotification, object: nil)
+    }
+}
+
+// MARK: - Whether it follows on this Mac
+
+/// Whether a target follows the hand on this Mac now. A value: every input is one of its
+/// members, so the answer is a pure table that a test fills in as it likes; `live` reads
+/// them from the running app.
+struct DockFollowAvailability: Equatable {
+
+    /// Why a target does not follow, the most lasting reason first (the order they are
+    /// looked at).
+    enum Obstacle: Equatable {
+        /// The view is not known to follow on this macOS: it runs once here.
+        case notOnThisMacOS
+        /// The swipe cannot be built on this Mac (`DockSwipeSynthesizer.isAvailable`):
+        /// nothing follows the hand here, the desktops neither.
+        case swipeUnavailable
+        /// The Dock's own switch for this trackpad gesture is off: it would ignore the swipe.
+        case gestureOff
+        /// macOS does not let Scrollio post events at the moment.
+        case cannotPostEvents
+    }
+
+    /// `DockSwipeSynthesizer.shared.isAvailable`.
+    var swipeIsAvailable: Bool
+    /// `ScrollPoster.shared.canPostEvents`.
+    var canPostEvents: Bool
+    /// The macOS major version (14, 15, 26, 27 …).
+    var majorVersion: Int
+    /// The Dock's own switches.
+    var switches: DockGestureSwitches
+    /// Whether Apps may follow at all in this build (`appsFollowInThisBuild`).
+    var appsMayFollow: Bool
+
+    /// The first macOS on which the pinch is driven: a synthesized spread is reported to
+    /// show the desktop there (Mac Mouse Fix, the "hid" layout), and it is the macOS it can
+    /// be watched on. Below it nobody here could try it (the "fields" layout, with its own
+    /// sign and an Apple bug in the release velocity before macOS 26), so Show Desktop runs
+    /// once there.
+    static let firstPinchMajorVersion = 27
+
+    /// Apps follows the hand only in a build made with SCROLLIO_TRACE, which
+    /// `scripts/install.sh` passes for the owner's own installed copy, so that it can be
+    /// seen on a real Mac whether the Apps view tracks a pinch at all (Launchpad's
+    /// successor is no view of the Dock's own, and the one public report calls it laggy).
+    /// A release, a debug build and the tests keep Apps instant.
+    static let appsFollowInThisBuild: Bool = {
+        #if SCROLLIO_TRACE
+        return true
+        #else
+        return false
+        #endif
+    }()
+
+    /// The table of macOS versions: Mission Control on every macOS Scrollio runs on, Show
+    /// Desktop from `firstPinchMajorVersion`, Apps there too and only where a build lets it.
+    static func isKnownToFollow(_ target: DockFollowTarget, majorVersion: Int, appsMayFollow: Bool) -> Bool {
+        switch target {
+        case .missionControl: return true
+        case .showDesktop: return majorVersion >= firstPinchMajorVersion
+        case .apps: return appsMayFollow && majorVersion >= firstPinchMajorVersion
+        }
+    }
+
+    /// What keeps `target` from following the hand; nil: it follows.
+    func obstacle(to target: DockFollowTarget) -> Obstacle? {
+        guard Self.isKnownToFollow(target, majorVersion: majorVersion, appsMayFollow: appsMayFollow) else {
+            return .notOnThisMacOS
+        }
+        guard swipeIsAvailable else { return .swipeUnavailable }
+        guard switches.allows(target, majorVersion: majorVersion) else { return .gestureOff }
+        guard canPostEvents else { return .cannotPostEvents }
+        return nil
+    }
+
+    func follows(_ target: DockFollowTarget) -> Bool {
+        return obstacle(to: target) == nil
+    }
+
+    /// The targets that follow the hand, in the order of `DockFollowTarget.allCases` (for
+    /// the pane's line about what opens with the hand on this Mac).
+    var targetsThatFollow: [DockFollowTarget] {
+        return DockFollowTarget.allCases.filter(follows)
+    }
+
+    /// The answer for this Mac at this moment. Cheap enough for the press of a gesture
+    /// button (no read of anything outside the process: the Dock's switches are the cached
+    /// ones). Under XCTest the swipe is unavailable unless a test gave the synthesizer a
+    /// driver, and the switches are all on; a test of the table makes its own value.
+    /// Main thread.
+    static var live: DockFollowAvailability {
+        return DockFollowAvailability(
+            swipeIsAvailable: DockSwipeSynthesizer.shared.isAvailable,
+            canPostEvents: ScrollPoster.shared.canPostEvents,
+            majorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
+            switches: DockGestureSwitches.current,
+            appsMayFollow: appsFollowInThisBuild
+        )
+    }
+}
+
+// MARK: - What a direction follows
+
+/// What a direction of a hold does about following the hand.
+enum DockFollowPlan: Equatable {
+    /// It drives the target's motion with the hand.
+    case follows(DockFollowTarget)
+    /// The settings ask for it (the mode, the switch, an action with a target), but this
+    /// Mac does not do it now: the direction runs its action once, as before. The obstacle
+    /// is for the pane's help and for the log.
+    case cannotFollow(DockFollowTarget, DockFollowAvailability.Obstacle)
+    /// Nothing asks for it: the direction runs its action once, as before (sideways, which
+    /// is the desktops' in "Follow the hand"; "One action per hold"; the switch off; an
+    /// action without a view to open).
+    case doesNotFollow
+
+    /// The target that follows; nil for both ways of running once.
+    var target: DockFollowTarget? {
+        if case .follows(let target) = self { return target }
+        return nil
+    }
+}
+
+extension MouseGestureSettings {
+
+    /// What `direction` follows with these settings on a Mac with this availability: the
+    /// one place that says so, for the hold (asked once, when the button goes down) and for
+    /// the pane's rows. Only Up and Down can follow; Left and Right stay what they are in
+    /// "Follow the hand", the desktops. For an app's own set, ask the settings that run in
+    /// the app (`Application.gesturesThatRun`).
+    func followPlan(for direction: MouseGestureDirection, availability: DockFollowAvailability) -> DockFollowPlan {
+        guard actionsFollowNow, direction == .up || direction == .down,
+              let target = DockFollowTarget(action: action(for: direction)) else {
+            return .doesNotFollow
+        }
+        if let obstacle = availability.obstacle(to: target) {
+            return .cannotFollow(target, obstacle)
+        }
+        return .follows(target)
+    }
+}

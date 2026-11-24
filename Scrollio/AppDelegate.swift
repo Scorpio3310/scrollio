@@ -279,6 +279,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // tap's callback: the user's Spaces shortcuts (another app's preferences) and the
         // keys of the keyboard layout in use.
         SystemShortcut.reloadSystemShortcuts()
+        // And the Dock's switches for its trackpad gestures, which say whether Mission
+        // Control and Show Desktop can follow the hand ("Up and Down follow the hand too").
+        DockGestureSwitches.reload()
         KeyboardLayoutKeys.shared.warmUp()
         // 上次运行若在手势冻结指针时退出, 先恢复指针与鼠标的关联
         MouseGesturePointerLock.shared.forceRelease()
@@ -384,6 +387,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             deactivatedBundleIdentifier: deactivated?.bundleIdentifier
         ) else { return }
         SystemShortcut.reloadSystemShortcuts()
+        // The same moments for the Dock's gesture switches (Trackpad › More Gestures).
+        DockGestureSwitches.reload()
     }
     // 辅助功能权限在运行时被撤销 (可能由多个 Interceptor 同时触发, 此方法必须幂等)
     @objc func handleAccessibilityPermissionLost() {
