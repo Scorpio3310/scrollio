@@ -102,10 +102,10 @@ enum DockFollowTuning {
     /// resting, in points: letting go of a thumb button jolts the mouse. (For the two new
     /// motions only; sideways stays as it is.)
     static let reverseTolerance: CGFloat = 8
-    /// The bound of the release velocity, in progress per second: twelve full travels a
-    /// second, about what a trackpad can send. A larger one shows as a jolt, most of all
-    /// in the pinch. (For the two new motions only.)
-    static let maximumVelocity: Double = 12 * fullProgress
+    /// The bound of the release velocity, in whole travels (`fullProgress`) per second:
+    /// about what a trackpad can send. A larger one shows as a jolt, most of all in the
+    /// pinch. (For the two new motions only.)
+    static let maximumTravelsPerSecond: Double = 12
 
     /// The share of the travel a target takes.
     static func travelFactor(for target: DockFollowTarget) -> CGFloat {

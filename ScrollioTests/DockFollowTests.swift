@@ -98,7 +98,7 @@ final class DockFollowTuningTests: XCTestCase {
         XCTAssertEqual(DockFollowTuning.travelFactor(for: .showDesktop), 1)
         XCTAssertEqual(DockFollowTuning.travelFactor(for: .apps), 0.75)
         XCTAssertEqual(DockFollowTuning.reverseTolerance, 8)
-        XCTAssertEqual(DockFollowTuning.maximumVelocity, 12)
+        XCTAssertEqual(DockFollowTuning.maximumTravelsPerSecond, 12)
     }
 
     /// Travel to a whole view at Swipe speed 1: 40 % of the screen's height, between 320 and
