@@ -395,13 +395,18 @@ struct DockSwipeDriver {
     var update: (Double) -> Void
     var end: (Double) -> Void
     var cancel: () -> Void
+    /// Posts now, once, what a finished swipe still had to post again, and drops the timers
+    /// (`DockSwipeSynthesizer.settle`). The last member and with a default, so a driver made
+    /// without it (the test doubles of the sideways swipe) settles nothing.
+    var settle: () -> Void = {}
 
     static let system = DockSwipeDriver(
         isAvailable: { DockSwipeSystemPoster.shared.isAvailable },
         begin: { DockSwipeSystemPoster.shared.begin(axis: $0) },
         update: { DockSwipeSystemPoster.shared.update(progress: $0) },
         end: { DockSwipeSystemPoster.shared.finish(phase: .ended, velocity: $0) },
-        cancel: { DockSwipeSystemPoster.shared.finish(phase: .cancelled, velocity: 0) }
+        cancel: { DockSwipeSystemPoster.shared.finish(phase: .cancelled, velocity: 0) },
+        settle: { DockSwipeSystemPoster.shared.settle() }
     )
 
     /// Used while XCTest runs without an explicit test driver: reports itself unavailable,
@@ -431,6 +436,8 @@ final class DockSwipeSynthesizer {
 
     /// True between `begin` and the terminal call.
     private(set) var isActive = false
+    /// The motion of the swipe that runs; nil while none does.
+    private(set) var runningAxis: DockSwipeAxis?
     /// Counts the swipes begun. Two drivers share the one swipe the Dock can follow (a
     /// gesture hold and the thumb wheel's "Follow the wheel"): a swipe is the caller's while
     /// it is active and still has the number its `begin` gave it. A `begin` of the other
@@ -446,6 +453,7 @@ final class DockSwipeSynthesizer {
         // A swipe that was never finished must not be left hanging in the Dock.
         if isActive { cancel() }
         isActive = true
+        runningAxis = axis
         swipeNumber &+= 1
         driver.begin(axis)
     }
@@ -466,6 +474,7 @@ final class DockSwipeSynthesizer {
     func end(velocity: Double) {
         guard isActive else { return }
         isActive = false
+        runningAxis = nil
         driver.end(velocity)
     }
 
@@ -474,7 +483,20 @@ final class DockSwipeSynthesizer {
     func cancel() {
         guard isActive else { return }
         isActive = false
+        runningAxis = nil
         driver.cancel()
+    }
+
+    /// The Dock hears one voice at a time. Before Scrollio asks it for a view in one go (the
+    /// instant toggle of Mission Control or Show Desktop, the Apps key), nothing of a swipe
+    /// may still be on its way: a swipe that runs is cancelled (its owner then sends nothing
+    /// more, `isRunning`), and a terminal event that was still to be posted again is posted
+    /// now, once, and its timers are dropped. Otherwise that re-post would reach the Dock
+    /// after the toggle, as a terminal event of a swipe that never began. Safe to call when
+    /// idle, and as often as wanted. Main thread.
+    func settle() {
+        cancel()
+        driver.settle()
     }
 
     #if DEBUG
@@ -490,17 +512,87 @@ final class DockSwipeSynthesizer {
     #endif
 }
 
+// MARK: - The terminal event, posted again
+
+/// The posts of a swipe's terminal event that are still to come. Under load the Dock can
+/// miss the first one and leave the desktop stuck between two Spaces (or a view half open);
+/// Mac Mouse Fix posts it again after 0.2 s and 0.5 s for the same reason and reports that
+/// it almost always frees it. A terminal event without a began is ignored, and what still
+/// waits never outlives its swipe: a new swipe drops it (`drop`), and an instant toggle of
+/// a Dock view first posts it once, at once (`postNowAndDrop`), so that nothing of the old
+/// swipe arrives after a newer voice. `Event` is what `post` takes (the poster's events; a
+/// test's own). Main thread.
+final class DockSwipeTerminalResends<Event> {
+    /// Runs the work item on the main queue after the delay.
+    typealias Schedule = (TimeInterval, DispatchWorkItem) -> Void
+
+    private let delays: [TimeInterval]
+    private let schedule: Schedule
+    private let post: (Event) -> Void
+    private var event: Event?
+    private var workItems: [DispatchWorkItem] = []
+    private var remaining = 0
+
+    init(delays: [TimeInterval], schedule: @escaping Schedule, post: @escaping (Event) -> Void) {
+        self.delays = delays
+        self.schedule = schedule
+        self.post = post
+    }
+
+    /// A post is still to come.
+    var isPending: Bool {
+        return remaining > 0
+    }
+
+    /// The terminal event was posted: it is posted again after each delay. An empty list
+    /// of delays turns the re-post off.
+    func begin(with event: Event) {
+        drop()
+        guard !delays.isEmpty else { return }
+        self.event = event
+        remaining = delays.count
+        for delay in delays {
+            let workItem = DispatchWorkItem { [weak self] in self?.postOneMore() }
+            workItems.append(workItem)
+            schedule(delay, workItem)
+        }
+    }
+
+    private func postOneMore() {
+        guard remaining > 0, let event else { return }
+        remaining -= 1
+        if remaining == 0 { drop() }
+        post(event)
+    }
+
+    /// Nothing more is posted (a new swipe begins: they must not end it).
+    func drop() {
+        workItems.forEach { $0.cancel() }
+        workItems.removeAll()
+        event = nil
+        remaining = 0
+    }
+
+    /// Posts what was still to come once, now, and drops the timers. False when nothing
+    /// waited (then nothing is posted).
+    @discardableResult
+    func postNowAndDrop() -> Bool {
+        guard remaining > 0, let event else { return false }
+        drop()
+        post(event)
+        return true
+    }
+}
+
 // MARK: - System poster
 
 /// Builds and posts the events. Only reached through `DockSwipeDriver.system`.
 private final class DockSwipeSystemPoster {
     static let shared = DockSwipeSystemPoster()
 
-    /// The terminal event is posted again after these delays. Under load the Dock can miss
-    /// the first one and leave the desktop stuck between two Spaces; Mac Mouse Fix re-posts
-    /// after 0.2 s and 0.5 s for the same reason and reports that it almost always frees it.
-    /// A duplicate terminal without a began is ignored, and a new swipe drops the pending
-    /// re-posts, so they cannot end a later gesture. An empty list turns the re-send off.
+    /// The terminal event is posted again after these delays (`DockSwipeTerminalResends`
+    /// says why). A new swipe drops the pending re-posts, so they cannot end a later
+    /// gesture; `settle` brings them forward. An empty list turns the re-send off.
     static let terminalResendDelays: [TimeInterval] = [0.2, 0.5]
 
     private let factory = DockSwipeEventFactory.system
@@ -508,14 +600,18 @@ private final class DockSwipeSystemPoster {
     private var naturalScrolling = true
     private var hasPostedBegan = false
     private var lastProgress: Double = 0
-    private var resendWorkItems: [DispatchWorkItem] = []
+    private lazy var resends = DockSwipeTerminalResends<[CGEvent]>(
+        delays: DockSwipeSystemPoster.terminalResendDelays,
+        schedule: { delay, workItem in DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem) },
+        post: { [weak self] events in self?.post(events) }
+    )
 
     var isAvailable: Bool {
         return factory.isAvailable
     }
 
     func begin(axis: DockSwipeAxis) {
-        cancelResends()
+        resends.drop()
         self.axis = axis
         // Read once per swipe: a change mid-swipe must not flip the direction under the hand.
         // (Only the horizontal motion uses it.)
@@ -546,17 +642,13 @@ private final class DockSwipeSystemPoster {
             return
         }
         post(events)
-
-        for delay in Self.terminalResendDelays {
-            let workItem = DispatchWorkItem { [weak self] in self?.post(events) }
-            resendWorkItems.append(workItem)
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
-        }
+        resends.begin(with: events)
     }
 
-    private func cancelResends() {
-        resendWorkItems.forEach { $0.cancel() }
-        resendWorkItems.removeAll()
+    /// The terminal event of a swipe that just finished, if it still waits to be posted
+    /// again: posted now, once, and its timers dropped (`DockSwipeSynthesizer.settle`).
+    func settle() {
+        resends.postNowAndDrop()
     }
 
     private static let wasLaunchedForTests = AppRuntime.isRunningXCTest

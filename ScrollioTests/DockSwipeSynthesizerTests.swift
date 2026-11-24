@@ -525,6 +525,204 @@ final class DockSwipeSynthesizerTests: XCTestCase {
         XCTAssertFalse(DockSwipeSynthesizer.shared.isActive)
     }
 
+    func testSynthesizerForwardsAVerticalAndAPinchSwipeAndKnowsWhichRuns() {
+        let calls = installRecordingDriver()
+        let synthesizer = DockSwipeSynthesizer.shared
+        XCTAssertNil(synthesizer.runningAxis)
+
+        synthesizer.begin(axis: .vertical)
+        XCTAssertEqual(synthesizer.runningAxis, .vertical)
+        synthesizer.update(progress: 0.25)
+        synthesizer.end(velocity: 2)
+        XCTAssertNil(synthesizer.runningAxis)
+
+        synthesizer.begin(axis: .pinch)
+        XCTAssertEqual(synthesizer.runningAxis, .pinch)
+        synthesizer.cancel()
+        XCTAssertNil(synthesizer.runningAxis)
+
+        // A sideways swipe that runs is cancelled before another motion begins.
+        synthesizer.begin(axis: .horizontal)
+        XCTAssertEqual(synthesizer.runningAxis, .horizontal)
+        synthesizer.begin(axis: .vertical)
+        XCTAssertEqual(synthesizer.runningAxis, .vertical)
+        synthesizer.cancel()
+
+        XCTAssertEqual(calls(), [
+            "begin vertical", "update 0.25", "end 2.0",
+            "begin pinch", "cancel",
+            "begin horizontal", "cancel", "begin vertical", "cancel",
+        ])
+    }
+
+    // MARK: - Settling before an instant toggle
+
+    /// A driver that also records `settle`.
+    private func installSettlingDriver() -> () -> [String] {
+        var calls: [String] = []
+        DockSwipeSynthesizer.shared.setTestingDriver(DockSwipeDriver(
+            isAvailable: { true },
+            begin: { calls.append("begin \($0)") },
+            update: { calls.append("update \($0)") },
+            end: { calls.append("end \($0)") },
+            cancel: { calls.append("cancel") },
+            settle: { calls.append("settle") }
+        ))
+        return { calls }
+    }
+
+    /// Before Scrollio asks the Dock for a view in one go, nothing of a swipe may still be
+    /// on its way: a swipe that runs is cancelled first, then the poster settles what it
+    /// still had to post again.
+    func testSettlingCancelsARunningSwipeAndThenSettlesThePoster() {
+        let calls = installSettlingDriver()
+        let synthesizer = DockSwipeSynthesizer.shared
+
+        synthesizer.begin(axis: .vertical)
+        synthesizer.update(progress: 0.4)
+        let number = synthesizer.swipeNumber
+        synthesizer.settle()
+        XCTAssertFalse(synthesizer.isActive)
+        XCTAssertNil(synthesizer.runningAxis)
+        XCTAssertFalse(synthesizer.isRunning(number), "its owner sends nothing more")
+        XCTAssertEqual(calls(), ["begin vertical", "update 0.4", "cancel", "settle"])
+
+        // Nothing more of that swipe afterwards.
+        synthesizer.update(progress: 0.5)
+        synthesizer.end(velocity: 1)
+        XCTAssertEqual(calls(), ["begin vertical", "update 0.4", "cancel", "settle"])
+    }
+
+    /// With no swipe running only the poster is settled (the terminal event of a swipe that
+    /// ended a moment ago may still wait to be posted again); never a second terminal.
+    func testSettlingWhileIdleOnlySettlesThePoster() {
+        let calls = installSettlingDriver()
+        let synthesizer = DockSwipeSynthesizer.shared
+
+        synthesizer.settle()
+        XCTAssertEqual(calls(), ["settle"])
+
+        synthesizer.begin(axis: .horizontal)
+        synthesizer.end(velocity: 1.5)
+        synthesizer.settle()
+        synthesizer.settle()
+        XCTAssertEqual(calls(), ["settle", "begin horizontal", "end 1.5", "settle", "settle"])
+    }
+
+    /// A driver from before `settle` (every test double of the sideways swipe) still builds,
+    /// and settling with it does nothing more than cancel.
+    func testADriverWithoutSettleStillCancels() {
+        let calls = installRecordingDriver()
+        DockSwipeSynthesizer.shared.begin(axis: .pinch)
+        DockSwipeSynthesizer.shared.settle()
+        XCTAssertEqual(calls(), ["begin pinch", "cancel"])
+        // The inert driver of the tests: nothing at all.
+        DockSwipeSynthesizer.shared.clearTestingDriver()
+        DockSwipeSynthesizer.shared.settle()
+        XCTAssertFalse(DockSwipeSynthesizer.shared.isActive)
+    }
+
+    // MARK: - The terminal event's posts that are still to come
+
+    /// A scheduler that only keeps what it was asked to run; a test runs it.
+    private final class Later {
+        var scheduled: [(delay: TimeInterval, work: DispatchWorkItem)] = []
+        var posted: [String] = []
+
+        /// Runs what was scheduled at `index`, as its timer would; a missing one fails the
+        /// test instead of stopping the test host.
+        func run(_ index: Int, file: StaticString = #filePath, line: UInt = #line) {
+            guard scheduled.indices.contains(index) else {
+                XCTFail("nothing was scheduled at \(index)", file: file, line: line)
+                return
+            }
+            scheduled[index].work.perform()
+        }
+
+        func makeResends(delays: [TimeInterval] = [0.2, 0.5]) -> DockSwipeTerminalResends<String> {
+            return DockSwipeTerminalResends<String>(
+                delays: delays,
+                schedule: { [unowned self] delay, work in self.scheduled.append((delay, work)) },
+                post: { [unowned self] in self.posted.append($0) }
+            )
+        }
+    }
+
+    func testTheTerminalEventIsPostedAgainAfterEachDelay() {
+        let later = Later()
+        let resends = later.makeResends()
+        XCTAssertFalse(resends.isPending)
+
+        resends.begin(with: "ended")
+        XCTAssertTrue(resends.isPending)
+        XCTAssertEqual(later.scheduled.map(\.delay), [0.2, 0.5])
+        XCTAssertEqual(later.posted, [], "the first post is the poster's own")
+
+        later.run(0)
+        XCTAssertEqual(later.posted, ["ended"])
+        XCTAssertTrue(resends.isPending, "one more to come")
+        later.run(1)
+        XCTAssertEqual(later.posted, ["ended", "ended"])
+        XCTAssertFalse(resends.isPending)
+        XCTAssertFalse(resends.postNowAndDrop(), "nothing left to settle")
+        XCTAssertEqual(later.posted, ["ended", "ended"])
+    }
+
+    /// The settle of an instant toggle: what was still to come is posted once, now, and
+    /// nothing of it arrives later, after the toggle.
+    func testSettlingPostsTheWaitingTerminalEventOnceNowAndDropsItsTimers() {
+        let later = Later()
+        let resends = later.makeResends()
+
+        resends.begin(with: "ended")
+        XCTAssertTrue(resends.postNowAndDrop())
+        XCTAssertEqual(later.posted, ["ended"])
+        XCTAssertFalse(resends.isPending)
+        later.scheduled.forEach { $0.work.perform() }
+        XCTAssertEqual(later.posted, ["ended"], "the timers were dropped")
+        XCTAssertFalse(resends.postNowAndDrop())
+
+        // Between the two delays: one more post, not two.
+        later.scheduled = []
+        later.posted = []
+        resends.begin(with: "cancelled")
+        later.run(0)
+        XCTAssertTrue(resends.postNowAndDrop())
+        XCTAssertEqual(later.posted, ["cancelled", "cancelled"])
+        later.run(1)
+        XCTAssertEqual(later.posted, ["cancelled", "cancelled"])
+    }
+
+    /// A new swipe drops what the one before still had to post: it must not end the new one.
+    func testANewSwipeDropsTheWaitingTerminalEventWithoutPostingIt() {
+        let later = Later()
+        let resends = later.makeResends()
+
+        resends.begin(with: "ended")
+        resends.drop()
+        XCTAssertFalse(resends.isPending)
+        later.scheduled.forEach { $0.work.perform() }
+        XCTAssertEqual(later.posted, [])
+        XCTAssertFalse(resends.postNowAndDrop())
+
+        // The next terminal event replaces one that still waits.
+        later.scheduled = []
+        resends.begin(with: "first")
+        resends.begin(with: "second")
+        later.scheduled.forEach { $0.work.perform() }
+        XCTAssertEqual(later.posted, ["second", "second"])
+    }
+
+    func testWithoutDelaysNothingWaits() {
+        let later = Later()
+        let resends = later.makeResends(delays: [])
+        resends.begin(with: "ended")
+        XCTAssertFalse(resends.isPending)
+        XCTAssertEqual(later.scheduled.count, 0)
+        XCTAssertFalse(resends.postNowAndDrop())
+        XCTAssertEqual(later.posted, [])
+    }
+
     // MARK: - Geometry
 
     func testProgressPerSpaceFollowsTheSpaceCount() {
