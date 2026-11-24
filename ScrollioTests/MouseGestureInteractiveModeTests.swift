@@ -153,6 +153,163 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         )
     }
 
+    // MARK: - Settings: "Up and Down follow the hand too"
+
+    /// The names of the gesture entry as 1.1.1 writes it.
+    private static let entryNamesFromBefore: Set<String> = [
+        "upAction", "downAction", "leftAction", "rightAction", "clickAction",
+        "invertHorizontal", "freezePointer", "mode", "trackingSpeed", "deviceTracking", "hapticFeedback",
+    ]
+
+    private func storedObject(of settings: MouseGestureSettings) throws -> [String: Any] {
+        let data = try JSONEncoder().encode(settings)
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    /// What 1.1.1 reads of a gesture entry: its decoder's names and fallbacks, kept here as
+    /// they were (`MouseGestureSettings.init(from:)` of v1.1.1), so that a newer entry can be
+    /// shown to read there as its own.
+    private struct EntryAsVersion111Reads: Decodable, Equatable {
+        var upAction: String
+        var downAction: String
+        var invertHorizontal: Bool
+        var freezePointer: Bool
+        var mode: String
+        var trackingSpeed: Double
+        var deviceTracking: Bool
+        var hapticFeedback: Bool
+
+        private enum CodingKeys: String, CodingKey {
+            case upAction, downAction, invertHorizontal, freezePointer, mode, trackingSpeed, deviceTracking, hapticFeedback
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            upAction = try c.decodeIfPresent(String.self, forKey: .upAction) ?? "missionControl"
+            downAction = try c.decodeIfPresent(String.self, forKey: .downAction) ?? "appExpose"
+            invertHorizontal = try c.decodeIfPresent(Bool.self, forKey: .invertHorizontal) ?? false
+            freezePointer = try c.decodeIfPresent(Bool.self, forKey: .freezePointer) ?? true
+            let storedMode = (try? c.decodeIfPresent(String.self, forKey: .mode)) ?? nil
+            mode = storedMode.flatMap { ["discrete", "interactive"].contains($0) ? $0 : nil } ?? "discrete"
+            trackingSpeed = ((try? c.decodeIfPresent(Double.self, forKey: .trackingSpeed)) ?? nil) ?? 1
+            deviceTracking = ((try? c.decodeIfPresent(Bool.self, forKey: .deviceTracking)) ?? nil) ?? false
+            hapticFeedback = ((try? c.decodeIfPresent(Bool.self, forKey: .hapticFeedback)) ?? nil) ?? true
+        }
+    }
+
+    func testTheDefaultsHaveTheFollowSwitchOff() {
+        XCTAssertFalse(MouseGestureSettings.default.actionsFollowHand)
+        XCTAssertFalse(MouseGestureSettings.default.actionsFollowNow)
+        XCTAssertEqual(MouseGestureSettings.default.mode, .discrete)
+        XCTAssertFalse(
+            MouseGestureSettings(
+                upAction: "", downAction: "", leftAction: "", rightAction: "", clickAction: "",
+                invertHorizontal: false, freezePointer: false, mode: .interactive
+            ).actionsFollowHand,
+            "an initialiser that does not name it leaves it off"
+        )
+    }
+
+    /// The update changes nothing for anybody: an entry from 1.1.1 with "Follow the hand" on
+    /// reads with the switch off and every other value as stored, and is written with the
+    /// same eleven names.
+    func testAnEntryFromBeforeHasTheFollowSwitchOffAndIsWrittenAsBefore() throws {
+        let json = """
+        {"upAction":"missionControl","downAction":"appExpose","leftAction":"navigateBack","rightAction":"navigateForward",
+         "clickAction":"showDesktop","invertHorizontal":true,"freezePointer":false,"mode":"interactive",
+         "trackingSpeed":1.75,"deviceTracking":true,"hapticFeedback":false}
+        """
+        let settings = try JSONDecoder().decode(MouseGestureSettings.self, from: Data(json.utf8))
+        XCTAssertFalse(settings.actionsFollowHand)
+        XCTAssertFalse(settings.actionsFollowNow)
+        XCTAssertEqual(settings.mode, .interactive)
+        XCTAssertEqual(settings.trackingSpeed, 1.75)
+        XCTAssertEqual(settings.leftAction, "navigateBack")
+        XCTAssertEqual(settings.clickAction, "showDesktop")
+        XCTAssertTrue(settings.invertHorizontal)
+        XCTAssertFalse(settings.freezePointer)
+        XCTAssertTrue(settings.deviceTracking)
+        XCTAssertFalse(settings.hapticFeedback)
+
+        let written = try storedObject(of: settings)
+        XCTAssertEqual(Set(written.keys), Self.entryNamesFromBefore, "written as before")
+        let before = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? NSDictionary)
+        XCTAssertEqual(written as NSDictionary, before, "and with the same values")
+    }
+
+    /// One JSON boolean, "actionsFollowHand", written only while the switch is on.
+    func testTheFollowSwitchRoundTripsAndIsWrittenOnlyWhileOn() throws {
+        var settings = MouseGestureSettings.default
+        settings.mode = .interactive
+        settings.actionsFollowHand = true
+        XCTAssertTrue(settings.actionsFollowNow)
+        let on = try storedObject(of: settings)
+        XCTAssertEqual(Set(on.keys), Self.entryNamesFromBefore.union(["actionsFollowHand"]))
+        let stored = try XCTUnwrap(on["actionsFollowHand"] as? NSNumber)
+        XCTAssertEqual(CFGetTypeID(stored), CFBooleanGetTypeID(), "a JSON boolean")
+        XCTAssertTrue(stored.boolValue)
+        XCTAssertEqual(try JSONDecoder().decode(MouseGestureSettings.self, from: try JSONEncoder().encode(settings)), settings)
+
+        settings.actionsFollowHand = false
+        XCTAssertEqual(Set(try storedObject(of: settings).keys), Self.entryNamesFromBefore, "off: the name is not written")
+        XCTAssertEqual(try JSONDecoder().decode(MouseGestureSettings.self, from: try JSONEncoder().encode(settings)), settings)
+
+        // A stored "false" (another program's file) is off like a missing name.
+        let explicit = try JSONDecoder().decode(
+            MouseGestureSettings.self, from: Data(#"{"mode":"interactive","actionsFollowHand":false}"#.utf8)
+        )
+        XCTAssertFalse(explicit.actionsFollowHand)
+        XCTAssertEqual(explicit.mode, .interactive)
+        XCTAssertEqual(Set(try storedObject(of: explicit).keys), Self.entryNamesFromBefore)
+
+        // The switch is kept while the mode is "One action per hold", where it is not used.
+        var discrete = MouseGestureSettings.default
+        discrete.actionsFollowHand = true
+        XCTAssertFalse(discrete.actionsFollowNow, "only used in \"Follow the hand\"")
+        let back = try JSONDecoder().decode(MouseGestureSettings.self, from: try JSONEncoder().encode(discrete))
+        XCTAssertTrue(back.actionsFollowHand)
+        XCTAssertEqual(back.mode, .discrete)
+    }
+
+    func testAFollowSwitchThatIsNoBooleanIsOffAndTakesNothingWithIt() throws {
+        for value in ["\"yes\"", "\"true\"", "1", "0.5", "null", "{}", "[]", "[true]"] {
+            let json = "{\"upAction\":\"copy\",\"invertHorizontal\":true,\"mode\":\"interactive\",\"trackingSpeed\":2,"
+                + "\"actionsFollowHand\":\(value)}"
+            let settings = try JSONDecoder().decode(MouseGestureSettings.self, from: Data(json.utf8))
+            XCTAssertFalse(settings.actionsFollowHand, "switch \(value)")
+            XCTAssertEqual(settings.mode, .interactive, "switch \(value)")
+            XCTAssertEqual(settings.upAction, "copy", "switch \(value)")
+            XCTAssertTrue(settings.invertHorizontal, "switch \(value)")
+            XCTAssertEqual(settings.trackingSpeed, 2, "switch \(value)")
+        }
+    }
+
+    /// An older version reads a newer entry as its own, whatever the switch says: the mode
+    /// is still "interactive", the actions keep their names, nothing else differs. (It
+    /// ignores the name it does not know; the switch is gone once it writes the entry.)
+    func testTheFollowSwitchNeverChangesWhatAnOlderVersionReads() throws {
+        var settings = MouseGestureSettings.default
+        settings.mode = .interactive
+        settings.trackingSpeed = 2.5
+        settings.upAction = SystemShortcut.showDesktop.identifier
+        let off = try JSONEncoder().encode(settings)
+        settings.actionsFollowHand = true
+        let on = try JSONEncoder().encode(settings)
+
+        let readOff = try JSONDecoder().decode(EntryAsVersion111Reads.self, from: off)
+        let readOn = try JSONDecoder().decode(EntryAsVersion111Reads.self, from: on)
+        XCTAssertEqual(readOn, readOff)
+        XCTAssertEqual(readOn.mode, "interactive")
+        XCTAssertEqual(readOn.trackingSpeed, 2.5)
+        XCTAssertEqual(readOn.upAction, "showDesktop")
+        XCTAssertEqual(readOn.downAction, "appExpose")
+
+        var withoutTheSwitch = try storedObject(of: settings)
+        withoutTheSwitch.removeValue(forKey: "actionsFollowHand")
+        settings.actionsFollowHand = false
+        XCTAssertEqual(withoutTheSwitch as NSDictionary, try storedObject(of: settings) as NSDictionary)
+    }
+
     // MARK: - Follow mode drives the swipe
 
     func testFollowModeDrivesBeginUpdateEnd() {

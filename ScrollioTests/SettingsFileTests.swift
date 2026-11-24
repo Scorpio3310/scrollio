@@ -863,6 +863,99 @@ final class SettingsFileFormatTests: XCTestCase {
         XCTAssertEqual(foreign.unreadableEntries, 0, "one odd value never takes the set or the ring with it")
     }
 
+    /// "Up and Down follow the hand too" travels inside the gesture entry and inside an
+    /// app's own gestures, under the name "actionsFollowHand": no new setting of the file,
+    /// the same format version. An import puts it in effect; it is no action, so the sheet
+    /// lists nothing for it.
+    func testTheFollowSwitchIsInTheFileAndComesBack() throws {
+        let source = makeSource()
+        var gesture = MouseGestureSettings.default
+        gesture.mode = .interactive
+        gesture.actionsFollowHand = true
+        source.options.gesture = gesture
+        let notes = try XCTUnwrap(source.options.application.applications.get(by: "/Applications/Notes.app"))
+        notes.setUsesGeneralGestures(false, general: gesture)
+        notes.changeOwnGestures { $0.actionsFollowHand = false }
+        let data = try SettingsFile.export(from: source.options, now: Self.moment).get()
+
+        let file = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(file["formatVersion"] as? Int, 1, "an older version reads the file")
+        let settings = try XCTUnwrap(file["settings"] as? [String: Any])
+        let entry = try XCTUnwrap(settings["mouseGestureSettings"] as? [String: Any])
+        XCTAssertEqual(entry["actionsFollowHand"] as? Bool, true)
+        XCTAssertEqual(entry["mode"] as? String, "interactive")
+        let apps = try XCTUnwrap(settings["applications"] as? [[String: Any]])
+        let ownEntry = try XCTUnwrap(apps.first { $0["path"] as? String == "/Applications/Notes.app" }?["gestures"] as? [String: Any])
+        XCTAssertEqual(ownEntry["actionsFollowHand"] as? Bool, false, "the app's own off under the general on")
+
+        let contents = try SettingsFile.read(data).get()
+        XCTAssertEqual(contents.gesture, gesture)
+        let read = try XCTUnwrap(contents.applications?.first { $0.path == "/Applications/Notes.app" })
+        XCTAssertEqual(read.gestures, notes.gestures)
+        XCTAssertEqual(contents.leftOutCount, 0)
+        XCTAssertEqual(SettingsFileText.gestureLines(of: contents), [
+            String(format: NSLocalizedString("general-settings-import-gesture-defaults-app", comment: ""), "Notes"),
+        ], "no line for the switch")
+
+        let target = OwnSettings(for: self)
+        target.options.readOptions()
+        XCTAssertFalse(target.options.gesture.actionsFollowHand)
+        XCTAssertTrue(SettingsFile.apply(contents, to: target.options))
+        XCTAssertEqual(target.options.gesture, gesture)
+        XCTAssertTrue(target.options.gesture.actionsFollowNow)
+        let imported = try XCTUnwrap(target.options.application.applications.get(by: "/Applications/Notes.app"))
+        XCTAssertEqual(imported.ownGestures?.actionsFollowHand, false)
+        XCTAssertFalse(imported.gesturesThatRun(general: target.options.gesture).actionsFollowHand)
+
+        // What the import stored is what the preferences read at the next launch.
+        let again = Options()
+        again.defaults = target.store.defaults
+        again.readOptions()
+        XCTAssertEqual(again.gesture, gesture)
+        // And a second export of it holds the same settings.
+        let second = try SettingsFile.export(from: target.options, now: Self.moment).get()
+        XCTAssertTrue(SettingsFile.holdSameSettings(data, second))
+    }
+
+    /// A file from before the switch (1.1.1, "Follow the hand" on) runs after the import as
+    /// it ran where it was made: the desktops follow, Up and Down run once. A switch that a
+    /// file from elsewhere spells oddly is off and takes nothing of the entry with it.
+    func testAFileFromBeforeTheFollowSwitchRunsAsItRan() throws {
+        let before = try Fixture.contents(
+            #""mouseGestureSettings":{"upAction":"missionControl","downAction":"appExpose","leftAction":"moveSpaceLeft","#
+                + #""rightAction":"moveSpaceRight","clickAction":"missionControl","invertHorizontal":false,"freezePointer":true,"#
+                + #""mode":"interactive","trackingSpeed":2,"deviceTracking":false,"hapticFeedback":true},"#
+                + #""applications":[{"path":"/Applications/A.app","gestures":{"inherit":false,"mode":"interactive"}}]"#
+        )
+        XCTAssertEqual(before.gesture?.mode, .interactive)
+        XCTAssertEqual(before.gesture?.trackingSpeed, 2)
+        XCTAssertEqual(before.gesture?.actionsFollowHand, false)
+        XCTAssertNil(before.applications?.first?.ownGestures?.actionsFollowHand, "the app goes on running the general choice")
+
+        let own = OwnSettings(for: self)
+        own.options.readOptions()
+        var current = MouseGestureSettings.default
+        current.mode = .interactive
+        current.actionsFollowHand = true
+        own.options.gesture = current
+        XCTAssertTrue(SettingsFile.apply(before, to: own.options))
+        XCTAssertEqual(own.options.gesture.mode, .interactive)
+        XCTAssertFalse(own.options.gesture.actionsFollowHand, "an import replaces the entry: off, as the file ran")
+
+        let odd = try Fixture.contents(
+            #""mouseGestureSettings":{"mode":"interactive","trackingSpeed":2,"upAction":"showDesktop","actionsFollowHand":"yes"},"#
+                + #""applications":[{"path":"/Applications/A.app","gestures":{"inherit":false,"mode":"interactive","actionsFollowHand":1}}]"#
+        )
+        XCTAssertEqual(odd.gesture?.actionsFollowHand, false)
+        XCTAssertEqual(odd.gesture?.mode, .interactive)
+        XCTAssertEqual(odd.gesture?.trackingSpeed, 2)
+        XCTAssertEqual(odd.gesture?.upAction, "showDesktop")
+        XCTAssertNil(odd.applications?.first?.ownGestures?.actionsFollowHand)
+        XCTAssertEqual(odd.applications?.first?.ownGestures?.mode, .interactive)
+        XCTAssertEqual(odd.unreadableEntries, 0)
+        XCTAssertEqual(odd.leftOutCount, 0, "the file is not damaged and nothing is left out")
+    }
+
     /// A ring as a file from elsewhere can spell it, read through the whole import: a name
     /// together with a target, the old spelling of an app, a file with arguments, and a
     /// ninth place that runs a script. Every place that is stored with something to open

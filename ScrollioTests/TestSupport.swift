@@ -245,6 +245,12 @@ final class TestIsolationTests: XCTestCase {
         // which says yes without asking under XCTest. Asking for it would prompt: nowhere.
         Effect(name: "reads the right to post events", pattern: #"CGPreflightPostEventAccess\("#, allowed: ["Scrollio/ScrollCore/ScrollPoster.swift"]),
         Effect(name: "asks for the right to post events", pattern: #"CGRequestPostEventAccess\("#, allowed: []),
+        // Another app's settings: the Dock's switches for its trackpad gestures, three
+        // values read by name. DockGestureSwitches.systemValue reads nothing under XCTest
+        // (DockGestureSwitchesTests holds that line).
+        Effect(name: "reads the Dock's settings", pattern: #"CFPreferencesCopyAppValue\("#, allowed: [
+            "Scrollio/InputEvent/DockFollow.swift",
+        ]),
         // The app's folder in Application Support (the settings from before an import):
         // SettingsBackups.live has no folder under XCTest, so nothing is written there.
         Effect(name: "uses the app's folder in Application Support", pattern: #"\.applicationSupportDirectory"#, allowed: [

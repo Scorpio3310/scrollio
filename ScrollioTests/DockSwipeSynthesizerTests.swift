@@ -143,7 +143,194 @@ final class DockSwipeSynthesizerTests: XCTestCase {
         XCTAssertEqual(Encoding.hidVelocityYField, 0x0009_0001)
     }
 
+    // MARK: - Mission Control (vertical) and the pinch: a fixed sign
+
+    func testTheThreeMotionsAreTheHIDGestureMotions() {
+        XCTAssertEqual(DockSwipeAxis.horizontal.rawValue, 1)
+        XCTAssertEqual(DockSwipeAxis.vertical.rawValue, 2, "Mission Control / App Exposé")
+        XCTAssertEqual(DockSwipeAxis.pinch.rawValue, 3, "the HID \"scale\" motion: Show Desktop / Launchpad")
+    }
+
+    /// Scrollio's own sign on these two axes: positive opens Mission Control (vertical) and
+    /// Show Desktop (pinch). In the "fields" layout that is the value turned over with the
+    /// flag set, as a trackpad with natural scrolling sends it, whatever the preference is.
+    func testFieldValuesOfAVerticalAndAPinchFrameIgnoreTheScrollingPreference() {
+        let motions: [(DockSwipeAxis, Int64, Double)] = [
+            (.vertical, 2, 2.802596928649634e-45),
+            (.pinch, 3, 4.203895392974451e-45),
+        ]
+        for (axis, motion, motionAsDouble) in motions {
+            let frame = DockSwipeFrame(phase: .changed, axis: axis, progress: 0.25)
+            for naturalScrolling in [true, false] {
+                let values = Encoding.fieldValues(for: frame, naturalScrolling: naturalScrolling)
+                let name = "\(axis), natural scrolling \(naturalScrolling)"
+                // The whole of it, so that nothing of another motion leaks in.
+                XCTAssertEqual(values.integers, [
+                    110: 23,
+                    132: 2, 134: 2,
+                    123: motion, 165: motion,
+                    135: 3_196_059_648, // the bits of Float(-0.25)
+                    136: 1,
+                ], name)
+                XCTAssertEqual(values.doubles, [119: motionAsDouble, 139: motionAsDouble, 124: -0.25], name)
+            }
+        }
+    }
+
+    /// The other end of each axis (App Exposé; Launchpad / Apps) is the negative progress.
+    func testFieldValuesOfTheOtherEndOfAVerticalAndAPinchFrame() {
+        for axis in [DockSwipeAxis.vertical, .pinch] {
+            let values = Encoding.fieldValues(
+                for: DockSwipeFrame(phase: .changed, axis: axis, progress: -0.5), naturalScrolling: false
+            )
+            XCTAssertEqual(values.doubles[124], 0.5, "\(axis)")
+            XCTAssertEqual(values.integers[135], 1_056_964_608, "\(axis): the bits of Float(0.5)")
+            XCTAssertEqual(values.integers[136], 1, "\(axis)")
+        }
+    }
+
+    /// The velocity carries the sign of the progress, so it is turned over with it.
+    func testFieldValuesOfTerminalVerticalAndPinchFrames() {
+        for naturalScrolling in [true, false] {
+            let ended = Encoding.fieldValues(
+                for: DockSwipeFrame(phase: .ended, axis: .pinch, progress: 0.5, velocity: 1.5),
+                naturalScrolling: naturalScrolling
+            )
+            XCTAssertEqual(ended.integers[132], 4)
+            XCTAssertEqual(ended.integers[134], 4)
+            XCTAssertEqual(ended.integers[123], 3)
+            XCTAssertEqual(ended.doubles[124], -0.5)
+            XCTAssertEqual(ended.integers[135], 3_204_448_256, "the bits of Float(-0.5)")
+            XCTAssertEqual(ended.integers[136], 1)
+            XCTAssertEqual(ended.doubles[129], -1.5)
+            XCTAssertEqual(ended.doubles[130], -1.5)
+
+            let cancelled = Encoding.fieldValues(
+                for: DockSwipeFrame(phase: .cancelled, axis: .vertical, progress: 0.3125),
+                naturalScrolling: naturalScrolling
+            )
+            XCTAssertEqual(cancelled.integers[132], 8)
+            XCTAssertEqual(cancelled.doubles[124], -0.3125)
+            XCTAssertEqual(cancelled.integers[135], 3_198_156_800, "the bits of Float(-0.3125)")
+            XCTAssertEqual(cancelled.doubles[129], 0)
+            XCTAssertEqual(cancelled.doubles[130], 0)
+        }
+    }
+
+    /// Nothing moved yet: a plain zero, not a negative one (field 135 carries the bits).
+    func testAVerticalOrPinchFrameAtTheStartIsAPlainZero() throws {
+        for axis in [DockSwipeAxis.vertical, .pinch] {
+            let values = Encoding.fieldValues(
+                for: DockSwipeFrame(phase: .cancelled, axis: axis, progress: 0), naturalScrolling: true
+            )
+            XCTAssertEqual(values.integers[135], 0, "\(axis)")
+            XCTAssertEqual(try XCTUnwrap(values.doubles[124]).sign, .plus, "\(axis)")
+            XCTAssertEqual(try XCTUnwrap(values.doubles[129]).sign, .plus, "\(axis)")
+        }
+    }
+
+    /// The "hid" layout carries Scrollio's value as it is on these two axes: the Dock does
+    /// not turn them with the scrolling preference, and Scrollio does not either.
+    func testHIDValuesOfAVerticalAndAPinchFrameIgnoreTheScrollingPreference() {
+        for (axis, motion) in [(DockSwipeAxis.vertical, 2), (.pinch, 3)] {
+            for naturalScrolling in [true, false] {
+                let name = "\(axis), natural scrolling \(naturalScrolling)"
+                let changed = Encoding.hidValues(
+                    for: DockSwipeFrame(phase: .changed, axis: axis, progress: 0.3125), naturalScrolling: naturalScrolling
+                )
+                XCTAssertEqual(changed, DockSwipeHIDValues(
+                    eventFlags: 2 << 24, motion: motion, flavor: 3, progress: 0.3125, velocity: nil
+                ), name)
+
+                let ended = Encoding.hidValues(
+                    for: DockSwipeFrame(phase: .ended, axis: axis, progress: -0.5, velocity: -1.5),
+                    naturalScrolling: naturalScrolling
+                )
+                XCTAssertEqual(ended, DockSwipeHIDValues(
+                    eventFlags: 4 << 24, motion: motion, flavor: 3, progress: -0.5, velocity: -1.5
+                ), name)
+
+                let wild = Encoding.hidValues(
+                    for: DockSwipeFrame(phase: .ended, axis: axis, progress: 1e9, velocity: -.infinity),
+                    naturalScrolling: naturalScrolling
+                )
+                XCTAssertEqual(wild.progress, 32_000, name)
+                XCTAssertEqual(wild.velocity, 0, name)
+            }
+        }
+    }
+
+    /// Only sideways asks for the scrolling preference: the desktops move as content does.
+    func testOnlyTheSidewaysMotionFollowsTheScrollingPreference() {
+        XCTAssertTrue(DockSwipeAxis.horizontal.followsScrollingPreference)
+        XCTAssertFalse(DockSwipeAxis.vertical.followsScrollingPreference)
+        XCTAssertFalse(DockSwipeAxis.pinch.followsScrollingPreference)
+    }
+
     // MARK: - Built events (never posted)
+
+    func testFieldsEventOfAVerticalAndAPinchFrameCarriesTheFixedSign() throws {
+        let factory = DockSwipeEventFactory(layout: .fields, bridge: nil)
+        for (axis, motion) in [(DockSwipeAxis.vertical, Int64(2)), (.pinch, Int64(3))] {
+            let frame = DockSwipeFrame(phase: .ended, axis: axis, progress: 0.25, velocity: 1.5)
+            let events = try XCTUnwrap(factory.makeEvents(for: frame, naturalScrolling: false))
+            XCTAssertEqual(events.map { $0.type.rawValue }, [30, 29])
+            for event in events {
+                XCTAssertEqual(event.getIntegerValueField(.eventSourceUserData), ScrollioEventMarker.syntheticCustom)
+            }
+            let event = events[0]
+            func integer(_ field: UInt32) -> Int64 { event.getIntegerValueField(DockSwipeEventFactory.field(field)) }
+            func double(_ field: UInt32) -> Double { event.getDoubleValueField(DockSwipeEventFactory.field(field)) }
+            XCTAssertEqual(integer(110), 23, "\(axis)")
+            XCTAssertEqual(integer(123), motion, "\(axis)")
+            XCTAssertEqual(integer(132), 4, "\(axis)")
+            XCTAssertEqual(double(124), -0.25, "\(axis)")
+            XCTAssertEqual(integer(136), 1, "\(axis): the flag is set whatever the preference")
+            XCTAssertEqual(double(129), -1.5, "\(axis)")
+        }
+    }
+
+    /// The macOS 27 event of the two motions, built with the real symbols and read back.
+    /// Skipped where the private symbols do not exist.
+    func testHIDEventOfAVerticalAndAPinchFrameCarriesTheMotionAndTheSign() throws {
+        guard let bridge = DockSwipeHIDBridge.load() else {
+            throw XCTSkip("IOKit / SkyLight symbols for the attached IOHIDEvent are missing")
+        }
+        guard let reader = HIDEventReader() else {
+            throw XCTSkip("IOHIDEvent read-back symbols are missing")
+        }
+        let factory = DockSwipeEventFactory(layout: .hid, bridge: bridge)
+        for (axis, motion) in [(DockSwipeAxis.vertical, 2), (.pinch, 3)] {
+            let changed = try XCTUnwrap(factory.makeEvents(
+                for: DockSwipeFrame(phase: .changed, axis: axis, progress: 0.3125), naturalScrolling: true
+            ))
+            XCTAssertEqual(changed.count, 1)
+            XCTAssertEqual(changed[0].type.rawValue, 30)
+            let changedHID = try XCTUnwrap(reader.copyHIDEvent(changed[0]))
+            defer { reader.release(changedHID) }
+            XCTAssertEqual(reader.type(changedHID), 23)
+            XCTAssertEqual(reader.flags(changedHID), 2 << 24)
+            XCTAssertEqual(reader.integer(changedHID, Encoding.hidDockSwipeMotionField), motion)
+            XCTAssertEqual(reader.integer(changedHID, Encoding.hidDockSwipeFlavorField), 3)
+            XCTAssertEqual(reader.double(changedHID, Encoding.hidDockSwipeProgressField), 0.3125, "\(axis): not turned over")
+            XCTAssertEqual(reader.children(changedHID).count, 0)
+
+            let ended = try XCTUnwrap(factory.makeEvents(
+                for: DockSwipeFrame(phase: .ended, axis: axis, progress: 0.5, velocity: 1.5), naturalScrolling: true
+            ))
+            let endedHID = try XCTUnwrap(reader.copyHIDEvent(ended[0]))
+            defer { reader.release(endedHID) }
+            XCTAssertEqual(reader.flags(endedHID), 4 << 24)
+            XCTAssertEqual(reader.double(endedHID, Encoding.hidDockSwipeProgressField), 0.5)
+            let children = reader.children(endedHID)
+            XCTAssertEqual(children.count, 1)
+            if let velocity = children.first {
+                XCTAssertEqual(reader.type(velocity), 9)
+                XCTAssertEqual(reader.double(velocity, Encoding.hidVelocityXField), 1.5)
+                XCTAssertEqual(reader.double(velocity, Encoding.hidVelocityYField), 1.5)
+            }
+        }
+    }
 
     func testFieldsEventCarriesTypeMarkerAndFields() throws {
         let factory = DockSwipeEventFactory(layout: .fields, bridge: nil)
@@ -336,6 +523,204 @@ final class DockSwipeSynthesizerTests: XCTestCase {
         DockSwipeSynthesizer.shared.clearTestingDriver()
         XCTAssertEqual(calls(), ["begin horizontal", "cancel"])
         XCTAssertFalse(DockSwipeSynthesizer.shared.isActive)
+    }
+
+    func testSynthesizerForwardsAVerticalAndAPinchSwipeAndKnowsWhichRuns() {
+        let calls = installRecordingDriver()
+        let synthesizer = DockSwipeSynthesizer.shared
+        XCTAssertNil(synthesizer.runningAxis)
+
+        synthesizer.begin(axis: .vertical)
+        XCTAssertEqual(synthesizer.runningAxis, .vertical)
+        synthesizer.update(progress: 0.25)
+        synthesizer.end(velocity: 2)
+        XCTAssertNil(synthesizer.runningAxis)
+
+        synthesizer.begin(axis: .pinch)
+        XCTAssertEqual(synthesizer.runningAxis, .pinch)
+        synthesizer.cancel()
+        XCTAssertNil(synthesizer.runningAxis)
+
+        // A sideways swipe that runs is cancelled before another motion begins.
+        synthesizer.begin(axis: .horizontal)
+        XCTAssertEqual(synthesizer.runningAxis, .horizontal)
+        synthesizer.begin(axis: .vertical)
+        XCTAssertEqual(synthesizer.runningAxis, .vertical)
+        synthesizer.cancel()
+
+        XCTAssertEqual(calls(), [
+            "begin vertical", "update 0.25", "end 2.0",
+            "begin pinch", "cancel",
+            "begin horizontal", "cancel", "begin vertical", "cancel",
+        ])
+    }
+
+    // MARK: - Settling before an instant toggle
+
+    /// A driver that also records `settle`.
+    private func installSettlingDriver() -> () -> [String] {
+        var calls: [String] = []
+        DockSwipeSynthesizer.shared.setTestingDriver(DockSwipeDriver(
+            isAvailable: { true },
+            begin: { calls.append("begin \($0)") },
+            update: { calls.append("update \($0)") },
+            end: { calls.append("end \($0)") },
+            cancel: { calls.append("cancel") },
+            settle: { calls.append("settle") }
+        ))
+        return { calls }
+    }
+
+    /// Before Scrollio asks the Dock for a view in one go, nothing of a swipe may still be
+    /// on its way: a swipe that runs is cancelled first, then the poster settles what it
+    /// still had to post again.
+    func testSettlingCancelsARunningSwipeAndThenSettlesThePoster() {
+        let calls = installSettlingDriver()
+        let synthesizer = DockSwipeSynthesizer.shared
+
+        synthesizer.begin(axis: .vertical)
+        synthesizer.update(progress: 0.4)
+        let number = synthesizer.swipeNumber
+        synthesizer.settle()
+        XCTAssertFalse(synthesizer.isActive)
+        XCTAssertNil(synthesizer.runningAxis)
+        XCTAssertFalse(synthesizer.isRunning(number), "its owner sends nothing more")
+        XCTAssertEqual(calls(), ["begin vertical", "update 0.4", "cancel", "settle"])
+
+        // Nothing more of that swipe afterwards.
+        synthesizer.update(progress: 0.5)
+        synthesizer.end(velocity: 1)
+        XCTAssertEqual(calls(), ["begin vertical", "update 0.4", "cancel", "settle"])
+    }
+
+    /// With no swipe running only the poster is settled (the terminal event of a swipe that
+    /// ended a moment ago may still wait to be posted again); never a second terminal.
+    func testSettlingWhileIdleOnlySettlesThePoster() {
+        let calls = installSettlingDriver()
+        let synthesizer = DockSwipeSynthesizer.shared
+
+        synthesizer.settle()
+        XCTAssertEqual(calls(), ["settle"])
+
+        synthesizer.begin(axis: .horizontal)
+        synthesizer.end(velocity: 1.5)
+        synthesizer.settle()
+        synthesizer.settle()
+        XCTAssertEqual(calls(), ["settle", "begin horizontal", "end 1.5", "settle", "settle"])
+    }
+
+    /// A driver from before `settle` (every test double of the sideways swipe) still builds,
+    /// and settling with it does nothing more than cancel.
+    func testADriverWithoutSettleStillCancels() {
+        let calls = installRecordingDriver()
+        DockSwipeSynthesizer.shared.begin(axis: .pinch)
+        DockSwipeSynthesizer.shared.settle()
+        XCTAssertEqual(calls(), ["begin pinch", "cancel"])
+        // The inert driver of the tests: nothing at all.
+        DockSwipeSynthesizer.shared.clearTestingDriver()
+        DockSwipeSynthesizer.shared.settle()
+        XCTAssertFalse(DockSwipeSynthesizer.shared.isActive)
+    }
+
+    // MARK: - The terminal event's posts that are still to come
+
+    /// A scheduler that only keeps what it was asked to run; a test runs it.
+    private final class Later {
+        var scheduled: [(delay: TimeInterval, work: DispatchWorkItem)] = []
+        var posted: [String] = []
+
+        /// Runs what was scheduled at `index`, as its timer would; a missing one fails the
+        /// test instead of stopping the test host.
+        func run(_ index: Int, file: StaticString = #filePath, line: UInt = #line) {
+            guard scheduled.indices.contains(index) else {
+                XCTFail("nothing was scheduled at \(index)", file: file, line: line)
+                return
+            }
+            scheduled[index].work.perform()
+        }
+
+        func makeResends(delays: [TimeInterval] = [0.2, 0.5]) -> DockSwipeTerminalResends<String> {
+            return DockSwipeTerminalResends<String>(
+                delays: delays,
+                schedule: { [unowned self] delay, work in self.scheduled.append((delay, work)) },
+                post: { [unowned self] in self.posted.append($0) }
+            )
+        }
+    }
+
+    func testTheTerminalEventIsPostedAgainAfterEachDelay() {
+        let later = Later()
+        let resends = later.makeResends()
+        XCTAssertFalse(resends.isPending)
+
+        resends.begin(with: "ended")
+        XCTAssertTrue(resends.isPending)
+        XCTAssertEqual(later.scheduled.map(\.delay), [0.2, 0.5])
+        XCTAssertEqual(later.posted, [], "the first post is the poster's own")
+
+        later.run(0)
+        XCTAssertEqual(later.posted, ["ended"])
+        XCTAssertTrue(resends.isPending, "one more to come")
+        later.run(1)
+        XCTAssertEqual(later.posted, ["ended", "ended"])
+        XCTAssertFalse(resends.isPending)
+        XCTAssertFalse(resends.postNowAndDrop(), "nothing left to settle")
+        XCTAssertEqual(later.posted, ["ended", "ended"])
+    }
+
+    /// The settle of an instant toggle: what was still to come is posted once, now, and
+    /// nothing of it arrives later, after the toggle.
+    func testSettlingPostsTheWaitingTerminalEventOnceNowAndDropsItsTimers() {
+        let later = Later()
+        let resends = later.makeResends()
+
+        resends.begin(with: "ended")
+        XCTAssertTrue(resends.postNowAndDrop())
+        XCTAssertEqual(later.posted, ["ended"])
+        XCTAssertFalse(resends.isPending)
+        later.scheduled.forEach { $0.work.perform() }
+        XCTAssertEqual(later.posted, ["ended"], "the timers were dropped")
+        XCTAssertFalse(resends.postNowAndDrop())
+
+        // Between the two delays: one more post, not two.
+        later.scheduled = []
+        later.posted = []
+        resends.begin(with: "cancelled")
+        later.run(0)
+        XCTAssertTrue(resends.postNowAndDrop())
+        XCTAssertEqual(later.posted, ["cancelled", "cancelled"])
+        later.run(1)
+        XCTAssertEqual(later.posted, ["cancelled", "cancelled"])
+    }
+
+    /// A new swipe drops what the one before still had to post: it must not end the new one.
+    func testANewSwipeDropsTheWaitingTerminalEventWithoutPostingIt() {
+        let later = Later()
+        let resends = later.makeResends()
+
+        resends.begin(with: "ended")
+        resends.drop()
+        XCTAssertFalse(resends.isPending)
+        later.scheduled.forEach { $0.work.perform() }
+        XCTAssertEqual(later.posted, [])
+        XCTAssertFalse(resends.postNowAndDrop())
+
+        // The next terminal event replaces one that still waits.
+        later.scheduled = []
+        resends.begin(with: "first")
+        resends.begin(with: "second")
+        later.scheduled.forEach { $0.work.perform() }
+        XCTAssertEqual(later.posted, ["second", "second"])
+    }
+
+    func testWithoutDelaysNothingWaits() {
+        let later = Later()
+        let resends = later.makeResends(delays: [])
+        resends.begin(with: "ended")
+        XCTAssertFalse(resends.isPending)
+        XCTAssertEqual(later.scheduled.count, 0)
+        XCTAssertFalse(resends.postNowAndDrop())
+        XCTAssertEqual(later.posted, [])
     }
 
     // MARK: - Geometry

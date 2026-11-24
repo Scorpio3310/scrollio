@@ -96,6 +96,12 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](../SECU
     wheel"): the window server's list of the desktops (Spaces) of the display under the
     pointer, for how many there are, when a swipe begins; "Follow the wheel" also hears
     from macOS that the desktop in use changed, to begin the next swipe;
+  - for "Up and Down follow the hand too": three switches in the Dock's settings, which
+    say whether the trackpad gestures for Mission Control, Show Desktop and Launchpad are
+    on (System Settings › Trackpad › More Gestures), when Scrollio starts or comes to the
+    front and when System Settings was in front. Where a gesture is off the Dock ignores
+    the motion, so that direction runs its action once instead. Nothing else of the
+    Dock's settings is read, and none is changed;
   - which app is under the pointer or in front, for the per-app settings and "Smooth
     Scrolling in …". With "Trackpad-style scrolling (Experimental)" on, for a wheel scroll in an
     app that gets the one-touch form, it reads the kind of the element under the pointer
