@@ -4,16 +4,18 @@
 //
 //  The Gestures part of an app's page: "Use the general gestures" and, while it is off,
 //  the app's own set, all of the Gestures pane but its preview and the button to hold, in
-//  the pane's rows and order (`MouseGestureRows`): "Mode", "Directions" (Up, Down, Left,
+//  the pane's rows and order (`MouseGestureRows`): "Mode" with the switch "Up and Down
+//  follow the hand too" under it (the app's own choice), "Directions" (Up, Down, Left,
 //  Right, Click, the same pull-downs, "Keyboard Shortcut…" with a name and an icon among
 //  them), "Behavior" (invert, freeze, swipe speed) and "Logitech mouse" ("Let the mouse
 //  track the gesture", "Pulse when a gesture locks in"), the last there while a connected
 //  mouse can do one of them, as in the pane. They run while the app is in front
 //  (`MouseGestureChoice`). In "Follow the hand" the Left and Right rows say so and the
-//  speed applies, as the pane's do, by the app's own mode; "Freeze pointer" reads on and
-//  dimmed while the mouse holds the pointer itself here, by the app's own tracking switch
-//  and the buttons that run the gestures in it (`MouseGesturePointerHolder`). The button
-//  to hold is a binding
+//  speed applies, as the pane's do, by the app's own mode, and the Up and Down rows say
+//  that they follow the hand where the app's own switch asks and this Mac can; "Freeze
+//  pointer" reads on and dimmed while the mouse holds the pointer itself here, by the
+//  app's own tracking switch and the buttons that run the gestures in it
+//  (`MouseGesturePointerHolder`). The button to hold is a binding
 //  of Buttons, or of the app's Buttons part: the first row, "Button to hold", says which
 //  one runs the gestures with the app in front ("Gesture button, as everywhere", "Back
 //  button, only in Figma", "None in Figma", `ApplicationTriggerRow`), and its button goes
@@ -61,6 +63,9 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     /// Whether "Follow the hand" can run at all (without it the mode is discrete). Tests
     /// replace it.
     var isInteractiveAvailable: () -> Bool = { DockSwipeSynthesizer.shared.isAvailable }
+    /// What can follow the hand up and down on this Mac now, as the Gestures pane asks.
+    /// Tests replace it.
+    var followAvailability: () -> DockFollowAvailability = { .live }
     /// What the connected mice can do: the "Logitech mouse" section shows as the Gestures
     /// pane's does. Tests replace it.
     var deviceSource: MouseGestureDeviceSource = .live
@@ -100,6 +105,8 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
     /// like everything below it, there only while "Use the general gestures" is off.
     private(set) var modeSection: PreferencesGroupSection?
     private(set) var modeRow: PreferencesGroupRow?
+    /// "Up and Down follow the hand too" of the app's own set, under its "Mode".
+    private(set) var followRow: PreferencesGroupRow?
     /// Up, Down, Left, Right, Click, in `Slot.allCases` order; empty while the app uses the
     /// general gestures.
     private(set) var directionRows: [PreferencesGroupRow] = []
@@ -208,6 +215,11 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         // A mouse that can track gestures or has haptics connected or left: the "Logitech
         // mouse" section follows, as the pane's does.
         for name in [LogiCenter.gestureStateChanged, LogiCenter.mouseStateChanged] {
+            NotificationCenter.default.addObserver(self, selector: #selector(deviceStateDidChange(_:)), name: name, object: nil)
+        }
+        // What opens with the hand on this Mac changed (the Dock's own switches, the right
+        // to post events): the rows say so, as the pane's do.
+        for name in [DockGestureSwitches.didChangeNotification, ScrollPoster.postEventAccessDidChangeNotification] {
             NotificationCenter.default.addObserver(self, selector: #selector(deviceStateDidChange(_:)), name: name, object: nil)
         }
     }
@@ -403,6 +415,9 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         guard let controls else { return }
         let presentation = controls.modePresentation
         modeRow?.explanation = text(presentation.descriptionKey)
+        if let followRow {
+            MouseGestureRows.show(controls.followPresentation, in: followRow, toggle: controls.followToggle)
+        }
         for slot in Slot.allCases where slot.isHorizontal {
             directionRows[slot.rawValue].isEnabled = presentation.areHorizontalActionsEditable
         }
@@ -443,6 +458,7 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
             self.controls = nil
             modeSection = nil
             modeRow = nil
+            followRow = nil
             directionRows = []
             directionsFold = nil
             directionsSection = nil
@@ -461,7 +477,8 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         let controls = MouseGestureSettingsControls(
             showLogiActions: showsLogiActions(),
             edits: .application(application),
-            isInteractiveAvailable: { [weak self] in self?.isInteractiveAvailable() ?? false }
+            isInteractiveAvailable: { [weak self] in self?.isInteractiveAvailable() ?? false },
+            followAvailability: { [weak self] in self?.followAvailability() ?? .live }
         )
         controls.onChange = { [weak self] in
             self?.showOwnValues()
@@ -473,7 +490,9 @@ final class ApplicationGesturesPartViewController: NSViewController, Application
         let mode = MouseGestureRows.mode(controls.modeControl)
         mode.identifier = Identifier.mode
         modeRow = mode
-        let modeBox = PreferencesGroupSection(width: width, rows: [mode])
+        let follow = MouseGestureRows.followActions(controls.followToggle, reserving: controls.followHints)
+        followRow = follow
+        let modeBox = PreferencesGroupSection(width: width, rows: [mode, follow])
         modeSection = modeBox
         // The rows of the Gestures pane, each with its pull-down (`popUpWidth` wide by itself).
         directionRows = Slot.allCases.map { slot in

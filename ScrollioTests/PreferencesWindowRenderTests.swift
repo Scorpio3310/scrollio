@@ -1944,7 +1944,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
     /// can track and pulse (`app-parity-gestures`: Mode in "follow the hand", Directions,
     /// Behavior with the speed, Logitech mouse), the same while nothing runs them
     /// (`app-parity-gestures-folded`: Mode, the three titles folded, Reset), and Calculator's
-    /// own ring with its freeze switch between the drawing and the places (`app-parity-ring`).
+    /// own ring with its freeze switch between the drawing and the places (`app-parity-ring`);
+    /// and the app's own "Up and Down follow the hand too" on, on a Mac where Mission Control
+    /// and Show Desktop follow (`app-parity-gestures-follow`: Up is its recorded keys, Down
+    /// says "Show Desktop follows the hand").
     func testRenderAppPageParity() throws {
         let stored = Options.shared.application.applications
         let savedRing = Options.shared.ring
@@ -1988,6 +1991,10 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 apps?.openApplication(withID: calculator.path, part: part)
                 guard let detail = apps?.detailController else { return }
                 detail.gesturesPart.isInteractiveAvailable = { true }
+                // (A released build on macOS 27, whatever this Mac is.)
+                detail.gesturesPart.followAvailability = {
+                    DockFollowAvailability(swipeIsAvailable: true, canPostEvents: true, majorVersion: 27, switches: .allOn, appsMayFollow: false)
+                }
                 detail.gesturesPart.deviceSource = mice
                 detail.gesturesPart.syncViewWithOptions()
                 detail.onHeightChange?()
@@ -1999,6 +2006,17 @@ final class PreferencesWindowRenderTests: XCTestCase {
         ]
         ButtonUtils.shared.invalidateCache()
         try page("app-parity-gestures", part: .gestures)
+        // The app's own "Up and Down follow the hand too": Down opens with the hand.
+        let ownActions = calculator.ownGestures?.actions
+        calculator.changeOwnGestures { own in
+            own.actionsFollowHand = true
+            own.actions.down = GestureAction(action: SystemShortcut.showDesktop.identifier)
+        }
+        try page("app-parity-gestures-follow", part: .gestures)
+        calculator.changeOwnGestures { own in
+            own.actionsFollowHand = false
+            if let ownActions { own.actions = ownActions }
+        }
         try page("app-parity-ring", part: .ring)
         // Haptics switched off under Mouse: the line under the Logitech box.
         hapticsOffOnMouse = true
