@@ -131,7 +131,9 @@ without that file means their check fails, and no copy learns of the version.
   no path of the build Mac anywhere in the app, debug symbols that belong to the
   binary, no Charts in the app, no `thumb wheel trace:` log line in the binary (only a
   debug build and a build of `scripts/install.sh`, which passes `SCROLLIO_TRACE`, have
-  it), and the Logitech boundary lint. After the notarization:
+  it; with that condition the installed copy also lets Apps try to follow the hand in
+  "Up and Down follow the hand too", which no release does), and the Logitech boundary
+  lint. After the notarization:
   Gatekeeper's verdict on the app and on the image, and that the image's update
   signature verifies.
 - **What it leaves** in `build/release`: `Scrollio-<version>.dmg` (the app, a link to

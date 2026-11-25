@@ -36,7 +36,8 @@ https://github.com/noah-nuebling/mac-mouse-fix
     the wheel", which makes the same swipe. Scrollio's code for it is its own,
     written from what Mac Mouse Fix's source shows, and so derived from it: the
     layout of the Dock swipe events (the event fields, and the HID event the
-    Dock reads on macOS 27), the empty event that follows each of them, the
+    Dock reads on macOS 27), the motions that open Mission Control and Show
+    Desktop and their signs, the empty event that follows each of them, the
     63 pt gap the Dock draws between two desktops, how a swipe's progress scales
     with the number of desktops, sending the final event again after 0.2 and
     0.5 seconds, the travel after which a hold locks to a direction, and the

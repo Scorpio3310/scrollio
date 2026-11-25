@@ -178,34 +178,54 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   goes back and never past where it started, and when you let go macOS finishes it or
   puts it back, from how far it is and how fast your hand was moving. "Swipe speed" sets
   how far the hand goes for the whole view (at 1, two fifths of the screen's height,
-  between 320 and 600 points). Mission Control follows on every macOS that has "Follow
-  the hand", Show Desktop on macOS 27 and later. Everything else is as before: Apps
-  (Launchpad) and every other action run once, Left and Right are the desktops, the
-  click is the click. An app's own gestures have the switch too, and the app in front
-  when you press decides.
+  between 320 and 600 points). A quick flick still opens the view in one go, as it did
+  before: let go while the view has moved less than a fifth of the way, with the hand
+  still moving that way at one whole view a second or more, the view goes back and the
+  action runs once. A slow small move that is let go goes back and runs nothing.
+  Mission Control follows on every macOS that has "Follow the hand", Show Desktop on
+  macOS 27 and later. Everything else is as before: Apps (Launchpad) and every other
+  action run once, Left and Right are the desktops, the click is the click. The preview
+  shows a direction that follows as its view opening with the hand, and one that runs
+  once as its view in one go. An app's own gestures have the switch too, and the app in
+  front when you press decides.
 - A direction that could follow the hand runs its action once instead: where the view's
   trackpad gesture is switched off in System Settings › Trackpad › More Gestures (the
   Dock would ignore the motion; Scrollio reads those switches and never changes them);
   while macOS does not let Scrollio post events; while the thumb wheel's "Follow the
   wheel" still slides the desktops or rests after a turn (a gesture never takes that
-  swipe over for another motion); and when Scrollio itself opened that view a moment
-  ago: the same move again closes it at once. While Mission Control that Scrollio opened
-  is showing, the opposite move puts it away with your hand, as a trackpad's swipe down
-  does, instead of running its own action. Scrollio cannot ask the Dock what it shows:
-  it only knows of a view it opened itself (with your hand, or by a Mission Control,
-  Show Desktop or Apps action of a button, a gesture or the Shortcut Ring), for a
-  minute, and no longer once another app comes to the front, the desktop in use
-  changes, the Mac sleeps or Scrollio is paused. After you left such a view another way
-  (Esc, a click on a window of the same app, the trackpad), the next move may open it at
-  once instead of with your hand, or do nothing once.
+  swipe over for another motion; the slide finishes by itself, as before); and when
+  one of Scrollio's gestures opened that view with your hand a moment ago: the same
+  move again closes it at once. While Mission Control that one of Up and Down opened with
+  your hand is showing, the other of the two puts it away with your hand, as a
+  trackpad's swipe down does, instead of running its own action; only where the
+  trackpad gesture for App Exposé is off in System Settings, since with it on that move
+  could show the app's windows instead (the direction then keeps its own action).
+  Scrollio cannot ask the Dock what it shows: it only knows of a view that one of its
+  own gestures opened with your hand (moved at least a fifth of the way and let go to
+  open), for a minute, and no longer once Scrollio asks the Dock for Mission Control,
+  Show Desktop or Apps in one go (a button, a gesture, the Shortcut Ring), another app
+  comes to the front (Finder may while Show Desktop is showing: a click on a file on
+  the desktop), the desktop in use changes, the Mac sleeps or Scrollio is paused. After
+  you left such a view another way (Esc, a click on a window of the same app, the
+  trackpad), the next move may open it at once instead of with your hand, or do nothing,
+  once: a move that was meant to put Mission Control away and is not turned back to
+  its start ends what Scrollio knew, so the move after it is that direction's own
+  action again.
 - A view that is opening with your hand goes back at once when the button is held for
-  more than ten seconds, when the Shortcut Ring opens, when the desktop in use changes,
-  when the screens change or the displays go to sleep (the desktops' swipe too, for
-  these two), and when Scrollio stops (sleep, another user, Pause, quit). The Dock is
-  never asked two things at once: before Scrollio asks it for Mission Control, Show
-  Desktop or Apps in one go, from any button, gesture or place of the ring, a swipe that
-  still runs is taken back first (the thumb wheel's too), and no gesture ever sends both
-  a swipe and the action of the same direction.
+  more than ten seconds, when the Shortcut Ring opens, when the desktop in use changes
+  (not for the change Scrollio's own swipe of the desktops has just made, a gesture's
+  or the thumb wheel's: macOS tells of it up to half a second late), when the screens
+  change (one is added, taken away or moved, or gets another size; not when only the
+  Dock changes its size or place) or the displays go to sleep (the desktops' swipe too,
+  for these two, with a line in the log), and when Scrollio stops (sleep, another user,
+  Pause, quit). What a gesture had not sent yet when it was let go is not sent after
+  one of these. About its own views the Dock is asked one thing at a time: before
+  Scrollio asks it for Mission Control, Show Desktop or Apps in one go, from any
+  button, gesture or place of the ring, a view that is still opening with your hand is
+  taken back first. A swipe of the desktops that still runs is left to finish, the thumb
+  wheel's too, as before; and the keys that move a desktop, or a key combination you
+  recorded, are sent as they are. No gesture sends both a swipe and the action of the
+  same direction, but for the flick, whose swipe is taken back before its action runs.
 - "Freeze pointer during a gesture" keeps the pointer where it is while you hold the
   button. While the mouse tracks every button that runs the gestures itself ("Let the
   mouse track the gesture"), the mouse holds the pointer still whatever the switch says:
@@ -215,9 +235,10 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
 - An app can have gestures of its own. Its page in Apps (add the app there, or open it
   in the list) has a "Gestures" part. "Use settings from Gestures" is on for every app;
   turn it off and the app gets everything of the Gestures pane but the button to hold,
-  in the pane's order: the mode, the five directions, "Invert left and right", "Freeze
-  pointer", the swipe speed and, while a connected mouse can do them, the two switches
-  of a Logitech mouse. They start as a copy of the pane's at that moment and are set the
+  in the pane's order: the mode with "Up and Down follow the hand too", the five
+  directions, "Invert left and right", "Freeze pointer", the swipe speed and, while a
+  connected mouse can do them, the two switches of a Logitech mouse. They start as a
+  copy of the pane's at that moment and are set the
   same way ("Keyboard Shortcut…" with a name and an icon too). They run while the app is
   in front when you press the button (the app in front, not the one under the pointer:
   the actions go to it); the gesture keeps them until you let go, whatever comes to the

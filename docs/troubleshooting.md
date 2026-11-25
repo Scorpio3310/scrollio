@@ -140,15 +140,21 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   out; then how it ended: "ended" when the button came up, with "expected to open" or
   "expected to close" when Scrollio expects macOS to finish it, which is what the
   stronger pulse of the mouse goes by; "cancelled" when the hand was back at the start
-  or heading back; or "cancelled" with what took it back: no button-up, the mouse went
+  or heading back; "cancelled, a flick: ran once" for a quick flick that was let go
+  before the view had moved a fifth of the way: the action ran once instead, and its
+  own line follows; or "cancelled" with what took it back: no button-up, the mouse went
   away, Scrollio's event taps stopped, the screens changed, the displays went to sleep,
   the desktop in use changed, the Shortcut Ring opened, its swipe had been taken back),
   one line for a direction that could follow the hand and ran once instead, right
   before the line of its action (`Gestures: up did not follow the hand: missionControl,
-  the Dock's gesture is off`; the other reasons: not on this macOS, cannot post events,
-  the swipe cannot be made on this Mac, the wheel's swipe was running, and Mission
-  Control, Show Desktop or Apps was showing: Scrollio had opened it itself and the same
-  move closes it; the desktops' swipe writes no line of its own),
+  the Dock's gesture is off`; the other reasons: "not on this macOS", which is Show
+  Desktop before macOS 27; "cannot post events"; "the wheel's swipe was running"; and
+  "Scrollio had just opened Mission Control", or "Show Desktop": that direction opened
+  the view with your hand and the same move closes it. Apps, which such a line would
+  name by its action `appExpose`, gets none in a released copy: it simply runs once),
+  one line for a swipe of the desktops that was taken back because the screens changed
+  or the displays went to sleep (`Gestures: a swipe of the desktops was taken back (the
+  screens changed)`; the desktops' swipe writes no other line),
   a line after a change of the settings when the count of apps
   with their own binding for a Logitech button, or of the buttons they take from the
   mouse or give back, is not what the last such line said, and at launch when an app has

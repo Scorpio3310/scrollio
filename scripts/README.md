@@ -7,7 +7,9 @@ Repeatable automation.
   with the commit, and installs it to `/Applications`. `--check` stops before installing.
   It builds with `SCROLLIO_TRACE`, so its builds write the `thumb wheel trace:` line to
   the scroll log (every event of a thumb wheel roll, for tuning the wheel); a release
-  never has it.
+  never has it. With that condition the installed copy also lets Apps (Launchpad) try
+  to follow the hand in Gestures › "Up and Down follow the hand too", so that it can be
+  watched on a real Mac; no release does: there Apps runs once.
   A `Local.xcconfig` in the repository root (ignored by git, template
   `Local.xcconfig.example`) is passed to the build: another Mac's signing team.
 - `release.sh`: builds the app for other people's Macs, from a commit tagged `v<version>`:
