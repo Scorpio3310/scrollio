@@ -187,17 +187,27 @@ struct DockGestureSwitches: Equatable {
         )
     }
 
-    /// A stored "false" (or the number 0) is off, a stored "true" on. A missing name counts
-    /// as `whenMissing` (`Key.isOnWhenMissing`: macOS has the gestures Scrollio drives on
-    /// until someone turns one off, and a Mac without a trackpad has no place to do that).
-    /// Anything else that is stored counts as on: the values are another app's data and may
-    /// be anything. (For App Exposé that is the careful side too: on means "do not leave
-    /// Mission Control with the hand".)
+    /// A stored "false" (or the number 0) is off, a stored "true" on. So are the texts
+    /// "no", "false" and "0", in any case: `defaults write` without `-bool` stores text,
+    /// and the Dock takes such text for off as well. A missing name counts as `whenMissing`
+    /// (`Key.isOnWhenMissing`: macOS has the gestures Scrollio drives on until someone
+    /// turns one off, and a Mac without a trackpad has no place to do that). Anything else
+    /// that is stored counts as on: the values are another app's data and may be anything.
+    /// (For App Exposé that is the careful side too: on means "do not leave Mission
+    /// Control with the hand".)
     static func isOn(_ value: Any?, whenMissing: Bool = true) -> Bool {
         guard let value else { return whenMissing }
-        guard let number = value as? NSNumber else { return true }
-        return number.boolValue
+        if let number = value as? NSNumber {
+            return number.boolValue
+        }
+        if let text = value as? String {
+            return !textsThatMeanOff.contains(text.lowercased())
+        }
+        return true
     }
+
+    /// The stored texts that mean off (compared in lower case).
+    static let textsThatMeanOff: Set<String> = ["no", "false", "0"]
 
     /// Whether the switch that governs `target` on macOS `majorVersion` is on. Since macOS
     /// 26 there is no switch for Launchpad's successor: the Show Desktop one stands for
@@ -232,10 +242,20 @@ struct DockGestureSwitches: Equatable {
     /// which views open with the hand on this Mac.
     static let didChangeNotification = Notification.Name("ScrollioDockGestureSwitchesDidChange")
 
-    /// Reads the four switches again: when Scrollio starts, when it becomes active and
-    /// when System Settings goes to the background, where a switch may just have been
-    /// changed (`AppDelegate`, beside the Spaces shortcuts). Never from an event tap's
-    /// callback: a hold takes `current`. Main thread.
+    /// Whether the switches are read again after an app with this bundle identifier
+    /// started: only after the Dock itself (its bundle identifier is the name of its
+    /// settings). A switch changed from outside System Settings (`defaults write`, then
+    /// `killall Dock`) counts from the Dock's next start, and Scrollio, a menu bar app, is
+    /// rarely the active app that would read it otherwise.
+    static func reloads(afterLaunchOf bundleIdentifier: String?) -> Bool {
+        return bundleIdentifier == domain
+    }
+
+    /// Reads the four switches again: when Scrollio starts, when it becomes active, when
+    /// System Settings goes to the background, where a switch may just have been changed
+    /// (`AppDelegate`, beside the Spaces shortcuts), and when the Dock starts
+    /// (`reloads(afterLaunchOf:)`). Never from an event tap's callback: a hold takes
+    /// `current`. Main thread.
     static func reload() {
         let found = DockGestureSwitches(reading: read)
         guard found != current else { return }

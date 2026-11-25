@@ -242,8 +242,10 @@ final class DockGestureSwitchesTests: XCTestCase {
         }
     }
 
-    /// A stored "false" is off. A missing name counts as on, and so does what is no switch
-    /// at all: the values are another app's data and may be anything.
+    /// A stored "false" is off, also when it was written as text (`defaults write` without
+    /// `-bool` stores "NO" or "false" as a string, and the Dock takes that for off). A
+    /// missing name counts as on, and so does what is no switch at all: the values are
+    /// another app's data and may be anything.
     func testAStoredFalseIsOffAndEverythingElseCountsAsOn() {
         XCTAssertTrue(DockGestureSwitches.isOn(nil), "a missing name")
         XCTAssertTrue(DockGestureSwitches.isOn(true))
@@ -252,10 +254,23 @@ final class DockGestureSwitchesTests: XCTestCase {
         XCTAssertFalse(DockGestureSwitches.isOn(kCFBooleanFalse))
         XCTAssertFalse(DockGestureSwitches.isOn(NSNumber(value: 0)), "written as a number")
         XCTAssertTrue(DockGestureSwitches.isOn(NSNumber(value: 1)))
-        let noSwitch: [Any] = ["NO", "false", "", NSNull(), Date(timeIntervalSince1970: 0), [false], ["on": false], Data()]
+        for text in ["NO", "no", "No", "false", "FALSE", "False", "0"] {
+            XCTAssertFalse(DockGestureSwitches.isOn(text), text)
+            XCTAssertFalse(DockGestureSwitches.isOn(text as NSString), text)
+            XCTAssertFalse(DockGestureSwitches.isOn(text, whenMissing: false), text)
+        }
+        for text in ["YES", "yes", "true", "1", "", "off", "nope", "00", " no", "false "] {
+            XCTAssertTrue(DockGestureSwitches.isOn(text), "\"\(text)\"")
+            XCTAssertTrue(DockGestureSwitches.isOn(text, whenMissing: false), "\"\(text)\"")
+        }
+        let noSwitch: [Any] = [NSNull(), Date(timeIntervalSince1970: 0), [false], ["on": false], Data()]
         for value in noSwitch {
             XCTAssertTrue(DockGestureSwitches.isOn(value), "\(value)")
         }
+        XCTAssertEqual(
+            DockGestureSwitches(reading: { $0 == .missionControl ? "NO" : nil }),
+            DockGestureSwitches(missionControl: false, showDesktop: true, launchpad: true)
+        )
     }
 
     func testEachSwitchIsReadUnderItsOwnName() {
@@ -350,19 +365,38 @@ final class DockGestureSwitchesTests: XCTestCase {
     }
 
     /// The switches are read where the Spaces shortcuts are: when Scrollio starts, and when
-    /// it becomes active or System Settings goes to the background. Were one of the two
-    /// calls lost, a gesture switched off in System Settings would count as on for good and
-    /// its hold would do nothing, with no word. Read from the source.
+    /// it becomes active or System Settings goes to the background. And when the Dock
+    /// itself starts: a switch changed from outside System Settings (`defaults write`,
+    /// then `killall Dock`) would otherwise count as it was until Scrollio starts again,
+    /// since a menu bar app is rarely the active one. Were one of the calls lost, a
+    /// gesture switched off would count as on for good and its hold would do nothing,
+    /// with no word. Read from the source.
     func testTheSwitchesAreReadAtTheStartAndWhenTheyMayHaveChanged() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("Scrollio/AppDelegate.swift"), encoding: .utf8)
         let code = source.components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.hasPrefix("//") }
-        let reads = code.indices.filter { code[$0] == "DockGestureSwitches.reload()" }
-        XCTAssertEqual(reads.count, 2)
-        for read in reads where read > 0 {
-            XCTAssertEqual(code[read - 1], "SystemShortcut.reloadSystemShortcuts()", "beside the Spaces shortcuts")
+        let reads = code.indices.filter { code[$0] == "DockGestureSwitches.reload()" && $0 > 0 }
+        XCTAssertEqual(reads.count, 3)
+        let before = reads.map { code[$0 - 1] }
+        XCTAssertEqual(before.filter { $0 == "SystemShortcut.reloadSystemShortcuts()" }.count, 2, "beside the Spaces shortcuts")
+        XCTAssertEqual(
+            before.filter { $0 == "guard DockGestureSwitches.reloads(afterLaunchOf: launched?.bundleIdentifier) else { return }" }.count,
+            1, "when the Dock starts"
+        )
+        // The Dock's start is heard: the observer is there, with that method.
+        let observer = try XCTUnwrap(code.firstIndex(of: "name: NSWorkspace.didLaunchApplicationNotification,"))
+        XCTAssertEqual(code[observer - 1], "selector: #selector(reloadDockGestureSwitchesIfTheDockStarted),")
+        XCTAssertTrue(code.contains("@objc func reloadDockGestureSwitchesIfTheDockStarted(notification: NSNotification) {"))
+    }
+
+    /// Only the Dock's own start reads them again, not every app's.
+    func testOnlyTheDocksStartReadsTheSwitchesAgain() {
+        XCTAssertEqual(DockGestureSwitches.domain, "com.apple.dock", "the Dock's bundle identifier is its settings' name")
+        XCTAssertTrue(DockGestureSwitches.reloads(afterLaunchOf: "com.apple.dock"))
+        for other in ["com.apple.finder", "com.apple.systempreferences", "com.apple.Dock", "com.apple.dock.extra", "", nil] {
+            XCTAssertFalse(DockGestureSwitches.reloads(afterLaunchOf: other), "\(String(describing: other))")
         }
     }
 
