@@ -2219,7 +2219,9 @@ final class ApplicationPageTests: XCTestCase {
         let down = controls.actionPopUp(for: .down)
         func title(_ popup: NSPopUpButton) -> String? { return popup.menu?.items.first?.title }
 
-        XCTAssertEqual(row.title, "Up and Down follow the hand too (Experimental)")
+        XCTAssertEqual(row.title, "Up and Down follow the hand too")
+        XCTAssertEqual(row.toolTip, PreferencesGesturesTests.followNote, "as the pane's row")
+        XCTAssertEqual(toggle.toolTip, PreferencesGesturesTests.followNote)
         XCTAssertTrue(row.accessory === toggle)
         XCTAssertTrue(row.superview === part.modeRow?.superview, "in the box of the app's mode")
         XCTAssertEqual(toggle.state, .on, "the set started as a copy of the pane's")

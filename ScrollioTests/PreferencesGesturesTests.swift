@@ -552,20 +552,59 @@ final class PreferencesGesturesTests: XCTestCase {
         return settings
     }
 
-    /// Under "Mode", in its box, always there: the switch "Up and Down follow the hand too
-    /// (Experimental)". Only "Follow the hand" uses it: in "One action per hold" it is
-    /// dimmed and says so, and still shows the stored choice. It writes its own value and
-    /// nothing else.
+    /// What the row says when the pointer rests on it.
+    static let followNote = "Scrollio cannot see what macOS is showing. If you close a view another way "
+        + "(Esc, a click, the trackpad), the next move may open it at once or do nothing. "
+        + "After that it follows your hand again."
+
+    /// The switch is no longer marked "(Experimental)": what a person may meet is said
+    /// where the pointer rests, on the title, the line, the switch and the room between
+    /// them, in both modes. VoiceOver hears it after the line, in the mode that uses the
+    /// switch. The title fits, so the tooltip never stands in for a cut title.
+    func testTheFollowSwitchSaysInItsTooltipWhatToExpect() throws {
+        let controller = makeController()
+        controller.view.layoutSubtreeIfNeeded()
+        let row = try XCTUnwrap(controller.followRow)
+        let followToggle = controller.controls.followToggle
+        XCTAssertFalse(row.title.contains("Experimental"), row.title)
+        XCTAssertEqual(MouseGestureRows.followNote, Self.followNote)
+        for view in [row, row.titleLabel, row.explanationLabel, followToggle] as [NSView] {
+            XCTAssertEqual(view.toolTip, Self.followNote, "\(type(of: view)), one action per hold")
+        }
+        XCTAssertLessThanOrEqual(row.titleLabel.intrinsicContentSize.width, row.titleLabel.frame.width + 0.5, "the title is whole")
+        XCTAssertEqual(followToggle.accessibilityHelp(), "Only used in “Follow the hand”.", "the mode does not use it")
+
+        controller.controls.modeControl.selectedSegment = 1
+        send(controller.controls.modeControl)
+        controller.view.layoutSubtreeIfNeeded()
+        let line = try XCTUnwrap(row.explanation)
+        XCTAssertTrue(line.hasSuffix(Self.followsOnceElsewhere), line)
+        XCTAssertEqual(followToggle.accessibilityHelp(), line + " " + Self.followNote)
+        toggle(followToggle, on: true)
+        XCTAssertEqual(followToggle.accessibilityHelp(), line + " " + Self.followNote, "and with the switch on")
+        for view in [row, row.titleLabel, row.explanationLabel, followToggle] as [NSView] {
+            XCTAssertEqual(view.toolTip, Self.followNote, "\(type(of: view)), follow the hand")
+        }
+
+        controller.controls.modeControl.selectedSegment = 0
+        send(controller.controls.modeControl)
+        XCTAssertEqual(followToggle.accessibilityHelp(), "Only used in “Follow the hand”.", "back to the line alone")
+    }
+
+    /// Under "Mode", in its box, always there: the switch "Up and Down follow the hand
+    /// too". Only "Follow the hand" uses it: in "One action per hold" it is dimmed and
+    /// says so, and still shows the stored choice. It writes its own value and nothing
+    /// else.
     func testTheFollowSwitchSitsUnderModeAndWritesItsOwnSetting() throws {
         let controller = makeController()
         controller.view.layoutSubtreeIfNeeded()
         let row = try XCTUnwrap(controller.followRow)
         let followToggle = controller.controls.followToggle
-        XCTAssertEqual(row.title, "Up and Down follow the hand too (Experimental)")
+        XCTAssertEqual(row.title, "Up and Down follow the hand too")
         XCTAssertTrue(row.accessory === followToggle)
         XCTAssertTrue(followToggle is NSSwitch)
         XCTAssertEqual(followToggle.identifier, MouseGestureSettingsControls.Identifier.followActions)
-        XCTAssertEqual(followToggle.accessibilityLabel(), "Up and Down follow the hand too (Experimental)")
+        XCTAssertEqual(followToggle.accessibilityLabel(), "Up and Down follow the hand too")
         XCTAssertTrue(row.superview === controller.modeRow.superview, "in the box of the mode")
         // (The root view is not flipped: lower on screen is a smaller y.)
         XCTAssertLessThan(frame(of: row, in: controller).maxY, frame(of: controller.modeRow, in: controller).minY + 0.5)
@@ -1043,7 +1082,10 @@ final class PreferencesGesturesTests: XCTestCase {
         follow = follows(canPostEvents: false)
         controller.reload()
         XCTAssertEqual(row.explanation, none)
-        XCTAssertEqual(controller.controls.followToggle.accessibilityHelp(), none, "VoiceOver gets the line")
+        XCTAssertEqual(
+            controller.controls.followToggle.accessibilityHelp(), none + " " + Self.followNote,
+            "VoiceOver gets the line, and the tooltip after it"
+        )
         follow = follows(switches: DockGestureSwitches(missionControl: false, showDesktop: false, launchpad: false))
         controller.reload()
         XCTAssertEqual(row.explanation, none)

@@ -878,10 +878,17 @@ enum MouseGestureRows {
         return row
     }
 
-    /// "Up and Down follow the hand too (Experimental)", under "Mode": what it does on this
-    /// Mac under the title, the switch on the right. Always there, so that picking the
-    /// other mode never changes the height; only "Follow the hand" uses it
-    /// (`show(_:in:toggle:)`).
+    /// What the row "Up and Down follow the hand too" says when the pointer rests on it:
+    /// the one thing the line under the switch has no room for (after a view was closed
+    /// some other way, one move may go wrong).
+    static var followNote: String {
+        return text("gesture-follow-actions-note")
+    }
+
+    /// "Up and Down follow the hand too", under "Mode": what it does on this Mac under the
+    /// title, the switch on the right, `followNote` as the tooltip of all of it. Always
+    /// there, so that picking the other mode never changes the height; only "Follow the
+    /// hand" uses it (`show(_:in:toggle:)`).
     /// - Parameter reserving: every line the row can show (`MouseGestureSettingsControls.followHints`):
     ///   it keeps room for the longest, whatever the mode, the switch and the Dock say.
     static func followActions(_ toggle: NSControl, reserving hints: [String]) -> PreferencesGroupRow {
@@ -891,16 +898,23 @@ enum MouseGestureRows {
             accessory: toggle
         )
         row.reservedExplanations = hints
+        // Wherever the pointer rests on the row: its texts and its switch say it too.
+        for view in [row, row.titleLabel, row.explanationLabel, toggle] {
+            view.toolTip = followNote
+        }
         return row
     }
 
     /// Puts the switch "Up and Down follow the hand too" and its line into their row:
     /// dimmed in "One action per hold", with the line that says so (the stored choice
-    /// still shows).
+    /// still shows). Where the switch is in use, VoiceOver hears the tooltip after the line.
     static func show(_ follow: MouseGestureFollowPresentation, in row: PreferencesGroupRow, toggle: NSControl) {
         MouseGestureSettingsControls.setOn(follow.isOn, toggle)
         row.isEnabled = follow.isEditable
         row.explanation = follow.hint
+        if follow.isEditable {
+            toggle.setAccessibilityHelp(follow.hint + " " + followNote)
+        }
     }
 
     static func invert(_ toggle: NSControl) -> PreferencesGroupRow {

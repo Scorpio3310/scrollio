@@ -170,10 +170,10 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
 - Two modes: "One action per hold", and "Follow the hand", in which moving sideways
   slides the desktops with your hand, like a trackpad swipe. "Follow the hand" uses a
   private macOS interface; where it is missing, the mode is not available.
-- "Up and Down follow the hand too (Experimental)", a switch for "Follow the hand", off
-  until you turn it on: an Up or Down direction whose action is Mission Control or Show
-  Desktop opens that view with your hand, like the trackpad gesture, instead of running
-  once. The view starts to move where the action would have run (after about 40 points
+- "Up and Down follow the hand too", a switch for "Follow the hand", off until you turn
+  it on: an Up or Down direction whose action is Mission Control or Show Desktop opens
+  that view with your hand, like the trackpad gesture, instead of running once.
+  The view starts to move where the action would have run (after about 40 points
   of travel, so a click and the jolt of a press show nothing), goes back as your hand
   goes back and never past where it started, and when you let go macOS finishes it or
   puts it back, from how far it is and how fast your hand was moving. "Swipe speed" sets
@@ -211,7 +211,7 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   trackpad), the next move may open it at once instead of with your hand, or do nothing,
   once: a move that was meant to put Mission Control away and is not turned back to
   its start ends what Scrollio knew, so the move after it is that direction's own
-  action again.
+  action again. The switch's tooltip says this in three sentences.
 - A view that is opening with your hand goes back at once when the button is held for
   more than ten seconds, when the Shortcut Ring opens, when the desktop in use changes
   (not for the change Scrollio's own swipe of the desktops has just made, a gesture's

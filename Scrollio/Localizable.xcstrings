@@ -11543,7 +11543,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Up and Down follow the hand too (Experimental)"
+            "value": "Up and Down follow the hand too"
+          }
+        }
+      }
+    },
+    "gesture-follow-actions-note": {
+      "comment": "Gestures pane and an app's Gestures part: tooltip of the row \"Up and Down follow the hand too\" (VoiceOver hears it after the line under the switch): what to expect after a view that opened with the hand was closed some other way",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scrollio cannot see what macOS is showing. If you close a view another way (Esc, a click, the trackpad), the next move may open it at once or do nothing. After that it follows your hand again."
           }
         }
       }
