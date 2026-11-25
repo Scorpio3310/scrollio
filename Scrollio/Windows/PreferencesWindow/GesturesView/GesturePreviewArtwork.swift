@@ -48,6 +48,7 @@ enum GesturePreviewPalette {
         dark: NSColor(srgbRed: 0.15, green: 0.42, blue: 0.78, alpha: 1)
     )
     static let desktopDocument = ScrollPreviewPalette.adaptive(light: .white, dark: NSColor(white: 0.86, alpha: 1))
+    static let desktopDocumentLine = NSColor(white: 0, alpha: 0.28)
     static let desktopItemName = ScrollPreviewPalette.adaptive(light: NSColor(white: 1, alpha: 0.9), dark: NSColor(white: 1, alpha: 0.7))
     /// App icons, the photos in the second desktop's window and the dock.
     static let tiles: [NSColor] = [
@@ -857,7 +858,7 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
                 GesturePreviewPalette.desktopDocument.setFill()
                 NSBezierPath(roundedRect: sheet, xRadius: 1.5, yRadius: 1.5).fill()
                 NSGraphicsContext.restoreGraphicsState()
-                ScrollPreviewPalette.pageLine.setFill()
+                GesturePreviewPalette.desktopDocumentLine.setFill()
                 for row in 0..<3 {
                     capsule(NSRect(x: sheet.minX + 2, y: sheet.minY + 3 + CGFloat(row) * 3, width: row == 2 ? 4 : 6, height: 1.2)).fill()
                 }
@@ -1016,13 +1017,16 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         }
     }
 
-    /// Mission Control's row of Spaces, coming down from the top: the one on screen framed.
+    /// Mission Control's row of Spaces, coming down from under the menu bar, which stays
+    /// as it is (a hold that follows the hand can stop with the row half out): the one on
+    /// screen framed.
     private func drawSpacesBar(progress: CGFloat, current: Int) {
         let size = NSSize(width: 34, height: 21)
         let gap: CGFloat = 8
         let total = 2 * size.width + gap
         let y = Self.menuBarHeight + 5 - (1 - progress) * 30
         NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: NSRect(x: 0, y: Self.menuBarHeight, width: bounds.width, height: bounds.height - Self.menuBarHeight)).addClip()
         NSGraphicsContext.current?.cgContext.setAlpha(progress)
         for index in 0..<2 {
             let rect = NSRect(x: ((bounds.width - total) / 2).rounded() + CGFloat(index) * (size.width + gap), y: y, width: size.width, height: size.height)

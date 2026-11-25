@@ -314,10 +314,11 @@ struct GesturePreviewLoop {
     static let followTravelRange: ClosedRange<CGFloat> = 14...56
     /// The same for a view that opens with the hand up or down, where the card has less
     /// room: mouse travel from closed to whole at tracking speed 1, and the range it is kept
-    /// in (the mouse is let go at `followReleaseShare` of it, and its arrow must stay in
-    /// the card).
-    static let followVerticalTravelAtSpeed1: CGFloat = 15
-    static let followVerticalTravelRange: ClosedRange<CGFloat> = 8...18
+    /// in. The mouse is let go at `followReleaseShare` of it: at the slowest speed that is
+    /// `verticalReach`, as far as one action per hold takes the mouse, so the arrow ahead
+    /// of it keeps the same distance from the card's edge.
+    static let followVerticalTravelAtSpeed1: CGFloat = 12
+    static let followVerticalTravelRange: ClosedRange<CGFloat> = 8...15
     /// A view opened with the hand: it has opened by itself `followSettle` after the
     /// release, stays for `overlayHold` and is closed again `overlayOut` later.
     static var followCloseStart: TimeInterval { return followRelease + followSettle + overlayHold }

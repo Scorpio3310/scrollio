@@ -455,14 +455,16 @@ final class GesturePreviewMotionTests: XCTestCase {
     }
 
     func testAHigherSwipeSpeedNeedsLessMovementUpAndDownToo() {
-        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 1), 15)
-        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 1.5), 10)
-        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 0.5), 18, "kept inside the card")
+        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 1), 12)
+        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 1.2), 10)
+        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 0.8), 15)
+        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 0.5), 15, "kept inside the card")
         XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 3), 8, "still visibly moves")
-        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: .nan), 15)
-        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 0), 15)
-        // At Swipe speed 1 the mouse is let go as far out as one action per hold takes it.
-        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 1) * CGFloat(Loop.followReleaseShare), Loop.verticalReach, accuracy: 1e-9)
+        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: .nan), 12)
+        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 0), 12)
+        // The longest way: the mouse is let go as far out as one action per hold takes it,
+        // which the card has room for (with the arrow ahead of the mouse).
+        XCTAssertEqual(Loop.followVerticalTravelRange.upperBound * CGFloat(Loop.followReleaseShare), Loop.verticalReach, accuracy: 1e-9)
 
         let slow = Loop(scene: followScene(focus: .up) { $0.trackingSpeed = 1 })
         let fast = Loop(scene: followScene(focus: .up) { $0.trackingSpeed = 1.5 })
@@ -477,7 +479,7 @@ final class GesturePreviewMotionTests: XCTestCase {
         let free = Loop(scene: followScene(focus: .up) { $0.freezePointer = false })
         let frame = free.frame(at: Loop.followRelease)
         XCTAssertEqual(frame.pointerOffset.y, frame.mouseOffset.y * Loop.pointerGain)
-        XCTAssertLessThan(frame.pointerOffset.y, -10)
+        XCTAssertLessThan(frame.pointerOffset.y, -8)
         XCTAssertEqual(Loop(scene: followScene(focus: .up)).frame(at: Loop.followRelease).pointerOffset, .zero)
     }
 

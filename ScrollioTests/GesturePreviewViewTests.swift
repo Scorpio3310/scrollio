@@ -419,22 +419,32 @@ final class GesturePreviewViewTests: XCTestCase {
     }
 
     /// The longest way the hand goes (the slowest Swipe speed), at the moment it lets go:
-    /// every mouse, in the view it is held in, and the arrow ahead of it are inside the card.
+    /// every mouse, in the view it is held in, and the arrow ahead of it are inside the
+    /// card, the arrow clear of its edge and no nearer to it than in one action per hold.
     func testTheMouseAndItsArrowStayInTheCardWhileARowFollows() {
         for model in MouseArtworkModel.allCases {
             for picture in [TriggerPictureSource.none, gestureButton(on: model)] {
                 for focus in [MouseGestureSettingsControls.Slot.up, .down] {
                     let view = makeView(mouse: model, picture: picture)
+                    let card = view.deviceCard
+                    let message = "\(model), held \(picture == .none ? "nothing" : "its button"), \(focus)"
+                    // One action per hold, the mouse as far out as it goes.
+                    view.scene = scene(focus: focus)
+                    view.showLoop(at: Loop.moveEnd)
+                    let once = card.arrowView.frame
+                    XCTAssertFalse(card.arrowView.isHidden, message)
+
                     view.scene = followScene(focus: focus) { $0.trackingSpeed = MouseGestureSettings.trackingSpeedRange.lowerBound }
                     XCTAssertEqual(view.loop.followVerticalTravel, Loop.followVerticalTravelRange.upperBound)
                     view.showLoop(at: Loop.followRelease)
-                    let card = view.deviceCard
                     let mouse = card.mouse
                     let outline = mouse.outlineRect.offsetBy(dx: mouse.frame.minX, dy: mouse.frame.minY)
-                    let message = "\(model), held \(picture == .none ? "nothing" : "its button"), \(focus)"
+                    let arrow = card.arrowView.frame
                     XCTAssertEqual(view.shownFrame.arrow, 1, accuracy: 1e-9, message)
                     XCTAssertFalse(card.arrowView.isHidden, message)
-                    XCTAssertTrue(card.bounds.contains(card.arrowView.frame), "the arrow \(card.arrowView.frame): \(message)")
+                    XCTAssertTrue(card.bounds.insetBy(dx: 0, dy: 2).contains(arrow), "the arrow \(arrow): \(message)")
+                    XCTAssertGreaterThanOrEqual(arrow.minY, once.minY - 0.5, "the arrow \(arrow), once \(once): \(message)")
+                    XCTAssertLessThanOrEqual(arrow.maxY, once.maxY + 0.5, "the arrow \(arrow), once \(once): \(message)")
                     XCTAssertTrue(card.bounds.insetBy(dx: 1, dy: 1).contains(outline), "the mouse \(outline): \(message)")
                 }
             }
@@ -554,6 +564,30 @@ final class GesturePreviewViewTests: XCTestCase {
             for point in [(x: CGFloat(246 + 117), y: CGFloat(4)), (x: CGFloat(246 + 117), y: CGFloat(140))] {
                 XCTAssertEqual(try colour(in: rest, x: point.x, y: point.y), try colour(in: whole, x: point.x, y: point.y), message)
             }
+        }
+    }
+
+    /// Mission Control half open, as a hold that follows can stand still: the row of Spaces
+    /// comes out from under the menu bar, which keeps its look; it is not drawn over it.
+    func testTheSpacesComeDownFromUnderTheMenuBar() throws {
+        // Over the second Space (the warm one) in the row: in the menu bar, and under it.
+        let inMenuBar = (x: CGFloat(246 + 138), y: CGFloat(4))
+        let below = (x: CGFloat(246 + 138), y: CGFloat(14))
+        func warmth(_ colour: NSColor) -> CGFloat {
+            return colour.redComponent - colour.blueComponent
+        }
+        for dark in [false, true] {
+            let rest = try render(followScene(focus: .up), dark: dark, time: 0)
+            let half = try render(followScene(focus: .up), dark: dark, time: stopTime)
+            let message = dark ? "dark" : "light"
+            XCTAssertGreaterThan(
+                warmth(try colour(in: half, x: below.x, y: below.y)), warmth(try colour(in: rest, x: below.x, y: below.y)) + 0.2,
+                "the second Space shows under the menu bar: \(message)"
+            )
+            XCTAssertEqual(
+                warmth(try colour(in: half, x: inMenuBar.x, y: inMenuBar.y)), warmth(try colour(in: rest, x: inMenuBar.x, y: inMenuBar.y)),
+                accuracy: 0.06, "and not over it: \(message)"
+            )
         }
     }
 
@@ -1203,12 +1237,30 @@ final class GesturePreviewViewTests: XCTestCase {
         }
         var showDesktopOnce = showDesktopScene
         showDesktopOnce.gesture.mode = .discrete
+        let upSlowest = followScene(focus: .up) { $0.trackingSpeed = 0.5 }
+        // The longest way up and down on the mice that are held seen from above, where the
+        // card has the least room: the arrow must not touch its edge.
+        for (name, model, scene) in [
+            ("plain-mouse-up-slowest-let-go", MouseArtworkModel.generic, upSlowest),
+            ("plain-mouse-down-slowest-let-go", .generic, showDesktopDownSlowest),
+            ("mx-master-3-up-slowest-let-go", .mxMaster3, upSlowest),
+            ("mx-vertical-down-slowest-let-go", .mxVertical, showDesktopDownSlowest),
+            ("mx-anywhere-3-up-half", .mxAnywhere3, followScene(focus: .up)),
+        ] {
+            for dark in [false, true] {
+                let time = name.hasSuffix("half") ? stopTime : Loop.followRelease
+                let rep = try render(scene, dark: dark, time: time, mouse: model, picture: gestureButton(on: model), scale: 4)
+                let data = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
+                try data.write(to: directory.appendingPathComponent("\(name)-\(dark ? "dark" : "light").png"))
+            }
+        }
         let cases: [(String, GesturePreviewScene, TimeInterval?)] = [
             ("up-mission-control-half", followScene(focus: .up), stopTime),
             ("up-mission-control-let-go", followScene(focus: .up), Loop.followRelease),
             ("up-mission-control-whole", followScene(focus: .up), wholeTime),
             ("up-mission-control-reduce-motion", followScene(focus: .up), nil),
-            ("up-mission-control-slowest-let-go", followScene(focus: .up) { $0.trackingSpeed = 0.5 }, Loop.followRelease),
+            ("up-mission-control-slowest-let-go", upSlowest, Loop.followRelease),
+            ("up-mission-control-quarter", followScene(focus: .up), 0.8),
             ("down-apps-half", followScene(focus: .down), stopTime),
             ("down-apps-reduce-motion", followScene(focus: .down), nil),
             ("up-show-desktop-quarter", showDesktopScene, 0.8),
