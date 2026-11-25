@@ -930,6 +930,58 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(instantVoices, [])
     }
 
+    /// A hold the mouse tracks itself (a Logitech control that reports its own movement)
+    /// drives the same motion: its counts are the hand's movement, half a point each, and
+    /// Scrollio does not freeze the pointer for it.
+    func testAHoldTheMouseTracksItselfFollowsTheHandTheSameWay() {
+        configureFollowing()
+        let down = InputEvent(
+            type: .mouse, code: 3, modifiers: [], phase: .down, source: .hidPP, device: nil, tracksMovementOnDevice: true
+        )
+        XCTAssertEqual(InputProcessor.shared.process(down), .consumed)
+        XCTAssertFalse(MouseGesturePointerLock.shared.isLocked)
+
+        advanceFrame()
+        InputProcessor.shared.handleDeviceGestureMovement(code: 3, countsX: 0, countsY: -200)
+        XCTAssertEqual(swipeCalls, [], "nothing is posted from the report's callback")
+        runScheduledWork()
+        advanceFrame()
+        InputProcessor.shared.handleDeviceGestureMovement(code: 3, countsX: 6, countsY: -280)
+        runScheduledWork()
+        // The pointer's own movement is not this hold's.
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: -500)
+        runScheduledWork()
+        releaseGestureButton()
+
+        assertSwipeCalls([.begin(.vertical), .update(0.25), .update(0.6), .end(0)])
+        XCTAssertEqual(instantVoices, [])
+        XCTAssertEqual(hapticCues, [.lockIn, .commit])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+    }
+
+    /// The pointer freeze can add a false movement when it has to put the pointer back; it
+    /// is taken out of a motion up as it is out of the desktops' swipe.
+    func testThePointerFreezesFalseMovementIsTakenOutOfAMotionUpToo() {
+        configureFollowing()
+        XCTAssertEqual(
+            InputProcessor.shared.process(InputEvent(fromCGEvent: makeOtherMouseEvent(.otherMouseDown))),
+            .consumed
+        )
+
+        // The detach is not honoured: the pointer drifts 60 pt up and is put back.
+        let drifted = makeMouseMoveEvent(deltaX: 0, deltaY: -60, location: CGPoint(x: 100, y: 40))
+        MouseInteractionSessionController.shared.handleMotionTapEventForTests(drifted)
+        XCTAssertEqual(pointerWarps, [pointerAnchor])
+        // The next event is back where the pointer was and reports "hand (-60) + jump (+60)".
+        let snappedBack = makeMouseMoveEvent(deltaX: 0, deltaY: 0, location: pointerAnchor)
+        MouseInteractionSessionController.shared.handleMotionTapEventForTests(snappedBack)
+        XCTAssertEqual(swipeCalls, [], "nothing is posted from the tap's callback")
+        runScheduledWork()
+
+        // The hand moved 120 pt in all; without the compensation the view would show half.
+        assertSwipeCalls([.begin(.vertical), .update(0.3)])
+    }
+
     func testSidewaysIsTheDesktopsWhateverUpAndDownFollow() {
         configureFollowing(up: "missionControl", down: "showDesktop")
         Options.shared.gesture.leftAction = "missionControl"

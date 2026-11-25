@@ -236,7 +236,9 @@ class InputProcessor: ModifierFlagsProviding {
 
     // MARK: - Interactive Gesture State
     /// The hold that drives the interactive swipe. Only one swipe can run at a time, so a
-    /// second gesture button pressed meanwhile behaves like the discrete mode.
+    /// second gesture button pressed meanwhile behaves like the discrete mode. (Nil again
+    /// once the hold's swipe was taken back or could not begin, while its button is still
+    /// down: that hold reads no more movement.)
     private var interactiveGestureKey: TriggerKey?
     /// Movement source of that hold (kept apart so the motion tap callback needs no lookup).
     private var interactiveGestureSource = MouseGestureMovementSource.pointer
@@ -824,9 +826,10 @@ class InputProcessor: ModifierFlagsProviding {
 
     // MARK: - Haptic cues
     //
-    // - lockIn (light): a discrete action fires, or a "follow the hand" swipe begins.
-    // - commit (stronger): a swipe is released towards a switch
-    //   (`InteractiveGestureSession.isExpectedToSwitch`).
+    // - lockIn (light): a discrete action fires, or a "follow the hand" swipe begins
+    //   (sideways, or up or down towards a view of the Dock).
+    // - commit (stronger): a swipe is released towards a switch: the next Space, or a view
+    //   that is expected to open or to be left (`InteractiveGestureSession.isExpectedToSwitch`).
     // Only for buttons that arrive over HID++ and while "haptic feedback" is on; the mouse
     // side decides whether it can and may play (LogiCenter.playGestureHaptic).
 
@@ -1160,8 +1163,7 @@ class InputProcessor: ModifierFlagsProviding {
                 finishFollowedMotion(of: session, interruption.map { .cancelled($0) } ?? .cancelledAtRelease)
             case .discrete(let direction):
                 let action = session.settings.action(for: direction)
-                if case .onceInstead(_, let reason)? = session.follow?[direction], let part = session.follow?[direction],
-                   !action.isEmpty {
+                if let part = session.follow?[direction], case .onceInstead(_, let reason) = part, !action.isEmpty {
                     // It could have followed the hand: the log says why it did not.
                     let appsOwn = session.isAppsOwn
                     noteMouseGesture { DockFollowHold.ranOnceLine(direction, insteadOf: part, reason: reason, appsOwn: appsOwn) }
@@ -1275,7 +1277,7 @@ class InputProcessor: ModifierFlagsProviding {
     // MARK: - What happens around a hold
 
     /// What macOS tells Scrollio that matters to a swipe or to the belief.
-    enum SurroundingsChange: CaseIterable {
+    enum SurroundingsChange {
         case anotherApplicationCameToFront
         case activeSpaceChanged
         case screenParametersChanged
