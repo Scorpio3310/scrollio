@@ -1672,6 +1672,59 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertNil(preview.scene.focus)
     }
 
+    /// The picture goes by what the rows say: a row that follows the hand is played as a
+    /// hold that opens its view with the hand, and the moment the row runs once instead
+    /// (the Dock's own switch for the gesture went off, the switch of the pane is turned
+    /// off) the picture is the action run once.
+    func testThePictureChangesWithWhatTheRowsSayFollows() {
+        Options.shared.gesture = followSettings()
+        let controller = makeController()
+        let controls = controller.controls!
+        let preview = controller.previewView!
+        let up = controls.actionPopUp(for: .up)
+
+        controller.slotHoverChanged(.up, inside: true)
+        XCTAssertEqual(title(of: up), "Mission Control follows the hand")
+        XCTAssertEqual(preview.loop.legs, [.follow(.up, opening: .missionControl)])
+        XCTAssertEqual(preview.scene.availability, controls.availability)
+
+        // The Dock's own switch for Mission Control goes off (System Settings).
+        var switches = DockGestureSwitches.allOn
+        switches.missionControl = false
+        follow = follows(switches: switches)
+        NotificationCenter.default.post(name: DockGestureSwitches.didChangeNotification, object: nil)
+        XCTAssertEqual(title(of: up), SystemShortcut.missionControl.localizedName)
+        XCTAssertEqual(preview.loop.legs, [.move(.up, effect: .missionControl)], "the row runs once, and so does the picture")
+        XCTAssertEqual(preview.loopTime, 0, "the demo starts again")
+
+        // And on again; then the pane's own switch off.
+        follow = follows()
+        NotificationCenter.default.post(name: DockGestureSwitches.didChangeNotification, object: nil)
+        XCTAssertEqual(preview.loop.legs, [.follow(.up, opening: .missionControl)])
+        toggle(controls.followToggle, on: false)
+        XCTAssertEqual(preview.loop.legs, [.move(.up, effect: .missionControl)])
+        toggle(controls.followToggle, on: true)
+        XCTAssertEqual(preview.loop.legs, [.follow(.up, opening: .missionControl)])
+
+        // Down is Apps: run once in a release, as its row says; with the hand only in the
+        // owner's own build.
+        controller.slotHoverChanged(.down, inside: true)
+        controller.slotHoverChanged(.up, inside: false)
+        XCTAssertEqual(title(of: controls.actionPopUp(for: .down)), SystemShortcut.appExpose.localizedName)
+        XCTAssertEqual(preview.loop.legs, [.move(.down, effect: .appGrid)])
+        follow = follows(apps: true)
+        controller.reload()
+        XCTAssertEqual(title(of: controls.actionPopUp(for: .down)), "Apps follow the hand")
+        XCTAssertEqual(preview.loop.legs, [.follow(.down, opening: .appGrid)])
+
+        // Nothing pointed at: the round shows what follows, after left and right.
+        controller.slotHoverChanged(.down, inside: false)
+        XCTAssertEqual(preview.loop.legs.map(\.direction), [.left, .right, .up, .down])
+        follow = follows()
+        controller.reload()
+        XCTAssertEqual(preview.loop.legs.map(\.direction), [.left, .right, .up], "Apps runs once: not in the round")
+    }
+
     func testDirectionRowsReportThePointerAndThePopUpsTheFocus() throws {
         let controller = makeController()
         for slot in Slot.allCases {
