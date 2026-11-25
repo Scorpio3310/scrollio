@@ -1249,9 +1249,10 @@ class InputProcessor: ModifierFlagsProviding {
     }
 
     /// The last event of a hold's motion up or down went out, or the motion had been taken
-    /// back before: its one line in the log, and what Scrollio believes the Dock shows now.
-    /// A hold that was let go and is expected to open its view put that view up; one that
-    /// left Mission Control so leaves nothing believed. Any other end changes nothing.
+    /// back before: its one line in the log, and what Scrollio believes the Dock shows now
+    /// (`DockFollowedMotion.beliefChange`: a hold that was let go and is expected to open
+    /// its view put that view up; one that left Mission Control and was not turned back to
+    /// its start leaves nothing believed).
     private func finishFollowedMotion(of session: ActiveMouseGestureSession, _ ending: DockFollowedMotion.Ending) {
         guard let motion = session.followed else { return }
         session.followed = nil
@@ -1262,12 +1263,10 @@ class InputProcessor: ModifierFlagsProviding {
             // The state machine gave the hold up itself: older than its limit.
             ending = .cancelled(.noButtonUp)
         }
-        if case .ended(_, true) = ending {
-            switch motion.part {
-            case .opens(let target): dockBelief.holdOpened(target, at: now)
-            case .leavesMissionControl: dockBelief.drop()
-            case .once, .onceInstead: break
-            }
+        switch motion.beliefChange(after: ending) {
+        case .opened(let target): dockBelief.holdOpened(target, at: now)
+        case .dropped: dockBelief.drop()
+        case .none: break
         }
         let appsOwn = session.isAppsOwn
         noteMouseGesture { motion.line(ending, appsOwn: appsOwn) }
@@ -1300,16 +1299,28 @@ class InputProcessor: ModifierFlagsProviding {
     // MARK: - What happens around a hold
 
     /// What macOS tells Scrollio that matters to a swipe or to the belief.
-    enum SurroundingsChange {
+    enum SurroundingsChange: Equatable {
         case anotherApplicationCameToFront
+        /// Finder came to the front: as any other app, except that a believed Show Desktop
+        /// stays (a click on a file on the desktop is what that view is for).
+        case finderCameToFront
         case activeSpaceChanged
         case screenParametersChanged
         case displaysWentToSleep
+
+        static let finderBundleIdentifier = "com.apple.finder"
+
+        /// The change that an app coming to the front is, by the app's bundle identifier.
+        static func applicationCameToFront(bundleIdentifier: String?) -> SurroundingsChange {
+            return bundleIdentifier == finderBundleIdentifier ? .finderCameToFront : .anotherApplicationCameToFront
+        }
     }
 
     /// macOS told of a change (the observers below), or a test did.
     /// - Another app came to the front, or the desktop in use changed: whatever view
     ///   Scrollio put up is most likely gone, so nothing is believed to show any more.
+    ///   Finder in front keeps a believed Show Desktop: clicking a file on the desktop
+    ///   brings Finder to the front and is that view's use, and the view stays.
     /// - The desktop in use changed: a motion towards a view is taken back too (the Dock
     ///   has just rebuilt what the motion was moving). The desktops' own swipe goes on: its
     ///   own switch is such a change. And macOS tells of that switch late, up to about
@@ -1329,6 +1340,10 @@ class InputProcessor: ModifierFlagsProviding {
         switch change {
         case .anotherApplicationCameToFront:
             dockBelief.drop()
+        case .finderCameToFront:
+            if dockBelief.view(at: interactiveEnvironment.now()) != .showDesktop {
+                dockBelief.drop()
+            }
         case .activeSpaceChanged:
             guard !isLateWordOfOwnDesktopsSwipe else { return }
             dockBelief.drop()
@@ -1370,15 +1385,19 @@ class InputProcessor: ModifierFlagsProviding {
     private func observeSurroundings() {
         guard !AppRuntime.isRunningXCTest else { return }
         let workspace = NSWorkspace.shared.notificationCenter
-        let watched: [(NotificationCenter, Notification.Name, SurroundingsChange)] = [
-            (workspace, NSWorkspace.didActivateApplicationNotification, .anotherApplicationCameToFront),
-            (workspace, NSWorkspace.activeSpaceDidChangeNotification, .activeSpaceChanged),
-            (workspace, NSWorkspace.screensDidSleepNotification, .displaysWentToSleep),
-            (NotificationCenter.default, NSApplication.didChangeScreenParametersNotification, .screenParametersChanged),
+        let watched: [(NotificationCenter, Notification.Name, (Notification) -> SurroundingsChange)] = [
+            (workspace, NSWorkspace.didActivateApplicationNotification, { notification in
+                // Which app it is, only to know Finder (what the notification carries).
+                let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                return .applicationCameToFront(bundleIdentifier: application?.bundleIdentifier)
+            }),
+            (workspace, NSWorkspace.activeSpaceDidChangeNotification, { _ in .activeSpaceChanged }),
+            (workspace, NSWorkspace.screensDidSleepNotification, { _ in .displaysWentToSleep }),
+            (NotificationCenter.default, NSApplication.didChangeScreenParametersNotification, { _ in .screenParametersChanged }),
         ]
         surroundingsObservers = watched.map { center, name, change in
-            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                self?.surroundingsChanged(change)
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+                self?.surroundingsChanged(change(notification))
             }
         }
     }
@@ -1389,12 +1408,14 @@ class InputProcessor: ModifierFlagsProviding {
     /// about its views at a time, so whatever is left of a swipe is settled first: a motion
     /// towards a view that runs is cancelled, and a last event that was still to be posted
     /// again is posted now. A swipe of the desktops that runs goes on (the thumb wheel's
-    /// slide ends by itself, and the desktop switches, as before). And the toggle turns
-    /// over what Scrollio believes the Dock shows. Main thread.
+    /// slide ends by itself, and the desktop switches, as before). And the toggle ends
+    /// what Scrollio believes the Dock shows: it closes the believed view or puts up
+    /// another, and it is never believed itself (it may have closed a view that was
+    /// opened elsewhere; only a hold that followed the hand sets the belief). Main thread.
     func dockViewWillBeToggled(_ view: DockFollowTarget) {
         assertMainThread()
         DockSwipeSynthesizer.shared.settle()
-        dockBelief.toggled(view, at: interactiveEnvironment.now())
+        dockBelief.drop()
     }
 
     #if DEBUG

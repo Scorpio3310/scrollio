@@ -20,7 +20,7 @@
 //  when it draws a row. The numbers of the two motions are in `DockFollowTuning`; the
 //  events, their signs and the travel are in `DockSwipeSynthesizer.swift`.
 //
-//  Nothing here posts an event, and nothing is written anywhere: three Booleans of the
+//  Nothing here posts an event, and nothing is written anywhere: four Booleans of the
 //  Dock's settings are read (`docs/privacy.md`), never under XCTest.
 //
 
@@ -132,40 +132,64 @@ struct DockGestureSwitches: Equatable {
     var missionControl: Bool
     var showDesktop: Bool
     var launchpad: Bool
+    /// The gesture for App Exposé (an app's windows). Scrollio drives nothing towards it;
+    /// it is read because it is the other end of Mission Control's motion: where it is on,
+    /// the swipe that leaves Mission Control opens App Exposé from the desktop, so
+    /// Mission Control is not left with the hand there (`DockBelief.move`).
+    var appExpose: Bool
 
+    /// Every gesture Scrollio drives is on, and App Exposé's is off: a Mac on which none
+    /// of them was ever changed (macOS ships them so), and what a test run sees.
     static let allOn = DockGestureSwitches(missionControl: true, showDesktop: true, launchpad: true)
 
-    /// The three names in the Dock's settings. (A fourth, for App Exposé, is not read:
-    /// Scrollio drives nothing towards it.)
+    /// The four names in the Dock's settings.
     enum Key: String, CaseIterable {
         case missionControl = "showMissionControlGestureEnabled"
         case showDesktop = "showDesktopGestureEnabled"
         case launchpad = "showLaunchpadGestureEnabled"
+        case appExpose = "showAppExposeGestureEnabled"
+
+        /// What a name that is not stored counts as. The three gestures Scrollio drives
+        /// are on until someone turns one off; App Exposé's is off until someone turns it on.
+        var isOnWhenMissing: Bool {
+            switch self {
+            case .missionControl, .showDesktop, .launchpad: return true
+            case .appExpose: return false
+            }
+        }
     }
 
     /// The Dock's settings.
     static let domain = "com.apple.dock"
 
-    init(missionControl: Bool, showDesktop: Bool, launchpad: Bool) {
+    init(missionControl: Bool, showDesktop: Bool, launchpad: Bool, appExpose: Bool = false) {
         self.missionControl = missionControl
         self.showDesktop = showDesktop
         self.launchpad = launchpad
+        self.appExpose = appExpose
     }
 
-    /// Pure: the three switches from what is stored under their names.
+    /// Pure: the four switches from what is stored under their names.
     init(reading value: (Key) -> Any?) {
+        func isOn(_ key: Key) -> Bool {
+            return Self.isOn(value(key), whenMissing: key.isOnWhenMissing)
+        }
         self.init(
-            missionControl: Self.isOn(value(.missionControl)),
-            showDesktop: Self.isOn(value(.showDesktop)),
-            launchpad: Self.isOn(value(.launchpad))
+            missionControl: isOn(.missionControl),
+            showDesktop: isOn(.showDesktop),
+            launchpad: isOn(.launchpad),
+            appExpose: isOn(.appExpose)
         )
     }
 
-    /// A stored "false" (or the number 0) is off. A missing name counts as on (macOS has
-    /// these gestures on until someone turns one off, and a Mac without a trackpad has no
-    /// place to do that), and so does anything else: the values are another app's data and
-    /// may be anything.
-    static func isOn(_ value: Any?) -> Bool {
+    /// A stored "false" (or the number 0) is off, a stored "true" on. A missing name counts
+    /// as `whenMissing` (`Key.isOnWhenMissing`: macOS has the gestures Scrollio drives on
+    /// until someone turns one off, and a Mac without a trackpad has no place to do that).
+    /// Anything else that is stored counts as on: the values are another app's data and may
+    /// be anything. (For App Exposé that is the careful side too: on means "do not leave
+    /// Mission Control with the hand".)
+    static func isOn(_ value: Any?, whenMissing: Bool = true) -> Bool {
+        guard let value else { return whenMissing }
         guard let number = value as? NSNumber else { return true }
         return number.boolValue
     }
@@ -203,7 +227,7 @@ struct DockGestureSwitches: Equatable {
     /// which views open with the hand on this Mac.
     static let didChangeNotification = Notification.Name("ScrollioDockGestureSwitchesDidChange")
 
-    /// Reads the three switches again: when Scrollio starts, when it becomes active and
+    /// Reads the four switches again: when Scrollio starts, when it becomes active and
     /// when System Settings goes to the background, where a switch may just have been
     /// changed (`AppDelegate`, beside the Spaces shortcuts). Never from an event tap's
     /// callback: a hold takes `current`. Main thread.

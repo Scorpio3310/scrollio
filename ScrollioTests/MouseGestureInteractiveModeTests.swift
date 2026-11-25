@@ -681,6 +681,9 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
     /// How often a hold asked what follows on this Mac.
     private var availabilityQuestions = 0
 
+    /// The Dock's switches of a Mac whose trackpad gesture for App Exposé is on as well.
+    private let appExposeOn = DockGestureSwitches(missionControl: true, showDesktop: true, launchpad: true, appExpose: true)
+
     /// A Mac on which Mission Control and Show Desktop follow: macOS 27, an ordinary build.
     private func mac(
         swipe: Bool = true, post: Bool = true, major: Int = 27, switches: DockGestureSwitches = .allOn, apps: Bool = false
@@ -1157,8 +1160,8 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(dockVoices, [.settle, .toggle(.missionControl)])
         XCTAssertEqual(gestureLog, ["Gestures: up ran missionControl"], "no line about following")
 
-        // Scrollio opened Mission Control itself, and still Down is its own action.
-        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+        // Scrollio asked for Mission Control itself, and Down is its own action.
+        XCTAssertNil(InputProcessor.shared.believedDockView, "a toggle is never believed")
         dockVoices = []
         gestureLog = []
         hold([(0, 100)])
@@ -1197,7 +1200,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(swipeCalls, [])
         XCTAssertEqual(dockVoices, [.settle, .toggle(.missionControl)])
         XCTAssertEqual(gestureLog, [
-            "Gestures: up did not follow the hand: missionControl, Mission Control was showing",
+            "Gestures: up did not follow the hand: missionControl, Scrollio had just opened Mission Control",
             "Gestures: up ran missionControl",
         ])
         XCTAssertNil(InputProcessor.shared.believedDockView, "the toggle closed it")
@@ -1237,19 +1240,84 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(dockVoices, [.settle, .key(resolvedShortcut(SystemShortcut.appExpose).code)])
     }
 
-    func testLeavingMissionControlOnlyPartWayKeepsItBelieved() {
+    /// A hold that left Mission Control with the hand and was not turned back to its start
+    /// ends the belief, whatever macOS made of it: had Mission Control not been showing
+    /// (left with Esc), every further Down would do nothing for up to a minute. So one odd
+    /// move at most, and then Down is its own action again.
+    func testALeavingHoldThatWasNotTurnedBackEndsTheBelief() {
+        configureFollowing()
+        let appsKey = resolvedShortcut(SystemShortcut.appExpose).code
+        openMissionControlWithTheHand()
+
+        // A quarter of the way and let go at rest.
+        hold([(0, 100)])
+        assertSwipeCalls([.begin(.vertical), .update(-0.25), .end(0)])
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+        XCTAssertEqual(instantVoices, [], "a leaving hold never runs a toggle")
+
+        // The same move again is Down's own action: Apps, by its key.
+        swipeCalls = []
+        hold([(0, 100)])
+        XCTAssertEqual(swipeCalls, [])
+        XCTAssertEqual(instantVoices, [.settle, .key(appsKey)])
+
+        // Let go while heading back, short of the start: the belief ends as well.
+        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
+        openMissionControlWithTheHand()
+        pressGestureButton()
+        moveHand(0, 240)
+        clock += 0.2
+        moveHand(0, -40)
+        releaseGestureButton(after: 0.01)
+        assertSwipeCalls([.begin(.vertical), .update(-0.6), .update(-0.5), .cancel])
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+
+        // Something else took it back part of the way (the hold was older than its limit).
+        openMissionControlWithTheHand()
+        pressGestureButton()
+        moveHand(0, 100)
+        InputProcessor.shared.fireInteractiveGestureWatchdogForTests()
+        assertSwipeCalls([.begin(.vertical), .update(-0.25), .cancel])
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+        releaseGestureButton()
+    }
+
+    /// Turned back to where it started, the hold changed nothing: Mission Control is still
+    /// believed to show, and Down leaves it with the hand again.
+    func testALeavingHoldTurnedBackToItsStartKeepsTheBelief() {
         configureFollowing()
         openMissionControlWithTheHand()
 
-        hold([(0, 100)])
-        assertSwipeCalls([.begin(.vertical), .update(-0.25), .end(0)])
-        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl, "a quarter of the way: it stays")
-
-        swipeCalls = []
         hold([(0, 100), (0, -100)])
         assertSwipeCalls([.begin(.vertical), .update(-0.25), .update(0), .cancel])
         XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
         XCTAssertEqual(instantVoices, [])
+
+        swipeCalls = []
+        hold([(0, 240)])
+        assertSwipeCalls([.begin(.vertical), .update(-0.6), .end(0)])
+        XCTAssertNil(InputProcessor.shared.believedDockView, "it was left")
+    }
+
+    /// Where the trackpad gesture for App Exposé is on, the swipe that leaves Mission
+    /// Control opens App Exposé when Mission Control is not showing after all (it was left
+    /// with Esc): a wrong view. There the opposite direction keeps its own plan.
+    func testMissionControlIsNotLeftWithTheHandWhereAppExposeHasItsGesture() {
+        configureFollowing(up: "missionControl", down: "showDesktop", on: mac(switches: appExposeOn))
+        openMissionControlWithTheHand()
+
+        // Down is Show Desktop, with the hand, as without a belief.
+        hold([(0, 100)])
+        assertSwipeCalls([.begin(.pinch), .update(0.25), .end(0)])
+        XCTAssertEqual(instantVoices, [])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl, "nothing left it")
+
+        // The same move again still closes what Scrollio opened.
+        swipeCalls = []
+        dockVoices = []
+        hold([(0, -100)])
+        XCTAssertEqual(swipeCalls, [])
+        XCTAssertEqual(dockVoices, [.settle, .toggle(.missionControl)])
     }
 
     func testAHoldThatIsNotExpectedToOpenLeavesNothingBelieved() {
@@ -1265,28 +1333,76 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         assertSwipeCalls([.begin(.vertical), .update(0.25), .end(0)])
     }
 
-    /// Scrollio's own instant toggle counts like its swipe: the click (Mission Control by
-    /// default) puts the view up, and Up then closes it at once.
-    func testAnInstantToggleOfScrolliosIsBelievedToo() {
+    /// Only a hold that followed the hand is believed. An instant toggle of Scrollio's is
+    /// not: it may as well have closed a view that was opened elsewhere (a hot corner, the
+    /// trackpad). And any instant toggle ends a belief: what the Dock shows after it is
+    /// not known.
+    func testAnInstantToggleOfScrolliosIsNeverBelievedAndEndsABelief() {
         configureFollowing()
+        let appsKey = resolvedShortcut(SystemShortcut.appExpose).code
 
+        // The click (Mission Control by default): nothing is believed, so Up opens with the
+        // hand and Down is its own action.
         hold([])
         XCTAssertEqual(dockVoices, [.settle, .toggle(.missionControl)])
-        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+        dockVoices = []
+        hold([(0, 100)])
+        XCTAssertEqual(swipeCalls, [])
+        XCTAssertEqual(dockVoices, [.settle, .key(appsKey)], "Down is Apps, not a move that leaves Mission Control")
+        dockVoices = []
+        hold([(0, -100)])
+        assertSwipeCalls([.begin(.vertical), .update(0.25), .end(0)])
+        XCTAssertEqual(instantVoices, [])
 
+        // A toggle from anywhere in Scrollio (a button, the Shortcut Ring) sets nothing…
+        for action in ["missionControl", "showDesktop", "appExpose"] {
+            ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: action))
+            XCTAssertNil(InputProcessor.shared.believedDockView, action)
+        }
+        // …and ends what a hold had set, whichever view it asks for.
+        for action in ["missionControl", "showDesktop", "appExpose"] {
+            openMissionControlWithTheHand()
+            ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: action))
+            XCTAssertNil(InputProcessor.shared.believedDockView, action)
+        }
+    }
+
+    /// A click on a file on the desktop brings Finder to the front, and that is what Show
+    /// Desktop is for: the view stays, and so does the belief. Any other app in front
+    /// ends it, and Finder ends the belief of any other view.
+    func testFinderComingToTheFrontKeepsABelievedShowDesktop() {
+        configureFollowing(up: "showDesktop", down: "missionControl")
+
+        hold([(0, -240)])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .showDesktop)
+        InputProcessor.shared.surroundingsChanged(.finderCameToFront)
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .showDesktop)
+
+        // Up again brings the windows back, at once.
+        swipeCalls = []
         dockVoices = []
         hold([(0, -100)])
         XCTAssertEqual(swipeCalls, [])
-        XCTAssertEqual(dockVoices, [.settle, .toggle(.missionControl)])
+        XCTAssertEqual(dockVoices, [.settle, .toggle(.showDesktop)])
+
+        hold([(0, -240)])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .showDesktop)
+        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
         XCTAssertNil(InputProcessor.shared.believedDockView)
 
-        // A toggle from anywhere in Scrollio (a button, the Shortcut Ring) counts.
-        ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: "showDesktop"))
-        XCTAssertEqual(InputProcessor.shared.believedDockView, .showDesktop)
-        ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: "showDesktop"))
+        // Mission Control: Finder in front means it was left.
+        hold([(0, 240)])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+        InputProcessor.shared.surroundingsChanged(.finderCameToFront)
         XCTAssertNil(InputProcessor.shared.believedDockView)
-        ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: "appExpose"))
-        XCTAssertEqual(InputProcessor.shared.believedDockView, .apps)
+
+        // Which app it is comes with the notification: only Finder is told apart.
+        typealias Change = InputProcessor.SurroundingsChange
+        XCTAssertEqual(Change.applicationCameToFront(bundleIdentifier: "com.apple.finder"), .finderCameToFront)
+        for other in ["com.apple.Safari", "com.apple.dock", "com.apple.finder.Open-With-Pool", "", nil] {
+            XCTAssertEqual(Change.applicationCameToFront(bundleIdentifier: other), .anotherApplicationCameToFront)
+        }
     }
 
     func testTheBeliefIsDroppedByEachOfItsTriggers() {
@@ -1397,7 +1513,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
             "Gestures: up followed the hand: missionControl, vertical +, began after 17 ms, 1 update, "
                 + "furthest 0.60, at 0.60: cancelled (its swipe had been taken back)",
         ])
-        XCTAssertEqual(InputProcessor.shared.believedDockView, .showDesktop, "the toggle's view, not the hold's")
+        XCTAssertNil(InputProcessor.shared.believedDockView, "not the hold's view, and a toggle is never believed")
         XCTAssertEqual(hapticCues, [.lockIn])
         DockSwipeSynthesizer.shared.cancel()
     }

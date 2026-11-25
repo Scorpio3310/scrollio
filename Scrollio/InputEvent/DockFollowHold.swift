@@ -74,7 +74,8 @@ struct DockFollowHold: Equatable {
     enum Reason: Equatable {
         /// This Mac does not follow it now.
         case obstacle(DockFollowAvailability.Obstacle)
-        /// Scrollio believes the view is showing: the same move again closes it.
+        /// Scrollio believes the view is showing, because a hold of its own just opened
+        /// it: the same move again closes it.
         case showing(DockFollowTarget)
         /// The thumb wheel's swipe of the desktops was still running when the motion would
         /// have begun; a hold never takes that swipe over for another motion.
@@ -87,9 +88,10 @@ struct DockFollowHold: Equatable {
             case .obstacle(.swipeUnavailable): return "the swipe cannot be made on this Mac"
             case .obstacle(.gestureOff): return "the Dock's gesture is off"
             case .obstacle(.cannotPostEvents): return "cannot post events"
-            case .showing(.missionControl): return "Mission Control was showing"
-            case .showing(.showDesktop): return "Show Desktop was showing"
-            case .showing(.apps): return "Apps was showing"
+            // Not "was showing": Scrollio cannot know that, only what it opened itself.
+            case .showing(.missionControl): return "Scrollio had just opened Mission Control"
+            case .showing(.showDesktop): return "Scrollio had just opened Show Desktop"
+            case .showing(.apps): return "Scrollio had just opened Apps"
             case .wheelSwipeRunning: return "the wheel's swipe was running"
             }
         }
@@ -117,12 +119,20 @@ struct DockFollowHold: Equatable {
     init(settings: MouseGestureSettings, availability: DockFollowAvailability, believed: DockFollowTarget?) {
         let upPlan = settings.followPlan(for: .up, availability: availability)
         let downPlan = settings.followPlan(for: .down, availability: availability)
-        up = Self.part(for: upPlan, opposite: downPlan, believed: believed)
-        down = Self.part(for: downPlan, opposite: upPlan, believed: believed)
+        // Where the trackpad gesture for App Exposé is on, Mission Control is not left
+        // with the hand (the leaving swipe could open App Exposé instead).
+        let appExpose = availability.switches.appExpose
+        up = Self.part(for: upPlan, opposite: downPlan, believed: believed, appExposeGestureIsOn: appExpose)
+        down = Self.part(for: downPlan, opposite: upPlan, believed: believed, appExposeGestureIsOn: appExpose)
     }
 
-    private static func part(for plan: DockFollowPlan, opposite: DockFollowPlan, believed: DockFollowTarget?) -> Part {
-        switch DockBelief.move(for: plan, opposite: opposite, believed: believed) {
+    private static func part(
+        for plan: DockFollowPlan, opposite: DockFollowPlan, believed: DockFollowTarget?, appExposeGestureIsOn: Bool
+    ) -> Part {
+        let move = DockBelief.move(
+            for: plan, opposite: opposite, believed: believed, appExposeGestureIsOn: appExposeGestureIsOn
+        )
+        switch move {
         case .toggle(let view):
             return .onceInstead(view, .showing(view))
         case .leaveMissionControl:
@@ -229,6 +239,36 @@ struct DockFollowedMotion: Equatable {
         updates += 1
         last = abs(progress)
         furthest = max(furthest, last)
+    }
+
+    // MARK: What it does to the belief
+
+    /// What the end of a motion does to the view Scrollio believes it put up (`DockBelief`).
+    enum BeliefChange: Equatable {
+        case none
+        /// The hold opened this view with the hand.
+        case opened(DockFollowTarget)
+        /// Nothing is believed to show any more.
+        case dropped
+    }
+
+    /// What this motion's end does to the belief.
+    /// - A hold that opened a view and was let go as expected to open put that view up.
+    /// - A hold that left Mission Control ends the belief unless it was turned back to
+    ///   where it started (nothing was left then): whatever the Dock made of it, and
+    ///   whatever ended it. Had Mission Control not been showing after all, the next move
+    ///   is the direction's own action again, instead of nothing for up to a minute.
+    /// - Any other end changes nothing.
+    func beliefChange(after ending: Ending) -> BeliefChange {
+        switch part {
+        case .opens(let target):
+            if case .ended(_, expected: true) = ending { return .opened(target) }
+            return .none
+        case .leavesMissionControl:
+            return last > 0 ? .dropped : .none
+        case .once, .onceInstead:
+            return .none
+        }
     }
 
     private func share(_ progress: Double) -> String {
