@@ -8,6 +8,42 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
+## Unreleased
+
+**Up and Down follow the hand too (Experimental):** Mission Control and Show Desktop can
+open with your hand, like on a trackpad.
+
+### New
+
+- **"Up and Down follow the hand too (Experimental)"**, a switch in Gestures for "Follow
+  the hand", off until you turn it on. An Up or Down direction set to Mission Control or
+  Show Desktop opens it with your hand instead of running once.
+- **Let go and macOS finishes it** or puts it back, from how far it is and how fast your
+  hand was moving. A quick flick opens it at once, as before. "Swipe speed" sets how far
+  your hand goes for the whole view.
+- **Mission Control** follows on every macOS that has "Follow the hand", **Show Desktop**
+  on macOS 27 and later. Apps (Launchpad) and every other action run once, as before.
+- **The same move again closes** a view you just opened with your hand. While that
+  Mission Control is showing, the opposite move puts it away with your hand.
+- **The rows say what follows** ("Mission Control follows the hand"), and the line under
+  the switch names what opens with your hand on this Mac.
+- **A trackpad gesture that is off** in System Settings › Trackpad › More Gestures: that
+  direction runs its action once. Scrollio reads those switches and never changes them.
+- **Never left half-open:** a view that is opening with your hand goes back when the
+  Shortcut Ring opens, the desktop or the screens change, the Mac sleeps or Scrollio is
+  paused.
+- **For each app:** Safari › Gestures has the same switch for the app's own gestures.
+- **The picture in Gestures** shows the view opening with your hand where Up or Down
+  follows it, and Show Desktop has a picture of its own.
+- **What it cannot do yet:** Scrollio cannot ask macOS what is showing. After you leave a
+  view another way (Esc, a click, the trackpad), the next move may open it at once instead
+  of with your hand, or do nothing once. Not yet tried on macOS 14, 15 and 26.
+
+### Fixed
+
+- **A swipe between desktops** goes back when a display is connected or removed or the
+  displays go to sleep, instead of staying half-way.
+
 ## 1.1.1
 
 **Recovers by itself:** the wheel never goes quiet, hold keys and Logitech buttons don't
