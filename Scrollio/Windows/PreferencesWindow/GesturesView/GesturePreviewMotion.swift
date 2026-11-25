@@ -540,11 +540,13 @@ struct GesturePreviewLoop {
                 : CGPoint(x: offset.x * Self.pointerGain, y: offset.y * Self.pointerGain),
             actionsFired: fired, isAtRest: false
         )
-        switch leg.effect {
-        case .missionControl: frame.overview = opened
-        case .appGrid: frame.appGrid = opened
-        case .showDesktop: frame.showDesktop = opened
-        case .none, .space, .pulse, .pulseText: break
+        if leg.opensWithTheHand {
+            switch leg.effect {
+            case .missionControl: frame.overview = opened
+            case .appGrid: frame.appGrid = opened
+            case .showDesktop: frame.showDesktop = opened
+            case .none, .space, .pulse, .pulseText: break
+            }
         }
         var effectRunning = false
         if let fire = leg.fireTime, t >= fire {
