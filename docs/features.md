@@ -170,6 +170,42 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
 - Two modes: "One action per hold", and "Follow the hand", in which moving sideways
   slides the desktops with your hand, like a trackpad swipe. "Follow the hand" uses a
   private macOS interface; where it is missing, the mode is not available.
+- "Up and Down follow the hand too (Experimental)", a switch for "Follow the hand", off
+  until you turn it on: an Up or Down direction whose action is Mission Control or Show
+  Desktop opens that view with your hand, like the trackpad gesture, instead of running
+  once. The view starts to move where the action would have run (after about 40 points
+  of travel, so a click and the jolt of a press show nothing), goes back as your hand
+  goes back and never past where it started, and when you let go macOS finishes it or
+  puts it back, from how far it is and how fast your hand was moving. "Swipe speed" sets
+  how far the hand goes for the whole view (at 1, two fifths of the screen's height,
+  between 320 and 600 points). Mission Control follows on every macOS that has "Follow
+  the hand", Show Desktop on macOS 27 and later. Everything else is as before: Apps
+  (Launchpad) and every other action run once, Left and Right are the desktops, the
+  click is the click. An app's own gestures have the switch too, and the app in front
+  when you press decides.
+- A direction that could follow the hand runs its action once instead: where the view's
+  trackpad gesture is switched off in System Settings › Trackpad › More Gestures (the
+  Dock would ignore the motion; Scrollio reads those switches and never changes them);
+  while macOS does not let Scrollio post events; while the thumb wheel's "Follow the
+  wheel" still slides the desktops or rests after a turn (a gesture never takes that
+  swipe over for another motion); and when Scrollio itself opened that view a moment
+  ago: the same move again closes it at once. While Mission Control that Scrollio opened
+  is showing, the opposite move puts it away with your hand, as a trackpad's swipe down
+  does, instead of running its own action. Scrollio cannot ask the Dock what it shows:
+  it only knows of a view it opened itself (with your hand, or by a Mission Control,
+  Show Desktop or Apps action of a button, a gesture or the Shortcut Ring), for a
+  minute, and no longer once another app comes to the front, the desktop in use
+  changes, the Mac sleeps or Scrollio is paused. After you left such a view another way
+  (Esc, a click on a window of the same app, the trackpad), the next move may open it at
+  once instead of with your hand, or do nothing once.
+- A view that is opening with your hand goes back at once when the button is held for
+  more than ten seconds, when the Shortcut Ring opens, when the desktop in use changes,
+  when the screens change or the displays go to sleep (the desktops' swipe too, for
+  these two), and when Scrollio stops (sleep, another user, Pause, quit). The Dock is
+  never asked two things at once: before Scrollio asks it for Mission Control, Show
+  Desktop or Apps in one go, from any button, gesture or place of the ring, a swipe that
+  still runs is taken back first (the thumb wheel's too), and no gesture ever sends both
+  a swipe and the action of the same direction.
 - "Freeze pointer during a gesture" keeps the pointer where it is while you hold the
   button. While the mouse tracks every button that runs the gestures itself ("Let the
   mouse track the gesture"), the mouse holds the pointer still whatever the switch says:
@@ -420,7 +456,10 @@ wheel.
   or rest, and it follows again. A swipe that ends within 0.7 s of such a bounce, or of a
   swipe that slid back, is given a second for its switch: macOS says it later while it
   still draws the one before, and the wheel is not held up that way for it.
-  While a gesture's swipe runs the wheel waits; a gesture that starts one takes over.
+  While a gesture's swipe runs the wheel waits; a gesture that starts one sideways takes
+  over, and one that would open Mission Control or Show Desktop with the hand runs that
+  action once instead (see [Mouse gestures](#mouse-gestures)), which takes the wheel's swipe
+  back first.
   Where macOS cannot be sent a swipe, the desktops go in steps.
 - For every action but Scroll Sideways, a small tick of the wheel, or a pair of them
   (where the thumb lets go of it or takes it again), does nothing on its own: the ticks

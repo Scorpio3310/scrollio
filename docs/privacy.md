@@ -101,7 +101,11 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](../SECU
     on (System Settings › Trackpad › More Gestures), when Scrollio starts or comes to the
     front and when System Settings was in front. Where a gesture is off the Dock ignores
     the motion, so that direction runs its action once instead. Nothing else of the
-    Dock's settings is read, and none is changed;
+    Dock's settings is read, and none is changed. Scrollio never asks the Dock what it
+    shows: it remembers, for a minute and only while it runs, which view it opened
+    itself, and hears from macOS that another app came to the front, that the desktop
+    in use changed, that the screens changed or that the displays went to sleep, to
+    forget that view or to take a swipe back;
   - which app is under the pointer or in front, for the per-app settings and "Smooth
     Scrolling in …". With "Trackpad-style scrolling (Experimental)" on, for a wheel scroll in an
     app that gets the one-touch form, it reads the kind of the element under the pointer
