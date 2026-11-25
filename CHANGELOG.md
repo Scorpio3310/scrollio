@@ -8,7 +8,7 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
-## Unreleased
+## 1.1.2
 
 **Up and Down follow the hand too:** Mission Control, Show Desktop and Apps can open with
 your hand, like on a trackpad.
