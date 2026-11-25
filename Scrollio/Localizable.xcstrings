@@ -896,7 +896,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "How far the desktops move with your hand."
+            "value": "How far the screen moves with your hand."
           }
         }
       }
@@ -973,7 +973,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Only used when the desktops follow the hand."
+            "value": "Only used in “Follow the hand”."
           }
         }
       }
@@ -11532,6 +11532,114 @@
           "stringUnit": {
             "state": "translated",
             "value": "Not smoothed: no display frames"
+          }
+        }
+      }
+    },
+    "gesture-follow-actions-label": {
+      "comment": "Gestures pane and an app's Gestures part: the switch under \"Mode\" that makes the Up and Down directions open Mission Control and Show Desktop with the hand, as the desktops follow it sideways",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up and Down follow the hand too (Experimental)"
+          }
+        }
+      }
+    },
+    "gesture-follow-actions-hint-one": {
+      "comment": "Gestures pane: under \"Up and Down follow the hand too\" in \"Follow the hand\", while one action can open with the hand on this Mac; %@ is its name (\"Mission Control\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ opens with your hand, like on a trackpad. Other actions run once."
+          }
+        }
+      }
+    },
+    "gesture-follow-actions-hint-several": {
+      "comment": "Gestures pane: under \"Up and Down follow the hand too\" in \"Follow the hand\", while several actions can open with the hand on this Mac; %@ is the list of their names (\"Mission Control and Show Desktop\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ open with your hand, like on a trackpad. Other actions run once."
+          }
+        }
+      }
+    },
+    "gesture-follow-actions-hint-none": {
+      "comment": "Gestures pane: under \"Up and Down follow the hand too\" in \"Follow the hand\", while no action can open with the hand on this Mac (the trackpad gestures are off in System Settings, or macOS lets Scrollio post no events)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing can open with your hand on this Mac right now. Every action runs once."
+          }
+        }
+      }
+    },
+    "gesture-follow-actions-hint-discrete": {
+      "comment": "Gestures pane: under \"Up and Down follow the hand too\" while the mode is \"One action per hold\"; the switch is dimmed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only used in “Follow the hand”."
+          }
+        }
+      }
+    },
+    "gesture-follow-action-value": {
+      "comment": "Gestures pane: what the pull-down of Up or Down shows in place of its action while that action opens with the hand; %@ is the action's name (\"Mission Control\", \"Show Desktop\", \"Launchpad\")",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ follows the hand"
+          }
+        }
+      }
+    },
+    "gesture-follow-apps-value": {
+      "comment": "Gestures pane: what the pull-down of Up or Down shows in place of the action \"Apps\" (macOS 26 and later) while it opens with the hand; \"Apps\" is a plural",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps follow the hand"
+          }
+        }
+      }
+    },
+    "gesture-follow-once-macos": {
+      "comment": "Gestures pane: tooltip and VoiceOver help of the pull-down of Up or Down while \"Up and Down follow the hand too\" is on and its action cannot open with the hand on this version of macOS",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runs once. It does not follow the hand on this version of macOS."
+          }
+        }
+      }
+    },
+    "gesture-follow-once-gesture-off": {
+      "comment": "Gestures pane: tooltip and VoiceOver help of the pull-down of Up or Down while \"Up and Down follow the hand too\" is on and the trackpad gesture for its action is switched off in System Settings (Trackpad, More Gestures)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runs once. Its trackpad gesture is off in System Settings."
           }
         }
       }

@@ -6,7 +6,11 @@
 //
 //  On top a preview that shows what a gesture does with the current settings (and the
 //  gesture of the row under the pointer), on the connected mouse holding the button the
-//  first row names first (`MouseGestureBindingSummary.picture`). Then a box with the mode, a box with the action
+//  first row names first (`MouseGestureBindingSummary.picture`). Then a box with the mode
+//  and, under it, the switch "Up and Down follow the hand too" (always there, used only in
+//  "Follow the hand"; its line names what opens with the hand on this Mac, and the Up and
+//  Down rows then say so in place of their action: `MouseGestureFollowPresentation`; the
+//  pane shows it anew when the Dock's own gesture switches change), a box with the action
 //  of every direction and of Click, a box with how a gesture behaves (invert, freeze,
 //  swipe speed) and, when a connected mouse can do it, a box with what a Logitech mouse
 //  does itself; under it, while the mouse has its haptics off because the user switched
@@ -43,8 +47,9 @@ final class GesturesPreferencesViewController: NSViewController {
     static var boxWidth: CGFloat {
         return PreferencesGroupedForm.boxWidth(paneWidth: paneWidth)
     }
-    /// All action pop-ups have this width, so they line up (the Buttons pane's).
-    static let popUpWidth: CGFloat = ButtonActionPullDown.width
+    /// All action pop-ups have this width, so they line up: wider than the Buttons pane's,
+    /// for the sentence a row shows where its direction follows the hand.
+    static let popUpWidth: CGFloat = ButtonActionPullDown.gestureWidth
     /// Room for the widest tracking speed ("2.75×"): the kit's value column, so the slider
     /// stands where the Scrolling pane's sliders stand.
     static let trackingSpeedValueWidth: CGFloat = PreferencesGroupedForm.sliderValueWidth
@@ -101,6 +106,9 @@ final class GesturesPreferencesViewController: NSViewController {
     private(set) var focusedSlot: Slot?
 
     private let isInteractiveAvailable: () -> Bool
+    /// What can follow the hand up and down on this Mac now; tests and screenshots give
+    /// their own (`MouseGestureSettingsControls.availability` is what the pane goes by).
+    private let followAvailability: () -> DockFollowAvailability
 
     // MARK: - Views (read access for tests)
 
@@ -116,6 +124,8 @@ final class GesturesPreferencesViewController: NSViewController {
         return triggerChooser.pullDown
     }
     private(set) var modeRow: PreferencesGroupRow!
+    /// "Up and Down follow the hand too", under "Mode".
+    private(set) var followRow: PreferencesGroupRow!
     /// Up, Down, Left, Right, Click, in `Slot.allCases` order, and the line under the title.
     private(set) var directionRows: [PreferencesGroupRow] = []
     private(set) var directionsHintLabel: NSTextField!
@@ -157,14 +167,19 @@ final class GesturesPreferencesViewController: NSViewController {
 
     // MARK: - Lifecycle
 
-    init(isInteractiveAvailable: @escaping () -> Bool = { DockSwipeSynthesizer.shared.isAvailable }) {
+    init(
+        isInteractiveAvailable: @escaping () -> Bool = { DockSwipeSynthesizer.shared.isAvailable },
+        followAvailability: @escaping () -> DockFollowAvailability = { .live }
+    ) {
         self.isInteractiveAvailable = isInteractiveAvailable
+        self.followAvailability = followAvailability
         super.init(nibName: nil, bundle: nil)
         title = NSLocalizedString("gestures-tab-title", comment: "")
     }
 
     required init?(coder: NSCoder) {
         isInteractiveAvailable = { DockSwipeSynthesizer.shared.isAvailable }
+        followAvailability = { .live }
         super.init(coder: coder)
         title = NSLocalizedString("gestures-tab-title", comment: "")
     }
@@ -182,7 +197,8 @@ final class GesturesPreferencesViewController: NSViewController {
 
         controls = MouseGestureSettingsControls(
             showLogiActions: bindingSummary().hasLogitechGestureButton,
-            isInteractiveAvailable: isInteractiveAvailable
+            isInteractiveAvailable: isInteractiveAvailable,
+            followAvailability: followAvailability
         )
         controls.onChange = { [weak self] in self?.reload() }
         controls.onFocusChange = { [weak self] slot, focused in self?.slotFocusChanged(slot, focused: focused) }
@@ -194,7 +210,7 @@ final class GesturesPreferencesViewController: NSViewController {
         previewView = preview
 
         let width = Self.boxWidth
-        let first = PreferencesGroupSection(width: width, rows: [makeGestureButtonRow(), makeModeRow()])
+        let first = PreferencesGroupSection(width: width, rows: [makeGestureButtonRow(), makeModeRow(), makeFollowRow()])
         directionRows = Slot.allCases.map { makeDirectionRow($0) }
         let directions = makeDirectionsSection(rows: directionRows)
         directionsSection = directions
@@ -246,6 +262,12 @@ final class GesturesPreferencesViewController: NSViewController {
             name: LogiCenter.mouseStateChanged,
             object: nil
         )
+        // The Dock's own switches for its trackpad gestures were read again and differ
+        // (System Settings › Trackpad › More Gestures), or macOS gave or took the right to
+        // post events: what opens with the hand on this Mac changed.
+        for name in [DockGestureSwitches.didChangeNotification, ScrollPoster.postEventAccessDidChangeNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(deviceStateDidChange(_:)), name: name, object: nil)
+        }
         // Edit › Undo or Redo of a change in Buttons or an app's Buttons part can change
         // which button runs the gestures while the pane shows.
         for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
@@ -320,6 +342,7 @@ final class GesturesPreferencesViewController: NSViewController {
         gestureButtonRow.explanation = summary.hasGestureButton && summary.buttonTitles.count == 1
             ? text("gestures-gesture-button-one") : summary.gestureButtonExplanation(fittingTwoLinesOf: gestureButtonLineWidth)
         modeRow.explanation = text(presentation.descriptionKey)
+        MouseGestureRows.show(controls.followPresentation, in: followRow, toggle: controls.followToggle)
         // No button runs these gestures (none at all, or only in apps that run their own):
         // what is under the first box waits, folded.
         let runsThese = summary.hasGestureButton || summary.onlyInApps?.usesGeneralSettings == true
@@ -553,6 +576,13 @@ final class GesturesPreferencesViewController: NSViewController {
     private func makeModeRow() -> PreferencesGroupRow {
         let row = MouseGestureRows.mode(controls.modeControl)
         modeRow = row
+        return row
+    }
+
+    /// "Up and Down follow the hand too", under "Mode".
+    private func makeFollowRow() -> PreferencesGroupRow {
+        let row = MouseGestureRows.followActions(controls.followToggle, reserving: controls.followHints)
+        followRow = row
         return row
     }
 

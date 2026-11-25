@@ -2027,13 +2027,16 @@ final class ApplicationPageTests: XCTestCase {
     /// Calculator's page on its Gestures part, with the menus' Logitech actions off and
     /// the connected mice able to do `mice`.
     private func gesturesPart(
-        interactiveAvailable: Bool = false, mice: MouseGestureDeviceSupport = .none
+        interactiveAvailable: Bool = false, mice: MouseGestureDeviceSupport = .none,
+        follow: @escaping () -> DockFollowAvailability = { PreferencesGesturesTests.follows() }
     ) throws -> (PreferencesApplicationViewController, ApplicationGesturesPartViewController) {
         let pane = makePane()
         pane.openApplication(withID: Self.calculator, part: .gestures)
         let part = try XCTUnwrap(pane.detailController?.gesturesPart)
         part.showsLogiActions = { false }
         part.isInteractiveAvailable = { interactiveAvailable }
+        // (What can follow the hand on the Mac a test describes, never this Mac's own.)
+        part.followAvailability = follow
         part.deviceSource = MouseGestureDeviceSource(support: { mice }, refresh: {})
         part.syncViewWithOptions()
         return (pane, part)
@@ -2192,6 +2195,97 @@ final class ApplicationPageTests: XCTestCase {
         part.syncViewWithOptions()
         XCTAssertTrue(part.directionRows[MouseGestureSettingsControls.Slot.left.rawValue].isEnabled)
         XCTAssertEqual(controls.actionPopUp(for: .left).menu?.items.first?.title, SystemShortcut.moveSpaceLeft.localizedName)
+    }
+
+    /// The app's own set has the pane's switch "Up and Down follow the hand too" under its
+    /// own "Mode", for its own set: it starts as the pane's (the set is a copy), writes the
+    /// app's value and nothing of the general gestures, and the app's Up and Down rows say
+    /// what follows by the app's own mode and switch, as the pane's do. A set from before
+    /// the switch shows the general choice until the page sets one.
+    func testTheAppsOwnSetHasItsOwnFollowSwitchAndItsRowsSayWhatFollows() throws {
+        let calculator = addApp(Self.calculator)
+        var general = MouseGestureSettings.default
+        general.mode = .interactive
+        general.actionsFollowHand = true
+        Options.shared.gesture = general
+        calculator.setUsesGeneralGestures(false, general: general)
+        var mac = PreferencesGesturesTests.follows(apps: false)
+        let (pane, part) = try gesturesPart(interactiveAvailable: true, follow: { mac })
+        let controls = try XCTUnwrap(part.controls)
+        let row = try XCTUnwrap(part.followRow)
+        let toggle = try XCTUnwrap(controls.followToggle as? NSSwitch)
+        let up = controls.actionPopUp(for: .up)
+        let down = controls.actionPopUp(for: .down)
+        func title(_ popup: NSPopUpButton) -> String? { return popup.menu?.items.first?.title }
+
+        XCTAssertEqual(row.title, "Up and Down follow the hand too (Experimental)")
+        XCTAssertTrue(row.accessory === toggle)
+        XCTAssertTrue(row.superview === part.modeRow?.superview, "in the box of the app's mode")
+        XCTAssertEqual(toggle.state, .on, "the set started as a copy of the pane's")
+        XCTAssertTrue(row.isEnabled)
+        XCTAssertEqual(row.explanation, "Mission Control and Show Desktop open with your hand, like on a trackpad. Other actions run once.")
+        XCTAssertEqual(title(up), "Mission Control follows the hand")
+        XCTAssertTrue(up.isEnabled)
+        XCTAssertEqual(title(down), SystemShortcut.appExpose.localizedName, "Apps runs once in a released build")
+        XCTAssertEqual(down.toolTip, "Runs once. It does not follow the hand on this version of macOS.")
+        XCTAssertEqual(down.accessibilityHelp(), down.toolTip)
+        pane.detailController?.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(up.frame.width, ButtonActionPullDown.gestureWidth, accuracy: 0.5, "as wide as the pane's")
+        XCTAssertFalse(part.view.hasAmbiguousLayout)
+
+        // The Dock's own switches changed: the part on the page follows.
+        var switches = DockGestureSwitches.allOn
+        switches.missionControl = false
+        mac = PreferencesGesturesTests.follows(apps: false, switches: switches)
+        NotificationCenter.default.post(name: DockGestureSwitches.didChangeNotification, object: nil)
+        XCTAssertEqual(title(up), SystemShortcut.missionControl.localizedName)
+        XCTAssertEqual(up.toolTip, "Runs once. Its trackpad gesture is off in System Settings.")
+        XCTAssertEqual(row.explanation, "Show Desktop opens with your hand, like on a trackpad. Other actions run once.")
+        mac = PreferencesGesturesTests.follows(apps: false)
+        NotificationCenter.default.post(name: DockGestureSwitches.didChangeNotification, object: nil)
+        XCTAssertEqual(title(up), "Mission Control follows the hand")
+
+        // Off for this app only.
+        toggle.state = .off
+        send(toggle)
+        XCTAssertEqual(calculator.ownGestures?.actionsFollowHand, false)
+        XCTAssertTrue(Options.shared.gesture.actionsFollowHand, "the pane's switch is untouched")
+        XCTAssertEqual(Options.shared.gesture, general)
+        XCTAssertEqual(title(up), SystemShortcut.missionControl.localizedName)
+        XCTAssertNil(down.toolTip, "nothing asks, so nothing is said")
+        XCTAssertTrue(part.hasSettingsToReset, "the set differs from the pane's")
+        toggle.state = .on
+        send(toggle)
+        XCTAssertEqual(calculator.ownGestures?.actionsFollowHand, true)
+        XCTAssertEqual(title(up), "Mission Control follows the hand")
+
+        // The app's own mode decides, as for Left and Right.
+        controls.modeControl.selectedSegment = 0
+        send(controls.modeControl)
+        XCTAssertFalse(row.isEnabled)
+        XCTAssertFalse(toggle.isEnabled)
+        XCTAssertEqual(toggle.state, .on, "the choice still shows")
+        XCTAssertEqual(row.explanation, "Only used in “Follow the hand”.")
+        XCTAssertEqual(title(up), SystemShortcut.missionControl.localizedName)
+        controls.modeControl.selectedSegment = 1
+        send(controls.modeControl)
+        XCTAssertEqual(title(up), "Mission Control follows the hand")
+
+        // A set from before the switch has no value of its own: the pane's counts, and a
+        // click makes it the app's.
+        calculator.changeOwnGestures { $0.actionsFollowHand = nil }
+        Options.shared.gesture.actionsFollowHand = false
+        part.syncViewWithOptions()
+        XCTAssertEqual(toggle.state, .off)
+        XCTAssertEqual(title(up), SystemShortcut.missionControl.localizedName)
+        Options.shared.gesture.actionsFollowHand = true
+        part.syncViewWithOptions()
+        XCTAssertEqual(toggle.state, .on)
+        XCTAssertEqual(title(up), "Mission Control follows the hand")
+        toggle.state = .off
+        send(toggle)
+        XCTAssertEqual(calculator.ownGestures?.actionsFollowHand, false)
+        XCTAssertTrue(Options.shared.gesture.actionsFollowHand)
     }
 
     /// The app's own set has every row of the Gestures pane but the button to hold, in
