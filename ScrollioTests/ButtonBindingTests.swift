@@ -477,10 +477,15 @@ final class ButtonBindingTests: XCTestCase {
         XCTAssertNil(pullDown.menu?.items.first?.image)
     }
 
-    func testPullDown_isAPullDownAsWideAsTheGesturesPullDowns() {
+    /// (The pull-downs of the Gestures pane were as wide until a direction's title could be
+    /// a sentence, "Mission Control follows the hand": they are 24 pt wider now.)
+    func testPullDown_isAPullDown240PointsWideAndTheGesturesPullDownsAreWider() {
         let pullDown = makePullDown(binding: makeBinding(SystemShortcut.scrollDash))
         XCTAssertTrue(pullDown.pullsDown)
-        XCTAssertEqual(ButtonActionPullDown.width, GesturesPreferencesViewController.popUpWidth)
+        XCTAssertEqual(ButtonActionPullDown.width, 240)
+        XCTAssertEqual(ButtonActionPullDown.width, RingPreferencesViewController.popUpWidth)
+        XCTAssertEqual(GesturesPreferencesViewController.popUpWidth, ButtonActionPullDown.gestureWidth)
+        XCTAssertGreaterThan(ButtonActionPullDown.gestureWidth, ButtonActionPullDown.width)
         XCTAssertEqual(shownTitle(pullDown), "Scroll Faster")
         // The symbol alone: no brand tag drawn in front of it.
         let image = pullDown.menu?.items.first?.image

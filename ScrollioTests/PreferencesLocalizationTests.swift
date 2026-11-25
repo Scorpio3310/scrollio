@@ -158,6 +158,10 @@ final class PreferencesLocalizationTests: XCTestCase {
         "mouse-gesture-haptics", "mouse-gesture-haptics-hint", "mouse-gesture-haptics-unavailable",
         "gestures-haptics-off-under-mouse", "gestures-open-mouse", "gestures-undo-reset",
         "gesture-freeze-pointer-mouse-holds", "gesture-freeze-pointer-mouse-holds-some",
+        "gesture-follow-actions-label", "gesture-follow-actions-hint-one", "gesture-follow-actions-hint-several",
+        "gesture-follow-actions-hint-none", "gesture-follow-actions-hint-discrete",
+        "gesture-follow-action-value", "gesture-follow-apps-value",
+        "gesture-follow-once-macos", "gesture-follow-once-gesture-off",
     ]
 
     /// Apps pane and an app's page.
@@ -395,6 +399,11 @@ final class PreferencesLocalizationTests: XCTestCase {
         "buttons-place-used-by": "d",
         // Gestures pane
         "gestures-gesture-button-bound": "@",
+        // The line under "Up and Down follow the hand too" (what opens with the hand: one
+        // name, or a list), and the sentence a row shows in place of its action
+        "gesture-follow-actions-hint-one": "@",
+        "gesture-follow-actions-hint-several": "@",
+        "gesture-follow-action-value": "@",
         // Apps pane
         "apps-detail-inherit-on": "@",
         "apps-detail-inherit-off": "@",

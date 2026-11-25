@@ -1,11 +1,20 @@
 //
 //  MouseGestureSettingsControls.swift
 //  Mos
-//  The controls that edit Options.shared.gesture: mode, one action per direction and
-//  click, and the switches for invert left/right and freeze pointer, and where the swipe
-//  speed and the two switches of a Logitech mouse are written. The Gestures pane lays them
-//  out in its rows (`MouseGestureRows`, the rows themselves); their rules live here. Changes
-//  apply immediately.
+//  The controls that edit Options.shared.gesture: mode, "Up and Down follow the hand too",
+//  one action per direction and click, and the switches for invert left/right and freeze
+//  pointer, and where the swipe speed and the two switches of a Logitech mouse are written.
+//  The Gestures pane lays them out in its rows (`MouseGestureRows`, the rows themselves);
+//  their rules live here. Changes apply immediately.
+//
+//  In "Follow the hand" the Left and Right rows say "Desktop follows the hand" and take no
+//  choice. With "Up and Down follow the hand too" on, an Up or Down row whose action opens
+//  with the hand on this Mac says so in place of the action ("Mission Control follows the
+//  hand") and stays a pull-down with its menu; one whose action could, but does not here,
+//  shows the action as ever and says why in its tooltip and VoiceOver help
+//  (`MouseGestureFollowPresentation`, from `MouseGestureSettings.followPlan`, the answer
+//  the hold itself goes by). What can follow on this Mac comes in as a value
+//  (`followAvailability`), so tests and pictures show every state.
 //
 //  An app's page edits the app's own gestures with the same controls and rows
 //  (`Edited.application`): every value is then the app's (`ApplicationGestures`), the mode
@@ -59,6 +68,152 @@ struct MouseGestureModePresentation: Equatable {
     }
 }
 
+/// What the pane shows about "Up and Down follow the hand too": the switch, the line under
+/// it and what the Up and Down rows say. Pure: from the settings as they run (the mode in
+/// effect) and what can follow the hand on this Mac (`DockFollowAvailability`).
+struct MouseGestureFollowPresentation: Equatable {
+
+    /// What the row of a direction shows.
+    enum Row: Equatable {
+        /// The action as it is: its picture and its name.
+        case plain
+        /// A sentence in place of the action: it opens with the hand.
+        case follows(String)
+        /// The action as it is, and why it runs once on this Mac although the switch is
+        /// on: the pull-down's tooltip and VoiceOver help.
+        case runsOnceHere(String)
+
+        /// The sentence shown in place of the action; nil: the action.
+        var face: String? {
+            if case .follows(let sentence) = self { return sentence }
+            return nil
+        }
+
+        /// The tooltip and VoiceOver help; nil: none.
+        var note: String? {
+            if case .runsOnceHere(let sentence) = self { return sentence }
+            return nil
+        }
+    }
+
+    /// The stored choice: the switch shows it also while it does not apply.
+    var isOn: Bool
+    /// Only "Follow the hand" uses the switch.
+    var isEditable: Bool
+    /// The line under the switch: what opens with the hand on this Mac, or that the mode
+    /// in effect does not use the switch.
+    var hint: String
+    var up: Row
+    var down: Row
+
+    /// What the row of `direction` shows. Left and Right are the desktops' in "Follow the
+    /// hand", whatever this says: they are not asked.
+    func row(for direction: MouseGestureDirection) -> Row {
+        switch direction {
+        case .up: return up
+        case .down: return down
+        case .left, .right: return .plain
+        }
+    }
+
+    /// - Parameters:
+    ///   - settings: the settings the pane edits (an app's own on its page), as stored.
+    ///   - mode: what the mode control shows: the mode in effect counts, not a stored
+    ///     "Follow the hand" that cannot run here.
+    static func make(
+        settings: MouseGestureSettings, mode: MouseGestureModePresentation, availability: DockFollowAvailability
+    ) -> MouseGestureFollowPresentation {
+        let isUsed = mode.selectedMode == .interactive
+        // The plan the hold itself goes by (`followPlan`), for the mode in effect.
+        var running = settings
+        running.mode = mode.selectedMode
+        func row(_ direction: MouseGestureDirection) -> Row {
+            switch running.followPlan(for: direction, availability: availability) {
+            case .follows(let target):
+                return .follows(face(of: target, majorVersion: availability.majorVersion))
+            case .cannotFollow(_, let obstacle):
+                return note(for: obstacle).map(Row.runsOnceHere) ?? .plain
+            case .doesNotFollow:
+                return .plain
+            }
+        }
+        return MouseGestureFollowPresentation(
+            isOn: settings.actionsFollowHand,
+            isEditable: isUsed,
+            hint: isUsed
+                ? hint(naming: availability.targetsThatFollow, majorVersion: availability.majorVersion)
+                : text("gesture-follow-actions-hint-discrete"),
+            up: row(.up),
+            down: row(.down)
+        )
+    }
+
+    private static func text(_ key: String) -> String {
+        return NSLocalizedString(key, comment: "")
+    }
+
+    /// The order the switch's line names them in: the menu's.
+    static let namedOrder: [DockFollowTarget] = [.missionControl, .apps, .showDesktop]
+
+    /// What the listed action that opens `target` is called on macOS `majorVersion`
+    /// ("Apps" from macOS 26 on, "Launchpad" before), as the menus call it.
+    static func name(of target: DockFollowTarget, majorVersion: Int) -> String {
+        return text(SystemShortcut.Shortcut.nameKey(of: target.actionIdentifier, onMacOS: majorVersion))
+    }
+
+    /// "Apps" is a plural: "Apps follow the hand", "Apps open with your hand".
+    private static func isPlural(_ target: DockFollowTarget, majorVersion: Int) -> Bool {
+        return target == .apps
+            && SystemShortcut.Shortcut.nameKey(of: target.actionIdentifier, onMacOS: majorVersion) != target.actionIdentifier
+    }
+
+    /// The line under the switch in "Follow the hand": what opens with the hand on this
+    /// Mac, `targets` in the line's own order ("Mission Control and Show Desktop open with
+    /// your hand, like on a trackpad. Other actions run once."), or that nothing can now.
+    static func hint(naming targets: [DockFollowTarget], majorVersion: Int) -> String {
+        let named = namedOrder.filter(targets.contains)
+        guard let first = named.first else { return text("gesture-follow-actions-hint-none") }
+        let several = named.count > 1 || isPlural(first, majorVersion: majorVersion)
+        return String(
+            format: text(several ? "gesture-follow-actions-hint-several" : "gesture-follow-actions-hint-one"),
+            InterfaceList.joined(named.map { name(of: $0, majorVersion: majorVersion) })
+        )
+    }
+
+    /// Every line the switch's row can show on macOS `majorVersion`, so the row keeps room
+    /// for the longest: the one of "One action per hold", the one for nothing, and one for
+    /// each choice of the three that can open with the hand.
+    static func hints(majorVersion: Int) -> [String] {
+        var lines = [text("gesture-follow-actions-hint-discrete"), text("gesture-follow-actions-hint-none")]
+        for choice in 1..<(1 << namedOrder.count) {
+            let targets = namedOrder.enumerated().filter { choice & (1 << $0.offset) != 0 }.map(\.element)
+            lines.append(hint(naming: targets, majorVersion: majorVersion))
+        }
+        return lines
+    }
+
+    /// The sentence a row shows in place of the action that opens `target`: "Mission
+    /// Control follows the hand", "Apps follow the hand".
+    static func face(of target: DockFollowTarget, majorVersion: Int) -> String {
+        if isPlural(target, majorVersion: majorVersion) {
+            return text("gesture-follow-apps-value")
+        }
+        return String(format: text("gesture-follow-action-value"), name(of: target, majorVersion: majorVersion))
+    }
+
+    /// Why a row whose action could open with the hand runs once here, where the reason is
+    /// the row's own: this macOS, or the Dock's own switch for the trackpad gesture. nil
+    /// where it is not (nothing follows the hand at all, or macOS lets Scrollio post
+    /// nothing): the row then shows its action without words.
+    static func note(for obstacle: DockFollowAvailability.Obstacle) -> String? {
+        switch obstacle {
+        case .notOnThisMacOS: return text("gesture-follow-once-macos")
+        case .gestureOff: return text("gesture-follow-once-gesture-off")
+        case .swipeUnavailable, .cannotPostEvents: return nil
+        }
+    }
+}
+
 /// Tracking speed slider: its tick marks, steps, clamping and the value label. Pure.
 enum MouseGestureTrackingSpeed {
     /// A tick every 0.25 from 0.5 to 3; the knob stops only on them.
@@ -106,6 +261,8 @@ final class MouseGestureSettingsControls: NSObject {
         static let mode = NSUserInterfaceItemIdentifier("gesture-mode")
         /// The explanation under "Mode" in the Gestures pane.
         static let modeNote = NSUserInterfaceItemIdentifier("gesture-mode-note")
+        /// "Up and Down follow the hand too".
+        static let followActions = NSUserInterfaceItemIdentifier("gesture-follow-actions")
         static let invertHorizontal = NSUserInterfaceItemIdentifier("gesture-invert-horizontal")
         static let freezePointer = NSUserInterfaceItemIdentifier("gesture-freeze-pointer")
         static let trackingSpeed = NSUserInterfaceItemIdentifier("gesture-tracking-speed")
@@ -145,6 +302,17 @@ final class MouseGestureSettingsControls: NSObject {
         /// Sideways rows belong to the swipe in "follow the hand" mode.
         var isHorizontal: Bool {
             return self == .left || self == .right
+        }
+
+        /// The direction of a hold the row is for; nil for Click.
+        var direction: MouseGestureDirection? {
+            switch self {
+            case .up: return .up
+            case .down: return .down
+            case .left: return .left
+            case .right: return .right
+            case .click: return nil
+            }
         }
 
         var symbol: String {
@@ -197,6 +365,8 @@ final class MouseGestureSettingsControls: NSObject {
     // MARK: - Controls
 
     let modeControl: NSSegmentedControl
+    /// "Up and Down follow the hand too": a switch, named by the row it sits in.
+    let followToggle: NSControl
     /// One pull-down per `Slot`, in `Slot.allCases` order.
     private(set) var actionPopUps: [MouseGestureActionPopUpButton] = []
     /// The pull-downs' stand-in bindings keep their identity while the controls live.
@@ -230,18 +400,25 @@ final class MouseGestureSettingsControls: NSObject {
     }
 
     private let isInteractiveAvailable: () -> Bool
+    private let followAvailability: () -> DockFollowAvailability
 
     /// - Parameters:
     ///   - showLogiActions: also offer Logi actions in the action popups.
     ///   - edits: whose gestures the action pop-ups and the invert switch edit.
+    ///   - isInteractiveAvailable: whether "Follow the hand" can run at all.
+    ///   - followAvailability: what can follow the hand up and down on this Mac now (the
+    ///     macOS, the Dock's own switches, the build). Its `swipeIsAvailable` is not read:
+    ///     `isInteractiveAvailable` says that, one answer for the mode and for the rows.
     init(
         showLogiActions: Bool,
         edits: Edited = .general,
-        isInteractiveAvailable: @escaping () -> Bool = { DockSwipeSynthesizer.shared.isAvailable }
+        isInteractiveAvailable: @escaping () -> Bool = { DockSwipeSynthesizer.shared.isAvailable },
+        followAvailability: @escaping () -> DockFollowAvailability = { .live }
     ) {
         self.showLogiActions = showLogiActions
         self.edited = edits
         self.isInteractiveAvailable = isInteractiveAvailable
+        self.followAvailability = followAvailability
 
         modeControl = NSSegmentedControl(
             labels: [
@@ -255,6 +432,8 @@ final class MouseGestureSettingsControls: NSObject {
         modeControl.identifier = Identifier.mode
         modeControl.setAccessibilityLabel(NSLocalizedString("gesture-mode-label", comment: ""))
 
+        followToggle = PreferencesGroupedForm.makeSwitch(target: nil, action: nil)
+        followToggle.identifier = Identifier.followActions
         invertToggle = PreferencesGroupedForm.makeSwitch(target: nil, action: nil)
         invertToggle.identifier = Identifier.invertHorizontal
         freezeToggle = PreferencesGroupedForm.makeSwitch(target: nil, action: nil)
@@ -264,6 +443,8 @@ final class MouseGestureSettingsControls: NSObject {
 
         modeControl.target = self
         modeControl.action = #selector(modeChanged(_:))
+        followToggle.target = self
+        followToggle.action = #selector(followToggled(_:))
         invertToggle.target = self
         invertToggle.action = #selector(invertToggled(_:))
         freezeToggle.target = self
@@ -368,7 +549,28 @@ final class MouseGestureSettingsControls: NSObject {
         )
     }
 
-    /// Brings the mode control and the Left / Right rows in line with the mode.
+    /// What can follow the hand up and down on this Mac now. The swipe is there as the
+    /// mode's own answer says: one answer for the mode and for the rows.
+    var availability: DockFollowAvailability {
+        var availability = followAvailability()
+        availability.swipeIsAvailable = isInteractiveAvailable()
+        return availability
+    }
+
+    /// What the switch "Up and Down follow the hand too", its line and the Up and Down rows
+    /// show now.
+    var followPresentation: MouseGestureFollowPresentation {
+        return MouseGestureFollowPresentation.make(settings: editedSettings, mode: modePresentation, availability: availability)
+    }
+
+    /// Every line the switch's row can show on this Mac (the room its row keeps).
+    var followHints: [String] {
+        return MouseGestureFollowPresentation.hints(majorVersion: followAvailability().majorVersion)
+    }
+
+    /// Brings the mode control, the switch under it and the rows of the directions in line
+    /// with the mode: Left and Right are the swipe's in "Follow the hand"; Up and Down say
+    /// that they follow the hand where they do.
     private func applyModePresentation() {
         let presentation = modePresentation
         if let interactiveSegment = Self.modes.firstIndex(of: .interactive) {
@@ -377,18 +579,23 @@ final class MouseGestureSettingsControls: NSObject {
         }
 
         let settings = editedSettings
+        let follow = MouseGestureFollowPresentation.make(settings: settings, mode: presentation, availability: availability)
+        Self.setOn(follow.isOn, followToggle)
+        followToggle.isEnabled = follow.isEditable
         for popup in actionPopUps {
             guard let slot = Slot(rawValue: popup.tag) else { continue }
+            if slot.isHorizontal {
+                // The configured action is kept for the discrete mode; it just does not apply now.
+                popup.face = presentation.areHorizontalActionsEditable ? nil : Self.followHorizontalValue
+                popup.isEnabled = presentation.areHorizontalActionsEditable
+            } else if let direction = slot.direction {
+                // (The pull-down stays one: its menu, the tick and what is stored are the action's.)
+                let row = follow.row(for: direction)
+                popup.face = row.face
+                popup.note = row.note
+            }
             // (An action this version does not run shows "No Action", and stays stored.)
             popup.configure(with: slot.action(in: settings).asBinding(id: slotIDs[slot.rawValue]))
-            guard slot.isHorizontal else { continue }
-            popup.isEnabled = presentation.areHorizontalActionsEditable
-            if !presentation.areHorizontalActionsEditable, let titleItem = popup.menu?.items.first {
-                // The configured action is kept for the discrete mode; it just does not apply now.
-                titleItem.attributedTitle = nil
-                titleItem.title = Self.followHorizontalValue
-                titleItem.image = nil
-            }
         }
     }
 
@@ -618,6 +825,13 @@ final class MouseGestureSettingsControls: NSObject {
         onChange?()
     }
 
+    /// "Up and Down follow the hand too": the pane's choice, or the app's own.
+    @objc private func followToggled(_ sender: NSControl) {
+        write(\.actionsFollowHand, \.actionsFollowHand, Self.isOn(sender))
+        applyModePresentation()
+        onChange?()
+    }
+
     @objc private func invertToggled(_ sender: NSControl) {
         switch edited {
         case .general:
@@ -661,6 +875,31 @@ enum MouseGestureRows {
         row.reservedExplanations = MouseGestureModePresentation.descriptionKeys.map(text)
         row.explanationLabel.identifier = MouseGestureSettingsControls.Identifier.modeNote
         return row
+    }
+
+    /// "Up and Down follow the hand too (Experimental)", under "Mode": what it does on this
+    /// Mac under the title, the switch on the right. Always there, so that picking the
+    /// other mode never changes the height; only "Follow the hand" uses it
+    /// (`show(_:in:toggle:)`).
+    /// - Parameter reserving: every line the row can show (`MouseGestureSettingsControls.followHints`):
+    ///   it keeps room for the longest, whatever the mode, the switch and the Dock say.
+    static func followActions(_ toggle: NSControl, reserving hints: [String]) -> PreferencesGroupRow {
+        let row = PreferencesGroupRow(
+            title: text("gesture-follow-actions-label"),
+            explanation: hints.first ?? "",
+            accessory: toggle
+        )
+        row.reservedExplanations = hints
+        return row
+    }
+
+    /// Puts the switch "Up and Down follow the hand too" and its line into their row:
+    /// dimmed in "One action per hold", with the line that says so (the stored choice
+    /// still shows).
+    static func show(_ follow: MouseGestureFollowPresentation, in row: PreferencesGroupRow, toggle: NSControl) {
+        MouseGestureSettingsControls.setOn(follow.isOn, toggle)
+        row.isEnabled = follow.isEditable
+        row.explanation = follow.hint
     }
 
     static func invert(_ toggle: NSControl) -> PreferencesGroupRow {
@@ -744,8 +983,9 @@ enum MouseGestureRows {
     }
 
     /// Puts the speed of `settings` into its row: on the nearer tick (a refresh while the
-    /// knob is dragged leaves the knob alone), editable only while the desktops follow the
-    /// hand, with the line that says so.
+    /// knob is dragged leaves the knob alone), editable only in "Follow the hand" (it
+    /// scales everything that moves with the hand there: the desktops, and what Up and
+    /// Down open), with the line that says so.
     static func show(_ settings: MouseGestureSettings, presentation: MouseGestureModePresentation, in row: PreferencesSliderRow) {
         if !row.isTracking {
             row.showValue(settings.trackingSpeed)

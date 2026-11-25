@@ -30,6 +30,10 @@
 //  The rows of the Shortcut Ring pane and of the Gestures pane use it too (`Use`): their
 //  menus offer what a place or a direction can hold, and their recorder takes only what a
 //  place of the ring can run (a key combination, the Back or the Forward button).
+//  A direction's pull-down is wider (`gestureWidth`): in "Follow the hand" its title can
+//  be a sentence in place of the action (`face`: "Mission Control follows the hand"), with
+//  the menu, its tick and what is stored unchanged; a sentence that has no room in the
+//  title is the tooltip and VoiceOver's help (`note`: "Runs once. …").
 //
 //  The open menu ticks what the row shows (`shownActionItem`), every time it opens: a
 //  listed action inside its category, which gets the dash; "Keyboard Shortcut…" for
@@ -67,6 +71,16 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     }
 
     static let width: CGFloat = 240
+    /// A direction of the Gestures pane (and of an app's Gestures part): room for the
+    /// longest sentence its title can be, "Mission Control follows the hand" (197 pt at
+    /// 13 pt; a 240 pt pull-down has 199.5 pt for a title and AppKit asks for 245).
+    static let gestureWidth: CGFloat = 264
+
+    /// How wide a pull-down is for what it chooses.
+    static func width(for use: Use) -> CGFloat {
+        if case .gesture = use { return gestureWidth }
+        return width
+    }
     /// Pictures before the title (an app's icon) are drawn this size.
     static let imageSize: CGFloat = 16
 
@@ -130,6 +144,28 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
             applyShowInTitles()
         }
     }
+    /// A sentence the title shows in place of the action, without a picture ("Mission
+    /// Control follows the hand" on a direction of the Gestures pane); nil: the action.
+    /// The menu, its tick and what is stored stay the action's, and the pull-down itself
+    /// keeps the sentence through its own refreshes (a menu opened and closed, a recording
+    /// given up). While a recording waits for a key the title asks for it.
+    var face: String? {
+        didSet {
+            guard face != oldValue else { return }
+            refreshActionDisplay()
+        }
+    }
+    /// A sentence about the row's action that has no room in the title ("Runs once. Its
+    /// trackpad gesture is off in System Settings."): the pull-down's tooltip and
+    /// VoiceOver's help; nil: none. The sentence of "Default" goes before it.
+    var note: String? {
+        didSet {
+            guard note != oldValue else { return }
+            refreshActionDisplay()
+        }
+    }
+    /// The help VoiceOver has is `note` (and is taken away again with it).
+    private var givesNoteAsHelp = false
     private var isCustomRecordingActive = false
     /// The recorder of "Keyboard Shortcut…" caught a key; it is stored after the recorder's
     /// moment of feedback.
@@ -206,7 +242,7 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
         self.use = use
         super.init(frame: .zero, pullsDown: true)
         translatesAutoresizingMaskIntoConstraints = false
-        widthAnchor.constraint(equalToConstant: Self.width).isActive = true
+        widthAnchor.constraint(equalToConstant: Self.width(for: use)).isActive = true
         // The tick is the menu's own (`tickShownAction`), not the item AppKit last chose.
         (cell as? NSPopUpButtonCell)?.altersStateOfSelectedItem = false
         configure(with: binding)
@@ -401,6 +437,16 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
     /// Puts the action into the title (item 0).
     func refreshActionDisplay() {
         guard let titleItem = menu?.items.first else { return }
+        if let face, !isCustomRecordingActive {
+            // A sentence in place of the action: no picture, nothing in grey.
+            titleItem.attributedTitle = nil
+            titleItem.title = face
+            titleItem.image = nil
+            toolTip = note
+            applyNoteAsHelp()
+            synchronizeTitleAndSelectedItem()
+            return
+        }
         var presentation = resolver.resolve(state: actionState)
         let font = self.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
         let showsDefault = offersDefault && presentation.kind == .unbound
@@ -415,7 +461,9 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
             : presentation.attributedTitle(font: font)
         // What "Default" does, in a sentence, where that is certain: the line under the row
         // said it before.
-        toolTip = showsDefault ? defaultEffect.map { NSLocalizedString($0.defaultExplanationKey, comment: "") } : nil
+        let defaultSentence = showsDefault ? defaultEffect.map { NSLocalizedString($0.defaultExplanationKey, comment: "") } : nil
+        toolTip = defaultSentence ?? note
+        applyNoteAsHelp()
         if let image = presentation.image {
             let sized = image.copy() as? NSImage ?? image
             sized.size = NSSize(width: Self.imageSize, height: Self.imageSize)
@@ -426,6 +474,19 @@ class ButtonActionPullDown: NSPopUpButton, NSMenuDelegate {
             titleItem.image = presentation.symbolName.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }
         }
         synchronizeTitleAndSelectedItem()
+    }
+
+    /// VoiceOver's help is the note while there is one. Set at every refresh: the row the
+    /// pull-down sits in gives its controls the row's line as help, and none for a row
+    /// without a line, whenever its texts are set. Without a note the row's help stays.
+    private func applyNoteAsHelp() {
+        if let note {
+            setAccessibilityHelp(note)
+            givesNoteAsHelp = true
+        } else if givesNoteAsHelp {
+            setAccessibilityHelp(nil)
+            givesNoteAsHelp = false
+        }
     }
 
     /// "Keyboard Shortcut…": the title asks for a key, and the recorder starts.
