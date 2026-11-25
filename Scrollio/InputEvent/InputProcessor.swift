@@ -22,7 +22,9 @@ enum InputResult: Equatable {
 /// 使用 activeBindings 表跟踪按下中的绑定, 确保 Up 事件正确配对
 class InputProcessor: ModifierFlagsProviding {
     static let shared = InputProcessor()
-    init() {}
+    init() {
+        observeSurroundings()
+    }
 
     private static let scrollActionTapReplayMovementTolerance: CGFloat = 8.0
     /// A gesture hold older than this is abandoned, in case its button-up was lost. The same
@@ -157,6 +159,9 @@ class InputProcessor: ModifierFlagsProviding {
         }
         // (After a release that never came, the other trigger opens a ring like any press.)
         ringTrigger = key
+        // A view of the Dock that is opening with the hand goes back before the ring comes:
+        // the ring's places may ask the Dock for a view themselves.
+        takeBackSwipe(onlyTowardsAView: true, because: .ringOpened)
         ShortcutRingController.shared.triggerPressed(by: event)
     }
 
@@ -198,6 +203,15 @@ class InputProcessor: ModifierFlagsProviding {
         var recognizer = MouseGestureRecognizer()
         /// Set in "follow the hand" mode; the recognizer above is then unused.
         var interactive: InteractiveGestureSession?
+        /// "Up and Down follow the hand too": what Up and Down do in this hold, decided
+        /// with `interactive` when the hold's settings have the switch on; nil: as before.
+        var follow: DockFollowHold?
+        /// The swipe this hold began, by its number (`DockSwipeSynthesizer.swipeNumber`);
+        /// 0 until it began one. A swipe that is no longer the one running gets nothing
+        /// more from this hold: it was taken back, and another may run by now.
+        var swipeNumber = 0
+        /// The motion this hold drives up or down, in numbers, for its line in the log.
+        var followed: DockFollowedMotion?
         /// Gives up on the hold when its button-up never arrives.
         var watchdog: DispatchWorkItem?
         /// The watchdog gave up on this hold. It stays in the table, so a late button-up is
@@ -222,7 +236,9 @@ class InputProcessor: ModifierFlagsProviding {
 
     // MARK: - Interactive Gesture State
     /// The hold that drives the interactive swipe. Only one swipe can run at a time, so a
-    /// second gesture button pressed meanwhile behaves like the discrete mode.
+    /// second gesture button pressed meanwhile behaves like the discrete mode. (Nil again
+    /// once the hold's swipe was taken back or could not begin, while its button is still
+    /// down: that hold reads no more movement.)
     private var interactiveGestureKey: TriggerKey?
     /// Movement source of that hold (kept apart so the motion tap callback needs no lookup).
     private var interactiveGestureSource = MouseGestureMovementSource.pointer
@@ -244,6 +260,11 @@ class InputProcessor: ModifierFlagsProviding {
     }
     /// Writes the line of a gesture's action (`mouseGestureRunLine`). Replaced in tests.
     private var mouseGestureLog: (String) -> Void = { AppSystemLog.note($0) }
+    /// Whether a view of the Dock follows the hand on this Mac now, asked once per hold
+    /// whose settings have "Up and Down follow the hand too" on. Replaced in tests.
+    private var followAvailability: () -> DockFollowAvailability = { .live }
+    /// The view of the Dock Scrollio believes it put up itself (`DockBelief`). Main thread.
+    private var dockBelief = DockBelief()
     /// The app in front when a gesture button goes down: whose gestures the hold runs
     /// (`MouseGestureChoice`). Read once per hold, inside the event callback: what
     /// `NSWorkspace` and the running app already hold, as for the ring's press, and then
@@ -422,6 +443,9 @@ class InputProcessor: ModifierFlagsProviding {
         }
         ShortcutRingController.existing?.cancel()
         cancelInteractiveGesture()
+        // Scrollio stops looking (sleep, Pause, another user, an event tap that started
+        // over): what it believed the Dock shows is not known any more.
+        dockBelief.drop()
         for session in activeMouseGestures.values {
             session.watchdog?.cancel()
         }
@@ -723,7 +747,7 @@ class InputProcessor: ModifierFlagsProviding {
             // The hold was interrupted (the mouse went away), not released: unwind it like
             // the watchdog does. No click action, a running swipe is reverted, the pointer
             // and the motion tap are released.
-            abandonMouseGesture(session, key: key)
+            abandonMouseGesture(session, key: key, because: .mouseWentAway)
             return true
         }
         if session.movementSource == .pointer {
@@ -802,9 +826,10 @@ class InputProcessor: ModifierFlagsProviding {
 
     // MARK: - Haptic cues
     //
-    // - lockIn (light): a discrete action fires, or a "follow the hand" swipe begins.
-    // - commit (stronger): a swipe is released towards a switch
-    //   (`InteractiveGestureSession.isExpectedToSwitch`).
+    // - lockIn (light): a discrete action fires, or a "follow the hand" swipe begins
+    //   (sideways, or up or down towards a view of the Dock).
+    // - commit (stronger): a swipe is released towards a switch: the next Space, or a view
+    //   that is expected to open or to be left (`InteractiveGestureSession.isExpectedToSwitch`).
     // Only for buttons that arrive over HID++ and while "haptic feedback" is on; the mouse
     // side decides whether it can and may play (LogiCenter.playGestureHaptic).
 
@@ -909,18 +934,35 @@ class InputProcessor: ModifierFlagsProviding {
         }
         let environment = interactiveEnvironment
         let screen = environment.screen()
-        session.interactive = InteractiveGestureSession(
-            configuration: InteractiveGestureSession.Configuration(
-                progressPerPoint: DockSwipeGeometry.progressPerPoint(
-                    screenWidth: screen.width,
-                    spaceCount: screen.spaceCount,
-                    trackingSpeed: session.settings.trackingSpeed
-                ),
-                maximumProgress: DockSwipeGeometry.progressPerSpace(spaceCount: screen.spaceCount),
-                invertHorizontal: session.settings.invertHorizontal
+        let startTime = environment.now()
+        var configuration = InteractiveGestureSession.Configuration(
+            progressPerPoint: DockSwipeGeometry.progressPerPoint(
+                screenWidth: screen.width,
+                spaceCount: screen.spaceCount,
+                trackingSpeed: session.settings.trackingSpeed
             ),
-            startTime: environment.now()
+            maximumProgress: DockSwipeGeometry.progressPerSpace(spaceCount: screen.spaceCount),
+            invertHorizontal: session.settings.invertHorizontal
         )
+        if session.settings.actionsFollowNow {
+            // "Up and Down follow the hand too": what each of the two does in this hold is
+            // decided here, before anything is sent, from the hold's own settings (the own
+            // set of the app in front counts as the pane's does), from what this Mac
+            // follows now and from the view Scrollio believes it put up. Left and Right
+            // stay the desktops' as they are, and with the switch off nobody asks.
+            let follow = DockFollowHold(
+                settings: session.settings, availability: followAvailability(), believed: dockBelief.view(at: startTime)
+            )
+            session.follow = follow
+            let speed = session.settings.trackingSpeed
+            if let channel = follow.up.channel(screenHeight: screen.height, trackingSpeed: speed) {
+                configuration.roles.up = .channel(channel)
+            }
+            if let channel = follow.down.channel(screenHeight: screen.height, trackingSpeed: speed) {
+                configuration.roles.down = .channel(channel)
+            }
+        }
+        session.interactive = InteractiveGestureSession(configuration: configuration, startTime: startTime)
         interactiveGestureKey = key
         interactiveGestureSource = session.movementSource
         interactiveFrameDuration = screen.frameDuration
@@ -999,7 +1041,7 @@ class InputProcessor: ModifierFlagsProviding {
     private func cancelInteractiveGesture() {
         if let key = interactiveGestureKey, let session = activeMouseGestures[key] {
             let commands = session.interactive?.cancel() ?? []
-            perform(commands.filter { $0.isSwipeCommand }, for: session)
+            perform(commands.filter { $0.isSwipeCommand }, for: session, cancelledBy: .scrollioStopped)
         }
         // Also covers a released swipe whose terminal event is still queued.
         DockSwipeSynthesizer.shared.cancel()
@@ -1044,7 +1086,8 @@ class InputProcessor: ModifierFlagsProviding {
     private func abandonMouseGesture(
         _ session: ActiveMouseGestureSession,
         key: TriggerKey,
-        refreshMotionTap: Bool = true
+        refreshMotionTap: Bool = true,
+        because interruption: DockFollowedMotion.Interruption = .noButtonUp
     ) {
         guard !session.isAbandoned else { return }
         session.isAbandoned = true
@@ -1052,7 +1095,7 @@ class InputProcessor: ModifierFlagsProviding {
         session.watchdog = nil
         if interactiveGestureKey == key {
             let commands = session.interactive?.expire() ?? []
-            perform(commands, for: session)
+            perform(commands, for: session, cancelledBy: interruption)
             interactiveGestureKey = nil
             pendingInteractiveDelta = .zero
         }
@@ -1067,24 +1110,64 @@ class InputProcessor: ModifierFlagsProviding {
         }
     }
 
-    private func perform(_ commands: [InteractiveGestureSession.Command], for session: ActiveMouseGestureSession) {
+    /// Turns the commands of a hold's state machine into the swipe and the actions.
+    /// `interruption`: what took the hold's motion back, when it was not its own release.
+    ///
+    /// A swipe is the hold's own while it is the one that runs and has the number its
+    /// begin gave it (`DockSwipeSynthesizer.isRunning`). One that was taken back meanwhile
+    /// (the Dock was asked for a view in one go, which settles the swipe first) gets
+    /// nothing more: a late update or end could otherwise reach a swipe that began after it.
+    private func perform(
+        _ commands: [InteractiveGestureSession.Command],
+        for session: ActiveMouseGestureSession,
+        cancelledBy interruption: DockFollowedMotion.Interruption? = nil
+    ) {
         for command in commands {
             switch command {
             case .begin(let axis):
+                if axis != .horizontal, DockSwipeSynthesizer.shared.isActive {
+                    // Only the thumb wheel's swipe of the desktops can run here (one hold
+                    // drives at a time), or its tail while the wheel rests. A motion towards
+                    // a view never takes it over: the Dock would get the end of one motion
+                    // and the begin of another in one go. The direction runs its action
+                    // once instead, and the rest of this hold's commands are dropped.
+                    runOnceInsteadOfFollowing(session)
+                    return
+                }
                 interactiveSwipeGeneration += 1
                 DockSwipeSynthesizer.shared.begin(axis: axis)
+                session.swipeNumber = DockSwipeSynthesizer.shared.swipeNumber
+                noteFollowedMotionBegan(by: session, axis: axis)
                 playGestureHaptic(.lockIn, for: session)
             case .update(let progress):
+                guard DockSwipeSynthesizer.shared.isRunning(session.swipeNumber) else { continue }
                 DockSwipeSynthesizer.shared.update(progress: progress)
+                session.followed?.told(progress: progress)
             case .end(let velocity):
+                guard DockSwipeSynthesizer.shared.isRunning(session.swipeNumber) else {
+                    finishFollowedMotion(of: session, .cancelled(.takenBack))
+                    continue
+                }
                 DockSwipeSynthesizer.shared.end(velocity: velocity)
-                if session.interactive?.isExpectedToSwitch(releaseVelocity: velocity) == true {
+                let expected = session.interactive?.isExpectedToSwitch(releaseVelocity: velocity) == true
+                if expected {
                     playGestureHaptic(.commit, for: session)
                 }
+                finishFollowedMotion(of: session, .ended(velocity: velocity, expected: expected))
             case .cancel:
+                guard DockSwipeSynthesizer.shared.isRunning(session.swipeNumber) else {
+                    finishFollowedMotion(of: session, .cancelled(.takenBack))
+                    continue
+                }
                 DockSwipeSynthesizer.shared.cancel()
+                finishFollowedMotion(of: session, interruption.map { .cancelled($0) } ?? .cancelledAtRelease)
             case .discrete(let direction):
                 let action = session.settings.action(for: direction)
+                if let part = session.follow?[direction], case .onceInstead(_, let reason) = part, !action.isEmpty {
+                    // It could have followed the hand: the log says why it did not.
+                    let appsOwn = session.isAppsOwn
+                    noteMouseGesture { DockFollowHold.ranOnceLine(direction, insteadOf: part, reason: reason, appsOwn: appsOwn) }
+                }
                 playLockInHaptic(for: session, action: action)
                 executeMouseGestureAction(action, part: .direction(direction), appsOwn: session.isAppsOwn)
             case .click:
@@ -1093,7 +1176,182 @@ class InputProcessor: ModifierFlagsProviding {
         }
     }
 
+    // MARK: - Up and Down follow the hand too
+    //
+    // In "Follow the hand", with the switch on, an Up or Down direction whose action shows
+    // a view of the Dock drives that view's motion with the hand (`DockFollowHold`, decided
+    // in `beginInteractiveGestureIfEnabled`). What is here keeps the Dock from hearing two
+    // voices at once, keeps what Scrollio believes the Dock shows, and writes the hold's
+    // line in the log.
+
+    /// Writes a line of a hold to the log on a later turn of the main queue, where its text
+    /// is made too: the callers run inside event callbacks.
+    private func noteMouseGesture(_ line: @escaping () -> String) {
+        let log = mouseGestureLog
+        DispatchQueue.main.async {
+            log(line())
+        }
+    }
+
+    /// A motion up or down that may not begin (`perform`): for the state machine the hold
+    /// is over, nothing of it reached the Dock, and its direction runs its action once, as
+    /// it does without the switch.
+    private func runOnceInsteadOfFollowing(_ session: ActiveMouseGestureSession) {
+        guard let direction = session.interactive?.followedDirection else { return }
+        _ = session.interactive?.cancel()
+        if let key = interactiveGestureKey, activeMouseGestures[key] === session {
+            interactiveGestureKey = nil
+            pendingInteractiveDelta = .zero
+        }
+        let action = session.settings.action(for: direction)
+        if let part = session.follow?[direction], !action.isEmpty {
+            let appsOwn = session.isAppsOwn
+            noteMouseGesture {
+                DockFollowHold.ranOnceLine(direction, insteadOf: part, reason: .wheelSwipeRunning, appsOwn: appsOwn)
+            }
+        }
+        playLockInHaptic(for: session, action: action)
+        executeMouseGestureAction(action, part: .direction(direction), appsOwn: session.isAppsOwn)
+    }
+
+    /// A hold began a motion: for Up and Down its numbers are kept for the log (the
+    /// desktops' swipe writes no line, as before).
+    private func noteFollowedMotionBegan(by session: ActiveMouseGestureSession, axis: DockSwipeAxis) {
+        guard axis != .horizontal, let interactive = session.interactive,
+              let direction = interactive.followedDirection, let channel = interactive.followedChannel,
+              let part = session.follow?[direction] else { return }
+        session.followed = DockFollowedMotion(
+            direction: direction,
+            part: part,
+            motion: axis,
+            sign: channel.sign,
+            fullProgress: channel.maximumProgress,
+            beganAfter: interactiveEnvironment.now() - interactive.startTime
+        )
+    }
+
+    /// The last event of a hold's motion up or down went out, or the motion had been taken
+    /// back before: its one line in the log, and what Scrollio believes the Dock shows now.
+    /// A hold that was let go and is expected to open its view put that view up; one that
+    /// left Mission Control so leaves nothing believed. Any other end changes nothing.
+    private func finishFollowedMotion(of session: ActiveMouseGestureSession, _ ending: DockFollowedMotion.Ending) {
+        guard let motion = session.followed else { return }
+        session.followed = nil
+        var ending = ending
+        let now = interactiveEnvironment.now()
+        if ending == .cancelledAtRelease, let interactive = session.interactive,
+           now - interactive.startTime >= interactive.configuration.watchdogTimeout {
+            // The state machine gave the hold up itself: older than its limit.
+            ending = .cancelled(.noButtonUp)
+        }
+        if case .ended(_, true) = ending {
+            switch motion.part {
+            case .opens(let target): dockBelief.holdOpened(target, at: now)
+            case .leavesMissionControl: dockBelief.drop()
+            case .once, .onceInstead: break
+            }
+        }
+        let appsOwn = session.isAppsOwn
+        noteMouseGesture { motion.line(ending, appsOwn: appsOwn) }
+    }
+
+    /// Takes back the swipe that runs, at once (synchronously, as every abnormal end): the
+    /// hold that drives it sends nothing more and runs nothing, and a swipe whose button is
+    /// already up, or the thumb wheel's, goes back as well.
+    /// - onlyTowardsAView: only a motion towards a view of the Dock (vertical, pinch); the
+    ///   desktops' swipe goes on.
+    private func takeBackSwipe(onlyTowardsAView: Bool, because interruption: DockFollowedMotion.Interruption) {
+        guard let axis = DockSwipeSynthesizer.shared.runningAxis, !onlyTowardsAView || axis != .horizontal else { return }
+        if let key = interactiveGestureKey, let session = activeMouseGestures[key], session.interactive?.phase == .swiping {
+            let commands = session.interactive?.cancel() ?? []
+            perform(commands.filter { $0.isSwipeCommand }, for: session, cancelledBy: interruption)
+            // The hold stays in the table until its button is up; it reads no more movement.
+            interactiveGestureKey = nil
+            pendingInteractiveDelta = .zero
+            isInteractiveFlushScheduled = false
+            interactiveFlushToken += 1
+        }
+        DockSwipeSynthesizer.shared.cancel()
+    }
+
+    // MARK: - What happens around a hold
+
+    /// What macOS tells Scrollio that matters to a swipe or to the belief.
+    enum SurroundingsChange {
+        case anotherApplicationCameToFront
+        case activeSpaceChanged
+        case screenParametersChanged
+        case displaysWentToSleep
+    }
+
+    /// macOS told of a change (the observers below), or a test did.
+    /// - Another app came to the front, or the desktop in use changed: whatever view
+    ///   Scrollio put up is most likely gone, so nothing is believed to show any more.
+    /// - The desktop in use changed: a motion towards a view is taken back too (the Dock
+    ///   has just rebuilt what the motion was moving). The desktops' own swipe goes on: its
+    ///   own switch is such a change.
+    /// - The screens changed, or the displays went to sleep: any swipe that runs is taken
+    ///   back. (Sleep, another user, Pause and quit stop the cores, which does the same:
+    ///   `clearActiveBindings`.)
+    func surroundingsChanged(_ change: SurroundingsChange) {
+        assertMainThread()
+        switch change {
+        case .anotherApplicationCameToFront:
+            dockBelief.drop()
+        case .activeSpaceChanged:
+            dockBelief.drop()
+            takeBackSwipe(onlyTowardsAView: true, because: .spaceChanged)
+        case .screenParametersChanged:
+            takeBackSwipe(onlyTowardsAView: false, because: .screensChanged)
+        case .displaysWentToSleep:
+            takeBackSwipe(onlyTowardsAView: false, because: .displaysSlept)
+        }
+    }
+
+    private var surroundingsObservers: [NSObjectProtocol] = []
+
+    /// Hears the four changes from macOS for as long as the app runs. Not under XCTest: a
+    /// test tells `surroundingsChanged` itself, and what happens on the Mac that runs the
+    /// tests must not reach them.
+    private func observeSurroundings() {
+        guard !AppRuntime.isRunningXCTest else { return }
+        let workspace = NSWorkspace.shared.notificationCenter
+        let watched: [(NotificationCenter, Notification.Name, SurroundingsChange)] = [
+            (workspace, NSWorkspace.didActivateApplicationNotification, .anotherApplicationCameToFront),
+            (workspace, NSWorkspace.activeSpaceDidChangeNotification, .activeSpaceChanged),
+            (workspace, NSWorkspace.screensDidSleepNotification, .displaysWentToSleep),
+            (NotificationCenter.default, NSApplication.didChangeScreenParametersNotification, .screenParametersChanged),
+        ]
+        surroundingsObservers = watched.map { center, name, change in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.surroundingsChanged(change)
+            }
+        }
+    }
+
+    /// Scrollio is about to ask the Dock for one of its views in one go: Mission Control
+    /// or Show Desktop by name (or by key), Apps by its key; from a button, a gesture, the
+    /// Shortcut Ring (`ShortcutExecutor.dockViewWillBeToggled`). The Dock hears one voice
+    /// at a time, so whatever is left of a swipe is settled first: one that runs is
+    /// cancelled, and a last event that was still to be posted again is posted now. And the
+    /// toggle turns over what Scrollio believes the Dock shows. Main thread.
+    func dockViewWillBeToggled(_ view: DockFollowTarget) {
+        assertMainThread()
+        DockSwipeSynthesizer.shared.settle()
+        dockBelief.toggled(view, at: interactiveEnvironment.now())
+    }
+
     #if DEBUG
+    /// What follows the hand for the next gesture holds; nil asks this Mac again.
+    func setTestingFollowAvailability(_ availability: (() -> DockFollowAvailability)?) {
+        followAvailability = availability ?? { .live }
+    }
+
+    /// The view of the Dock Scrollio believes it put up, now.
+    var believedDockView: DockFollowTarget? {
+        return dockBelief.view(at: interactiveEnvironment.now())
+    }
+
     /// A new environment brings its own clock, so the frame pacing starts over.
     func setTestingInteractiveGestureEnvironment(_ environment: InteractiveGestureEnvironment) {
         interactiveEnvironment = environment

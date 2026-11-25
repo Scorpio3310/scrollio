@@ -129,7 +129,27 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   that sent nothing, such as a Spaces action whose shortcut is off in System Settings;
   a key combination only as "a recorded key combination", never its
   keys or its name; ", the app in front has its own gestures" when the set was an app's
-  own, never which app), a line after a change of the settings when the count of apps
+  own, never which app), one line for each hold whose Up or Down followed the hand
+  ("Up and Down follow the hand too"), written when its last event went out
+  (`Gestures: up followed the hand: missionControl, vertical +, began after 48 ms, 37
+  updates, furthest 0.82, released at 0.74, 1.9/s: ended, expected to open`: the view by
+  its action's name, or "leaving missionControl" for the move that puts Mission Control
+  away; the Dock's motion and its sign; the time from the press to the first event; how
+  many events went out; the furthest and the last position as a share of the whole
+  view, and the hand's speed in whole views a second, all three counted the hand's way
+  out; then how it ended: "ended" when the button came up, with "expected to open" or
+  "expected to close" when Scrollio expects macOS to finish it, which is what the
+  stronger pulse of the mouse goes by; "cancelled" when the hand was back at the start
+  or heading back; or "cancelled" with what took it back: no button-up, the mouse went
+  away, Scrollio's event taps stopped, the screens changed, the displays went to sleep,
+  the desktop in use changed, the Shortcut Ring opened, its swipe had been taken back),
+  one line for a direction that could follow the hand and ran once instead, right
+  before the line of its action (`Gestures: up did not follow the hand: missionControl,
+  the Dock's gesture is off`; the other reasons: not on this macOS, cannot post events,
+  the swipe cannot be made on this Mac, the wheel's swipe was running, and Mission
+  Control, Show Desktop or Apps was showing: Scrollio had opened it itself and the same
+  move closes it; the desktops' swipe writes no line of its own),
+  a line after a change of the settings when the count of apps
   with their own binding for a Logitech button, or of the buttons they take from the
   mouse or give back, is not what the last such line said, and at launch when an app has
   such a binding ("2 app(s) have their own binding for a Logitech button: 1 Logitech
