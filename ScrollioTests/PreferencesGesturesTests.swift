@@ -677,12 +677,21 @@ final class PreferencesGesturesTests: XCTestCase {
 
         // The defaults: Up is Mission Control, Down is Apps.
         XCTAssertEqual(rows(followSettings(), follows()), [.follows("Mission Control follows the hand"), .follows("Apps follow the hand")])
-        XCTAssertEqual(rows(followSettings(), follows(apps: false)), [.follows("Mission Control follows the hand"), notHere])
+        // A released build: Apps is an action like any other there, on every macOS, so its
+        // row says nothing (and never names macOS as the reason).
+        XCTAssertEqual(rows(followSettings(), follows(apps: false)), [.follows("Mission Control follows the hand"), .plain])
+        XCTAssertEqual(rows(followSettings(up: SystemShortcut.appExpose.identifier), follows(apps: false)), [.plain, .plain])
+        for macOS in [14, 15, 26] {
+            XCTAssertEqual(
+                rows(followSettings(up: showDesktop), follows(macOS: macOS, apps: false)), [notHere, .plain],
+                "macOS \(macOS): the sentence is Show Desktop's"
+            )
+        }
         XCTAssertEqual(
             rows(followSettings(up: showDesktop, down: SystemShortcut.missionControl.identifier), follows()),
             [.follows("Show Desktop follows the hand"), .follows("Mission Control follows the hand")]
         )
-        XCTAssertEqual(rows(followSettings(up: showDesktop), follows(macOS: 26)), [notHere, notHere])
+        XCTAssertEqual(rows(followSettings(up: showDesktop), follows(macOS: 26, apps: true)), [notHere, notHere])
         XCTAssertEqual(Follow.face(of: .apps, majorVersion: 15), "Launchpad follows the hand")
         XCTAssertEqual(Follow.face(of: .apps, majorVersion: 26), "Apps follow the hand")
         XCTAssertEqual(Follow.face(of: .missionControl, majorVersion: 14), "Mission Control follows the hand")
@@ -847,6 +856,20 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertNil(down.toolTip)
         XCTAssertNil(down.accessibilityHelp())
         XCTAssertEqual(title(of: up), SystemShortcut.missionControl.localizedName)
+
+        // A released build, the default actions (Down = Apps): no macOS makes Apps follow
+        // there, so the row is the action as ever and blames nothing.
+        Options.shared.gesture = followSettings()
+        for macOS in [27, 26, 15, 14] {
+            follow = follows(macOS: macOS, apps: false)
+            controller.reload()
+            XCTAssertEqual(title(of: up), "Mission Control follows the hand", "macOS \(macOS)")
+            XCTAssertEqual(title(of: down), SystemShortcut.appExpose.localizedName, "macOS \(macOS)")
+            XCTAssertNotNil(down.menu?.items.first?.image, "macOS \(macOS)")
+            XCTAssertNil(down.face, "macOS \(macOS)")
+            XCTAssertNil(down.toolTip, "macOS \(macOS)")
+            XCTAssertNil(down.accessibilityHelp(), "macOS \(macOS)")
+        }
     }
 
     /// The Dock's own switches were read again and changed (System Settings › Trackpad ›

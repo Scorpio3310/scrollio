@@ -320,7 +320,7 @@ enum DockFollowPlan: Equatable {
     case cannotFollow(DockFollowTarget, DockFollowAvailability.Obstacle)
     /// Nothing asks for it: the direction runs its action once, as before (sideways, which
     /// is the desktops' in "Follow the hand"; "One action per hold"; the switch off; an
-    /// action without a view to open).
+    /// action without a view to open; Apps in a build that never lets it follow).
     case doesNotFollow
 
     /// The target that follows; nil for both ways of running once.
@@ -335,11 +335,18 @@ extension MouseGestureSettings {
     /// What `direction` follows with these settings on a Mac with this availability: the
     /// one place that says so, for the hold (asked once, when the button goes down) and for
     /// the pane's rows. Only Up and Down can follow; Left and Right stay what they are in
-    /// "Follow the hand", the desktops. For an app's own set, ask the settings that run in
-    /// the app (`Application.gesturesThatRun`).
+    /// "Follow the hand", the desktops. Apps is asked to follow only where the build lets
+    /// it (`appsMayFollow`); everywhere else it is `.doesNotFollow`, like "Copy". For an
+    /// app's own set, ask the settings that run in the app (`Application.gesturesThatRun`).
     func followPlan(for direction: MouseGestureDirection, availability: DockFollowAvailability) -> DockFollowPlan {
         guard actionsFollowNow, direction == .up || direction == .down,
               let target = DockFollowTarget(action: action(for: direction)) else {
+            return .doesNotFollow
+        }
+        // In a build that never lets Apps follow (every release, on every macOS) Apps is an
+        // action like any other: nothing asks it to follow, so its row is plain and the log
+        // gives no reason. (The reason would be the build, which nobody can change.)
+        if target == .apps, !availability.appsMayFollow {
             return .doesNotFollow
         }
         if let obstacle = availability.obstacle(to: target) {
