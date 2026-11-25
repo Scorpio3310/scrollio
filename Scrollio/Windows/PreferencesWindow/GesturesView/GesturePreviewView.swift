@@ -6,8 +6,11 @@
 //  Navigation (`picture`, the first the "Button to hold" row names; with none, a dashed
 //  outline where "Set Up…" usually ends) while the hand moves it, on the right a small
 //  desktop that answers as the settings
-//  say (the desktops follow the hand, Mission Control opens, the app grid shows, a Space
-//  changes, or the action's icon pulses). Built like the Scrolling tab's preview.
+//  say (the desktops follow the hand, Mission Control opens, the app grid shows, the
+//  windows make way for the desktop, a Space changes, or the action's icon pulses). An Up
+//  or Down row that follows the hand on this Mac (`GesturePreviewScene.availability`) opens
+//  its view with the hand, as the desktops move sideways; Reduce Motion shows it half open.
+//  Built like the Scrolling tab's preview.
 //
 //  The view only keeps time: it asks GesturePreviewLoop for the picture at the current
 //  moment and hands it to the artwork (GesturePreviewArtwork.swift). Nothing runs while it

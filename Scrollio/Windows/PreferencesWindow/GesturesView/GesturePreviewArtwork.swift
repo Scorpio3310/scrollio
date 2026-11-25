@@ -37,6 +37,18 @@ enum GesturePreviewPalette {
     static let hudFill = ScrollPreviewPalette.adaptive(light: NSColor(white: 0.90, alpha: 0.95), dark: NSColor(white: 0.20, alpha: 0.92))
     static let hudEdge = ScrollPreviewPalette.adaptive(light: NSColor(white: 0, alpha: 0.12), dark: NSColor(white: 1, alpha: 0.12))
     static let hudSymbol = ScrollPreviewPalette.adaptive(light: NSColor(white: 0.15, alpha: 1), dark: NSColor(white: 0.92, alpha: 1))
+    /// What lies on the desktop and shows when the windows are out of the way (Show
+    /// Desktop): folders, a document, and the names under them.
+    static let desktopFolder = ScrollPreviewPalette.adaptive(
+        light: NSColor(srgbRed: 0.25, green: 0.62, blue: 0.98, alpha: 1),
+        dark: NSColor(srgbRed: 0.22, green: 0.55, blue: 0.92, alpha: 1)
+    )
+    static let desktopFolderTab = ScrollPreviewPalette.adaptive(
+        light: NSColor(srgbRed: 0.16, green: 0.50, blue: 0.90, alpha: 1),
+        dark: NSColor(srgbRed: 0.15, green: 0.42, blue: 0.78, alpha: 1)
+    )
+    static let desktopDocument = ScrollPreviewPalette.adaptive(light: .white, dark: NSColor(white: 0.86, alpha: 1))
+    static let desktopItemName = ScrollPreviewPalette.adaptive(light: NSColor(white: 1, alpha: 0.9), dark: NSColor(white: 1, alpha: 0.7))
     /// App icons, the photos in the second desktop's window and the dock.
     static let tiles: [NSColor] = [
         .systemBlue, .systemOrange, .systemGreen, .systemPink, .systemPurple,
@@ -607,8 +619,8 @@ final class GesturePreviewMouse: GesturePreviewArtworkView {
 // MARK: - The screen card
 
 /// The right card: a row of desktops seen through the screen, a menu bar and a dock that
-/// stay put, the overview of Mission Control, the app grid, the pulse of other actions and
-/// the pointer.
+/// stay put, the overview of Mission Control, the app grid, the windows out of the way for
+/// Show Desktop, the pulse of other actions and the pointer.
 final class GesturePreviewScreenCard: GesturePreviewArtworkView {
 
     static let cornerRadius: CGFloat = 10
@@ -622,6 +634,13 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
     static let dockIconCount = 7
     /// How much smaller the windows get in the overview.
     static let overviewScale: CGFloat = 0.6
+    /// Show Desktop: how much of a window stays in sight at the edge it slid to.
+    static let showDesktopSliver: CGFloat = 5
+    /// What lies on the desktop: how many items, their size, and their place in a column
+    /// from the top-right corner, as a Mac sorts them.
+    static let desktopItemCount = 3
+    static let desktopItemSize = NSSize(width: 15, height: 12)
+    static let desktopItemPitch: CGFloat = 25
     static let pointerSize = NSSize(width: 11, height: 17)
 
     private(set) var shown: GesturePreviewLoop.Frame?
@@ -646,6 +665,7 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
     /// Two frames that draw the same desktop.
     static func looksTheSame(_ a: GesturePreviewLoop.Frame, _ b: GesturePreviewLoop.Frame) -> Bool {
         return a.desktop == b.desktop && a.overview == b.overview && a.appGrid == b.appGrid
+            && a.showDesktop == b.showDesktop
             && a.pulse == b.pulse && a.pulseSymbol == b.pulseSymbol && a.pulseText == b.pulseText
             && a.pointerOffset == b.pointerOffset
             && a.isAtRest == b.isAtRest
@@ -698,6 +718,33 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         return windowRect(kind, in: size)
     }
 
+    /// Where a window is when Show Desktop has moved the windows out of the way: at its own
+    /// size, slid to the side of the screen it is nearer to until only a sliver of it is in
+    /// sight; a window in the middle goes up, under the menu bar. None leaves through the
+    /// bottom, where the Dock is.
+    static func showDesktopRect(_ kind: WindowKind, in size: NSSize) -> NSRect {
+        let home = windowRect(kind, in: size)
+        let sliver = showDesktopSliver
+        let fromMiddle = home.midX - size.width / 2
+        if abs(fromMiddle) < size.width * 0.1 {
+            return home.offsetBy(dx: 0, dy: menuBarHeight + sliver - home.maxY)
+        }
+        if fromMiddle < 0 {
+            return home.offsetBy(dx: sliver - home.maxX, dy: 0)
+        }
+        return home.offsetBy(dx: size.width - sliver - home.minX, dy: 0)
+    }
+
+    /// Where the things on the desktop lie (`desktopItemCount` of them, top to bottom): the
+    /// icon of each; its name is drawn under it.
+    static func desktopItemRects(in size: NSSize) -> [NSRect] {
+        let item = desktopItemSize
+        let x = (size.width - 14 - item.width).rounded()
+        return (0..<desktopItemCount).map { index in
+            NSRect(x: x, y: menuBarHeight + 12 + CGFloat(index) * desktopItemPitch, width: item.width, height: item.height)
+        }
+    }
+
     /// The pointer's tip when the hand has not moved it.
     var pointerHome: NSPoint {
         return NSPoint(x: (bounds.width * 0.72).rounded(), y: 64)
@@ -728,7 +775,8 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
             guard x < bounds.width, x + bounds.width > 0 else { continue }
             let overview = index % 2 == current ? CGFloat(frame?.overview ?? 0) : 0
             let grid = index % 2 == current ? CGFloat(frame?.appGrid ?? 0) : 0
-            drawDesktop(index % 2, at: x, overview: overview, gridFade: grid)
+            let away = index % 2 == current ? CGFloat(frame?.showDesktop ?? 0) : 0
+            drawDesktop(index % 2, at: x, overview: overview, gridFade: grid, windowsAway: away)
         }
 
         drawMenuBar()
@@ -753,7 +801,11 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         card.stroke()
     }
 
-    private func drawDesktop(_ index: Int, at x: CGFloat, overview: CGFloat, gridFade: CGFloat) {
+    /// One desktop: its wallpaper and its windows. `overview` moves the windows to their
+    /// places in Mission Control, `gridFade` fades them out under the app grid, and
+    /// `windowsAway` slides them to the edges for Show Desktop while what lies on the
+    /// desktop comes up (all 0…1; one of them at a time).
+    private func drawDesktop(_ index: Int, at x: CGFloat, overview: CGFloat, gridFade: CGFloat, windowsAway: CGFloat) {
         let rect = NSRect(x: x, y: 0, width: bounds.width, height: bounds.height)
         let start = index == 0 ? ScrollPreviewPalette.desktopStart : GesturePreviewPalette.secondDesktopStart
         let end = index == 0 ? ScrollPreviewPalette.desktopEnd : GesturePreviewPalette.secondDesktopEnd
@@ -761,6 +813,9 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         if overview > 0 {
             GesturePreviewPalette.overviewShade.withAlphaComponent(0.28 * overview).setFill()
             rect.fill(using: .sourceOver)
+        }
+        if windowsAway > 0 {
+            drawDesktopItems(at: x, strength: windowsAway)
         }
 
         let alpha = 1 - gridFade
@@ -771,8 +826,54 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         for kind in Self.windows(onDesktop: index) {
             let home = Self.windowRect(kind, in: bounds.size)
             let target = Self.overviewRect(kind, onDesktop: index, in: bounds.size)
-            let place = lerp(home, target, overview).offsetBy(dx: x, dy: 0)
-            drawWindow(kind, in: place, natural: home.size)
+            var place = lerp(home, target, overview)
+            if windowsAway > 0 {
+                place = lerp(place, Self.showDesktopRect(kind, in: bounds.size), windowsAway)
+            }
+            drawWindow(kind, in: place.offsetBy(dx: x, dy: 0), natural: home.size)
+        }
+        NSGraphicsContext.current?.cgContext.endTransparencyLayer()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// What lies on the desktop, a column in the top-right corner: two folders and a
+    /// document, each with its name under it. They come up as the windows move away
+    /// (`strength`, 0…1), as the things on a Mac's desktop do when it is shown.
+    private func drawDesktopItems(at x: CGFloat, strength: CGFloat) {
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current?.cgContext.setAlpha(min(1, max(0, strength)))
+        NSGraphicsContext.current?.cgContext.beginTransparencyLayer(auxiliaryInfo: nil)
+        for (index, home) in Self.desktopItemRects(in: bounds.size).enumerated() {
+            let rect = home.offsetBy(dx: x, dy: 0)
+            NSGraphicsContext.saveGraphicsState()
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor(white: 0, alpha: 0.25)
+            shadow.shadowBlurRadius = 1.5
+            shadow.shadowOffset = NSSize(width: 0, height: -0.5)
+            shadow.set()
+            if index == Self.desktopItemCount - 1 {
+                // A document: a sheet, upright.
+                let sheet = NSRect(x: rect.midX - 5, y: rect.minY - 1, width: 10, height: rect.height + 1)
+                GesturePreviewPalette.desktopDocument.setFill()
+                NSBezierPath(roundedRect: sheet, xRadius: 1.5, yRadius: 1.5).fill()
+                NSGraphicsContext.restoreGraphicsState()
+                ScrollPreviewPalette.pageLine.setFill()
+                for row in 0..<3 {
+                    capsule(NSRect(x: sheet.minX + 2, y: sheet.minY + 3 + CGFloat(row) * 3, width: row == 2 ? 4 : 6, height: 1.2)).fill()
+                }
+            } else {
+                // A folder: its tab behind, its front over it.
+                GesturePreviewPalette.desktopFolderTab.setFill()
+                NSBezierPath(roundedRect: NSRect(x: rect.minX, y: rect.minY, width: rect.width * 0.5, height: 5), xRadius: 1.5, yRadius: 1.5).fill()
+                NSBezierPath(roundedRect: NSRect(x: rect.minX, y: rect.minY + 1.5, width: rect.width, height: rect.height - 1.5), xRadius: 2, yRadius: 2).fill()
+                NSGraphicsContext.restoreGraphicsState()
+                GesturePreviewPalette.desktopFolder.setFill()
+                NSBezierPath(roundedRect: NSRect(x: rect.minX, y: rect.minY + 3.5, width: rect.width, height: rect.height - 3.5), xRadius: 2, yRadius: 2).fill()
+            }
+            // Its name.
+            let nameWidth: CGFloat = index == 1 ? 13 : 17
+            GesturePreviewPalette.desktopItemName.setFill()
+            capsule(NSRect(x: rect.midX - nameWidth / 2, y: rect.maxY + 3, width: nameWidth, height: 2.5)).fill()
         }
         NSGraphicsContext.current?.cgContext.endTransparencyLayer()
         NSGraphicsContext.restoreGraphicsState()

@@ -5,11 +5,14 @@
 //  The picture at the top of the Gestures tab (GesturePreviewView): that it builds, when
 //  its timer runs, that a changed scene restarts the demo, what Reduce Motion shows, that
 //  the mouse and the desktop follow the loop, and that it draws off screen in light and
-//  dark. Nothing is shown on screen: windows are created but never ordered in, and frames
-//  are asked for by loop time, not waited for. Nothing runs a real action.
+//  dark; for a row that follows the hand up or down, that its view stands half open at the
+//  stop and under Reduce Motion, that the mouse and its arrow stay in their card, and what
+//  Show Desktop draws. Nothing is shown on screen: windows are created but never ordered
+//  in, and frames are asked for by loop time, not waited for. Nothing runs a real action.
 //
 //  With the render tests' switch set (`RenderShots`), `testContactSheets` also writes contact
-//  sheets of the demo into `gesture-preview` in that folder, for a look at the artwork:
+//  sheets of the demo into `gesture-preview` in that folder, for a look at the artwork, and
+//  `testRenderFollowedRows` single pictures of the rows that follow, four times their size:
 //  TEST_RUNNER_SCROLLIO_SHOTS_DIR=/some/dir xcodebuild … test -only-testing:ScrollioTests/GesturePreviewViewTests/testContactSheets
 //
 
@@ -76,6 +79,31 @@ final class GesturePreviewViewTests: XCTestCase {
         configure(&gesture)
         return GesturePreviewScene(gesture: gesture, focus: focus)
     }
+
+    /// "Follow the hand" with "Up and Down follow the hand too" on, on a Mac where Mission
+    /// Control, Show Desktop and Apps all follow (a value: this Mac is not asked).
+    private func followScene(
+        focus: MouseGestureSettingsControls.Slot? = nil,
+        configure: (inout MouseGestureSettings) -> Void = { _ in }
+    ) -> GesturePreviewScene {
+        var gesture = MouseGestureSettings.default
+        gesture.mode = .interactive
+        gesture.actionsFollowHand = true
+        configure(&gesture)
+        let everything = DockFollowAvailability(
+            swipeIsAvailable: true, canPostEvents: true, majorVersion: 27, switches: .allOn, appsMayFollow: true
+        )
+        return GesturePreviewScene(gesture: gesture, focus: focus, availability: everything)
+    }
+
+    /// Show Desktop on the Up row, following.
+    private var showDesktopScene: GesturePreviewScene {
+        return followScene(focus: .up) { $0.upAction = SystemShortcut.showDesktop.identifier }
+    }
+
+    /// The moment the hand stands still half-way, and one at which a followed view is whole.
+    private let stopTime = (Loop.followFirstStopEnd + Loop.followSecondStart) / 2
+    private let wholeTime = Loop.followRelease + Loop.followSettle + 0.3
 
     // MARK: - Building
 
@@ -362,6 +390,200 @@ final class GesturePreviewViewTests: XCTestCase {
         XCTAssertEqual(view.screenCard.shown?.desktop ?? 0, 0.5, accuracy: 1e-9)
     }
 
+    // MARK: - A row that follows the hand up or down
+
+    func testARowThatFollowsShowsItsViewHalfOpenAtTheStop() {
+        let view = makeView()
+        let mouse = view.deviceCard.mouse
+        let home = mouse.frame.origin
+        view.scene = followScene(focus: .up)
+        view.showLoop(at: stopTime)
+        XCTAssertEqual(view.screenCard.shown, view.shownFrame)
+        XCTAssertEqual(view.screenCard.shown?.overview ?? 0, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(mouse.frame.origin.x, home.x, accuracy: 1e-9)
+        XCTAssertEqual(mouse.frame.origin.y, home.y - view.loop.followVerticalTravel / 2, accuracy: 0.5, "up is towards the top of the card")
+        let arrow = view.deviceCard.arrowSegment
+        XCTAssertLessThan(arrow?.to.y ?? 0, arrow?.from.y ?? 0, "the arrow points up")
+
+        view.scene = followScene(focus: .down)
+        view.showLoop(at: stopTime)
+        XCTAssertEqual(view.screenCard.shown?.appGrid ?? 0, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(mouse.frame.origin.y, home.y + view.loop.followVerticalTravel / 2, accuracy: 0.5)
+
+        view.scene = showDesktopScene
+        view.showLoop(at: stopTime)
+        XCTAssertEqual(view.screenCard.shown?.showDesktop ?? 0, 0.5, accuracy: 1e-9)
+        view.showLoop(at: view.loop.length - 0.05)
+        XCTAssertEqual(view.screenCard.shown?.showDesktop ?? 1, 0)
+        XCTAssertEqual(mouse.frame.origin, home)
+    }
+
+    /// The longest way the hand goes (the slowest Swipe speed), at the moment it lets go:
+    /// every mouse, in the view it is held in, and the arrow ahead of it are inside the card.
+    func testTheMouseAndItsArrowStayInTheCardWhileARowFollows() {
+        for model in MouseArtworkModel.allCases {
+            for picture in [TriggerPictureSource.none, gestureButton(on: model)] {
+                for focus in [MouseGestureSettingsControls.Slot.up, .down] {
+                    let view = makeView(mouse: model, picture: picture)
+                    view.scene = followScene(focus: focus) { $0.trackingSpeed = MouseGestureSettings.trackingSpeedRange.lowerBound }
+                    XCTAssertEqual(view.loop.followVerticalTravel, Loop.followVerticalTravelRange.upperBound)
+                    view.showLoop(at: Loop.followRelease)
+                    let card = view.deviceCard
+                    let mouse = card.mouse
+                    let outline = mouse.outlineRect.offsetBy(dx: mouse.frame.minX, dy: mouse.frame.minY)
+                    let message = "\(model), held \(picture == .none ? "nothing" : "its button"), \(focus)"
+                    XCTAssertEqual(view.shownFrame.arrow, 1, accuracy: 1e-9, message)
+                    XCTAssertFalse(card.arrowView.isHidden, message)
+                    XCTAssertTrue(card.bounds.contains(card.arrowView.frame), "the arrow \(card.arrowView.frame): \(message)")
+                    XCTAssertTrue(card.bounds.insetBy(dx: 1, dy: 1).contains(outline), "the mouse \(outline): \(message)")
+                }
+            }
+        }
+    }
+
+    func testReduceMotionShowsARowThatFollowsHalfOpen() {
+        let view = makeView(reduceMotion: true, picture: gestureButton(on: .mxMaster4))
+        host(view)
+        view.setAnimating(true)
+
+        view.scene = followScene(focus: .up)
+        XCTAssertFalse(view.isTimerRunning, "nothing runs with Reduce Motion on")
+        XCTAssertEqual(view.shownFrame, view.loop.stillFrame)
+        XCTAssertEqual(view.shownFrame.overview, 0.5, accuracy: 1e-9, "Mission Control half open")
+        XCTAssertEqual(view.shownFrame.buttonDepth, 1, accuracy: 1e-9, "the button is shown held")
+        XCTAssertEqual(view.shownFrame.mouseOffset.y, -view.loop.followVerticalTravel / 2, accuracy: 1e-9, "the mouse half-way up")
+        XCTAssertEqual(view.screenCard.shown, view.shownFrame)
+
+        view.scene = showDesktopScene
+        XCTAssertFalse(view.isTimerRunning)
+        XCTAssertEqual(view.shownFrame.showDesktop, 0.5, accuracy: 1e-9, "the windows half-way out")
+
+        // The same row in "One action per hold" shows the view whole.
+        var once = followScene(focus: .up)
+        once.gesture.mode = .discrete
+        view.scene = once
+        XCTAssertEqual(view.shownFrame.overview, 1, accuracy: 1e-9)
+    }
+
+    /// Show Desktop: every window keeps its size and slides straight to an edge of the
+    /// screen, where a sliver of it stays in sight; none goes down, where the Dock is; the
+    /// things on the desktop lie in the part that is free then.
+    func testShowDesktopSlidesTheWindowsToTheEdges() {
+        typealias Card = GesturePreviewScreenCard
+        let size = NSSize(width: 234, height: 150)
+        let screen = NSRect(origin: .zero, size: size)
+        let sliver = Card.showDesktopSliver
+        let free = NSRect(
+            x: sliver, y: Card.menuBarHeight + sliver,
+            width: size.width - 2 * sliver, height: size.height - Card.menuBarHeight - sliver
+        )
+        for kind in Card.WindowKind.allCases {
+            let home = Card.windowRect(kind, in: size)
+            let away = Card.showDesktopRect(kind, in: size)
+            XCTAssertEqual(away.size, home.size, "\(kind) keeps its size")
+            XCTAssertTrue(away.minX == home.minX || away.minY == home.minY, "\(kind) slides straight")
+            XCTAssertNotEqual(away, home, "\(kind)")
+            XCTAssertLessThanOrEqual(away.maxY, home.maxY, "\(kind) does not go down")
+            XCTAssertFalse(away.intersection(screen).isEmpty, "a sliver of \(kind) stays in sight")
+            XCTAssertFalse(away.intersects(free), "\(kind) is out of the way")
+        }
+        XCTAssertEqual(Card.showDesktopRect(.article, in: size).maxX, sliver, "the window on the left goes left")
+        XCTAssertEqual(Card.showDesktopRect(.notes, in: size).minX, size.width - sliver, "the one on the right goes right")
+        XCTAssertEqual(Card.showDesktopRect(.photos, in: size).maxY, Card.menuBarHeight + sliver, "the one in the middle goes up, under the menu bar")
+
+        let items = Card.desktopItemRects(in: size)
+        XCTAssertEqual(items.count, Card.desktopItemCount)
+        for (index, item) in items.enumerated() {
+            XCTAssertTrue(free.insetBy(dx: 4, dy: 4).contains(item), "item \(index)")
+            XCTAssertLessThan(item.maxY + 8, size.height - Card.dockHeight - 4, "above the Dock, with its name: item \(index)")
+            if index > 0 {
+                XCTAssertGreaterThan(item.minY, items[index - 1].maxY + 6, "room for the name of the one above")
+            }
+        }
+    }
+
+    /// A frame that only moves the windows redraws the desktop; one that only moves the
+    /// mouse does not.
+    func testTheDesktopIsRedrawnWhileTheWindowsSlide() {
+        let rest = Loop(scene: scene()).frame(at: 0)
+        var slid = rest
+        slid.showDesktop = 0.3
+        XCTAssertFalse(GesturePreviewScreenCard.looksTheSame(rest, slid))
+        var moved = rest
+        moved.mouseOffset = CGPoint(x: 0, y: -4)
+        moved.buttonDepth = 1
+        XCTAssertTrue(GesturePreviewScreenCard.looksTheSame(rest, moved))
+    }
+
+    func testShowDesktopUncoversTheDesktop() throws {
+        // Where the front window's page is at rest; a point both windows of the first
+        // desktop cover at rest and neither does half-way; the sliver of the front window
+        // at the left edge; the front of the first folder on the desktop.
+        let page = (x: CGFloat(246 + 23), y: CGFloat(106))
+        let middle = (x: CGFloat(246 + 125), y: CGFloat(66))
+        let sliver = (x: CGFloat(246 + 2.5), y: CGFloat(60))
+        let folder = GesturePreviewScreenCard.desktopItemRects(in: NSSize(width: 234, height: 150))[0]
+        let item = (x: 246 + folder.midX, y: folder.maxY - 3)
+        func isWallpaper(_ colour: NSColor) -> Bool {
+            return colour.blueComponent > colour.redComponent + 0.1 && colour.alphaComponent > 0.99
+        }
+        func isWindow(_ colour: NSColor, dark: Bool) -> Bool {
+            let isGrey = abs(colour.blueComponent - colour.redComponent) < 0.05
+            return isGrey && (dark ? mean(colour) < 0.3 : mean(colour) > 0.85)
+        }
+        for dark in [false, true] {
+            let rest = try render(showDesktopScene, dark: dark, time: 0)
+            let half = try render(showDesktopScene, dark: dark, time: stopTime)
+            let whole = try render(showDesktopScene, dark: dark, time: wholeTime)
+            let message = dark ? "dark" : "light"
+
+            XCTAssertTrue(isWindow(try colour(in: rest, x: page.x, y: page.y), dark: dark), message)
+            XCTAssertTrue(isWindow(try colour(in: rest, x: middle.x, y: middle.y), dark: dark), message)
+            XCTAssertTrue(isWallpaper(try colour(in: half, x: middle.x, y: middle.y)), "half-way the windows have parted: \(message)")
+            XCTAssertTrue(isWallpaper(try colour(in: whole, x: middle.x, y: middle.y)), message)
+            XCTAssertTrue(isWallpaper(try colour(in: whole, x: page.x, y: page.y)), "the desktop shows where the window was: \(message)")
+            XCTAssertTrue(isWindow(try colour(in: whole, x: sliver.x, y: sliver.y), dark: dark), "a sliver of the window stays: \(message)")
+
+            // What lies on the desktop comes up with it: a folder, bluer than the wallpaper.
+            let folderShown = try colour(in: whole, x: item.x, y: item.y)
+            let before = try colour(in: rest, x: item.x, y: item.y)
+            XCTAssertGreaterThan(folderShown.blueComponent - folderShown.redComponent, 0.5, message)
+            XCTAssertLessThan(before.blueComponent - before.redComponent, 0.45, "nothing there at rest: \(message)")
+
+            // The menu bar and the Dock stay where they are.
+            for point in [(x: CGFloat(246 + 117), y: CGFloat(4)), (x: CGFloat(246 + 117), y: CGFloat(140))] {
+                XCTAssertEqual(try colour(in: rest, x: point.x, y: point.y), try colour(in: whole, x: point.x, y: point.y), message)
+            }
+        }
+    }
+
+    func testAFollowedRowsPictureChangesWithTheLoopAndComesBack() throws {
+        let round = followScene()
+        let cases: [(GesturePreviewScene, TimeInterval)] = [
+            (followScene(focus: .up), stopTime),
+            (followScene(focus: .down), stopTime),
+            (showDesktopScene, stopTime),
+            (showDesktopScene, wholeTime),
+            (round, Loop(scene: round).starts[2] + stopTime),
+            (round, Loop(scene: round).starts[3] + wholeTime),
+        ]
+        for (scene, moment) in cases {
+            let loop = Loop(scene: scene)
+            for dark in [false, true] {
+                let start = try render(scene, dark: dark, time: 0)
+                let middle = try render(scene, dark: dark, time: moment)
+                let again = try render(scene, dark: dark, time: loop.length)
+                XCTAssertNotEqual(try pixels(of: start), try pixels(of: middle), "\(scene)")
+                XCTAssertEqual(try pixels(of: start), try pixels(of: again), "back after a round: \(scene)")
+                // Both cards are painted, moving and still.
+                for rep in [middle, try render(scene, dark: dark, time: nil)] {
+                    XCTAssertLessThan(try colour(in: rep, x: 12, y: 12).alphaComponent, 0.2, "\(scene)")
+                    XCTAssertEqual(try colour(in: rep, x: 470, y: 30).alphaComponent, 1, accuracy: 0.01, "\(scene)")
+                }
+            }
+        }
+    }
+
     // MARK: - Reduce Motion
 
     func testReduceMotionShowsAStillFrame() {
@@ -397,10 +619,11 @@ final class GesturePreviewViewTests: XCTestCase {
 
     // MARK: - Drawing
 
-    /// One picture of the view, rendered off screen.
+    /// One picture of the view, rendered off screen (`scale`: pixels per point, for a
+    /// picture to look at; without it, as the view would cache itself).
     private func render(
         _ scene: GesturePreviewScene, dark: Bool, time: TimeInterval?, size: NSSize? = nil, mouse: MouseArtworkModel = .mxMaster4,
-        picture: TriggerPictureSource = .none
+        picture: TriggerPictureSource = .none, scale: CGFloat? = nil
     ) throws -> NSBitmapImageRep {
         let view = makeView(reduceMotion: time == nil, size: size, mouse: mouse, picture: picture)
         view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
@@ -408,7 +631,17 @@ final class GesturePreviewViewTests: XCTestCase {
         if let time {
             view.showLoop(at: time)
         }
-        let rep = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        guard let scale else {
+            let rep = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: rep)
+            return rep
+        }
+        let rep = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * scale), pixelsHigh: Int(view.bounds.height * scale),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        rep.size = view.bounds.size
         view.cacheDisplay(in: view.bounds, to: rep)
         return rep
     }
@@ -935,18 +1168,75 @@ final class GesturePreviewViewTests: XCTestCase {
             ("discrete-left-inverted", scene(focus: .left) { $0.invertHorizontal = true }),
             ("discrete-up-no-action", scene(focus: .up) { $0.upAction = "" }),
             ("discrete-right-pointer-free", scene(focus: .right) { $0.freezePointer = false }),
+            ("discrete-up-show-desktop", scene(focus: .up) { $0.upAction = SystemShortcut.showDesktop.identifier }),
+            ("follow-up-mission-control", followScene(focus: .up)),
+            ("follow-down-apps", followScene(focus: .down)),
+            ("follow-up-show-desktop", showDesktopScene),
+            ("follow-down-show-desktop-slow-pointer-free", followScene(focus: .down) {
+                $0.downAction = SystemShortcut.showDesktop.identifier
+                $0.trackingSpeed = 0.5
+                $0.freezePointer = false
+            }),
+            ("follow-up-mission-control-fast", followScene(focus: .up) { $0.trackingSpeed = 3 }),
         ]
         for (name, scene) in cases {
             try write("\(name)-light", scene, dark: false)
             try write("\(name)-dark", scene, dark: true)
         }
+        // The round with nothing pointed at: its third and fourth hold, up and down.
+        for dark in [false, true] {
+            let name = "follow-cycle-up-and-down-\(dark ? "dark" : "light")"
+            let sheet = try contactSheet(title: name, scene: followScene(), dark: dark, legs: 2..<4)
+            try XCTUnwrap(sheet.representation(using: .png, properties: [:])).write(to: directory.appendingPathComponent("\(name).png"))
+        }
     }
 
-    /// Twelve moments of the loop, two to a row, each with what it shows and when.
-    private func contactSheet(title: String, scene: GesturePreviewScene, dark: Bool) throws -> NSBitmapImageRep {
+    /// Single pictures of the rows that follow the hand, four times their size, when the
+    /// render tests are asked for (`RenderShots`): Mission Control, the app grid and Show
+    /// Desktop half open at the stop and whole, and the frame Reduce Motion shows, in
+    /// light and in dark.
+    func testRenderFollowedRows() throws {
+        let directory = try RenderShots.directory(for: "the rows that follow the hand", subfolder: "gesture-preview-follow")
+        let showDesktopDownSlowest = followScene(focus: .down) {
+            $0.downAction = SystemShortcut.showDesktop.identifier
+            $0.trackingSpeed = 0.5
+        }
+        var showDesktopOnce = showDesktopScene
+        showDesktopOnce.gesture.mode = .discrete
+        let cases: [(String, GesturePreviewScene, TimeInterval?)] = [
+            ("up-mission-control-half", followScene(focus: .up), stopTime),
+            ("up-mission-control-let-go", followScene(focus: .up), Loop.followRelease),
+            ("up-mission-control-whole", followScene(focus: .up), wholeTime),
+            ("up-mission-control-reduce-motion", followScene(focus: .up), nil),
+            ("up-mission-control-slowest-let-go", followScene(focus: .up) { $0.trackingSpeed = 0.5 }, Loop.followRelease),
+            ("down-apps-half", followScene(focus: .down), stopTime),
+            ("down-apps-reduce-motion", followScene(focus: .down), nil),
+            ("up-show-desktop-quarter", showDesktopScene, 0.8),
+            ("up-show-desktop-half", showDesktopScene, stopTime),
+            ("up-show-desktop-let-go", showDesktopScene, Loop.followRelease),
+            ("up-show-desktop-whole", showDesktopScene, wholeTime),
+            ("up-show-desktop-reduce-motion", showDesktopScene, nil),
+            ("down-show-desktop-slowest-let-go", showDesktopDownSlowest, Loop.followRelease),
+            ("once-show-desktop-reduce-motion", showDesktopOnce, nil),
+        ]
+        for (name, scene, time) in cases {
+            for dark in [false, true] {
+                let rep = try render(scene, dark: dark, time: time, picture: gestureButton(on: .mxMaster4), scale: 4)
+                let data = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
+                try data.write(to: directory.appendingPathComponent("\(name)-\(dark ? "dark" : "light").png"))
+            }
+        }
+    }
+
+    /// Moments of the loop (of its first two holds, or of `legs`), two to a row, each with
+    /// what it shows and when.
+    private func contactSheet(
+        title: String, scene: GesturePreviewScene, dark: Bool, legs shown: Range<Int>? = nil
+    ) throws -> NSBitmapImageRep {
         let loop = Loop(scene: scene)
         var moments: [(label: String, time: TimeInterval?)] = []
-        for (index, leg) in loop.legs.prefix(2).enumerated() {
+        for index in (shown ?? 0..<2).clamped(to: 0..<loop.legs.count) {
+            let leg = loop.legs[index]
             let start = loop.starts[index]
             let name = leg.direction.map { "\($0)" } ?? "click"
             let prefix = "leg \(index + 1) (\(name))"
@@ -959,6 +1249,12 @@ final class GesturePreviewViewTests: XCTestCase {
                     ("\(prefix): let go", start + Loop.followRelease + 0.1),
                     ("\(prefix): settled", start + Loop.followReturnStart + 0.2),
                 ]
+                if leg.opensWithTheHand {
+                    moments += [
+                        ("\(prefix): whole, the mouse back", start + Loop.followReturnEnd + 0.3),
+                        ("\(prefix): closing", start + Loop.followCloseStart + Loop.overlayOut / 2),
+                    ]
+                }
             case .move, .click:
                 let fire = leg.fireTime ?? Loop.moveEnd
                 moments += [

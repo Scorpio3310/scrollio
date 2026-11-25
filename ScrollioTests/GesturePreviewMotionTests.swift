@@ -5,8 +5,11 @@
 //  The script of the Gestures tab's preview (GesturePreviewLoop): which holds a scene
 //  plays, that "Follow the hand" moves the desktops in step with the mouse and settles on
 //  a whole desktop, that inverting flips the slide, that a discrete action runs once per
-//  hold, and that the loop ends on the picture it started with. Pure values: nothing is
-//  drawn and no action runs.
+//  hold, and that the loop ends on the picture it started with. With "Up and Down follow
+//  the hand too": that a row whose view follows on this Mac opens it as far as the mouse
+//  has moved (Mission Control, Show Desktop, the app grid), that every other row keeps its
+//  one action per hold, and what the round and the still frame show then. Pure values:
+//  nothing is drawn and no action runs.
 //
 
 import XCTest
@@ -27,6 +30,43 @@ final class GesturePreviewMotionTests: XCTestCase {
         gesture.mode = mode
         configure(&gesture)
         return GesturePreviewScene(gesture: gesture, focus: focus)
+    }
+
+    /// A Mac on which views of the Dock follow the hand: the swipe can be built, events can
+    /// be posted, the Dock's own gestures are on. Apps follows only in a build that lets it.
+    private func mac(
+        version: Int = 27, apps: Bool = false, swipe: Bool = true, canPost: Bool = true,
+        switches: DockGestureSwitches = .allOn
+    ) -> DockFollowAvailability {
+        return DockFollowAvailability(
+            swipeIsAvailable: swipe, canPostEvents: canPost, majorVersion: version, switches: switches, appsMayFollow: apps
+        )
+    }
+
+    /// "Follow the hand" with "Up and Down follow the hand too" on; without another Mac,
+    /// one on which all three views follow.
+    private func followScene(
+        focus: MouseGestureSettingsControls.Slot? = nil,
+        on availability: DockFollowAvailability? = nil,
+        configure: (inout MouseGestureSettings) -> Void = { _ in }
+    ) -> GesturePreviewScene {
+        var gesture = MouseGestureSettings.default
+        gesture.mode = .interactive
+        gesture.actionsFollowHand = true
+        configure(&gesture)
+        return GesturePreviewScene(gesture: gesture, focus: focus, availability: availability ?? mac(apps: true))
+    }
+
+    /// The three views a row can open with the hand, each on the row and with the action
+    /// that opens it, and the number of the frame that draws it.
+    private var followedViews: [(name: String, scene: GesturePreviewScene, opened: (Loop.Frame) -> Double)] {
+        let showDesktop = SystemShortcut.showDesktop.identifier
+        return [
+            ("Mission Control, up", followScene(focus: .up), { $0.overview }),
+            ("the app grid, down", followScene(focus: .down), { $0.appGrid }),
+            ("Show Desktop, up", followScene(focus: .up) { $0.upAction = showDesktop }, { $0.showDesktop }),
+            ("Show Desktop, down", followScene(focus: .down) { $0.downAction = showDesktop }, { $0.showDesktop }),
+        ]
     }
 
     /// Frames every `step` seconds over the whole loop.
@@ -50,6 +90,7 @@ final class GesturePreviewMotionTests: XCTestCase {
         XCTAssertEqual(Effect(action: ""), .none)
         XCTAssertEqual(Effect(action: SystemShortcut.missionControl.identifier), .missionControl)
         XCTAssertEqual(Effect(action: SystemShortcut.appExpose.identifier), .appGrid, "shown as Launchpad")
+        XCTAssertEqual(Effect(action: SystemShortcut.showDesktop.identifier), .showDesktop)
         XCTAssertEqual(Effect(action: SystemShortcut.moveSpaceLeft.identifier), .space(.left))
         XCTAssertEqual(Effect(action: SystemShortcut.moveSpaceRight.identifier), .space(.right))
         XCTAssertEqual(Effect(action: SystemShortcut.copy.identifier), .pulse(symbolName: SystemShortcut.copy.symbolName))
@@ -58,11 +99,18 @@ final class GesturePreviewMotionTests: XCTestCase {
 
         XCTAssertEqual(Effect.space(.left).shift, -1)
         XCTAssertEqual(Effect.space(.right).shift, 1)
-        for effect in [Effect.none, .missionControl, .appGrid, .pulse(symbolName: "doc.on.doc")] {
+        for effect in [Effect.none, .missionControl, .appGrid, .showDesktop, .pulse(symbolName: "doc.on.doc")] {
             XCTAssertEqual(effect.shift, 0)
         }
         XCTAssertEqual(Effect.none.duration, 0)
         XCTAssertGreaterThan(Effect.missionControl.duration, 1)
+        XCTAssertEqual(Effect.showDesktop.duration, Effect.missionControl.duration, "it opens, stays and closes as the overview does")
+
+        // What a hold opens with the hand looks as the action that opens it at once.
+        for target in DockFollowTarget.allCases {
+            XCTAssertEqual(Effect(opening: target), Effect(action: target.actionIdentifier), "\(target)")
+        }
+        XCTAssertEqual(Effect(opening: .apps), .appGrid)
     }
 
     // MARK: - Which holds
@@ -92,12 +140,59 @@ final class GesturePreviewMotionTests: XCTestCase {
         XCTAssertEqual(click.legs, [.click(effect: .missionControl)])
         XCTAssertNil(click.legs[0].direction)
 
-        // In "Follow the hand" up, down and click keep their one action per hold.
+        // In "Follow the hand" up, down and click keep their one action per hold while "Up
+        // and Down follow the hand too" is off, whatever this Mac could do.
         let followUp = Loop(scene: scene(mode: .interactive, focus: .up))
         XCTAssertEqual(followUp.legs.map(\.kind), [.move])
+        var switchOff = scene(mode: .interactive, focus: .up)
+        switchOff.availability = mac(apps: true)
+        XCTAssertEqual(Loop(scene: switchOff).legs, [.move(.up, effect: .missionControl)])
         let followLeft = Loop(scene: scene(mode: .interactive, focus: .left))
         XCTAssertEqual(followLeft.legs.first?.kind, .follow)
         XCTAssertEqual(followLeft.legs.first?.direction, .left)
+    }
+
+    /// With the switch on, a row still runs its action once where it does not follow: an
+    /// action with no view to open with the hand, a view this Mac does not open with the
+    /// hand, the click, and everything in "One action per hold".
+    func testARowThatDoesNotFollowKeepsItsOneActionPerHold() {
+        let copy = SystemShortcut.copy.identifier
+        XCTAssertEqual(
+            Loop(scene: followScene(focus: .up) { $0.upAction = copy }).legs,
+            [.move(.up, effect: .pulse(symbolName: SystemShortcut.copy.symbolName))]
+        )
+        XCTAssertEqual(Loop(scene: followScene(focus: .up) { $0.upAction = "" }).legs, [.move(.up, effect: .none)])
+        XCTAssertEqual(Loop(scene: followScene(focus: .down, on: mac())).legs, [.move(.down, effect: .appGrid)],
+                       "Apps runs once in a build that does not let it follow")
+        XCTAssertEqual(Loop(scene: followScene(focus: .up, on: mac(swipe: false))).legs, [.move(.up, effect: .missionControl)],
+                       "the swipe cannot be built")
+        XCTAssertEqual(Loop(scene: followScene(focus: .up, on: mac(canPost: false))).legs, [.move(.up, effect: .missionControl)])
+        let missionControlOff = DockGestureSwitches(missionControl: false, showDesktop: true, launchpad: true)
+        XCTAssertEqual(Loop(scene: followScene(focus: .up, on: mac(switches: missionControlOff))).legs,
+                       [.move(.up, effect: .missionControl)], "its trackpad gesture is off")
+        let showDesktop = SystemShortcut.showDesktop.identifier
+        XCTAssertEqual(Loop(scene: followScene(focus: .down, on: mac(version: 26)) { $0.downAction = showDesktop }).legs,
+                       [.move(.down, effect: .showDesktop)], "Show Desktop runs once before macOS 27")
+        XCTAssertEqual(Loop(scene: followScene(focus: .click)).legs, [.click(effect: .missionControl)])
+        // Left and right are the desktops', whatever their actions are.
+        XCTAssertEqual(Loop(scene: followScene(focus: .left) { $0.leftAction = SystemShortcut.missionControl.identifier }).legs.first,
+                       .follow(.left, invert: false))
+
+        // "One action per hold": the stored switch means nothing.
+        var discrete = followScene(focus: .up)
+        discrete.gesture.mode = .discrete
+        XCTAssertEqual(Loop(scene: discrete).legs, [.move(.up, effect: .missionControl)])
+        discrete.focus = nil
+        XCTAssertEqual(Loop(scene: discrete).legs.map(\.direction), [.left, .right])
+    }
+
+    /// Without a value handed in, a scene asks this Mac.
+    func testASceneAsksThisMacWhatFollowsUnlessItIsTold() {
+        XCTAssertEqual(GesturePreviewScene().availability, DockFollowAvailability.live)
+        XCTAssertEqual(GesturePreviewScene(gesture: .default, focus: .up).availability, DockFollowAvailability.live)
+        let told = GesturePreviewScene(availability: mac(version: 14))
+        XCTAssertEqual(told.availability, mac(version: 14))
+        XCTAssertNotEqual(told, GesturePreviewScene(availability: mac(version: 27)), "another Mac is another scene: the demo restarts")
     }
 
     func testWithLeftAndRightInvertedTheOtherHandRunsARowsAction() {
@@ -236,6 +331,280 @@ final class GesturePreviewMotionTests: XCTestCase {
         let right = Loop(scene: scene(mode: .interactive, focus: .right) { $0.invertHorizontal = true })
         XCTAssertEqual(right.legs[0].direction, .right)
         XCTAssertEqual(right.legs[0].shift, 1)
+    }
+
+    // MARK: - Up and Down follow the hand too
+
+    func testARowThatFollowsOpensItsViewWithTheHand() {
+        let up = Loop(scene: followScene(focus: .up))
+        XCTAssertEqual(up.legs, [.follow(.up, opening: .missionControl)])
+        let leg = up.legs[0]
+        XCTAssertEqual(leg.kind, .follow)
+        XCTAssertEqual(leg.direction, .up)
+        XCTAssertEqual(leg.effect, .missionControl)
+        XCTAssertEqual(leg.shift, 0, "no desktop moves")
+        XCTAssertNil(leg.fireTime, "nothing runs at one moment: the view opens with the hand")
+        XCTAssertTrue(leg.opensWithTheHand)
+        XCTAssertFalse(Leg.follow(.left, invert: false).opensWithTheHand)
+        XCTAssertFalse(Leg.move(.up, effect: .missionControl).opensWithTheHand)
+        // Press, half-way, a stop, on, let go, as sideways; then the view opens by itself,
+        // stays as long as the overview of one action per hold does, and closes.
+        XCTAssertEqual(leg.pressTime, Leg.follow(.left, invert: false).pressTime)
+        XCTAssertEqual(leg.releaseTime, Leg.follow(.left, invert: false).releaseTime)
+        XCTAssertEqual(leg.length, 4.2, accuracy: 1e-9)
+
+        XCTAssertEqual(Loop(scene: followScene(focus: .down)).legs, [.follow(.down, opening: .appGrid)])
+        let showDesktop = SystemShortcut.showDesktop.identifier
+        XCTAssertEqual(Loop(scene: followScene(focus: .up) { $0.upAction = showDesktop }).legs, [.follow(.up, opening: .showDesktop)])
+        // The hand moves the row's way, whatever the row opens.
+        XCTAssertEqual(Loop(scene: followScene(focus: .down) { $0.downAction = SystemShortcut.missionControl.identifier }).legs,
+                       [.follow(.down, opening: .missionControl)])
+        // A release build: Mission Control and Show Desktop, not Apps.
+        XCTAssertEqual(Loop(scene: followScene(focus: .up, on: mac())).legs, [.follow(.up, opening: .missionControl)])
+        // Before macOS 27: Mission Control only.
+        XCTAssertEqual(Loop(scene: followScene(focus: .up, on: mac(version: 14))).legs, [.follow(.up, opening: .missionControl)])
+    }
+
+    func testTheViewIsOpenAsFarAsTheHandHasMoved() {
+        for (name, scene, opened) in followedViews {
+            for speed in [0.5, 1, 1.5, 3] {
+                var scene = scene
+                scene.gesture.trackingSpeed = speed
+                let loop = Loop(scene: scene)
+                let leg = loop.legs[0]
+                let travel = Double(loop.followVerticalTravel)
+                let message = "\(name), speed \(speed)"
+                var checked = 0
+                for time in stride(from: leg.pressTime, through: leg.releaseTime, by: 0.01) {
+                    let frame = loop.frame(at: time)
+                    XCTAssertEqual(frame.mouseOffset.x, 0, message)
+                    // Up is towards the top of the card (y down).
+                    let moved = Double(leg.direction == .up ? -frame.mouseOffset.y : frame.mouseOffset.y)
+                    XCTAssertGreaterThanOrEqual(moved, 0, "the hand moves the row's way: \(message)")
+                    XCTAssertEqual(opened(frame), moved / travel, accuracy: 1e-9, "\(message) at \(time)")
+                    // Nothing else answers: one view, no desktop moves, no action runs.
+                    XCTAssertEqual(frame.overview + frame.appGrid + frame.showDesktop, opened(frame), accuracy: 1e-12, message)
+                    XCTAssertEqual(frame.desktop, 0, message)
+                    XCTAssertEqual(frame.swipeProgress, 0, message)
+                    XCTAssertEqual(frame.pulse, 0, message)
+                    XCTAssertEqual(frame.actionsFired, 0, message)
+                    if time >= leg.pressTime + Loop.buttonTravel {
+                        XCTAssertEqual(frame.buttonDepth, 1, accuracy: 1e-9, "held all the way: \(message)")
+                    }
+                    checked += 1
+                }
+                XCTAssertGreaterThan(checked, 100)
+                // Half-way the hand stops for a moment, and the view stands half open.
+                for time in stride(from: Loop.followFirstStopEnd, through: Loop.followSecondStart, by: 0.05) {
+                    let stop = loop.frame(at: time)
+                    XCTAssertEqual(opened(stop), Loop.followFirstStop, accuracy: 1e-9, message)
+                    XCTAssertEqual(Double(abs(stop.mouseOffset.y)), travel * Loop.followFirstStop, accuracy: 1e-9, message)
+                }
+                XCTAssertTrue(loop.frame(at: (Loop.followFirstStopEnd + Loop.followSecondStart) / 2).isAtRest, "nothing moves at the stop: \(message)")
+                XCTAssertFalse(loop.frame(at: (Loop.followFirstStart + Loop.followFirstStopEnd) / 2).isAtRest, message)
+            }
+        }
+    }
+
+    func testTheViewOpensAllTheWayAfterTheReleaseAndClosesAgain() {
+        for (name, scene, opened) in followedViews {
+            let loop = Loop(scene: scene)
+            let leg = loop.legs[0]
+            let released = loop.frame(at: leg.releaseTime)
+            XCTAssertEqual(opened(released), Loop.followReleaseShare, accuracy: 1e-9, name)
+
+            // It finishes the way by itself.
+            var previous = opened(released)
+            for time in stride(from: leg.releaseTime, through: leg.releaseTime + Loop.followSettle, by: 0.01) {
+                let frame = loop.frame(at: time)
+                XCTAssertGreaterThanOrEqual(opened(frame), previous - 1e-12, name)
+                previous = opened(frame)
+            }
+            XCTAssertFalse(loop.frame(at: leg.releaseTime + Loop.followSettle / 2).isAtRest, name)
+            let whole = loop.frame(at: leg.releaseTime + Loop.followSettle + 0.01)
+            XCTAssertEqual(opened(whole), 1, accuracy: 1e-9, name)
+            XCTAssertEqual(whole.buttonDepth, 0, accuracy: 1e-9, "let go: \(name)")
+
+            // The mouse glides back with the button up while the view stays whole.
+            let back = loop.frame(at: Loop.followReturnEnd + 0.01)
+            XCTAssertEqual(back.mouseOffset, .zero, name)
+            XCTAssertEqual(opened(back), 1, accuracy: 1e-9, name)
+            XCTAssertTrue(back.isAtRest, name)
+            XCTAssertEqual(opened(loop.frame(at: Loop.followCloseStart)), 1, accuracy: 1e-9, name)
+
+            // Then it closes, and the hold ends on the picture it began with.
+            XCTAssertEqual(Loop.followCloseStart, Loop.followRelease + Loop.followSettle + Loop.overlayHold, accuracy: 1e-9)
+            let closing = loop.frame(at: Loop.followCloseStart + Loop.overlayOut / 2)
+            XCTAssertEqual(opened(closing), 0.5, accuracy: 1e-9, name)
+            XCTAssertFalse(closing.isAtRest, name)
+            let closed = loop.frame(at: Loop.followCloseEnd + 0.001)
+            XCTAssertEqual(opened(closed), 0, accuracy: 1e-9, name)
+            XCTAssertTrue(closed.isAtRest, name)
+
+            // One opening per hold, and no action runs in it.
+            let values = frames(loop).map { opened($0.frame) }
+            XCTAssertEqual(values.max() ?? 0, 1, accuracy: 1e-9, name)
+            var rises = 0
+            for (a, b) in zip(values, values.dropFirst()) where a == 0 && b > 0 {
+                rises += 1
+            }
+            XCTAssertEqual(rises, 1, name)
+            XCTAssertTrue(frames(loop).allSatisfy { $0.frame.actionsFired == 0 }, name)
+            XCTAssertTrue(values.allSatisfy { $0 >= 0 && $0 <= 1 + 1e-12 }, name)
+        }
+    }
+
+    func testAHigherSwipeSpeedNeedsLessMovementUpAndDownToo() {
+        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 1), 15)
+        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 1.5), 10)
+        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 0.5), 18, "kept inside the card")
+        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 3), 8, "still visibly moves")
+        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: .nan), 15)
+        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 0), 15)
+        // At Swipe speed 1 the mouse is let go as far out as one action per hold takes it.
+        XCTAssertEqual(Loop.followVerticalTravel(trackingSpeed: 1) * CGFloat(Loop.followReleaseShare), Loop.verticalReach, accuracy: 1e-9)
+
+        let slow = Loop(scene: followScene(focus: .up) { $0.trackingSpeed = 1 })
+        let fast = Loop(scene: followScene(focus: .up) { $0.trackingSpeed = 1.5 })
+        let time = Loop.followRelease
+        XCTAssertEqual(slow.frame(at: time).overview, fast.frame(at: time).overview, accuracy: 1e-9)
+        XCTAssertLessThan(abs(fast.frame(at: time).mouseOffset.y), abs(slow.frame(at: time).mouseOffset.y))
+        // Sideways is untouched by it.
+        XCTAssertEqual(slow.followTravel, Loop.followTravel(trackingSpeed: 1))
+    }
+
+    func testTheFreePointerDriftsUpWithAFollowedHoldToo() {
+        let free = Loop(scene: followScene(focus: .up) { $0.freezePointer = false })
+        let frame = free.frame(at: Loop.followRelease)
+        XCTAssertEqual(frame.pointerOffset.y, frame.mouseOffset.y * Loop.pointerGain)
+        XCTAssertLessThan(frame.pointerOffset.y, -10)
+        XCTAssertEqual(Loop(scene: followScene(focus: .up)).frame(at: Loop.followRelease).pointerOffset, .zero)
+    }
+
+    /// Nothing pointed at: after left and right the round shows what follows the hand up
+    /// and down, and only that.
+    func testTheRoundTakesInTheDirectionsThatFollow() {
+        let all = Loop(scene: followScene())
+        XCTAssertEqual(all.legs.map(\.direction), [.left, .right, .up, .down])
+        XCTAssertEqual(all.legs.map(\.kind), [.follow, .follow, .follow, .follow])
+        XCTAssertEqual(all.legs.map(\.effect), [.none, .none, .missionControl, .appGrid])
+        XCTAssertEqual(all.legs.map(\.shift), [1, -1, 0, 0], "it ends on the desktop it began on")
+        XCTAssertEqual(all.length, 2 * 3.05 + 2 * 4.2, accuracy: 1e-9)
+        XCTAssertEqual(all.legs.count, 4, "nothing plays twice")
+
+        // A release build with the defaults: Mission Control follows, Apps does not.
+        let release = Loop(scene: followScene(on: mac()))
+        XCTAssertEqual(release.legs.map(\.direction), [.left, .right, .up])
+        XCTAssertEqual(release.legs.last, .follow(.up, opening: .missionControl))
+        // Show Desktop on Down joins it; Copy on Up leaves.
+        let showDesktop = Loop(scene: followScene(on: mac()) {
+            $0.upAction = SystemShortcut.copy.identifier
+            $0.downAction = SystemShortcut.showDesktop.identifier
+        })
+        XCTAssertEqual(showDesktop.legs.map(\.direction), [.left, .right, .down])
+        XCTAssertEqual(showDesktop.legs.last?.effect, .showDesktop)
+        // Nothing follows up or down: left and right, as before.
+        let sidewaysOnly = [followScene(on: mac(swipe: false)), scene(mode: .interactive), followScene { $0.upAction = ""; $0.downAction = "" }]
+        for scene in sidewaysOnly {
+            XCTAssertEqual(Loop(scene: scene).legs.map(\.direction), [.left, .right], "\(scene)")
+        }
+
+        // Each hold of the round answers with its own view only.
+        for (index, leg) in all.legs.enumerated() {
+            let stop = all.frame(at: all.starts[index] + leg.stillTime)
+            XCTAssertEqual(stop.leg, index)
+            XCTAssertEqual(stop.overview, leg.effect == .missionControl ? 0.5 : 0, accuracy: 1e-9, "leg \(index)")
+            XCTAssertEqual(stop.appGrid, leg.effect == .appGrid ? 0.5 : 0, accuracy: 1e-9, "leg \(index)")
+            XCTAssertEqual(stop.desktop, leg.effect == .none ? 0.5 : 0, accuracy: 1e-9, "leg \(index)")
+        }
+    }
+
+    func testALoopWithFollowedDirectionsEndsWhereItStarted() {
+        let showDesktop = SystemShortcut.showDesktop.identifier
+        let scenes: [GesturePreviewScene] = [
+            followScene(), followScene(on: mac()), followScene(focus: .up), followScene(focus: .down),
+            followScene(focus: .up) { $0.upAction = showDesktop },
+            followScene { $0.downAction = showDesktop; $0.invertHorizontal = true },
+            followScene(focus: .down) { $0.freezePointer = false },
+            scene(focus: .up) { $0.upAction = showDesktop },
+        ]
+        for scene in scenes {
+            let loop = Loop(scene: scene)
+            let start = loop.frame(at: 0)
+            let end = loop.frame(at: loop.length - 1e-6)
+            let message = "\(scene)"
+            XCTAssertEqual(start.desktop, 0, message)
+            XCTAssertEqual(end.desktop, start.desktop, accuracy: 1e-6, message)
+            XCTAssertEqual(end.mouseOffset, start.mouseOffset, message)
+            XCTAssertEqual(end.buttonDepth, 0, accuracy: 1e-9, message)
+            for frame in [start, end] {
+                XCTAssertEqual(frame.overview, 0, message)
+                XCTAssertEqual(frame.appGrid, 0, message)
+                XCTAssertEqual(frame.showDesktop, 0, message)
+                XCTAssertEqual(frame.pulse, 0, accuracy: 1e-9, message)
+                XCTAssertEqual(frame.pointerOffset, .zero, message)
+                XCTAssertEqual(frame.sideTurn, 0, accuracy: 1e-9, message)
+                XCTAssertTrue(frame.isAtRest, message)
+            }
+            // Every hold begins on a closed, resting picture, the mouse seen from above.
+            for (index, begin) in loop.starts.enumerated() {
+                let frame = loop.frame(at: begin)
+                XCTAssertEqual(frame.leg, index, message)
+                XCTAssertEqual(frame.overview + frame.appGrid + frame.showDesktop, 0, message)
+                XCTAssertEqual(frame.mouseOffset, .zero, message)
+                XCTAssertEqual(frame.sideTurn, 0, accuracy: 1e-9, message)
+                XCTAssertTrue(frame.isAtRest, message)
+                let leg = loop.legs[index]
+                XCTAssertLessThanOrEqual(leg.releaseTime + Loop.buttonTravel + MouseArtworkTurn.duration, leg.length, message)
+            }
+            assertClose(loop.frame(at: loop.length + 0.7), loop.frame(at: 0.7), message)
+            assertClose(loop.frame(at: -0.3), loop.frame(at: loop.length - 0.3), message)
+        }
+    }
+
+    /// Reduce Motion: a row that follows shows its view half open under a held, half-moved
+    /// mouse; the same row in "One action per hold" shows it whole. The two can be told
+    /// apart in one picture.
+    func testTheStillFrameOfARowThatFollowsIsTheHalfOpenView() {
+        for (name, scene, opened) in followedViews {
+            let loop = Loop(scene: scene)
+            let still = loop.stillFrame
+            XCTAssertEqual(opened(still), 0.5, accuracy: 1e-9, name)
+            XCTAssertEqual(still.buttonDepth, 1, accuracy: 1e-9, name)
+            XCTAssertEqual(still.arrow, 1, accuracy: 1e-9, name)
+            XCTAssertEqual(still.sideTurn, 1, accuracy: 1e-9, name)
+            XCTAssertEqual(still.pressPulse, 0, name)
+            XCTAssertTrue(still.isAtRest, name)
+            let half = loop.followVerticalTravel * 0.5
+            XCTAssertEqual(still.mouseOffset.y, scene.focus == .up ? -half : half, accuracy: 1e-9, name)
+            XCTAssertEqual(still.mouseOffset.x, 0, name)
+
+            var once = scene
+            once.gesture.mode = .discrete
+            XCTAssertEqual(opened(Loop(scene: once).stillFrame), 1, accuracy: 1e-9, "one action per hold: \(name)")
+        }
+        // Nothing pointed at: the first hold of the round, the desktops half-way.
+        let round = Loop(scene: followScene()).stillFrame
+        XCTAssertEqual(round.desktop, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(round.overview, 0)
+    }
+
+    /// Show Desktop has a picture of its own in "One action per hold" too: the windows go
+    /// away once, stay away a moment and come back.
+    func testShowDesktopRunsOnceAsTheOtherViewsDo() {
+        let loop = Loop(scene: scene(focus: .up) { $0.upAction = SystemShortcut.showDesktop.identifier })
+        XCTAssertEqual(loop.legs, [.move(.up, effect: .showDesktop)])
+        let fire = try! XCTUnwrap(loop.legs[0].fireTime)
+        XCTAssertEqual(loop.frame(at: fire - 0.001).showDesktop, 0)
+        XCTAssertEqual(loop.frame(at: fire + Loop.overlayIn + 0.01).showDesktop, 1, accuracy: 1e-9)
+        XCTAssertEqual(loop.frame(at: loop.legs[0].stillTime).showDesktop, 1, accuracy: 1e-9)
+        XCTAssertEqual(loop.frame(at: loop.length - 0.01).showDesktop, 0)
+        for (_, frame) in frames(loop) {
+            XCTAssertEqual(frame.pulse, 0, "no pulse with its symbol any more")
+            XCTAssertEqual(frame.overview, 0)
+            XCTAssertEqual(frame.appGrid, 0)
+        }
+        XCTAssertEqual(loop.frame(at: loop.length - 0.01).actionsFired, 1)
     }
 
     // MARK: - One action per hold

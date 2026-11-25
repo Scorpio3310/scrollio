@@ -12,6 +12,13 @@
 //  The desktops are an endless row of two alternating wallpapers, so a slide always has a
 //  neighbour to go to and the loop can end on the picture it started with.
 //
+//  With "Up and Down follow the hand too", a hold up or down whose action is a view of the
+//  Dock that follows on this Mac (`MouseGestureSettings.followPlan`: Mission Control, Show
+//  Desktop, the app grid) is played the same way as the desktops sideways: the view is
+//  open as far as the mouse has moved, stands still while the hand does, goes on with it,
+//  and opens the rest of the way by itself when the button is let go. Every other hold up
+//  or down runs its action once, as before.
+//
 //  Nothing here runs an action: the effects are only numbers the artwork draws.
 //
 
@@ -26,6 +33,9 @@ enum GesturePreviewEffect: Equatable {
     case missionControl
     /// Launchpad (Apps on macOS 26): a grid of app icons over the desktop.
     case appGrid
+    /// Show Desktop: the windows slide away to the edges of the screen and the desktop,
+    /// with what lies on it, shows.
+    case showDesktop
     /// Move a Space: the desktop slides once, to its neighbour on that side.
     case space(MouseGestureDirection)
     /// Anything else: a short pulse with the action's icon in the middle of the desktop.
@@ -45,6 +55,8 @@ enum GesturePreviewEffect: Equatable {
             // Shown as "Launchpad" (as "Apps" on macOS 26 and later) in the menus: the F4 key
             // that opens the app grid.
             self = .appGrid
+        case SystemShortcut.showDesktop.identifier:
+            self = .showDesktop
         case SystemShortcut.moveSpaceLeft.identifier:
             self = .space(.left)
         case SystemShortcut.moveSpaceRight.identifier:
@@ -76,6 +88,15 @@ enum GesturePreviewEffect: Equatable {
         }
     }
 
+    /// What a view of the Dock looks like that a hold opens with the hand.
+    init(opening target: DockFollowTarget) {
+        switch target {
+        case .missionControl: self = .missionControl
+        case .showDesktop: self = .showDesktop
+        case .apps: self = .appGrid
+        }
+    }
+
     /// For an action the shortcut table does not know (an "Open…" target, say).
     static let fallbackSymbol = "bolt.fill"
 
@@ -90,11 +111,11 @@ enum GesturePreviewEffect: Equatable {
     }
 
     /// How long the effect takes from the moment the action runs. Every effect has ended
-    /// (the overview and the grid are closed again) after this time.
+    /// (the overview and the grid are closed again, the windows are back) after this time.
     var duration: TimeInterval {
         switch self {
         case .none: return 0
-        case .missionControl, .appGrid:
+        case .missionControl, .appGrid, .showDesktop:
             return GesturePreviewLoop.overlayIn + GesturePreviewLoop.overlayHold + GesturePreviewLoop.overlayOut
         case .space: return GesturePreviewLoop.slideDuration
         case .pulse, .pulseText:
@@ -103,17 +124,36 @@ enum GesturePreviewEffect: Equatable {
     }
 }
 
-/// What the preview shows: the settings, with the mode in effect, and the row it is about.
+/// What the preview shows: the settings, with the mode in effect, the row it is about and
+/// what can follow the hand on this Mac.
 struct GesturePreviewScene: Equatable {
     /// The gesture settings; `mode` is the mode in effect (discrete where "Follow the hand"
     /// is not available, whatever is stored).
     var gesture = MouseGestureSettings.default
-    /// The row under the pointer or with the keyboard focus. nil: left and right in turn.
+    /// The row under the pointer or with the keyboard focus. nil: left and right in turn,
+    /// and after them the directions that follow the hand up and down.
     var focus: MouseGestureSettingsControls.Slot?
+    /// Which views of the Dock follow the hand on this Mac. With the settings it says
+    /// whether Up and Down open their view with the hand (`followedEffect`), by the same
+    /// answer the hold and the rows take (`MouseGestureSettings.followPlan`).
+    var availability: DockFollowAvailability
 
-    init(gesture: MouseGestureSettings = .default, focus: MouseGestureSettingsControls.Slot? = nil) {
+    /// - Parameter availability: what the pane draws its rows from; left out, this Mac's
+    ///   answer at this moment (`DockFollowAvailability.live`; main thread).
+    init(
+        gesture: MouseGestureSettings = .default, focus: MouseGestureSettingsControls.Slot? = nil,
+        availability: DockFollowAvailability = .live
+    ) {
         self.gesture = gesture
         self.focus = focus
+        self.availability = availability
+    }
+
+    /// The view a hold in `direction` opens with the hand; nil when the direction runs its
+    /// action once (or, sideways in "Follow the hand", moves the desktops).
+    func followedEffect(for direction: MouseGestureDirection) -> GesturePreviewEffect? {
+        guard let target = gesture.followPlan(for: direction, availability: availability).target else { return nil }
+        return GesturePreviewEffect(opening: target)
     }
 }
 
@@ -121,7 +161,8 @@ struct GesturePreviewScene: Equatable {
 struct GesturePreviewLeg: Equatable {
 
     enum Kind: Equatable {
-        /// "Follow the hand", sideways: the desktops move with the mouse while it is held.
+        /// "Follow the hand": what is on screen moves with the mouse while it is held. Sideways
+        /// the desktops; up or down a view of the Dock that opens with the hand (`effect`).
         case follow
         /// One action per hold: the mouse moves one way and the action runs once.
         case move
@@ -132,7 +173,8 @@ struct GesturePreviewLeg: Equatable {
     let kind: Kind
     /// The way the hand moves the mouse; nil for a click.
     let direction: MouseGestureDirection?
-    /// What the action shows (follow: nothing, the slide is the hand's).
+    /// What the action shows. A sideways follow has none (the slide is the hand's); a
+    /// follow up or down has the view it opens with the hand.
     let effect: GesturePreviewEffect
     /// Desktops the row has moved by the end of the leg: −1, 0 or +1.
     let shift: Int
@@ -164,6 +206,27 @@ struct GesturePreviewLeg: Equatable {
         )
     }
 
+    /// A hold up or down in "Follow the hand" that opens `effect` (Mission Control, Show
+    /// Desktop or the app grid) with the hand: as far as the mouse has moved while the
+    /// button is held, half-way where it stops, and the rest of the way by itself once the
+    /// button is let go. The view stays a moment and closes again, so that the loop can go
+    /// on. No action runs at any one moment (`fireTime` is nil), as for the desktops.
+    static func follow(_ direction: MouseGestureDirection, opening effect: GesturePreviewEffect) -> GesturePreviewLeg {
+        typealias L = GesturePreviewLoop
+        let stop = (L.followFirstStopEnd + L.followSecondStart) / 2
+        return GesturePreviewLeg(
+            kind: .follow, direction: direction, effect: effect, shift: 0,
+            pressTime: L.pressTime, releaseTime: L.followRelease, fireTime: nil,
+            length: L.followCloseEnd + L.rest,
+            stillTime: stop, holdTime: stop
+        )
+    }
+
+    /// The hold opens a view with the hand (a follow up or down).
+    var opensWithTheHand: Bool {
+        return kind == .follow && effect != .none
+    }
+
     /// A hold that moves the mouse one way and runs `effect` once on the way.
     static func move(_ direction: MouseGestureDirection, effect: GesturePreviewEffect) -> GesturePreviewLeg {
         typealias L = GesturePreviewLoop
@@ -191,12 +254,12 @@ struct GesturePreviewLeg: Equatable {
         )
     }
 
-    /// The overview, the grid or the pulse fully shown; a slide half-way.
+    /// The overview, the grid, the desktop or the pulse fully shown; a slide half-way.
     private static func stillTime(fire: TimeInterval, effect: GesturePreviewEffect, fallback: TimeInterval) -> TimeInterval {
         typealias L = GesturePreviewLoop
         switch effect {
         case .none: return fallback
-        case .missionControl, .appGrid: return fire + L.overlayIn + L.overlayHold / 2
+        case .missionControl, .appGrid, .showDesktop: return fire + L.overlayIn + L.overlayHold / 2
         case .space: return fire + L.slideDuration / 2
         case .pulse, .pulseText: return fire + L.pulseIn + L.pulseHold / 2
         }
@@ -249,6 +312,16 @@ struct GesturePreviewLoop {
     /// kept in so that the mouse still visibly moves at 3× and stays in its card at 0.5×.
     static let followTravelAtSpeed1: CGFloat = 30
     static let followTravelRange: ClosedRange<CGFloat> = 14...56
+    /// The same for a view that opens with the hand up or down, where the card has less
+    /// room: mouse travel from closed to whole at tracking speed 1, and the range it is kept
+    /// in (the mouse is let go at `followReleaseShare` of it, and its arrow must stay in
+    /// the card).
+    static let followVerticalTravelAtSpeed1: CGFloat = 15
+    static let followVerticalTravelRange: ClosedRange<CGFloat> = 8...18
+    /// A view opened with the hand: it has opened by itself `followSettle` after the
+    /// release, stays for `overlayHold` and is closed again `overlayOut` later.
+    static var followCloseStart: TimeInterval { return followRelease + followSettle + overlayHold }
+    static var followCloseEnd: TimeInterval { return followCloseStart + overlayOut }
 
     // Effects
     static let overlayIn: TimeInterval = 0.4
@@ -281,9 +354,11 @@ struct GesturePreviewLoop {
         var desktop: Double
         /// Follow the hand: how far the hold has moved the desktops (signed, in desktops).
         var swipeProgress: Double
-        /// 0…1: the Mission Control overview, the app grid and the pulse.
+        /// 0…1: the Mission Control overview, the app grid, how far the windows have slid
+        /// away for Show Desktop, and the pulse.
         var overview: Double
         var appGrid: Double
+        var showDesktop: Double = 0
         var pulse: Double
         var pulseSymbol: String?
         /// What the pulse shows instead of a symbol (`GesturePreviewEffect.pulseText`).
@@ -305,12 +380,15 @@ struct GesturePreviewLoop {
     /// When each leg starts (seconds from the start of the loop).
     let starts: [TimeInterval]
     let length: TimeInterval
-    /// Desktops travelled per point of mouse travel in "Follow the hand".
+    /// Mouse travel for one desktop in "Follow the hand" (points).
     let followTravel: CGFloat
+    /// Mouse travel that opens a view all the way, up or down (points).
+    let followVerticalTravel: CGFloat
 
     init(scene: GesturePreviewScene) {
         self.scene = scene
         followTravel = Self.followTravel(trackingSpeed: scene.gesture.trackingSpeed)
+        followVerticalTravel = Self.followVerticalTravel(trackingSpeed: scene.gesture.trackingSpeed)
         var legs = Self.legs(for: scene)
         // The row must come back to the wallpaper it started on.
         if legs.reduce(0, { $0 + $1.shift }) % 2 != 0 {
@@ -329,9 +407,18 @@ struct GesturePreviewLoop {
 
     /// Mouse travel for one desktop: less at a higher tracking speed.
     static func followTravel(trackingSpeed: Double) -> CGFloat {
+        return travel(atSpeed1: followTravelAtSpeed1, in: followTravelRange, trackingSpeed: trackingSpeed)
+    }
+
+    /// Mouse travel that opens a view all the way, up or down: less at a higher tracking
+    /// speed, as sideways.
+    static func followVerticalTravel(trackingSpeed: Double) -> CGFloat {
+        return travel(atSpeed1: followVerticalTravelAtSpeed1, in: followVerticalTravelRange, trackingSpeed: trackingSpeed)
+    }
+
+    private static func travel(atSpeed1 base: CGFloat, in range: ClosedRange<CGFloat>, trackingSpeed: Double) -> CGFloat {
         let speed = trackingSpeed.isFinite && trackingSpeed > 0 ? trackingSpeed : MouseGestureSettings.defaultTrackingSpeed
-        let travel = followTravelAtSpeed1 / CGFloat(speed)
-        return min(followTravelRange.upperBound, max(followTravelRange.lowerBound, travel))
+        return min(range.upperBound, max(range.lowerBound, base / CGFloat(speed)))
     }
 
     /// The holds the scene demonstrates.
@@ -342,11 +429,18 @@ struct GesturePreviewLoop {
             if isSideways && gesture.mode == .interactive {
                 return .follow(direction, invert: gesture.invertHorizontal)
             }
+            if let view = scene.followedEffect(for: direction) {
+                return .follow(direction, opening: view)
+            }
             return .move(direction, effect: GesturePreviewEffect(action: gesture.action(for: direction)))
         }
         switch scene.focus {
         case nil:
-            return [hand(.left), hand(.right)]
+            // Left and right in turn, then what follows the hand up and down: the round
+            // shows everything "Follow the hand" does. A direction that runs its action
+            // once is shown when its row is pointed at.
+            let followed = [MouseGestureDirection.up, .down].filter { scene.followedEffect(for: $0) != nil }
+            return [hand(.left), hand(.right)] + followed.map(hand)
         case .up?:
             return [hand(.up)]
         case .down?:
@@ -407,15 +501,23 @@ struct GesturePreviewLoop {
         let share: Double
         var swipe = 0.0
         var position = base
+        // A view that opens with the hand (0…1).
+        var opened = 0.0
         switch leg.kind {
         case .follow:
-            reach = followTravel
+            reach = leg.opensWithTheHand ? followVerticalTravel : followTravel
             share = Self.followShare(at: t)
             let progress = t <= leg.releaseTime
                 ? share
                 : Self.followReleaseShare + (1 - Self.followReleaseShare) * Self.easeOut((t - leg.releaseTime) / Self.followSettle)
-            swipe = Double(leg.shift) * progress
-            position += swipe
+            if leg.opensWithTheHand {
+                // Open as far as the hand has moved, whole after the release, then closed
+                // again for the next hold.
+                opened = progress * (1 - Self.easeInOut((t - Self.followCloseStart) / Self.overlayOut))
+            } else {
+                swipe = Double(leg.shift) * progress
+                position += swipe
+            }
         case .move:
             reach = leg.direction == .up || leg.direction == .down ? Self.verticalReach : Self.horizontalReach
             share = Self.smoothstep((t - Self.moveStart) / Self.moveDuration)
@@ -437,6 +539,12 @@ struct GesturePreviewLoop {
                 : CGPoint(x: offset.x * Self.pointerGain, y: offset.y * Self.pointerGain),
             actionsFired: fired, isAtRest: false
         )
+        switch leg.effect {
+        case .missionControl: frame.overview = opened
+        case .appGrid: frame.appGrid = opened
+        case .showDesktop: frame.showDesktop = opened
+        case .none, .space, .pulse, .pulseText: break
+        }
         var effectRunning = false
         if let fire = leg.fireTime, t >= fire {
             frame.actionsFired += 1
@@ -449,6 +557,8 @@ struct GesturePreviewLoop {
                 frame.overview = Self.envelope(since, in: Self.overlayIn, hold: Self.overlayHold, out: Self.overlayOut)
             case .appGrid:
                 frame.appGrid = Self.envelope(since, in: Self.overlayIn, hold: Self.overlayHold, out: Self.overlayOut)
+            case .showDesktop:
+                frame.showDesktop = Self.envelope(since, in: Self.overlayIn, hold: Self.overlayHold, out: Self.overlayOut)
             case .space:
                 position += Double(leg.effect.shift) * Self.easeInOut(since / Self.slideDuration)
             case .pulse(let symbol):
@@ -463,7 +573,11 @@ struct GesturePreviewLoop {
 
         let buttonMoving = (t > leg.pressTime && t < leg.pressTime + Self.buttonTravel)
             || (t > leg.releaseTime && t < leg.releaseTime + Self.buttonTravel)
-        let settling = leg.kind == .follow && t > leg.releaseTime && t < leg.releaseTime + Self.followSettle
+        var settling = leg.kind == .follow && t > leg.releaseTime && t < leg.releaseTime + Self.followSettle
+        if leg.opensWithTheHand, t > Self.followCloseStart, t < Self.followCloseEnd {
+            // The view closes again.
+            settling = true
+        }
         let mouseMoving: Bool
         switch leg.kind {
         case .follow:
@@ -491,7 +605,8 @@ struct GesturePreviewLoop {
         return time >= 0 ? max(0, 1 - time / pressPulseDuration) : 0
     }
 
-    /// Follow the hand: the mouse's share of one desktop's travel at `t`.
+    /// Follow the hand: the mouse's share of its travel (one desktop's, or a whole view's)
+    /// at `t`.
     static func followShare(at t: TimeInterval) -> Double {
         if t <= followFirstStopEnd {
             return followFirstStop * smoothstep((t - followFirstStart) / (followFirstStopEnd - followFirstStart))
