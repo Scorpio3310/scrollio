@@ -257,8 +257,17 @@ class InputProcessor: ModifierFlagsProviding {
     private var interactiveFlushToken = 0
     private var lastInteractiveFlushTime = -TimeInterval.infinity
     private var interactiveFrameDuration = InteractiveGestureEnvironment.fallbackScreen.frameDuration
-    /// Counts swipes, so a terminal event queued for one swipe can never end a later one.
+    /// Counts the swipes begun and the stops that take every swipe back (Scrollio stops,
+    /// the screens change, the displays sleep). A release hands its swipe events to the
+    /// next turn of the main queue with the number of that moment: once it has changed,
+    /// they are not sent. So a terminal event queued for one swipe can never end a later
+    /// one, and a whole flick (begin, update, end in one turn) does not go out after a stop.
     private var interactiveSwipeGeneration = 0
+    /// The same for what stops only a motion towards a view and leaves the desktops' swipe
+    /// alone (the Shortcut Ring opens, the desktop in use changes, the Dock is asked for a
+    /// view in one go): the queued events of a motion up or down are not sent after it,
+    /// while a swipe of the desktops still gets its end.
+    private var viewSwipeGeneration = 0
     private var interactiveEnvironment = InteractiveGestureEnvironment.system
     /// Plays a haptic cue on the mouse a button belongs to. Replaced in tests.
     private var gestureHapticPlayer: (MouseGestureHapticCue, UInt16) -> Void = InputProcessor.systemGestureHapticPlayer
@@ -1044,8 +1053,19 @@ class InputProcessor: ModifierFlagsProviding {
         let swipeCommands = commands.filter { $0.isSwipeCommand }
         if !swipeCommands.isEmpty {
             let generation = interactiveSwipeGeneration
+            let viewGeneration = viewSwipeGeneration
+            let isTowardsAView = (session.interactive?.followedChannel?.motion ?? .horizontal) != .horizontal
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.interactiveSwipeGeneration == generation else { return }
+                guard let self else { return }
+                guard self.interactiveSwipeGeneration == generation,
+                      !isTowardsAView || self.viewSwipeGeneration == viewGeneration else {
+                    // Revoked meanwhile (another swipe began, or a stop): nothing more is
+                    // sent, and nothing is believed. A motion that had begun was taken
+                    // back by whatever stopped it and gets its line here; a flick that was
+                    // still whole never reached the Dock and writes none.
+                    self.finishFollowedMotion(of: session, .cancelled(.takenBack))
+                    return
+                }
                 self.perform(swipeCommands, for: session)
             }
         }
@@ -1060,7 +1080,9 @@ class InputProcessor: ModifierFlagsProviding {
             let commands = session.interactive?.cancel() ?? []
             perform(commands.filter { $0.isSwipeCommand }, for: session, cancelledBy: .scrollioStopped)
         }
-        // Also covers a released swipe whose terminal event is still queued.
+        // Also covers a released swipe whose terminal event is still queued; and what a
+        // release queued for the next turn (a whole flick among it) is not sent after this.
+        interactiveSwipeGeneration += 1
         DockSwipeSynthesizer.shared.cancel()
         interactiveGestureKey = nil
         pendingInteractiveDelta = .zero
@@ -1290,12 +1312,21 @@ class InputProcessor: ModifierFlagsProviding {
 
     /// Takes back the swipe that runs, at once (synchronously, as every abnormal end): the
     /// hold that drives it sends nothing more and runs nothing, and a swipe whose button is
-    /// already up, or the thumb wheel's, goes back as well. A motion towards a view says so
+    /// already up, or the thumb wheel's, goes back as well; what a release still held for
+    /// the next turn of the main queue is not sent. A motion towards a view says so
     /// in its own line; a swipe of the desktops, which writes none otherwise, gets one here
     /// (a hold that is dead until its button is up should not be a riddle in the log).
     /// - onlyTowardsAView: only a motion towards a view of the Dock (vertical, pinch); the
     ///   desktops' swipe goes on.
     private func takeBackSwipe(onlyTowardsAView: Bool, because interruption: DockFollowedMotion.Interruption) {
+        // What a release queued for the next turn is revoked as well, whether or not a
+        // swipe runs yet: a whole flick must not begin after this. (Not the queued events
+        // of the desktops' swipe where that swipe goes on: it still needs its end.)
+        if onlyTowardsAView {
+            viewSwipeGeneration += 1
+        } else {
+            interactiveSwipeGeneration += 1
+        }
         guard let axis = DockSwipeSynthesizer.shared.runningAxis, !onlyTowardsAView || axis != .horizontal else { return }
         if let key = interactiveGestureKey, let session = activeMouseGestures[key], session.interactive?.phase == .swiping {
             let commands = session.interactive?.cancel() ?? []
@@ -1430,6 +1461,9 @@ class InputProcessor: ModifierFlagsProviding {
     /// opened elsewhere; only a hold that followed the hand sets the belief). Main thread.
     func dockViewWillBeToggled(_ view: DockFollowTarget) {
         assertMainThread()
+        // A motion towards a view that a release still holds for the next turn (a whole
+        // flick) is not sent after the toggle either.
+        viewSwipeGeneration += 1
         DockSwipeSynthesizer.shared.settle()
         dockBelief.drop()
     }

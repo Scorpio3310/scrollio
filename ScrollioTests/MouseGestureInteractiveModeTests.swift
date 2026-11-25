@@ -1936,6 +1936,155 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(hapticCues, [.lockIn])
     }
 
+    /// The gesture button, and a second button (4) that opens the Shortcut Ring, with a
+    /// ring that opens nothing on the screen.
+    private func configureRingBesideTheGestures(_ harness: RingHarness) {
+        configureGestureBinding(mode: .interactive)
+        Options.shared.buttons.binding.append(ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: SystemShortcut.shortcutRing.identifier,
+            isEnabled: true
+        ))
+        ButtonUtils.shared.invalidateCache()
+        ShortcutRingController.setTestingController(harness.controller)
+    }
+
+    /// A release hands its swipe events to the next turn of the main queue: a whole flick
+    /// (begin, update, end) when the hand's movement arrived with the button-up. After a
+    /// stop none of it goes out, and no view is believed after the belief was dropped.
+    func testAStopRevokesTheWholeFlickAReleaseQueued() {
+        configureFollowing()
+        let harness = RingHarness()
+        addTeardownBlock { ShortcutRingController.setTestingController(nil) }
+        let stops: [(name: String, happen: () -> Void, voices: [DockVoice])] = [
+            ("Scrollio stopped (a tap that started over, Pause)", { InputProcessor.shared.clearActiveBindings() }, []),
+            ("the desktop in use changed", { InputProcessor.shared.surroundingsChanged(.activeSpaceChanged) }, []),
+            ("the screens changed", { [unowned self] in self.changeTheScreens() }, []),
+            ("the displays went to sleep", { InputProcessor.shared.surroundingsChanged(.displaysWentToSleep) }, []),
+            ("the Shortcut Ring opened", { [unowned self] in
+                XCTAssertEqual(InputProcessor.shared.process(self.gestureInputEvent(phase: .down, code: 4)), .consumed)
+            }, []),
+            ("the Dock was asked for a view in one go", {
+                ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: "showDesktop"))
+            }, [.settle, .toggle(.showDesktop)]),
+        ]
+        for stop in stops {
+            configureRingBesideTheGestures(harness)
+            swipeCalls = []
+            dockVoices = []
+            gestureLog = []
+
+            // 200 pt up and the button-up in one turn: half of the view at twelve a second.
+            pressGestureButton()
+            clock += 0.05
+            InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: -200)
+            XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+            stop.happen()
+            drainMainQueue()
+
+            XCTAssertEqual(swipeCalls, [], "nothing of the flick goes out: \(stop.name)")
+            XCTAssertEqual(dockVoices, stop.voices, stop.name)
+            XCTAssertNil(InputProcessor.shared.believedDockView, "no view is believed after the stop: \(stop.name)")
+            XCTAssertEqual(gestureLog, [], "nothing reached the Dock, so no line: \(stop.name)")
+            XCTAssertFalse(DockSwipeSynthesizer.shared.isActive, stop.name)
+
+            _ = InputProcessor.shared.process(gestureInputEvent(phase: .up, code: 4))
+            ShortcutRingController.setTestingController(nil)
+            InputProcessor.shared.clearActiveBindings()
+        }
+
+        // Without a stop the same flick goes out whole.
+        configureGestureBinding(mode: .interactive)
+        swipeCalls = []
+        pressGestureButton()
+        clock += 0.05
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: -200)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        drainMainQueue()
+        assertSwipeCalls([.begin(.vertical), .update(0.5), .end(12)])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+    }
+
+    /// What leaves the desktops' swipe alone (the ring, a change of the desktop, an
+    /// instant toggle) leaves its queued events alone too: a flick sideways still goes
+    /// out, and a swipe that runs still gets its end. A change of the screens, the
+    /// displays going to sleep and a stop of Scrollio revoke them like any other.
+    func testWhatLeavesTheDesktopsSwipeAloneLeavesItsQueuedEventsAlone() {
+        configureFollowing()
+        let harness = RingHarness()
+        addTeardownBlock { ShortcutRingController.setTestingController(nil) }
+        let passes: [(name: String, happen: () -> Void)] = [
+            ("the desktop in use changed", { InputProcessor.shared.surroundingsChanged(.activeSpaceChanged) }),
+            ("the Shortcut Ring opened", { [unowned self] in
+                XCTAssertEqual(InputProcessor.shared.process(self.gestureInputEvent(phase: .down, code: 4)), .consumed)
+            }),
+            ("the Dock was asked for a view in one go", {
+                ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: "showDesktop"))
+            }),
+        ]
+        for pass in passes {
+            configureRingBesideTheGestures(harness)
+
+            // A whole flick sideways, queued.
+            swipeCalls = []
+            pressGestureButton()
+            clock += 0.05
+            InputProcessor.shared.handleMouseGestureMovement(deltaX: -100, deltaY: 0)
+            XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+            pass.happen()
+            drainMainQueue()
+            XCTAssertEqual(Array(swipeCalls.prefix(2)), [.begin(.horizontal), .update(0.1)], pass.name)
+            XCTAssertEqual(swipeCalls.count, 3, pass.name)
+            XCTAssertFalse(DockSwipeSynthesizer.shared.isActive, "it got its end: \(pass.name)")
+            _ = InputProcessor.shared.process(gestureInputEvent(phase: .up, code: 4))
+
+            // A swipe of the desktops that runs, its end queued: it must not be left open.
+            swipeCalls = []
+            pressGestureButton()
+            moveHand(-100, 0)
+            clock += 0.2
+            XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+            pass.happen()
+            XCTAssertTrue(DockSwipeSynthesizer.shared.isActive, pass.name)
+            drainMainQueue()
+            assertSwipeCalls([.begin(.horizontal), .update(0.1), .end(0)])
+            XCTAssertFalse(DockSwipeSynthesizer.shared.isActive, pass.name)
+
+            _ = InputProcessor.shared.process(gestureInputEvent(phase: .up, code: 4))
+            ShortcutRingController.setTestingController(nil)
+            InputProcessor.shared.clearActiveBindings()
+        }
+
+        // The screens changed, the displays sleep, Scrollio stops: a queued flick sideways
+        // is revoked, and a swipe that runs goes back at once and gets no second terminal.
+        let stops: [(name: String, happen: () -> Void)] = [
+            ("the screens changed", { [unowned self] in self.changeTheScreens() }),
+            ("the displays went to sleep", { InputProcessor.shared.surroundingsChanged(.displaysWentToSleep) }),
+            ("Scrollio stopped", { InputProcessor.shared.clearActiveBindings() }),
+        ]
+        for stop in stops {
+            configureGestureBinding(mode: .interactive)
+            swipeCalls = []
+            pressGestureButton()
+            clock += 0.05
+            InputProcessor.shared.handleMouseGestureMovement(deltaX: -100, deltaY: 0)
+            XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+            stop.happen()
+            drainMainQueue()
+            XCTAssertEqual(swipeCalls, [], stop.name)
+
+            pressGestureButton()
+            moveHand(-100, 0)
+            clock += 0.2
+            XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+            stop.happen()
+            assertSwipeCalls([.begin(.horizontal), .update(0.1), .cancel])
+            drainMainQueue()
+            XCTAssertEqual(swipeCalls.count, 3, stop.name)
+            InputProcessor.shared.clearActiveBindings()
+        }
+    }
+
     func testTheWatchdogOfAFollowedHoldLetsTheNextPressStartOver() {
         configureFollowing()
 
