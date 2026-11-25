@@ -24,6 +24,8 @@ class InputProcessor: ModifierFlagsProviding {
     static let shared = InputProcessor()
     init() {
         observeSurroundings()
+        // The first look at the screens: a later "the screens changed" is compared with it.
+        lastScreenFrames = screenFrames()
         // Both swipes of the desktops (a hold's and the thumb wheel's) end through the one
         // synthesizer: when macOS reports the change of the desktop late, it is known for
         // Scrollio's own (`surroundingsChanged`).
@@ -271,6 +273,11 @@ class InputProcessor: ModifierFlagsProviding {
     private var followAvailability: () -> DockFollowAvailability = { .live }
     /// The view of the Dock Scrollio believes it put up itself (`DockBelief`). Main thread.
     private var dockBelief = DockBelief()
+    /// The frames of the screens, in points. Replaced in tests.
+    private var screenFrames: () -> [CGRect] = InputProcessor.systemScreenFrames
+    private static let systemScreenFrames: () -> [CGRect] = { NSScreen.screens.map(\.frame) }
+    /// The screens' frames when they were last looked at (`screensReallyChanged`).
+    private var lastScreenFrames: [CGRect] = []
     /// When Scrollio's own swipe of the desktops last ended (a hold's or the thumb wheel's),
     /// on the gestures' clock: macOS tells of the change of the desktop after it, late.
     private var desktopsSwipeEndedAt = -TimeInterval.infinity
@@ -1268,7 +1275,9 @@ class InputProcessor: ModifierFlagsProviding {
 
     /// Takes back the swipe that runs, at once (synchronously, as every abnormal end): the
     /// hold that drives it sends nothing more and runs nothing, and a swipe whose button is
-    /// already up, or the thumb wheel's, goes back as well.
+    /// already up, or the thumb wheel's, goes back as well. A motion towards a view says so
+    /// in its own line; a swipe of the desktops, which writes none otherwise, gets one here
+    /// (a hold that is dead until its button is up should not be a riddle in the log).
     /// - onlyTowardsAView: only a motion towards a view of the Dock (vertical, pinch); the
     ///   desktops' swipe goes on.
     private func takeBackSwipe(onlyTowardsAView: Bool, because interruption: DockFollowedMotion.Interruption) {
@@ -1283,6 +1292,9 @@ class InputProcessor: ModifierFlagsProviding {
             interactiveFlushToken += 1
         }
         DockSwipeSynthesizer.shared.cancel()
+        if axis == .horizontal {
+            noteMouseGesture { DockFollowedMotion.desktopsSwipeTakenBackLine(interruption) }
+        }
     }
 
     // MARK: - What happens around a hold
@@ -1306,8 +1318,12 @@ class InputProcessor: ModifierFlagsProviding {
     ///   desktops (a hold's or the thumb wheel's) is that swipe's, and changes nothing here.
     ///   Otherwise a flick sideways would take back the view the next hold is opening.
     /// - The screens changed, or the displays went to sleep: any swipe that runs is taken
-    ///   back. (Sleep, another user, Pause and quit stop the cores, which does the same:
-    ///   `clearActiveBindings`.)
+    ///   back, and a swipe of the desktops that is taken back so writes a line. (Sleep,
+    ///   another user, Pause and quit stop the cores, which does the same:
+    ///   `clearActiveBindings`.) macOS also says "the screens changed" when only the Dock
+    ///   changed its size or its place (an app that starts adds an icon): that takes
+    ///   nothing back. A swipe goes back only when a screen's frame or the number of
+    ///   screens is not what it was at the last look (`screensReallyChanged`).
     func surroundingsChanged(_ change: SurroundingsChange) {
         assertMainThread()
         switch change {
@@ -1318,10 +1334,20 @@ class InputProcessor: ModifierFlagsProviding {
             dockBelief.drop()
             takeBackSwipe(onlyTowardsAView: true, because: .spaceChanged)
         case .screenParametersChanged:
+            guard screensReallyChanged() else { return }
             takeBackSwipe(onlyTowardsAView: false, because: .screensChanged)
         case .displaysWentToSleep:
             takeBackSwipe(onlyTowardsAView: false, because: .displaysSlept)
         }
+    }
+
+    /// Looks at the screens: whether a frame, or how many there are, differs from the last
+    /// look (the one at the start, then one per "the screens changed"). The frames are
+    /// the whole screens: the Dock and the menu bar are not in them.
+    private func screensReallyChanged() -> Bool {
+        let frames = screenFrames()
+        defer { lastScreenFrames = frames }
+        return frames != lastScreenFrames
     }
 
     /// A swipe of the desktops was let go to macOS (`DockSwipeSynthesizer.desktopsSwipeDidEnd`).
@@ -1375,6 +1401,13 @@ class InputProcessor: ModifierFlagsProviding {
     /// What follows the hand for the next gesture holds; nil asks this Mac again.
     func setTestingFollowAvailability(_ availability: (() -> DockFollowAvailability)?) {
         followAvailability = availability ?? { .live }
+    }
+
+    /// The screens of the Mac a test makes up (their frames); nil looks at the real ones
+    /// again. The frames it gives now are the last look.
+    func setTestingScreenFrames(_ frames: (() -> [CGRect])?) {
+        screenFrames = frames ?? InputProcessor.systemScreenFrames
+        lastScreenFrames = screenFrames()
     }
 
     /// The view of the Dock Scrollio believes it put up, now.

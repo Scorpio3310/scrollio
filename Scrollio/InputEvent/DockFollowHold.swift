@@ -202,6 +202,13 @@ struct DockFollowedMotion: Equatable {
         }
     }
 
+    /// The line of a swipe of the desktops that was taken back (the screens changed, the
+    /// displays went to sleep): a hold's or the thumb wheel's. The desktops' swipe writes
+    /// no other line.
+    static func desktopsSwipeTakenBackLine(_ interruption: Interruption) -> String {
+        return "Gestures: a swipe of the desktops was taken back (\(interruption.logText))"
+    }
+
     var direction: MouseGestureDirection
     /// What the direction did: `.opens` or `.leavesMissionControl`.
     var part: DockFollowHold.Part

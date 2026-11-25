@@ -676,6 +676,8 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
     private var instantVoices: [DockVoice] { dockVoices.filter { !$0.isSwipe } }
     private var gestureLog: [String] = []
     private var hapticCues: [MouseGestureHapticCue] = []
+    /// The frames of the screens of the Mac made up here.
+    private var screenFrames: [CGRect] = []
     /// How often a hold asked what follows on this Mac.
     private var availabilityQuestions = 0
 
@@ -704,6 +706,8 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         gestureLog = []
         hapticCues = []
         availabilityQuestions = 0
+        screenFrames = [CGRect(x: 0, y: 0, width: 1512, height: 1000)]
+        InputProcessor.shared.setTestingScreenFrames { [weak self] in self?.screenFrames ?? [] }
 
         DockSwipeSynthesizer.shared.setTestingDriver(DockSwipeDriver(
             isAvailable: { [weak self] in self?.isSynthesizerAvailable ?? false },
@@ -733,6 +737,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
             self?.drainMainQueue()
             InputProcessor.shared.clearActiveBindings()
             InputProcessor.shared.setTestingFollowAvailability(nil)
+            InputProcessor.shared.setTestingScreenFrames(nil)
             InputProcessor.shared.setTestingMouseGestureLog(nil)
             InputProcessor.shared.clearTestingGestureHapticPlayer()
             ShortcutExecutor.shared.toggleDockMode = toggleBefore
@@ -750,6 +755,12 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
             self?.availabilityQuestions += 1
             return availability
         }
+    }
+
+    /// macOS says the screens' parameters changed, and they did: another resolution.
+    private func changeTheScreens() {
+        screenFrames[0].size.width += 208
+        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
     }
 
     /// A hold's last swipe event waits one turn of the main queue, and its line in the log
@@ -1477,7 +1488,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
             ("no button-up", { InputProcessor.shared.fireInteractiveGestureWatchdogForTests() }),
             ("the mouse went away", { XCTAssertEqual(InputProcessor.shared.process(syntheticRelease), .consumed) }),
             ("Scrollio's event taps stopped", { InputProcessor.shared.clearActiveBindings() }),
-            ("the screens changed", { InputProcessor.shared.surroundingsChanged(.screenParametersChanged) }),
+            ("the screens changed", { [unowned self] in self.changeTheScreens() }),
             ("the displays went to sleep", { InputProcessor.shared.surroundingsChanged(.displaysWentToSleep) }),
             ("the desktop in use changed", { InputProcessor.shared.surroundingsChanged(.activeSpaceChanged) }),
             ("the Shortcut Ring opened", { [unowned self] in
@@ -1528,7 +1539,8 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
 
     /// A change of the desktop in use takes back a motion towards a view; the desktops'
     /// own swipe goes on (its own switch of desktops is such a change). A change of the
-    /// screens, and the displays going to sleep, take back whatever runs.
+    /// screens, and the displays going to sleep, take back whatever runs, and a swipe of
+    /// the desktops that is taken back so leaves one line in the log.
     func testTheDesktopsSwipeGoesOnThroughAChangeOfTheDesktopButNotOfTheScreens() {
         configureFollowing()
 
@@ -1538,20 +1550,77 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
         assertSwipeCalls([.begin(.horizontal), .update(0.1)])
         moveHand(-100, 0)
-        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
+        changeTheScreens()
         assertSwipeCalls([.begin(.horizontal), .update(0.1), .update(0.2), .cancel])
         moveHand(-100, 0)
         releaseGestureButton()
         XCTAssertEqual(swipeCalls.count, 4)
+        XCTAssertEqual(gestureLog, ["Gestures: a swipe of the desktops was taken back (the screens changed)"])
 
         swipeCalls = []
+        gestureLog = []
         pressGestureButton()
         moveHand(-100, 0)
         InputProcessor.shared.surroundingsChanged(.displaysWentToSleep)
         assertSwipeCalls([.begin(.horizontal), .update(0.1), .cancel])
         releaseGestureButton()
         XCTAssertEqual(swipeCalls.count, 3)
-        XCTAssertEqual(gestureLog, [], "the desktops write no line")
+        XCTAssertEqual(gestureLog, ["Gestures: a swipe of the desktops was taken back (the displays went to sleep)"])
+
+        // The thumb wheel's slide is such a swipe too. With nothing running there is no line.
+        swipeCalls = []
+        gestureLog = []
+        DockSwipeSynthesizer.shared.begin(axis: .horizontal)
+        changeTheScreens()
+        changeTheScreens()
+        InputProcessor.shared.surroundingsChanged(.displaysWentToSleep)
+        drainMainQueue()
+        assertSwipeCalls([.begin(.horizontal), .cancel])
+        XCTAssertEqual(gestureLog, ["Gestures: a swipe of the desktops was taken back (the screens changed)"])
+    }
+
+    /// macOS also says "the screens' parameters changed" when the Dock changes its size
+    /// or its place (an app that starts adds an icon). A swipe is taken back only when a
+    /// screen's frame, or the number of screens, is not what it was at the last look.
+    func testAChangeOfTheDockAloneTakesNoSwipeBack() {
+        configureFollowing()
+
+        // The desktops' swipe, with the switch off as well.
+        pressGestureButton()
+        moveHand(-100, 0)
+        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
+        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
+        moveHand(-100, 0)
+        releaseGestureButton()
+        assertSwipeCalls([.begin(.horizontal), .update(0.1), .update(0.2), .end(0)])
+        XCTAssertEqual(gestureLog, [])
+
+        // A view that is opening.
+        swipeCalls = []
+        pressGestureButton()
+        moveHand(0, -100)
+        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
+        assertSwipeCalls([.begin(.vertical), .update(0.25)])
+
+        // A second screen is plugged in: now they changed.
+        screenFrames.append(CGRect(x: 1512, y: 0, width: 1920, height: 1080))
+        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
+        assertSwipeCalls([.begin(.vertical), .update(0.25), .cancel])
+        releaseGestureButton()
+        XCTAssertEqual(gestureLog.count, 1)
+        XCTAssertTrue(gestureLog.first?.hasSuffix("at 0.25: cancelled (the screens changed)") == true, "\(gestureLog)")
+
+        // That look is the last one: the same screens again change nothing, and a screen
+        // that only moved (the arrangement) does.
+        swipeCalls = []
+        pressGestureButton()
+        moveHand(-100, 0)
+        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
+        assertSwipeCalls([.begin(.horizontal), .update(0.1)])
+        screenFrames[1].origin.y = -200
+        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
+        assertSwipeCalls([.begin(.horizontal), .update(0.1), .cancel])
+        releaseGestureButton()
     }
 
     /// macOS tells of a change of the desktop up to about half a second after a swipe of

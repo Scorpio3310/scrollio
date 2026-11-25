@@ -1001,6 +1001,14 @@ final class DockFollowHoldTests: XCTestCase {
                     + "furthest 0.30, at 0.30: cancelled (\(text))"
             )
         }
+        XCTAssertEqual(
+            DockFollowedMotion.desktopsSwipeTakenBackLine(.screensChanged),
+            "Gestures: a swipe of the desktops was taken back (the screens changed)"
+        )
+        XCTAssertEqual(
+            DockFollowedMotion.desktopsSwipeTakenBackLine(.displaysSlept),
+            "Gestures: a swipe of the desktops was taken back (the displays went to sleep)"
+        )
         // No number of a hold can break the line.
         var odd = motion(beganAfter: .infinity)
         odd.fullProgress = 0
