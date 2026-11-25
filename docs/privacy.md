@@ -96,16 +96,22 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](../SECU
     wheel"): the window server's list of the desktops (Spaces) of the display under the
     pointer, for how many there are, when a swipe begins; "Follow the wheel" also hears
     from macOS that the desktop in use changed, to begin the next swipe;
-  - for "Up and Down follow the hand too": three switches in the Dock's settings, which
-    say whether the trackpad gestures for Mission Control, Show Desktop and Launchpad are
-    on (System Settings › Trackpad › More Gestures), when Scrollio starts or comes to the
-    front and when System Settings was in front. Where a gesture is off the Dock ignores
-    the motion, so that direction runs its action once instead. Nothing else of the
-    Dock's settings is read, and none is changed. Scrollio never asks the Dock what it
-    shows: it remembers, for a minute and only while it runs, which view it opened
-    itself, and hears from macOS that another app came to the front, that the desktop
-    in use changed, that the screens changed or that the displays went to sleep, to
-    forget that view or to take a swipe back;
+  - for "Up and Down follow the hand too": four switches in the Dock's settings
+    (`showMissionControlGestureEnabled`, `showDesktopGestureEnabled`,
+    `showLaunchpadGestureEnabled` and `showAppExposeGestureEnabled` of `com.apple.dock`),
+    which say whether the trackpad gestures for Mission Control, Show Desktop, Launchpad
+    and App Exposé are on (System Settings › Trackpad › More Gestures). They are read
+    whether or not that switch is on: when Scrollio starts, when it becomes the active
+    app, when System Settings was in front and when the Dock starts (macOS tells when
+    an app starts; only the Dock's start is acted on). Where a gesture is off the Dock
+    ignores the motion, so that direction runs its action once instead; where the one
+    for App Exposé is on, Mission Control is not put away with your hand. Nothing else of
+    the Dock's settings is read, and none is changed. Scrollio never asks the Dock what
+    it shows: it remembers, for a minute and only while it runs, which view one of its
+    gestures opened with your hand, and hears from macOS that another app came to the
+    front (of which it only looks whether it is Finder), that the desktop in use
+    changed, that the screens changed (it then looks at the screens' places and sizes)
+    or that the displays went to sleep, to forget that view or to take a swipe back;
   - which app is under the pointer or in front, for the per-app settings and "Smooth
     Scrolling in …". With "Trackpad-style scrolling (Experimental)" on, for a wheel scroll in an
     app that gets the one-touch form, it reads the kind of the element under the pointer

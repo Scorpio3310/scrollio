@@ -2654,6 +2654,32 @@ final class AppDelegateObserverTests: XCTestCase {
         XCTAssertTrue(controller.coresActive)
     }
 
+    /// The Dock started (again): its switches for the trackpad gestures are read again
+    /// ("Up and Down follow the hand too"; a switch changed with `defaults write` counts
+    /// from the Dock's next start). No other app's start reads them. The reader is the
+    /// test's own: nothing of the Mac's settings is looked at.
+    func testTheDocksStartReadsItsGestureSwitchesAgain() throws {
+        var reads = 0
+        DockGestureSwitches.read = { _ in
+            reads += 1
+            return nil
+        }
+        defer {
+            DockGestureSwitches.read = DockGestureSwitches.systemValue
+            DockGestureSwitches.reload()
+        }
+        let started = NSWorkspace.didLaunchApplicationNotification
+        workspace.post(name: started, object: nil)
+        workspace.post(name: started, object: nil, userInfo: [NSWorkspace.applicationUserInfoKey: NSRunningApplication.current])
+        XCTAssertEqual(reads, 0, "another app's start")
+
+        guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: DockGestureSwitches.domain).first else {
+            throw XCTSkip("no Dock runs here to stand for the one that started")
+        }
+        workspace.post(name: started, object: nil, userInfo: [NSWorkspace.applicationUserInfoKey: dock])
+        XCTAssertEqual(reads, DockGestureSwitches.Key.allCases.count, "each switch once")
+    }
+
     /// An event tap that finds the access gone posts this; the cores stop at once.
     func testALostAccessStopsTheCores() {
         world.access = false

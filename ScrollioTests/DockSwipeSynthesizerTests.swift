@@ -555,6 +555,40 @@ final class DockSwipeSynthesizerTests: XCTestCase {
         ])
     }
 
+    /// The end of a swipe of the desktops is told (macOS reports the change of the desktop
+    /// late, and the gestures must know it for their own): only an end, and only sideways.
+    func testTheEndOfASwipeOfTheDesktopsIsTold() {
+        // Its own synthesizer: under XCTest it has the driver that does nothing.
+        let synthesizer = DockSwipeSynthesizer()
+        var told = 0
+        synthesizer.desktopsSwipeDidEnd = { told += 1 }
+
+        synthesizer.begin(axis: .horizontal)
+        synthesizer.update(progress: 0.6)
+        XCTAssertEqual(told, 0)
+        synthesizer.end(velocity: 1)
+        XCTAssertEqual(told, 1)
+        synthesizer.end(velocity: 1)
+        XCTAssertEqual(told, 1, "nothing ran")
+
+        // Taken back: the desktop stays, no change follows.
+        synthesizer.begin(axis: .horizontal)
+        synthesizer.cancel()
+        synthesizer.begin(axis: .horizontal)
+        synthesizer.begin(axis: .horizontal)
+        synthesizer.settle()
+        XCTAssertEqual(told, 1)
+        synthesizer.end(velocity: 0)
+        XCTAssertEqual(told, 2)
+
+        // A motion towards a view is no swipe of the desktops.
+        for axis in [DockSwipeAxis.vertical, .pinch] {
+            synthesizer.begin(axis: axis)
+            synthesizer.end(velocity: 3)
+        }
+        XCTAssertEqual(told, 2)
+    }
+
     // MARK: - Settling before an instant toggle
 
     /// A driver that also records `settle`.
@@ -571,26 +605,49 @@ final class DockSwipeSynthesizerTests: XCTestCase {
         return { calls }
     }
 
-    /// Before Scrollio asks the Dock for a view in one go, nothing of a swipe may still be
-    /// on its way: a swipe that runs is cancelled first, then the poster settles what it
-    /// still had to post again.
+    /// Before Scrollio asks the Dock for a view in one go, nothing of a motion towards a
+    /// view may still be on its way: a vertical swipe or a pinch that runs is cancelled
+    /// first, then the poster settles what it still had to post again.
     func testSettlingCancelsARunningSwipeAndThenSettlesThePoster() {
+        for axis in [DockSwipeAxis.vertical, .pinch] {
+            let calls = installSettlingDriver()
+            let synthesizer = DockSwipeSynthesizer.shared
+
+            synthesizer.begin(axis: axis)
+            synthesizer.update(progress: 0.4)
+            let number = synthesizer.swipeNumber
+            synthesizer.settle()
+            XCTAssertFalse(synthesizer.isActive)
+            XCTAssertNil(synthesizer.runningAxis)
+            XCTAssertFalse(synthesizer.isRunning(number), "its owner sends nothing more")
+            XCTAssertEqual(calls(), ["begin \(axis)", "update 0.4", "cancel", "settle"])
+
+            // Nothing more of that swipe afterwards.
+            synthesizer.update(progress: 0.5)
+            synthesizer.end(velocity: 1)
+            XCTAssertEqual(calls(), ["begin \(axis)", "update 0.4", "cancel", "settle"])
+        }
+    }
+
+    /// A swipe of the desktops is never taken back by an instant toggle (a hold's sideways
+    /// swipe, the thumb wheel's slide or its rest after a turn): it goes on and ends by
+    /// itself, and the toggle goes out beside it, as it did before there was a settle.
+    func testSettlingLeavesASwipeOfTheDesktopsRunning() {
         let calls = installSettlingDriver()
         let synthesizer = DockSwipeSynthesizer.shared
 
-        synthesizer.begin(axis: .vertical)
-        synthesizer.update(progress: 0.4)
+        synthesizer.begin(axis: .horizontal)
+        synthesizer.update(progress: 0.7)
         let number = synthesizer.swipeNumber
         synthesizer.settle()
-        XCTAssertFalse(synthesizer.isActive)
-        XCTAssertNil(synthesizer.runningAxis)
-        XCTAssertFalse(synthesizer.isRunning(number), "its owner sends nothing more")
-        XCTAssertEqual(calls(), ["begin vertical", "update 0.4", "cancel", "settle"])
+        XCTAssertTrue(synthesizer.isActive)
+        XCTAssertEqual(synthesizer.runningAxis, .horizontal)
+        XCTAssertTrue(synthesizer.isRunning(number), "its owner goes on")
+        XCTAssertEqual(calls(), ["begin horizontal", "update 0.7", "settle"])
 
-        // Nothing more of that swipe afterwards.
-        synthesizer.update(progress: 0.5)
+        synthesizer.update(progress: 0.9)
         synthesizer.end(velocity: 1)
-        XCTAssertEqual(calls(), ["begin vertical", "update 0.4", "cancel", "settle"])
+        XCTAssertEqual(calls(), ["begin horizontal", "update 0.7", "settle", "update 0.9", "end 1.0"])
     }
 
     /// With no swipe running only the poster is settled (the terminal event of a swipe that
@@ -721,6 +778,198 @@ final class DockSwipeSynthesizerTests: XCTestCase {
         XCTAssertEqual(later.scheduled.count, 0)
         XCTAssertFalse(resends.postNowAndDrop())
         XCTAssertEqual(later.posted, [])
+    }
+
+    // MARK: - The poster's own sequence
+    //
+    // What `DockSwipeDriver.system` drives, with an "event" that is the frame itself and
+    // the scrolling preference it was built with: nothing is built for real and nothing is
+    // posted anywhere but into the test's own list.
+
+    private struct Built: Equatable {
+        var frame: DockSwipeFrame
+        var naturalScrolling: Bool
+    }
+
+    /// A poster whose events land in a list and whose timers a test runs.
+    private final class PosterWorld {
+        var posted: [Built] = []
+        var scheduled: [(delay: TimeInterval, work: DispatchWorkItem)] = []
+        var naturalScrolling = true
+        var preferenceReads = 0
+        /// false: the events of a frame cannot be built.
+        var canBuild = true
+
+        private(set) lazy var poster = DockSwipePoster<Built>(
+            makeEvents: { [unowned self] frame, naturalScrolling in
+                self.canBuild ? Built(frame: frame, naturalScrolling: naturalScrolling) : nil
+            },
+            post: { [unowned self] in self.posted.append($0) },
+            isNaturalScrollingEnabled: { [unowned self] in
+                self.preferenceReads += 1
+                return self.naturalScrolling
+            },
+            resendDelays: DockSwipeSystemPoster.terminalResendDelays,
+            schedule: { [unowned self] delay, work in self.scheduled.append((delay, work)) }
+        )
+
+        var frames: [DockSwipeFrame] { posted.map(\.frame) }
+
+        func runEveryTimer() {
+            scheduled.forEach { $0.work.perform() }
+        }
+    }
+
+    private func frame(_ phase: DockSwipePhase, _ axis: DockSwipeAxis, _ progress: Double, velocity: Double = 0) -> DockSwipeFrame {
+        return DockSwipeFrame(phase: phase, axis: axis, progress: progress, velocity: velocity)
+    }
+
+    /// `begin` posts nothing; the first update is `began` and carries its progress, later
+    /// ones are `changed`; the last event repeats the last progress and adds the velocity,
+    /// and is posted again after 0.2 s and 0.5 s.
+    func testThePostersFirstUpdateIsBeganAndItsLastEventRepeatsTheLastProgress() {
+        let world = PosterWorld()
+        XCTAssertEqual(DockSwipeSystemPoster.terminalResendDelays, [0.2, 0.5])
+
+        world.poster.begin(axis: .vertical)
+        XCTAssertEqual(world.frames, [], "nothing until the hand moves")
+        world.poster.update(progress: 0.1)
+        XCTAssertEqual(world.frames, [frame(.began, .vertical, 0.1)])
+        world.poster.update(progress: 0.7)
+        world.poster.update(progress: 0.4)
+        world.poster.finish(phase: .ended, velocity: 2.5)
+        let last = frame(.ended, .vertical, 0.4, velocity: 2.5)
+        XCTAssertEqual(world.frames, [
+            frame(.began, .vertical, 0.1), frame(.changed, .vertical, 0.7), frame(.changed, .vertical, 0.4), last,
+        ])
+
+        XCTAssertEqual(world.scheduled.map(\.delay), [0.2, 0.5])
+        world.runEveryTimer()
+        XCTAssertEqual(Array(world.frames.suffix(3)), [last, last, last], "the same event, twice more")
+        XCTAssertEqual(world.frames.count, 6)
+
+        // A swipe that is taken back ends the same way, with the other phase.
+        world.posted = []
+        world.poster.begin(axis: .horizontal)
+        world.poster.update(progress: -0.3)
+        world.poster.finish(phase: .cancelled, velocity: 0)
+        XCTAssertEqual(world.frames, [frame(.began, .horizontal, -0.3), frame(.cancelled, .horizontal, -0.3)])
+    }
+
+    /// Nothing reached the Dock, so there is nothing to finish; and one swipe has one
+    /// terminal event, however often it is finished.
+    func testAFinishBeforeAnyUpdatePostsNothing() {
+        let world = PosterWorld()
+
+        world.poster.finish(phase: .ended, velocity: 1)
+        world.poster.begin(axis: .pinch)
+        world.poster.finish(phase: .cancelled, velocity: 0)
+        world.poster.finish(phase: .ended, velocity: 3)
+        XCTAssertEqual(world.frames, [])
+        XCTAssertEqual(world.scheduled.count, 0, "and nothing to post again")
+
+        world.poster.update(progress: 0.2)
+        world.poster.finish(phase: .ended, velocity: 1)
+        world.poster.finish(phase: .ended, velocity: 1)
+        world.poster.finish(phase: .cancelled, velocity: 0)
+        XCTAssertEqual(world.frames, [frame(.began, .pinch, 0.2), frame(.ended, .pinch, 0.2, velocity: 1)])
+        XCTAssertEqual(world.scheduled.count, 2)
+    }
+
+    /// A second swipe starts clean: the re-posts of the one before are dropped (they would
+    /// end the new swipe), its first update is `began` again, and its last event carries
+    /// its own progress, not the old one's.
+    func testASecondBeginStartsCleanAndDropsTheWaitingReposts() {
+        let world = PosterWorld()
+
+        world.poster.begin(axis: .horizontal)
+        world.poster.update(progress: 0.6)
+        world.poster.finish(phase: .ended, velocity: 1)
+        XCTAssertEqual(world.frames.count, 2)
+
+        world.poster.begin(axis: .pinch)
+        world.runEveryTimer()
+        XCTAssertEqual(world.frames.count, 2, "nothing of the first swipe after the second began")
+        world.poster.update(progress: 0.1)
+        world.poster.finish(phase: .cancelled, velocity: 0)
+        XCTAssertEqual(Array(world.frames.suffix(2)), [frame(.began, .pinch, 0.1), frame(.cancelled, .pinch, 0.1)])
+
+        // A swipe begun over one that never finished: no stale `changed`, no old progress.
+        world.posted = []
+        world.poster.begin(axis: .vertical)
+        world.poster.update(progress: 0.9)
+        world.poster.begin(axis: .vertical)
+        world.poster.finish(phase: .ended, velocity: 0)
+        XCTAssertEqual(world.frames, [frame(.began, .vertical, 0.9)], "the new swipe has nothing to finish yet")
+        world.poster.update(progress: 0.05)
+        world.poster.finish(phase: .ended, velocity: 0)
+        XCTAssertEqual(Array(world.frames.suffix(2)), [frame(.began, .vertical, 0.05), frame(.ended, .vertical, 0.05)])
+    }
+
+    /// The settle of an instant toggle, through the poster: the last event that still
+    /// waits is posted once, now, and its timers are dropped. With nothing waiting, or a
+    /// swipe that still runs, it posts nothing.
+    func testSettlingThePosterPostsTheWaitingLastEventOnceNow() {
+        let world = PosterWorld()
+
+        world.poster.settle()
+        world.poster.begin(axis: .vertical)
+        world.poster.update(progress: 0.3)
+        world.poster.settle()
+        XCTAssertEqual(world.frames.count, 1, "nothing waits while the swipe runs")
+
+        world.poster.finish(phase: .cancelled, velocity: 0)
+        world.poster.settle()
+        let last = frame(.cancelled, .vertical, 0.3)
+        XCTAssertEqual(world.frames, [frame(.began, .vertical, 0.3), last, last])
+        world.poster.settle()
+        world.runEveryTimer()
+        XCTAssertEqual(world.frames.count, 3, "once, and the timers are gone")
+    }
+
+    /// The scrolling preference is read once per swipe, at its begin: a change mid-swipe
+    /// must not flip the direction under the hand.
+    func testThePosterReadsTheScrollingPreferenceOncePerSwipe() {
+        let world = PosterWorld()
+        world.naturalScrolling = false
+
+        world.poster.begin(axis: .horizontal)
+        XCTAssertEqual(world.preferenceReads, 1)
+        world.poster.update(progress: 0.1)
+        world.naturalScrolling = true
+        world.poster.update(progress: 0.2)
+        world.poster.finish(phase: .ended, velocity: 1)
+        world.runEveryTimer()
+        XCTAssertEqual(world.preferenceReads, 1)
+        XCTAssertEqual(world.posted.map(\.naturalScrolling), [false, false, false, false, false])
+
+        world.poster.begin(axis: .horizontal)
+        world.poster.update(progress: 0.1)
+        XCTAssertEqual(world.preferenceReads, 2)
+        XCTAssertEqual(world.posted.last?.naturalScrolling, true)
+    }
+
+    /// An event that cannot be built is not posted and does not count: the next update is
+    /// still `began`, and a last event that cannot be built is not posted again either.
+    func testAnEventThatCannotBeBuiltIsNotCounted() {
+        let world = PosterWorld()
+
+        world.poster.begin(axis: .vertical)
+        world.canBuild = false
+        world.poster.update(progress: 0.1)
+        world.poster.finish(phase: .ended, velocity: 1)
+        XCTAssertEqual(world.frames, [])
+        world.canBuild = true
+        world.poster.update(progress: 0.2)
+        XCTAssertEqual(world.frames, [frame(.began, .vertical, 0.2)])
+
+        world.canBuild = false
+        world.poster.finish(phase: .ended, velocity: 1)
+        XCTAssertEqual(world.frames.count, 1)
+        XCTAssertEqual(world.scheduled.count, 0)
+        world.canBuild = true
+        world.poster.finish(phase: .ended, velocity: 1)
+        XCTAssertEqual(world.frames.count, 1, "that swipe is over for the poster")
     }
 
     // MARK: - Geometry

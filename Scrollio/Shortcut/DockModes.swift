@@ -18,12 +18,13 @@
 //  `hs.spaces.toggleMissionControl` and `toggleShowDesktop` make. It is in no public
 //  header, so it is looked up by name; where it is missing the key press is sent as before.
 //
-//  The Dock hears one voice at a time. A view can also open with the hand, as a swipe
-//  (DockSwipeSynthesizer.swift), and a toggle that met what was left of a swipe would be the
-//  kind of mixing that put the Dock out of step before. So before any toggle is sent, by
-//  name or by key, the swipe is settled: `ShortcutExecutor` tells
-//  `InputProcessor.dockViewWillBeToggled`, which cancels a swipe that runs and posts a last
-//  event that was still to be posted again, now.
+//  The Dock hears one voice about its views at a time. A view can also open with the hand,
+//  as a swipe (DockSwipeSynthesizer.swift), and a toggle that met what was left of such a
+//  swipe would be the kind of mixing that put the Dock out of step before. So before any
+//  toggle is sent, by name or by key, the swipe is settled: `ShortcutExecutor` tells
+//  `InputProcessor.dockViewWillBeToggled`, which cancels a motion towards a view that runs
+//  and posts a last event that was still to be posted again, now. A swipe of the desktops
+//  that runs is left alone and ends by itself, as it always did.
 //
 
 import Foundation

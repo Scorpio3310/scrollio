@@ -676,8 +676,13 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
     private var instantVoices: [DockVoice] { dockVoices.filter { !$0.isSwipe } }
     private var gestureLog: [String] = []
     private var hapticCues: [MouseGestureHapticCue] = []
+    /// The frames of the screens of the Mac made up here.
+    private var screenFrames: [CGRect] = []
     /// How often a hold asked what follows on this Mac.
     private var availabilityQuestions = 0
+
+    /// The Dock's switches of a Mac whose trackpad gesture for App Exposé is on as well.
+    private let appExposeOn = DockGestureSwitches(missionControl: true, showDesktop: true, launchpad: true, appExpose: true)
 
     /// A Mac on which Mission Control and Show Desktop follow: macOS 27, an ordinary build.
     private func mac(
@@ -704,6 +709,8 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         gestureLog = []
         hapticCues = []
         availabilityQuestions = 0
+        screenFrames = [CGRect(x: 0, y: 0, width: 1512, height: 1000)]
+        InputProcessor.shared.setTestingScreenFrames { [weak self] in self?.screenFrames ?? [] }
 
         DockSwipeSynthesizer.shared.setTestingDriver(DockSwipeDriver(
             isAvailable: { [weak self] in self?.isSynthesizerAvailable ?? false },
@@ -733,6 +740,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
             self?.drainMainQueue()
             InputProcessor.shared.clearActiveBindings()
             InputProcessor.shared.setTestingFollowAvailability(nil)
+            InputProcessor.shared.setTestingScreenFrames(nil)
             InputProcessor.shared.setTestingMouseGestureLog(nil)
             InputProcessor.shared.clearTestingGestureHapticPlayer()
             ShortcutExecutor.shared.toggleDockMode = toggleBefore
@@ -750,6 +758,12 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
             self?.availabilityQuestions += 1
             return availability
         }
+    }
+
+    /// macOS says the screens' parameters changed, and they did: another resolution.
+    private func changeTheScreens() {
+        screenFrames[0].size.width += 208
+        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
     }
 
     /// A hold's last swipe event waits one turn of the main queue, and its line in the log
@@ -902,6 +916,132 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         drainMainQueue()
         assertSwipeCalls([.begin(.vertical), .update(0.5), .end(12)])
         XCTAssertEqual(instantVoices, [])
+    }
+
+    // MARK: A quick flick opens the view at once
+
+    /// A quick flick used to open the view (the action ran at 40 pt). Followed with the
+    /// hand it is a motion of a few hundredths of the way, let go fast, and whether the
+    /// Dock finishes that is its own secret. So a hold that opens a view and is let go
+    /// as expected to open while the view has moved less than a fifth of the way takes
+    /// its motion back and runs the direction's action once, in one go.
+    func testAQuickFlickOpensTheViewAtOnce() {
+        configureFollowing()
+
+        // 60 pt, all of it in the turn of the release: 0.15 of the way at nine views a second.
+        pressGestureButton()
+        clock += 0.05
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: -60)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        XCTAssertEqual(dockVoices, [], "nothing is posted inside the callbacks")
+        drainMainQueue()
+        XCTAssertEqual(dockVoices, [
+            .swipe(.begin(.vertical)), .swipe(.update(0.15)), .swipe(.cancel), .settle, .toggle(.missionControl),
+        ])
+        XCTAssertEqual(gestureLog, [
+            "Gestures: up followed the hand: missionControl, vertical +, began after 50 ms, 1 update, "
+                + "furthest 0.15, released at 0.15, 9.0/s: cancelled, a flick: ran once",
+            "Gestures: up ran missionControl",
+        ])
+        XCTAssertEqual(hapticCues, [.lockIn], "one light pulse, as when the action ran at 40 pt")
+        XCTAssertNil(InputProcessor.shared.believedDockView, "a toggle is never believed")
+        XCTAssertFalse(DockSwipeSynthesizer.shared.isActive)
+
+        // The same flick again closes it the same way (the toggle), and so on.
+        dockVoices = []
+        gestureLog = []
+        pressGestureButton()
+        moveHand(0, -45)
+        moveHand(0, -30)
+        releaseGestureButton(after: 0.01)
+        XCTAssertEqual(dockVoices.suffix(3), [.swipe(.cancel), .settle, .toggle(.missionControl)])
+        XCTAssertEqual(gestureLog.count, 2)
+        XCTAssertTrue(gestureLog.first?.hasSuffix("released at 0.19, 7.0/s: cancelled, a flick: ran once") == true, "\(gestureLog)")
+    }
+
+    /// Only a flick: a slow small move that is let go goes back and runs nothing, and from
+    /// a fifth of the way on macOS decides, however fast the hand was.
+    func testASlowSmallMoveGoesBackAndAFlickFromAFifthOnIsTheDocks() {
+        configureFollowing()
+
+        // 0.15 of the way, at rest.
+        hold([(0, -60)])
+        assertSwipeCalls([.begin(.vertical), .update(0.15), .end(0)])
+        XCTAssertEqual(instantVoices, [], "nothing runs")
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+
+        // 0.15 of the way, heading back: cancelled, and still nothing runs.
+        swipeCalls = []
+        pressGestureButton()
+        moveHand(0, -100)
+        clock += 0.2
+        moveHand(0, 40)
+        releaseGestureButton(after: 0.01)
+        assertSwipeCalls([.begin(.vertical), .update(0.25), .update(0.15), .cancel])
+        XCTAssertEqual(instantVoices, [])
+
+        // Exactly a fifth, fast: the Dock's.
+        swipeCalls = []
+        gestureLog = []
+        pressGestureButton()
+        clock += 0.05
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: -80)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        drainMainQueue()
+        assertSwipeCalls([.begin(.vertical), .update(0.2), .end(12)])
+        XCTAssertEqual(instantVoices, [])
+        XCTAssertEqual(gestureLog.count, 1)
+        XCTAssertTrue(gestureLog.first?.hasSuffix("released at 0.20, 12.0/s: ended, expected to open") == true, "\(gestureLog)")
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+    }
+
+    /// The pinch's two views flick the same way, each by its own action; an app's own set
+    /// says so in both lines.
+    func testAFlickRunsTheActionOfItsOwnDirection() {
+        configureFollowing(up: "showDesktop", down: "appExpose", on: mac(apps: true))
+
+        hold([(0, -60)], rest: 0.01)
+        XCTAssertEqual(dockVoices, [
+            .swipe(.begin(.pinch)), .swipe(.update(0.15)), .swipe(.cancel), .settle, .toggle(.showDesktop),
+        ])
+        XCTAssertEqual(gestureLog.last, "Gestures: up ran showDesktop")
+
+        // Apps, where a build lets it follow: the other end of the pinch, then its key.
+        swipeCalls = []
+        dockVoices = []
+        gestureLog = []
+        hold([(0, 45)], rest: 0.01)
+        assertSwipeCalls([.begin(.pinch), .update(-0.15), .cancel])
+        XCTAssertEqual(instantVoices, [.settle, .key(resolvedShortcut(SystemShortcut.appExpose).code)])
+        XCTAssertEqual(dockVoices.last, .key(resolvedShortcut(SystemShortcut.appExpose).code), "the key after the motion went back")
+        XCTAssertEqual(gestureLog, [
+            "Gestures: down followed the hand: appExpose, pinch -, began after 17 ms, 1 update, "
+                + "furthest 0.15, released at 0.15, 9.0/s: cancelled, a flick: ran once",
+            "Gestures: down ran appExpose",
+        ])
+    }
+
+    /// A hold that leaves Mission Control never runs a toggle, however short and fast: its
+    /// direction's own action is another view's (Apps), and a toggle of Mission Control
+    /// would open it again where it had been left another way.
+    func testAFlickThatLeavesMissionControlNeverRunsAToggle() {
+        configureFollowing()
+        openMissionControlWithTheHand()
+
+        pressGestureButton()
+        clock += 0.05
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: 60)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        drainMainQueue()
+
+        assertSwipeCalls([.begin(.vertical), .update(-0.15), .end(-9)])
+        XCTAssertEqual(instantVoices, [])
+        XCTAssertEqual(gestureLog, [
+            "Gestures: down followed the hand: leaving missionControl, vertical -, began after 50 ms, 1 update, "
+                + "furthest 0.15, released at 0.15, 9.0/s: ended, expected to close",
+        ])
+        XCTAssertEqual(hapticCues, [.lockIn, .commit])
+        XCTAssertNil(InputProcessor.shared.believedDockView)
     }
 
     func testEachViewDrivesItsOwnMotionAndSign() {
@@ -1144,8 +1284,8 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(dockVoices, [.settle, .toggle(.missionControl)])
         XCTAssertEqual(gestureLog, ["Gestures: up ran missionControl"], "no line about following")
 
-        // Scrollio opened Mission Control itself, and still Down is its own action.
-        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+        // Scrollio asked for Mission Control itself, and Down is its own action.
+        XCTAssertNil(InputProcessor.shared.believedDockView, "a toggle is never believed")
         dockVoices = []
         gestureLog = []
         hold([(0, 100)])
@@ -1184,7 +1324,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(swipeCalls, [])
         XCTAssertEqual(dockVoices, [.settle, .toggle(.missionControl)])
         XCTAssertEqual(gestureLog, [
-            "Gestures: up did not follow the hand: missionControl, Mission Control was showing",
+            "Gestures: up did not follow the hand: missionControl, Scrollio had just opened Mission Control",
             "Gestures: up ran missionControl",
         ])
         XCTAssertNil(InputProcessor.shared.believedDockView, "the toggle closed it")
@@ -1224,19 +1364,84 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(dockVoices, [.settle, .key(resolvedShortcut(SystemShortcut.appExpose).code)])
     }
 
-    func testLeavingMissionControlOnlyPartWayKeepsItBelieved() {
+    /// A hold that left Mission Control with the hand and was not turned back to its start
+    /// ends the belief, whatever macOS made of it: had Mission Control not been showing
+    /// (left with Esc), every further Down would do nothing for up to a minute. So one odd
+    /// move at most, and then Down is its own action again.
+    func testALeavingHoldThatWasNotTurnedBackEndsTheBelief() {
+        configureFollowing()
+        let appsKey = resolvedShortcut(SystemShortcut.appExpose).code
+        openMissionControlWithTheHand()
+
+        // A quarter of the way and let go at rest.
+        hold([(0, 100)])
+        assertSwipeCalls([.begin(.vertical), .update(-0.25), .end(0)])
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+        XCTAssertEqual(instantVoices, [], "a leaving hold never runs a toggle")
+
+        // The same move again is Down's own action: Apps, by its key.
+        swipeCalls = []
+        hold([(0, 100)])
+        XCTAssertEqual(swipeCalls, [])
+        XCTAssertEqual(instantVoices, [.settle, .key(appsKey)])
+
+        // Let go while heading back, short of the start: the belief ends as well.
+        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
+        openMissionControlWithTheHand()
+        pressGestureButton()
+        moveHand(0, 240)
+        clock += 0.2
+        moveHand(0, -40)
+        releaseGestureButton(after: 0.01)
+        assertSwipeCalls([.begin(.vertical), .update(-0.6), .update(-0.5), .cancel])
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+
+        // Something else took it back part of the way (the hold was older than its limit).
+        openMissionControlWithTheHand()
+        pressGestureButton()
+        moveHand(0, 100)
+        InputProcessor.shared.fireInteractiveGestureWatchdogForTests()
+        assertSwipeCalls([.begin(.vertical), .update(-0.25), .cancel])
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+        releaseGestureButton()
+    }
+
+    /// Turned back to where it started, the hold changed nothing: Mission Control is still
+    /// believed to show, and Down leaves it with the hand again.
+    func testALeavingHoldTurnedBackToItsStartKeepsTheBelief() {
         configureFollowing()
         openMissionControlWithTheHand()
 
-        hold([(0, 100)])
-        assertSwipeCalls([.begin(.vertical), .update(-0.25), .end(0)])
-        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl, "a quarter of the way: it stays")
-
-        swipeCalls = []
         hold([(0, 100), (0, -100)])
         assertSwipeCalls([.begin(.vertical), .update(-0.25), .update(0), .cancel])
         XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
         XCTAssertEqual(instantVoices, [])
+
+        swipeCalls = []
+        hold([(0, 240)])
+        assertSwipeCalls([.begin(.vertical), .update(-0.6), .end(0)])
+        XCTAssertNil(InputProcessor.shared.believedDockView, "it was left")
+    }
+
+    /// Where the trackpad gesture for App Exposé is on, the swipe that leaves Mission
+    /// Control opens App Exposé when Mission Control is not showing after all (it was left
+    /// with Esc): a wrong view. There the opposite direction keeps its own plan.
+    func testMissionControlIsNotLeftWithTheHandWhereAppExposeHasItsGesture() {
+        configureFollowing(up: "missionControl", down: "showDesktop", on: mac(switches: appExposeOn))
+        openMissionControlWithTheHand()
+
+        // Down is Show Desktop, with the hand, as without a belief.
+        hold([(0, 100)])
+        assertSwipeCalls([.begin(.pinch), .update(0.25), .end(0)])
+        XCTAssertEqual(instantVoices, [])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl, "nothing left it")
+
+        // The same move again still closes what Scrollio opened.
+        swipeCalls = []
+        dockVoices = []
+        hold([(0, -100)])
+        XCTAssertEqual(swipeCalls, [])
+        XCTAssertEqual(dockVoices, [.settle, .toggle(.missionControl)])
     }
 
     func testAHoldThatIsNotExpectedToOpenLeavesNothingBelieved() {
@@ -1252,28 +1457,76 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         assertSwipeCalls([.begin(.vertical), .update(0.25), .end(0)])
     }
 
-    /// Scrollio's own instant toggle counts like its swipe: the click (Mission Control by
-    /// default) puts the view up, and Up then closes it at once.
-    func testAnInstantToggleOfScrolliosIsBelievedToo() {
+    /// Only a hold that followed the hand is believed. An instant toggle of Scrollio's is
+    /// not: it may as well have closed a view that was opened elsewhere (a hot corner, the
+    /// trackpad). And any instant toggle ends a belief: what the Dock shows after it is
+    /// not known.
+    func testAnInstantToggleOfScrolliosIsNeverBelievedAndEndsABelief() {
         configureFollowing()
+        let appsKey = resolvedShortcut(SystemShortcut.appExpose).code
 
+        // The click (Mission Control by default): nothing is believed, so Up opens with the
+        // hand and Down is its own action.
         hold([])
         XCTAssertEqual(dockVoices, [.settle, .toggle(.missionControl)])
-        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+        dockVoices = []
+        hold([(0, 100)])
+        XCTAssertEqual(swipeCalls, [])
+        XCTAssertEqual(dockVoices, [.settle, .key(appsKey)], "Down is Apps, not a move that leaves Mission Control")
+        dockVoices = []
+        hold([(0, -100)])
+        assertSwipeCalls([.begin(.vertical), .update(0.25), .end(0)])
+        XCTAssertEqual(instantVoices, [])
 
+        // A toggle from anywhere in Scrollio (a button, the Shortcut Ring) sets nothing…
+        for action in ["missionControl", "showDesktop", "appExpose"] {
+            ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: action))
+            XCTAssertNil(InputProcessor.shared.believedDockView, action)
+        }
+        // …and ends what a hold had set, whichever view it asks for.
+        for action in ["missionControl", "showDesktop", "appExpose"] {
+            openMissionControlWithTheHand()
+            ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: action))
+            XCTAssertNil(InputProcessor.shared.believedDockView, action)
+        }
+    }
+
+    /// A click on a file on the desktop brings Finder to the front, and that is what Show
+    /// Desktop is for: the view stays, and so does the belief. Any other app in front
+    /// ends it, and Finder ends the belief of any other view.
+    func testFinderComingToTheFrontKeepsABelievedShowDesktop() {
+        configureFollowing(up: "showDesktop", down: "missionControl")
+
+        hold([(0, -240)])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .showDesktop)
+        InputProcessor.shared.surroundingsChanged(.finderCameToFront)
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .showDesktop)
+
+        // Up again brings the windows back, at once.
+        swipeCalls = []
         dockVoices = []
         hold([(0, -100)])
         XCTAssertEqual(swipeCalls, [])
-        XCTAssertEqual(dockVoices, [.settle, .toggle(.missionControl)])
+        XCTAssertEqual(dockVoices, [.settle, .toggle(.showDesktop)])
+
+        hold([(0, -240)])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .showDesktop)
+        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
         XCTAssertNil(InputProcessor.shared.believedDockView)
 
-        // A toggle from anywhere in Scrollio (a button, the Shortcut Ring) counts.
-        ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: "showDesktop"))
-        XCTAssertEqual(InputProcessor.shared.believedDockView, .showDesktop)
-        ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: "showDesktop"))
+        // Mission Control: Finder in front means it was left.
+        hold([(0, 240)])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+        InputProcessor.shared.surroundingsChanged(.finderCameToFront)
         XCTAssertNil(InputProcessor.shared.believedDockView)
-        ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: "appExpose"))
-        XCTAssertEqual(InputProcessor.shared.believedDockView, .apps)
+
+        // Which app it is comes with the notification: only Finder is told apart.
+        typealias Change = InputProcessor.SurroundingsChange
+        XCTAssertEqual(Change.applicationCameToFront(bundleIdentifier: "com.apple.finder"), .finderCameToFront)
+        for other in ["com.apple.Safari", "com.apple.dock", "com.apple.finder.Open-With-Pool", "", nil] {
+            XCTAssertEqual(Change.applicationCameToFront(bundleIdentifier: other), .anotherApplicationCameToFront)
+        }
     }
 
     func testTheBeliefIsDroppedByEachOfItsTriggers() {
@@ -1333,6 +1586,34 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertFalse(dockVoices.contains(.settle))
     }
 
+    /// A swipe of the desktops is never taken back by an instant toggle, as before there
+    /// was a settle: the thumb wheel's slide (or its rest after a turn) ends by itself and
+    /// the desktop switches, and a hold's own sideways swipe goes on under the hand.
+    func testAnInstantToggleNeverTakesBackASwipeOfTheDesktops() {
+        configureFollowing(follow: false)
+
+        // "Follow the wheel" slides the desktops; a button asks for Mission Control.
+        DockSwipeSynthesizer.shared.begin(axis: .horizontal)
+        DockSwipeSynthesizer.shared.update(progress: 0.7)
+        ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: "missionControl"))
+        XCTAssertEqual(dockVoices, [
+            .swipe(.begin(.horizontal)), .swipe(.update(0.7)), .settle, .toggle(.missionControl),
+        ])
+        XCTAssertTrue(DockSwipeSynthesizer.shared.isActive, "the slide finishes by itself")
+        DockSwipeSynthesizer.shared.end(velocity: 0)
+
+        // A hold slides the desktops; the Apps key from elsewhere does not stop it.
+        swipeCalls = []
+        dockVoices = []
+        pressGestureButton()
+        moveHand(-100, 0)
+        ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: "appExpose"))
+        moveHand(-100, 0)
+        releaseGestureButton()
+        assertSwipeCalls([.begin(.horizontal), .update(0.1), .update(0.2), .end(0)])
+        XCTAssertEqual(instantVoices, [.settle, .key(resolvedShortcut(SystemShortcut.appExpose).code)])
+    }
+
     /// A toggle from elsewhere while a hold drives a motion: the motion goes back first, the
     /// hold sends nothing more, and its release cannot end a swipe that began after it.
     func testAToggleFromElsewhereTakesTheHoldsMotionBackFirst() {
@@ -1356,7 +1637,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
             "Gestures: up followed the hand: missionControl, vertical +, began after 17 ms, 1 update, "
                 + "furthest 0.60, at 0.60: cancelled (its swipe had been taken back)",
         ])
-        XCTAssertEqual(InputProcessor.shared.believedDockView, .showDesktop, "the toggle's view, not the hold's")
+        XCTAssertNil(InputProcessor.shared.believedDockView, "not the hold's view, and a toggle is never believed")
         XCTAssertEqual(hapticCues, [.lockIn])
         DockSwipeSynthesizer.shared.cancel()
     }
@@ -1392,15 +1673,16 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         moveHand(0, -100)
         XCTAssertEqual(dockVoices, [.swipe(.begin(.horizontal)), .swipe(.update(0.5))], "no vertical begin, nothing taken over")
         waitForMainQueue()
-        // The action runs once instead. It is a toggle of the Dock, so the swipe that runs
-        // is settled first: one voice.
+        // The action runs once instead, beside the wheel's slide, which finishes by itself
+        // (the desktop switches) as it did before Up could follow the hand.
         XCTAssertEqual(dockVoices, [
-            .swipe(.begin(.horizontal)), .swipe(.update(0.5)), .swipe(.cancel), .settle, .toggle(.missionControl),
+            .swipe(.begin(.horizontal)), .swipe(.update(0.5)), .settle, .toggle(.missionControl),
         ])
+        XCTAssertTrue(DockSwipeSynthesizer.shared.isActive, "the wheel's swipe goes on")
         moveHand(0, -300)
         releaseGestureButton()
 
-        XCTAssertEqual(dockVoices.count, 5, "the rest of the hold does nothing")
+        XCTAssertEqual(dockVoices.count, 4, "the rest of the hold does nothing")
         XCTAssertEqual(gestureLog, [
             "Gestures: up did not follow the hand: missionControl, the wheel's swipe was running",
             "Gestures: up ran missionControl",
@@ -1409,9 +1691,8 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
 
         // Sideways still takes the wheel's swipe over, as before.
         swipeCalls = []
-        DockSwipeSynthesizer.shared.begin(axis: .horizontal)
         hold([(-100, 0)])
-        assertSwipeCalls([.begin(.horizontal), .cancel, .begin(.horizontal), .update(0.1), .end(0)])
+        assertSwipeCalls([.cancel, .begin(.horizontal), .update(0.1), .end(0)])
     }
 
     /// The same when the motion would begin with the release itself.
@@ -1425,11 +1706,13 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
         drainMainQueue()
 
-        XCTAssertEqual(dockVoices, [.swipe(.begin(.horizontal)), .swipe(.cancel), .settle, .toggle(.missionControl)])
+        XCTAssertEqual(dockVoices, [.swipe(.begin(.horizontal)), .settle, .toggle(.missionControl)])
+        XCTAssertTrue(DockSwipeSynthesizer.shared.isActive, "the wheel's swipe goes on")
         XCTAssertEqual(gestureLog, [
             "Gestures: up did not follow the hand: missionControl, the wheel's swipe was running",
             "Gestures: up ran missionControl",
         ])
+        DockSwipeSynthesizer.shared.cancel()
     }
 
     // MARK: Nothing stuck
@@ -1445,7 +1728,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
             ("no button-up", { InputProcessor.shared.fireInteractiveGestureWatchdogForTests() }),
             ("the mouse went away", { XCTAssertEqual(InputProcessor.shared.process(syntheticRelease), .consumed) }),
             ("Scrollio's event taps stopped", { InputProcessor.shared.clearActiveBindings() }),
-            ("the screens changed", { InputProcessor.shared.surroundingsChanged(.screenParametersChanged) }),
+            ("the screens changed", { [unowned self] in self.changeTheScreens() }),
             ("the displays went to sleep", { InputProcessor.shared.surroundingsChanged(.displaysWentToSleep) }),
             ("the desktop in use changed", { InputProcessor.shared.surroundingsChanged(.activeSpaceChanged) }),
             ("the Shortcut Ring opened", { [unowned self] in
@@ -1496,7 +1779,8 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
 
     /// A change of the desktop in use takes back a motion towards a view; the desktops'
     /// own swipe goes on (its own switch of desktops is such a change). A change of the
-    /// screens, and the displays going to sleep, take back whatever runs.
+    /// screens, and the displays going to sleep, take back whatever runs, and a swipe of
+    /// the desktops that is taken back so leaves one line in the log.
     func testTheDesktopsSwipeGoesOnThroughAChangeOfTheDesktopButNotOfTheScreens() {
         configureFollowing()
 
@@ -1506,20 +1790,126 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
         assertSwipeCalls([.begin(.horizontal), .update(0.1)])
         moveHand(-100, 0)
-        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
+        changeTheScreens()
         assertSwipeCalls([.begin(.horizontal), .update(0.1), .update(0.2), .cancel])
         moveHand(-100, 0)
         releaseGestureButton()
         XCTAssertEqual(swipeCalls.count, 4)
+        XCTAssertEqual(gestureLog, ["Gestures: a swipe of the desktops was taken back (the screens changed)"])
 
         swipeCalls = []
+        gestureLog = []
         pressGestureButton()
         moveHand(-100, 0)
         InputProcessor.shared.surroundingsChanged(.displaysWentToSleep)
         assertSwipeCalls([.begin(.horizontal), .update(0.1), .cancel])
         releaseGestureButton()
         XCTAssertEqual(swipeCalls.count, 3)
-        XCTAssertEqual(gestureLog, [], "the desktops write no line")
+        XCTAssertEqual(gestureLog, ["Gestures: a swipe of the desktops was taken back (the displays went to sleep)"])
+
+        // The thumb wheel's slide is such a swipe too. With nothing running there is no line.
+        swipeCalls = []
+        gestureLog = []
+        DockSwipeSynthesizer.shared.begin(axis: .horizontal)
+        changeTheScreens()
+        changeTheScreens()
+        InputProcessor.shared.surroundingsChanged(.displaysWentToSleep)
+        drainMainQueue()
+        assertSwipeCalls([.begin(.horizontal), .cancel])
+        XCTAssertEqual(gestureLog, ["Gestures: a swipe of the desktops was taken back (the screens changed)"])
+    }
+
+    /// macOS also says "the screens' parameters changed" when the Dock changes its size
+    /// or its place (an app that starts adds an icon). A swipe is taken back only when a
+    /// screen's frame, or the number of screens, is not what it was at the last look.
+    func testAChangeOfTheDockAloneTakesNoSwipeBack() {
+        configureFollowing()
+
+        // The desktops' swipe, with the switch off as well.
+        pressGestureButton()
+        moveHand(-100, 0)
+        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
+        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
+        moveHand(-100, 0)
+        releaseGestureButton()
+        assertSwipeCalls([.begin(.horizontal), .update(0.1), .update(0.2), .end(0)])
+        XCTAssertEqual(gestureLog, [])
+
+        // A view that is opening.
+        swipeCalls = []
+        pressGestureButton()
+        moveHand(0, -100)
+        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
+        assertSwipeCalls([.begin(.vertical), .update(0.25)])
+
+        // A second screen is plugged in: now they changed.
+        screenFrames.append(CGRect(x: 1512, y: 0, width: 1920, height: 1080))
+        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
+        assertSwipeCalls([.begin(.vertical), .update(0.25), .cancel])
+        releaseGestureButton()
+        XCTAssertEqual(gestureLog.count, 1)
+        XCTAssertTrue(gestureLog.first?.hasSuffix("at 0.25: cancelled (the screens changed)") == true, "\(gestureLog)")
+
+        // That look is the last one: the same screens again change nothing, and a screen
+        // that only moved (the arrangement) does.
+        swipeCalls = []
+        pressGestureButton()
+        moveHand(-100, 0)
+        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
+        assertSwipeCalls([.begin(.horizontal), .update(0.1)])
+        screenFrames[1].origin.y = -200
+        InputProcessor.shared.surroundingsChanged(.screenParametersChanged)
+        assertSwipeCalls([.begin(.horizontal), .update(0.1), .cancel])
+        releaseGestureButton()
+    }
+
+    /// macOS tells of a change of the desktop up to about half a second after a swipe of
+    /// the desktops ended. Such late word of Scrollio's own swipe (a hold's or the thumb
+    /// wheel's) takes back nothing and leaves the belief alone; a second after the swipe
+    /// ended, a change is somebody else's again.
+    func testLateWordOfScrolliosOwnSwipeOfTheDesktopsTakesNothingBack() {
+        configureFollowing()
+
+        // A flick left switches desktops, and Up is held right after it.
+        hold([(-100, 0)])
+        swipeCalls = []
+        pressGestureButton()
+        moveHand(0, -240)
+        clock += 0.4
+        InputProcessor.shared.surroundingsChanged(.activeSpaceChanged)
+        assertSwipeCalls([.begin(.vertical), .update(0.6)])
+        moveHand(0, -40)
+        releaseGestureButton()
+        assertSwipeCalls([.begin(.vertical), .update(0.6), .update(0.7), .end(0)])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+        XCTAssertEqual(gestureLog.count, 1)
+        XCTAssertTrue(gestureLog.first?.hasSuffix("released at 0.70, 0.0/s: ended, expected to open") == true, "\(gestureLog)")
+
+        // The thumb wheel slides the desktops inside Mission Control: the word of that
+        // switch comes late too, and Mission Control is still believed to show.
+        DockSwipeSynthesizer.shared.begin(axis: .horizontal)
+        DockSwipeSynthesizer.shared.update(progress: 0.8)
+        DockSwipeSynthesizer.shared.end(velocity: 0)
+        clock += 0.9
+        InputProcessor.shared.surroundingsChanged(.activeSpaceChanged)
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+
+        // More than a second after that swipe ended, a change is not its own any more.
+        clock += 0.2
+        InputProcessor.shared.surroundingsChanged(.activeSpaceChanged)
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+
+        // A swipe of the desktops that was taken back switched nothing: a change right
+        // after it still takes back the view that is opening.
+        swipeCalls = []
+        DockSwipeSynthesizer.shared.begin(axis: .horizontal)
+        DockSwipeSynthesizer.shared.cancel()
+        pressGestureButton()
+        moveHand(0, -240)
+        InputProcessor.shared.surroundingsChanged(.activeSpaceChanged)
+        assertSwipeCalls([.begin(.horizontal), .cancel, .begin(.vertical), .update(0.6), .cancel])
+        releaseGestureButton()
+        XCTAssertEqual(swipeCalls.count, 5)
     }
 
     /// A motion whose button is up and whose last event still waits for the main queue is
@@ -1542,6 +1932,155 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         ])
         XCTAssertNil(InputProcessor.shared.believedDockView)
         XCTAssertEqual(hapticCues, [.lockIn])
+    }
+
+    /// The gesture button, and a second button (4) that opens the Shortcut Ring, with a
+    /// ring that opens nothing on the screen.
+    private func configureRingBesideTheGestures(_ harness: RingHarness) {
+        configureGestureBinding(mode: .interactive)
+        Options.shared.buttons.binding.append(ButtonBinding(
+            triggerEvent: RecordedEvent(type: .mouse, code: 4, modifiers: 0, deviceFilter: nil),
+            systemShortcutName: SystemShortcut.shortcutRing.identifier,
+            isEnabled: true
+        ))
+        ButtonUtils.shared.invalidateCache()
+        ShortcutRingController.setTestingController(harness.controller)
+    }
+
+    /// A release hands its swipe events to the next turn of the main queue: a whole flick
+    /// (begin, update, end) when the hand's movement arrived with the button-up. After a
+    /// stop none of it goes out, and no view is believed after the belief was dropped.
+    func testAStopRevokesTheWholeFlickAReleaseQueued() {
+        configureFollowing()
+        let harness = RingHarness()
+        addTeardownBlock { ShortcutRingController.setTestingController(nil) }
+        let stops: [(name: String, happen: () -> Void, voices: [DockVoice])] = [
+            ("Scrollio stopped (a tap that started over, Pause)", { InputProcessor.shared.clearActiveBindings() }, []),
+            ("the desktop in use changed", { InputProcessor.shared.surroundingsChanged(.activeSpaceChanged) }, []),
+            ("the screens changed", { [unowned self] in self.changeTheScreens() }, []),
+            ("the displays went to sleep", { InputProcessor.shared.surroundingsChanged(.displaysWentToSleep) }, []),
+            ("the Shortcut Ring opened", { [unowned self] in
+                XCTAssertEqual(InputProcessor.shared.process(self.gestureInputEvent(phase: .down, code: 4)), .consumed)
+            }, []),
+            ("the Dock was asked for a view in one go", {
+                ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: "showDesktop"))
+            }, [.settle, .toggle(.showDesktop)]),
+        ]
+        for stop in stops {
+            configureRingBesideTheGestures(harness)
+            swipeCalls = []
+            dockVoices = []
+            gestureLog = []
+
+            // 200 pt up and the button-up in one turn: half of the view at twelve a second.
+            pressGestureButton()
+            clock += 0.05
+            InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: -200)
+            XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+            stop.happen()
+            drainMainQueue()
+
+            XCTAssertEqual(swipeCalls, [], "nothing of the flick goes out: \(stop.name)")
+            XCTAssertEqual(dockVoices, stop.voices, stop.name)
+            XCTAssertNil(InputProcessor.shared.believedDockView, "no view is believed after the stop: \(stop.name)")
+            XCTAssertEqual(gestureLog, [], "nothing reached the Dock, so no line: \(stop.name)")
+            XCTAssertFalse(DockSwipeSynthesizer.shared.isActive, stop.name)
+
+            _ = InputProcessor.shared.process(gestureInputEvent(phase: .up, code: 4))
+            ShortcutRingController.setTestingController(nil)
+            InputProcessor.shared.clearActiveBindings()
+        }
+
+        // Without a stop the same flick goes out whole.
+        configureGestureBinding(mode: .interactive)
+        swipeCalls = []
+        pressGestureButton()
+        clock += 0.05
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: -200)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        drainMainQueue()
+        assertSwipeCalls([.begin(.vertical), .update(0.5), .end(12)])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+    }
+
+    /// What leaves the desktops' swipe alone (the ring, a change of the desktop, an
+    /// instant toggle) leaves its queued events alone too: a flick sideways still goes
+    /// out, and a swipe that runs still gets its end. A change of the screens, the
+    /// displays going to sleep and a stop of Scrollio revoke them like any other.
+    func testWhatLeavesTheDesktopsSwipeAloneLeavesItsQueuedEventsAlone() {
+        configureFollowing()
+        let harness = RingHarness()
+        addTeardownBlock { ShortcutRingController.setTestingController(nil) }
+        let passes: [(name: String, happen: () -> Void)] = [
+            ("the desktop in use changed", { InputProcessor.shared.surroundingsChanged(.activeSpaceChanged) }),
+            ("the Shortcut Ring opened", { [unowned self] in
+                XCTAssertEqual(InputProcessor.shared.process(self.gestureInputEvent(phase: .down, code: 4)), .consumed)
+            }),
+            ("the Dock was asked for a view in one go", {
+                ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: "showDesktop"))
+            }),
+        ]
+        for pass in passes {
+            configureRingBesideTheGestures(harness)
+
+            // A whole flick sideways, queued.
+            swipeCalls = []
+            pressGestureButton()
+            clock += 0.05
+            InputProcessor.shared.handleMouseGestureMovement(deltaX: -100, deltaY: 0)
+            XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+            pass.happen()
+            drainMainQueue()
+            XCTAssertEqual(Array(swipeCalls.prefix(2)), [.begin(.horizontal), .update(0.1)], pass.name)
+            XCTAssertEqual(swipeCalls.count, 3, pass.name)
+            XCTAssertFalse(DockSwipeSynthesizer.shared.isActive, "it got its end: \(pass.name)")
+            _ = InputProcessor.shared.process(gestureInputEvent(phase: .up, code: 4))
+
+            // A swipe of the desktops that runs, its end queued: it must not be left open.
+            swipeCalls = []
+            pressGestureButton()
+            moveHand(-100, 0)
+            clock += 0.2
+            XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+            pass.happen()
+            XCTAssertTrue(DockSwipeSynthesizer.shared.isActive, pass.name)
+            drainMainQueue()
+            assertSwipeCalls([.begin(.horizontal), .update(0.1), .end(0)])
+            XCTAssertFalse(DockSwipeSynthesizer.shared.isActive, pass.name)
+
+            _ = InputProcessor.shared.process(gestureInputEvent(phase: .up, code: 4))
+            ShortcutRingController.setTestingController(nil)
+            InputProcessor.shared.clearActiveBindings()
+        }
+
+        // The screens changed, the displays sleep, Scrollio stops: a queued flick sideways
+        // is revoked, and a swipe that runs goes back at once and gets no second terminal.
+        let stops: [(name: String, happen: () -> Void)] = [
+            ("the screens changed", { [unowned self] in self.changeTheScreens() }),
+            ("the displays went to sleep", { InputProcessor.shared.surroundingsChanged(.displaysWentToSleep) }),
+            ("Scrollio stopped", { InputProcessor.shared.clearActiveBindings() }),
+        ]
+        for stop in stops {
+            configureGestureBinding(mode: .interactive)
+            swipeCalls = []
+            pressGestureButton()
+            clock += 0.05
+            InputProcessor.shared.handleMouseGestureMovement(deltaX: -100, deltaY: 0)
+            XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+            stop.happen()
+            drainMainQueue()
+            XCTAssertEqual(swipeCalls, [], stop.name)
+
+            pressGestureButton()
+            moveHand(-100, 0)
+            clock += 0.2
+            XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+            stop.happen()
+            assertSwipeCalls([.begin(.horizontal), .update(0.1), .cancel])
+            drainMainQueue()
+            XCTAssertEqual(swipeCalls.count, 3, stop.name)
+            InputProcessor.shared.clearActiveBindings()
+        }
     }
 
     func testTheWatchdogOfAFollowedHoldLetsTheNextPressStartOver() {

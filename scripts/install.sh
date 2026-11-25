@@ -19,6 +19,10 @@
 # after each roll of the thumb wheel that runs an action (every event of the roll), which is
 # what the wheel is tuned from. Only this script and a debug build have it; a release
 # (scripts/release.sh) never passes it and refuses a binary that holds the line.
+# With SCROLLIO_TRACE the installed copy also lets Apps (Launchpad) try to follow the hand
+# in Gestures > "Up and Down follow the hand too" (DockFollowAvailability.appsFollowInThisBuild),
+# so that it can be watched on a real Mac. No release does that, and a debug build does not
+# either: there Apps runs once.
 #
 # The project signs for its author's team. To build with your own, do not edit the project:
 # copy Local.xcconfig.example to Local.xcconfig (ignored by git) and put your team there.

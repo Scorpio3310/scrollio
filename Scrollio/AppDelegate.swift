@@ -161,8 +161,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Follows what the Mac tells the app while it runs: another user takes the Mac or gives
     /// it back, sleep and wake, a change of the displays, a loss or a change of the
-    /// Accessibility access, a change of the macOS keyboard shortcuts, a change of the
-    /// clock or the time zone. The three centers
+    /// Accessibility access, a change of the macOS keyboard shortcuts, a start of the Dock,
+    /// a change of the clock or the time zone. The three centers
     /// are parameters so that a test can post to its own and see where each one leads:
     /// under XCTest the launch code that calls this does not run.
     func registerObservers(
@@ -224,6 +224,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self,
             selector: #selector(reloadSystemShortcutsIfNeeded),
             name: NSWorkspace.didDeactivateApplicationNotification,
+            object: nil
+        )
+        // The Dock started (again): its switches for the trackpad gestures may have been
+        // changed from outside System Settings ("Up and Down follow the hand too").
+        workspace.addObserver(
+            self,
+            selector: #selector(reloadDockGestureSwitchesIfTheDockStarted),
+            name: NSWorkspace.didLaunchApplicationNotification,
             object: nil
         )
         // The Accessibility list of System Settings changed (any app's entry): look at the
@@ -388,6 +396,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ) else { return }
         SystemShortcut.reloadSystemShortcuts()
         // The same moments for the Dock's gesture switches (Trackpad › More Gestures).
+        DockGestureSwitches.reload()
+    }
+    @objc func reloadDockGestureSwitchesIfTheDockStarted(notification: NSNotification) {
+        let launched = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+        guard DockGestureSwitches.reloads(afterLaunchOf: launched?.bundleIdentifier) else { return }
         DockGestureSwitches.reload()
     }
     // 辅助功能权限在运行时被撤销 (可能由多个 Interceptor 同时触发, 此方法必须幂等)

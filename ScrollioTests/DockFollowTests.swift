@@ -102,6 +102,8 @@ final class DockFollowTuningTests: XCTestCase {
         XCTAssertEqual(DockFollowTuning.travelFactor(for: .apps), 0.75)
         XCTAssertEqual(DockFollowTuning.reverseTolerance, 8)
         XCTAssertEqual(DockFollowTuning.maximumTravelsPerSecond, 12)
+        XCTAssertEqual(DockFollowTuning.lateDesktopChange, 1)
+        XCTAssertEqual(DockFollowTuning.flickFloor, 0.2)
     }
 
     /// Travel to a whole view at Swipe speed 1: 40 % of the screen's height, between 320 and
@@ -201,11 +203,49 @@ final class DockGestureSwitchesTests: XCTestCase {
         XCTAssertEqual(DockGestureSwitches.domain, "com.apple.dock")
         XCTAssertEqual(DockGestureSwitches.Key.allCases.map(\.rawValue), [
             "showMissionControlGestureEnabled", "showDesktopGestureEnabled", "showLaunchpadGestureEnabled",
+            "showAppExposeGestureEnabled",
         ])
     }
 
-    /// A stored "false" is off. A missing name counts as on, and so does what is no switch
-    /// at all: the values are another app's data and may be anything.
+    /// The gestures Scrollio drives are on until someone turns one off; App Exposé's is
+    /// off until someone turns it on (macOS ships them so). A stored value decides for
+    /// each alike.
+    func testAMissingNameIsOnForTheGesturesScrollioDrivesAndOffForAppExpose() {
+        typealias Key = DockGestureSwitches.Key
+        XCTAssertEqual(Key.allCases.filter(\.isOnWhenMissing), [.missionControl, .showDesktop, .launchpad])
+        XCTAssertFalse(Key.appExpose.isOnWhenMissing)
+
+        XCTAssertFalse(DockGestureSwitches.isOn(nil, whenMissing: false))
+        XCTAssertTrue(DockGestureSwitches.isOn(nil, whenMissing: true))
+        for whenMissing in [true, false] {
+            XCTAssertTrue(DockGestureSwitches.isOn(true, whenMissing: whenMissing))
+            XCTAssertFalse(DockGestureSwitches.isOn(false, whenMissing: whenMissing))
+            XCTAssertFalse(DockGestureSwitches.isOn(NSNumber(value: 0), whenMissing: whenMissing))
+            XCTAssertTrue(DockGestureSwitches.isOn(NSNumber(value: 1), whenMissing: whenMissing))
+            // What is no switch at all counts as on: for App Exposé that is the careful side.
+            XCTAssertTrue(DockGestureSwitches.isOn(Data(), whenMissing: whenMissing))
+        }
+
+        XCTAssertFalse(DockGestureSwitches.allOn.appExpose, "a Mac on which nothing was ever changed")
+        XCTAssertFalse(DockGestureSwitches(missionControl: true, showDesktop: true, launchpad: true).appExpose)
+        XCTAssertFalse(DockGestureSwitches(reading: { _ in nil }).appExpose)
+        XCTAssertTrue(DockGestureSwitches(reading: { $0 == .appExpose ? true : nil }).appExpose)
+        XCTAssertEqual(
+            DockGestureSwitches(reading: { $0 == .appExpose ? true : nil }),
+            DockGestureSwitches(missionControl: true, showDesktop: true, launchpad: true, appExpose: true)
+        )
+        XCTAssertFalse(DockGestureSwitches(reading: { $0 == .appExpose ? false : true }).appExpose)
+        // It governs no target: what follows the hand does not depend on it.
+        let on = DockGestureSwitches(missionControl: true, showDesktop: true, launchpad: true, appExpose: true)
+        for target in DockFollowTarget.allCases {
+            XCTAssertTrue(on.allows(target, majorVersion: 27), "\(target)")
+        }
+    }
+
+    /// A stored "false" is off, also when it was written as text (`defaults write` without
+    /// `-bool` stores "NO" or "false" as a string, and the Dock takes that for off). A
+    /// missing name counts as on, and so does what is no switch at all: the values are
+    /// another app's data and may be anything.
     func testAStoredFalseIsOffAndEverythingElseCountsAsOn() {
         XCTAssertTrue(DockGestureSwitches.isOn(nil), "a missing name")
         XCTAssertTrue(DockGestureSwitches.isOn(true))
@@ -214,10 +254,23 @@ final class DockGestureSwitchesTests: XCTestCase {
         XCTAssertFalse(DockGestureSwitches.isOn(kCFBooleanFalse))
         XCTAssertFalse(DockGestureSwitches.isOn(NSNumber(value: 0)), "written as a number")
         XCTAssertTrue(DockGestureSwitches.isOn(NSNumber(value: 1)))
-        let noSwitch: [Any] = ["NO", "false", "", NSNull(), Date(timeIntervalSince1970: 0), [false], ["on": false], Data()]
+        for text in ["NO", "no", "No", "false", "FALSE", "False", "0"] {
+            XCTAssertFalse(DockGestureSwitches.isOn(text), text)
+            XCTAssertFalse(DockGestureSwitches.isOn(text as NSString), text)
+            XCTAssertFalse(DockGestureSwitches.isOn(text, whenMissing: false), text)
+        }
+        for text in ["YES", "yes", "true", "1", "", "off", "nope", "00", " no", "false "] {
+            XCTAssertTrue(DockGestureSwitches.isOn(text), "\"\(text)\"")
+            XCTAssertTrue(DockGestureSwitches.isOn(text, whenMissing: false), "\"\(text)\"")
+        }
+        let noSwitch: [Any] = [NSNull(), Date(timeIntervalSince1970: 0), [false], ["on": false], Data()]
         for value in noSwitch {
             XCTAssertTrue(DockGestureSwitches.isOn(value), "\(value)")
         }
+        XCTAssertEqual(
+            DockGestureSwitches(reading: { $0 == .missionControl ? "NO" : nil }),
+            DockGestureSwitches(missionControl: false, showDesktop: true, launchpad: true)
+        )
     }
 
     func testEachSwitchIsReadUnderItsOwnName() {
@@ -228,7 +281,7 @@ final class DockGestureSwitchesTests: XCTestCase {
         })
         XCTAssertEqual(nothingStored, .allOn, "a Mac that never had a trackpad")
         XCTAssertEqual(Set(asked), Set(DockGestureSwitches.Key.allCases))
-        XCTAssertEqual(asked.count, 3, "each once, and nothing else")
+        XCTAssertEqual(asked.count, 4, "each once, and nothing else")
 
         XCTAssertEqual(
             DockGestureSwitches(reading: { $0 == .missionControl ? false : nil }),
@@ -236,15 +289,15 @@ final class DockGestureSwitchesTests: XCTestCase {
         )
         XCTAssertEqual(
             DockGestureSwitches(reading: { $0 == .showDesktop ? false : true }),
-            DockGestureSwitches(missionControl: true, showDesktop: false, launchpad: true)
+            DockGestureSwitches(missionControl: true, showDesktop: false, launchpad: true, appExpose: true)
         )
         XCTAssertEqual(
             DockGestureSwitches(reading: { $0 == .launchpad ? NSNumber(value: 0) : "yes" }),
-            DockGestureSwitches(missionControl: true, showDesktop: true, launchpad: false)
+            DockGestureSwitches(missionControl: true, showDesktop: true, launchpad: false, appExpose: true)
         )
         XCTAssertEqual(
             DockGestureSwitches(reading: { _ in false }),
-            DockGestureSwitches(missionControl: false, showDesktop: false, launchpad: false)
+            DockGestureSwitches(missionControl: false, showDesktop: false, launchpad: false, appExpose: false)
         )
     }
 
@@ -293,15 +346,15 @@ final class DockGestureSwitchesTests: XCTestCase {
         XCTAssertEqual(reads, 0)
 
         DockGestureSwitches.reload()
-        XCTAssertEqual(reads, 3)
+        XCTAssertEqual(reads, 4)
         XCTAssertEqual(DockGestureSwitches.current, DockGestureSwitches(missionControl: true, showDesktop: false, launchpad: true))
         XCTAssertEqual(DockFollowAvailability.live.switches, DockGestureSwitches.current)
         XCTAssertEqual(changes, 1)
         _ = DockGestureSwitches.current
         _ = DockFollowAvailability.live
-        XCTAssertEqual(reads, 3, "asking for the answer reads nothing")
+        XCTAssertEqual(reads, 4, "asking for the answer reads nothing")
         DockGestureSwitches.reload()
-        XCTAssertEqual(reads, 6)
+        XCTAssertEqual(reads, 8)
         XCTAssertEqual(changes, 1, "the same answer again: nothing changed")
 
         DockGestureSwitches.read = { _ in nil }
@@ -312,19 +365,38 @@ final class DockGestureSwitchesTests: XCTestCase {
     }
 
     /// The switches are read where the Spaces shortcuts are: when Scrollio starts, and when
-    /// it becomes active or System Settings goes to the background. Were one of the two
-    /// calls lost, a gesture switched off in System Settings would count as on for good and
-    /// its hold would do nothing, with no word. Read from the source.
+    /// it becomes active or System Settings goes to the background. And when the Dock
+    /// itself starts: a switch changed from outside System Settings (`defaults write`,
+    /// then `killall Dock`) would otherwise count as it was until Scrollio starts again,
+    /// since a menu bar app is rarely the active one. Were one of the calls lost, a
+    /// gesture switched off would count as on for good and its hold would do nothing,
+    /// with no word. Read from the source.
     func testTheSwitchesAreReadAtTheStartAndWhenTheyMayHaveChanged() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("Scrollio/AppDelegate.swift"), encoding: .utf8)
         let code = source.components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.hasPrefix("//") }
-        let reads = code.indices.filter { code[$0] == "DockGestureSwitches.reload()" }
-        XCTAssertEqual(reads.count, 2)
-        for read in reads where read > 0 {
-            XCTAssertEqual(code[read - 1], "SystemShortcut.reloadSystemShortcuts()", "beside the Spaces shortcuts")
+        let reads = code.indices.filter { code[$0] == "DockGestureSwitches.reload()" && $0 > 0 }
+        XCTAssertEqual(reads.count, 3)
+        let before = reads.map { code[$0 - 1] }
+        XCTAssertEqual(before.filter { $0 == "SystemShortcut.reloadSystemShortcuts()" }.count, 2, "beside the Spaces shortcuts")
+        XCTAssertEqual(
+            before.filter { $0 == "guard DockGestureSwitches.reloads(afterLaunchOf: launched?.bundleIdentifier) else { return }" }.count,
+            1, "when the Dock starts"
+        )
+        // The Dock's start is heard: the observer is there, with that method.
+        let observer = try XCTUnwrap(code.firstIndex(of: "name: NSWorkspace.didLaunchApplicationNotification,"))
+        XCTAssertEqual(code[observer - 1], "selector: #selector(reloadDockGestureSwitchesIfTheDockStarted),")
+        XCTAssertTrue(code.contains("@objc func reloadDockGestureSwitchesIfTheDockStarted(notification: NSNotification) {"))
+    }
+
+    /// Only the Dock's own start reads them again, not every app's.
+    func testOnlyTheDocksStartReadsTheSwitchesAgain() {
+        XCTAssertEqual(DockGestureSwitches.domain, "com.apple.dock", "the Dock's bundle identifier is its settings' name")
+        XCTAssertTrue(DockGestureSwitches.reloads(afterLaunchOf: "com.apple.dock"))
+        for other in ["com.apple.finder", "com.apple.systempreferences", "com.apple.Dock", "com.apple.dock.extra", "", nil] {
+            XCTAssertFalse(DockGestureSwitches.reloads(afterLaunchOf: other), "\(String(describing: other))")
         }
     }
 
@@ -617,8 +689,8 @@ final class DockFollowPlanTests: XCTestCase {
 
 // MARK: - What Scrollio believes the Dock shows
 
-/// The belief (`DockBelief`): the view Scrollio's own last followed swipe or instant toggle
-/// put up. Pure: the times are made up.
+/// The belief (`DockBelief`): the view Scrollio's own last followed swipe put up. Pure: the
+/// times are made up.
 final class DockBeliefTests: XCTestCase {
 
     func testThereIsNoBeliefUntilScrollioOpensAView() {
@@ -627,24 +699,20 @@ final class DockBeliefTests: XCTestCase {
         XCTAssertNil(belief.view(at: 1_000))
     }
 
-    /// A followed hold that is expected to open a view sets it; an instant toggle of a view
-    /// puts it up too, and the same toggle again closes it.
-    func testAFollowedHoldSetsItAndAnInstantToggleFlipsIt() {
+    /// A followed hold that is expected to open a view sets it, and nothing else does: an
+    /// instant toggle can only end it (`drop`; `InputProcessor.dockViewWillBeToggled`).
+    func testOnlyAFollowedHoldSetsIt() {
         var belief = DockBelief()
         belief.holdOpened(.missionControl, at: 10)
         XCTAssertEqual(belief.view(at: 10), .missionControl)
         XCTAssertEqual(belief.view(at: 40), .missionControl)
 
-        belief.toggled(.missionControl, at: 41)
-        XCTAssertNil(belief.view(at: 41), "the toggle of the believed view closes it")
-        belief.toggled(.missionControl, at: 42)
-        XCTAssertEqual(belief.view(at: 42), .missionControl, "with no belief the toggle puts it up")
-        belief.toggled(.showDesktop, at: 43)
-        XCTAssertEqual(belief.view(at: 43), .showDesktop, "the Dock goes from one view to the other")
-        belief.toggled(.apps, at: 44)
+        belief.drop()
+        XCTAssertNil(belief.view(at: 41), "a toggle ends it")
+        belief.drop()
+        XCTAssertNil(belief.view(at: 42), "and never sets it")
+        belief.holdOpened(.apps, at: 44)
         XCTAssertEqual(belief.view(at: 44), .apps)
-        belief.toggled(.apps, at: 45)
-        XCTAssertNil(belief.view(at: 45))
     }
 
     func testItIsDroppedAfterAMinuteAndWhenToldTo() {
@@ -656,8 +724,7 @@ final class DockBeliefTests: XCTestCase {
         XCTAssertNil(belief.view(at: 5_000))
         XCTAssertNil(belief.view(at: 99), "a clock that starts over leaves nothing believed")
 
-        // Too old, the toggle finds nothing to close: it puts the view up.
-        belief.toggled(.showDesktop, at: 200)
+        belief.holdOpened(.showDesktop, at: 200)
         XCTAssertEqual(belief.view(at: 200), .showDesktop)
 
         belief.drop()
@@ -702,7 +769,7 @@ final class DockBeliefTests: XCTestCase {
         ]
         for plan in plans {
             for opposite in plans {
-                XCTAssertEqual(DockBelief.move(for: plan, opposite: opposite, believed: nil), .asPlanned, "\(plan) / \(opposite)")
+                XCTAssertEqual(DockBelief.move(for: plan, opposite: opposite, believed: nil, appExposeGestureIsOn: false), .asPlanned, "\(plan) / \(opposite)")
             }
         }
     }
@@ -712,15 +779,15 @@ final class DockBeliefTests: XCTestCase {
     func testTheDirectionOfTheBelievedViewToggles() {
         for target in DockFollowTarget.allCases {
             XCTAssertEqual(
-                DockBelief.move(for: .follows(target), opposite: .doesNotFollow, believed: target), .toggle(target), "\(target)"
+                DockBelief.move(for: .follows(target), opposite: .doesNotFollow, believed: target, appExposeGestureIsOn: false), .toggle(target), "\(target)"
             )
             XCTAssertEqual(
-                DockBelief.move(for: .follows(target), opposite: .follows(target), believed: target), .toggle(target),
+                DockBelief.move(for: .follows(target), opposite: .follows(target), believed: target, appExposeGestureIsOn: false), .toggle(target),
                 "both directions hold it: \(target)"
             )
             // A direction that runs once anyway is the toggle already.
             XCTAssertEqual(
-                DockBelief.move(for: .cannotFollow(target, .gestureOff), opposite: .doesNotFollow, believed: target), .asPlanned,
+                DockBelief.move(for: .cannotFollow(target, .gestureOff), opposite: .doesNotFollow, believed: target, appExposeGestureIsOn: false), .asPlanned,
                 "\(target)"
             )
         }
@@ -735,10 +802,36 @@ final class DockBeliefTests: XCTestCase {
         ]
         for own in others {
             XCTAssertEqual(
-                DockBelief.move(for: own, opposite: .follows(.missionControl), believed: .missionControl), .leaveMissionControl,
+                DockBelief.move(for: own, opposite: .follows(.missionControl), believed: .missionControl, appExposeGestureIsOn: false), .leaveMissionControl,
                 "\(own)"
             )
         }
+    }
+
+    /// Where the trackpad gesture for App Exposé is on, the swipe that leaves Mission
+    /// Control would open App Exposé from the desktop (when Mission Control was left
+    /// another way meanwhile): there the opposite direction keeps its own plan. The same
+    /// move again still toggles.
+    func testMissionControlIsNotLeftWhereAppExposeHasItsGesture() {
+        let others: [DockFollowPlan] = [
+            .follows(.showDesktop), .follows(.apps), .cannotFollow(.apps, .notOnThisMacOS), .doesNotFollow,
+        ]
+        for own in others {
+            XCTAssertEqual(
+                DockBelief.move(for: own, opposite: .follows(.missionControl), believed: .missionControl, appExposeGestureIsOn: true),
+                .asPlanned, "\(own)"
+            )
+        }
+        XCTAssertEqual(
+            DockBelief.move(
+                for: .follows(.missionControl), opposite: .doesNotFollow, believed: .missionControl, appExposeGestureIsOn: true
+            ),
+            .toggle(.missionControl)
+        )
+        XCTAssertEqual(
+            DockBelief.move(for: .doesNotFollow, opposite: .follows(.missionControl), believed: nil, appExposeGestureIsOn: true),
+            .asPlanned
+        )
     }
 
     /// Nothing else changes: no other view is ever left by a swipe, and Mission Control
@@ -746,23 +839,23 @@ final class DockBeliefTests: XCTestCase {
     func testNothingElseChanges() {
         // Mission Control showing, but no direction opens it with the hand.
         XCTAssertEqual(
-            DockBelief.move(for: .follows(.showDesktop), opposite: .follows(.apps), believed: .missionControl), .asPlanned
+            DockBelief.move(for: .follows(.showDesktop), opposite: .follows(.apps), believed: .missionControl, appExposeGestureIsOn: false), .asPlanned
         )
-        XCTAssertEqual(DockBelief.move(for: .doesNotFollow, opposite: .doesNotFollow, believed: .missionControl), .asPlanned)
+        XCTAssertEqual(DockBelief.move(for: .doesNotFollow, opposite: .doesNotFollow, believed: .missionControl, appExposeGestureIsOn: false), .asPlanned)
         XCTAssertEqual(
-            DockBelief.move(for: .doesNotFollow, opposite: .cannotFollow(.missionControl, .gestureOff), believed: .missionControl),
+            DockBelief.move(for: .doesNotFollow, opposite: .cannotFollow(.missionControl, .gestureOff), believed: .missionControl, appExposeGestureIsOn: false),
             .asPlanned, "the Dock would ignore the way back as it ignores the way in"
         )
         // Show Desktop or Apps showing: the opposite direction keeps its own plan.
         for showing in [DockFollowTarget.showDesktop, .apps] {
             for own in [DockFollowPlan.follows(.missionControl), .doesNotFollow, .cannotFollow(.apps, .notOnThisMacOS)] {
                 XCTAssertEqual(
-                    DockBelief.move(for: own, opposite: .follows(showing), believed: showing), .asPlanned, "\(showing) / \(own)"
+                    DockBelief.move(for: own, opposite: .follows(showing), believed: showing, appExposeGestureIsOn: false), .asPlanned, "\(showing) / \(own)"
                 )
             }
         }
         XCTAssertEqual(
-            DockBelief.move(for: .follows(.apps), opposite: .follows(.showDesktop), believed: .showDesktop), .asPlanned,
+            DockBelief.move(for: .follows(.apps), opposite: .follows(.showDesktop), believed: .showDesktop, appExposeGestureIsOn: false), .asPlanned,
             "the Dock's own slider brings the windows back"
         )
     }
@@ -774,10 +867,15 @@ final class DockBeliefTests: XCTestCase {
         for believed in DockFollowTarget.allCases {
             for plan in plans {
                 for opposite in plans {
-                    let move = DockBelief.move(for: plan, opposite: opposite, believed: believed)
-                    if move == .leaveMissionControl {
-                        XCTAssertEqual(believed, .missionControl)
-                        XCTAssertEqual(opposite, .follows(.missionControl))
+                    for appExpose in [false, true] {
+                        let move = DockBelief.move(
+                            for: plan, opposite: opposite, believed: believed, appExposeGestureIsOn: appExpose
+                        )
+                        if move == .leaveMissionControl {
+                            XCTAssertEqual(believed, .missionControl)
+                            XCTAssertEqual(opposite, .follows(.missionControl))
+                            XCTAssertFalse(appExpose)
+                        }
                     }
                 }
             }
@@ -874,6 +972,77 @@ final class DockFollowHoldTests: XCTestCase {
         XCTAssertEqual(hold.down, .once)
     }
 
+    /// Where the trackpad gesture for App Exposé is on, the opposite move keeps its own
+    /// plan while Mission Control is believed to show; the same move again still closes it.
+    func testMissionControlIsNotLeftWithTheHandWhereAppExposeHasItsGesture() {
+        let appExposeOn = DockGestureSwitches(missionControl: true, showDesktop: true, launchpad: true, appExpose: true)
+        var hold = DockFollowHold(
+            settings: settings(down: "showDesktop"), availability: mac(switches: appExposeOn), believed: .missionControl
+        )
+        XCTAssertEqual(hold.up, .onceInstead(.missionControl, .showing(.missionControl)))
+        XCTAssertEqual(hold.down, .opens(.showDesktop), "its own plan")
+
+        hold = DockFollowHold(settings: settings(down: "copy"), availability: mac(switches: appExposeOn), believed: .missionControl)
+        XCTAssertEqual(hold.down, .once)
+        // Off (and where the name is missing): left with the hand.
+        hold = DockFollowHold(settings: settings(down: "copy"), availability: mac(), believed: .missionControl)
+        XCTAssertEqual(hold.down, .leavesMissionControl)
+    }
+
+    /// What the end of a motion does to the belief. A hold that opened a view and is
+    /// expected to open it put it up. A hold that left Mission Control ends the belief
+    /// unless it was turned back to its start, whatever ended it.
+    func testWhatTheEndOfAMotionDoesToTheBelief() {
+        typealias Ending = DockFollowedMotion.Ending
+        var up = motion()
+        up.told(progress: 0.6)
+        XCTAssertEqual(up.beliefChange(after: .ended(velocity: 0, expected: true)), .opened(.missionControl))
+        XCTAssertEqual(up.beliefChange(after: .ended(velocity: 0, expected: false)), DockFollowedMotion.BeliefChange.none)
+        XCTAssertEqual(up.beliefChange(after: .cancelledAtRelease), DockFollowedMotion.BeliefChange.none)
+        XCTAssertEqual(up.beliefChange(after: .cancelled(.ringOpened)), DockFollowedMotion.BeliefChange.none)
+        var desktop = motion(.down, .opens(.showDesktop), .pinch)
+        desktop.told(progress: 0.7)
+        XCTAssertEqual(desktop.beliefChange(after: .ended(velocity: 0, expected: true)), .opened(.showDesktop))
+
+        // The belief needs the view to have moved: a fifth of the way, as the Dock was
+        // told. A release that was only fast (expected to open at 2 % of the way) is none.
+        var flick = motion()
+        flick.told(progress: 0.02)
+        XCTAssertEqual(flick.beliefChange(after: .ended(velocity: 3, expected: true)), DockFollowedMotion.BeliefChange.none)
+        flick.told(progress: 0.19)
+        XCTAssertEqual(flick.beliefChange(after: .ended(velocity: 3, expected: true)), DockFollowedMotion.BeliefChange.none)
+        XCTAssertFalse(flick.hasMovedTheView)
+        flick.told(progress: 0.2)
+        XCTAssertTrue(flick.hasMovedTheView)
+        XCTAssertEqual(flick.beliefChange(after: .ended(velocity: 3, expected: true)), .opened(.missionControl))
+        // Where it was let go counts, not how far it had been.
+        flick.told(progress: 0.9)
+        flick.told(progress: 0.1)
+        XCTAssertFalse(flick.hasMovedTheView)
+        XCTAssertEqual(flick.beliefChange(after: .ended(velocity: 3, expected: true)), DockFollowedMotion.BeliefChange.none)
+        // Apps, the other end of the pinch: its progress is negative, the share is not.
+        var apps = motion(.down, .opens(.apps), .pinch, sign: -1)
+        apps.told(progress: -0.5)
+        XCTAssertEqual(apps.beliefChange(after: .ended(velocity: -1, expected: true)), .opened(.apps))
+
+        let endings: [Ending] = [
+            .ended(velocity: 0, expected: true), .ended(velocity: 0, expected: false), .cancelledAtRelease,
+            .cancelled(.noButtonUp), .cancelled(.ringOpened), .cancelled(.takenBack),
+        ]
+        var leave = motion(.down, .leavesMissionControl, .vertical, sign: -1)
+        for ending in endings {
+            XCTAssertEqual(leave.beliefChange(after: ending), DockFollowedMotion.BeliefChange.none, "nothing was told: \(ending)")
+        }
+        leave.told(progress: -0.25)
+        for ending in endings {
+            XCTAssertEqual(leave.beliefChange(after: ending), .dropped, "part of the way: \(ending)")
+        }
+        leave.told(progress: 0)
+        for ending in endings {
+            XCTAssertEqual(leave.beliefChange(after: ending), DockFollowedMotion.BeliefChange.none, "back at its start: \(ending)")
+        }
+    }
+
     /// The motion a direction drives: one-sided, whole at 1, with the travel, the room for
     /// the jolt of letting go and the bound of the release velocity of `DockFollowTuning`.
     func testTheChannelOfADirection() throws {
@@ -922,9 +1091,9 @@ final class DockFollowHoldTests: XCTestCase {
             (.obstacle(.cannotPostEvents), "cannot post events"),
             (.obstacle(.swipeUnavailable), "the swipe cannot be made on this Mac"),
             (.wheelSwipeRunning, "the wheel's swipe was running"),
-            (.showing(.missionControl), "Mission Control was showing"),
-            (.showing(.showDesktop), "Show Desktop was showing"),
-            (.showing(.apps), "Apps was showing"),
+            (.showing(.missionControl), "Scrollio had just opened Mission Control"),
+            (.showing(.showDesktop), "Scrollio had just opened Show Desktop"),
+            (.showing(.apps), "Scrollio had just opened Apps"),
         ]
         for (reason, text) in reasons {
             XCTAssertEqual(reason.logText, text)
@@ -979,6 +1148,36 @@ final class DockFollowHoldTests: XCTestCase {
         )
     }
 
+    /// A flick: a hold that opens a view, let go as expected to open while the view has
+    /// moved less than a fifth of the way. A hold that leaves Mission Control is never one.
+    func testAFlickIsAHoldThatOpensAViewAndBarelyMovedIt() {
+        var up = motion()
+        XCTAssertTrue(up.isFlickIfReleasedToSwitch, "nothing told yet")
+        up.told(progress: 0.19)
+        XCTAssertTrue(up.isFlickIfReleasedToSwitch)
+        up.told(progress: 0.2)
+        XCTAssertFalse(up.isFlickIfReleasedToSwitch, "from the floor on macOS decides")
+        up.told(progress: 0.05)
+        XCTAssertTrue(up.isFlickIfReleasedToSwitch, "where it was let go counts")
+
+        var apps = motion(.down, .opens(.apps), .pinch, sign: -1)
+        apps.told(progress: -0.1)
+        XCTAssertTrue(apps.isFlickIfReleasedToSwitch)
+        var leave = motion(.down, .leavesMissionControl, .vertical, sign: -1)
+        leave.told(progress: -0.1)
+        XCTAssertFalse(leave.isFlickIfReleasedToSwitch)
+
+        // Its line, and it leaves nothing believed (its toggle is never believed either).
+        up.told(progress: 0.15)
+        XCTAssertEqual(
+            up.line(.flick(velocity: 9), appsOwn: true),
+            "Gestures: up followed the hand: missionControl, vertical +, began after 48 ms, 4 updates, "
+                + "furthest 0.20, released at 0.15, 9.0/s: cancelled, a flick: ran once, the app in front has its own gestures"
+        )
+        XCTAssertTrue(apps.line(.flick(velocity: -2.5)).hasSuffix(", released at 0.10, 2.5/s: cancelled, a flick: ran once"))
+        XCTAssertEqual(up.beliefChange(after: .flick(velocity: 9)), DockFollowedMotion.BeliefChange.none)
+    }
+
     /// A motion of negative sign reads the hand's way out as positive too.
     func testTheLineCountsTheHandsWayOut() {
         var apps = motion(.down, .opens(.apps), .pinch, sign: -1, beganAfter: 0.0554)
@@ -1015,6 +1214,14 @@ final class DockFollowHoldTests: XCTestCase {
                     + "furthest 0.30, at 0.30: cancelled (\(text))"
             )
         }
+        XCTAssertEqual(
+            DockFollowedMotion.desktopsSwipeTakenBackLine(.screensChanged),
+            "Gestures: a swipe of the desktops was taken back (the screens changed)"
+        )
+        XCTAssertEqual(
+            DockFollowedMotion.desktopsSwipeTakenBackLine(.displaysSlept),
+            "Gestures: a swipe of the desktops was taken back (the displays went to sleep)"
+        )
         // No number of a hold can break the line.
         var odd = motion(beganAfter: .infinity)
         odd.fullProgress = 0

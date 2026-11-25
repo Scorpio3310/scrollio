@@ -401,7 +401,7 @@ struct DockSwipeDriver {
     var settle: () -> Void = {}
 
     static let system = DockSwipeDriver(
-        isAvailable: { DockSwipeSystemPoster.shared.isAvailable },
+        isAvailable: { DockSwipeSystemPoster.isAvailable },
         begin: { DockSwipeSystemPoster.shared.begin(axis: $0) },
         update: { DockSwipeSystemPoster.shared.update(progress: $0) },
         end: { DockSwipeSystemPoster.shared.finish(phase: .ended, velocity: $0) },
@@ -444,6 +444,12 @@ final class DockSwipeSynthesizer {
     /// cancels it (below), and its owner then sends nothing more.
     private(set) var swipeNumber = 0
 
+    /// Told when a swipe of the desktops was let go to macOS (`end`; not when one was
+    /// taken back): a hold's or the thumb wheel's. macOS then tells of the change of the
+    /// desktop up to about half a second later, and whoever hears that change must not
+    /// take it for someone else's (`InputProcessor.surroundingsChanged`). Main thread.
+    var desktopsSwipeDidEnd: (() -> Void)?
+
     /// False when the events cannot be built on this system. Callers then stay discrete.
     var isAvailable: Bool {
         return driver.isAvailable()
@@ -473,9 +479,13 @@ final class DockSwipeSynthesizer {
     /// Lets macOS complete or revert the swipe from its position and the release velocity.
     func end(velocity: Double) {
         guard isActive else { return }
+        let wasOfTheDesktops = runningAxis == .horizontal
         isActive = false
         runningAxis = nil
         driver.end(velocity)
+        if wasOfTheDesktops {
+            desktopsSwipeDidEnd?()
+        }
     }
 
     /// Returns to what the swipe started from (the Space it began on; the desktop, or the
@@ -487,15 +497,24 @@ final class DockSwipeSynthesizer {
         driver.cancel()
     }
 
-    /// The Dock hears one voice at a time. Before Scrollio asks it for a view in one go (the
-    /// instant toggle of Mission Control or Show Desktop, the Apps key), nothing of a swipe
-    /// may still be on its way: a swipe that runs is cancelled (its owner then sends nothing
-    /// more, `isRunning`), and a terminal event that was still to be posted again is posted
-    /// now, once, and its timers are dropped. Otherwise that re-post would reach the Dock
-    /// after the toggle, as a terminal event of a swipe that never began. Safe to call when
-    /// idle, and as often as wanted. Main thread.
+    /// The Dock hears one voice about its views at a time. Before Scrollio asks it for a
+    /// view in one go (the instant toggle of Mission Control or Show Desktop, the Apps
+    /// key), nothing of a motion towards a view may still be on its way: a vertical swipe
+    /// or a pinch that runs is cancelled (its owner then sends nothing more, `isRunning`),
+    /// and a terminal event that was still to be posted again is posted now, once, and its
+    /// timers are dropped. Otherwise that re-post would reach the Dock after the toggle, as
+    /// a terminal event of a swipe that never began.
+    ///
+    /// A swipe of the desktops that runs is left alone (a hold's, the thumb wheel's slide
+    /// or its rest after a turn): it ends by itself and the toggle goes out beside it, as
+    /// it always did. Taking it back would put the desktop back where the wheel had just
+    /// moved it from.
+    ///
+    /// Safe to call when idle, and as often as wanted. Main thread.
     func settle() {
-        cancel()
+        if let runningAxis, runningAxis != .horizontal {
+            cancel()
+        }
         driver.settle()
     }
 
@@ -584,30 +603,49 @@ final class DockSwipeTerminalResends<Event> {
     }
 }
 
-// MARK: - System poster
+// MARK: - The poster
 
-/// Builds and posts the events. Only reached through `DockSwipeDriver.system`.
-private final class DockSwipeSystemPoster {
-    static let shared = DockSwipeSystemPoster()
+/// The order of one swipe's events as the Dock gets them: what `DockSwipeDriver.system`
+/// drives. `Event` is what one frame is built into (the system's: the CGEvents of the
+/// frame; a test's own), so the sequence itself can be tested without an event:
+///
+/// - `begin` posts nothing: the first `update` goes out as `began` and carries the first
+///   movement, like a hand that has just started to move; later ones are `changed`.
+/// - `finish` before any update posts nothing (nothing reached the Dock, so there is
+///   nothing to finish); otherwise the terminal event repeats the last progress and adds
+///   the velocity, and is posted again after each delay (`DockSwipeTerminalResends`).
+/// - A new `begin` starts clean and drops the re-posts that still wait: they must not end
+///   the new swipe. `settle` brings them forward instead.
+///
+/// Main thread.
+final class DockSwipePoster<Event> {
+    /// The events of one frame; nil when they cannot be built.
+    typealias MakeEvents = (_ frame: DockSwipeFrame, _ naturalScrolling: Bool) -> Event?
 
-    /// The terminal event is posted again after these delays (`DockSwipeTerminalResends`
-    /// says why). A new swipe drops the pending re-posts, so they cannot end a later
-    /// gesture; `settle` brings them forward. An empty list turns the re-send off.
-    static let terminalResendDelays: [TimeInterval] = [0.2, 0.5]
+    private let makeEvents: MakeEvents
+    private let post: (Event) -> Void
+    private let isNaturalScrollingEnabled: () -> Bool
+    private let resends: DockSwipeTerminalResends<Event>
 
-    private let factory = DockSwipeEventFactory.system
     private var axis = DockSwipeAxis.horizontal
     private var naturalScrolling = true
     private var hasPostedBegan = false
     private var lastProgress: Double = 0
-    private lazy var resends = DockSwipeTerminalResends<[CGEvent]>(
-        delays: DockSwipeSystemPoster.terminalResendDelays,
-        schedule: { delay, workItem in DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem) },
-        post: { [weak self] events in self?.post(events) }
-    )
 
-    var isAvailable: Bool {
-        return factory.isAvailable
+    /// - resendDelays: the terminal event is posted again after each; an empty list turns
+    ///   the re-send off.
+    /// - schedule: runs a work item on the main queue after a delay.
+    init(
+        makeEvents: @escaping MakeEvents,
+        post: @escaping (Event) -> Void,
+        isNaturalScrollingEnabled: @escaping () -> Bool,
+        resendDelays: [TimeInterval],
+        schedule: @escaping DockSwipeTerminalResends<Event>.Schedule
+    ) {
+        self.makeEvents = makeEvents
+        self.post = post
+        self.isNaturalScrollingEnabled = isNaturalScrollingEnabled
+        resends = DockSwipeTerminalResends<Event>(delays: resendDelays, schedule: schedule, post: post)
     }
 
     func begin(axis: DockSwipeAxis) {
@@ -615,7 +653,7 @@ private final class DockSwipeSystemPoster {
         self.axis = axis
         // Read once per swipe: a change mid-swipe must not flip the direction under the hand.
         // (Only the horizontal motion uses it.)
-        naturalScrolling = Self.isNaturalScrollingEnabled()
+        naturalScrolling = isNaturalScrollingEnabled()
         hasPostedBegan = false
         lastProgress = 0
     }
@@ -625,7 +663,7 @@ private final class DockSwipeSystemPoster {
     func update(progress: Double) {
         let phase: DockSwipePhase = hasPostedBegan ? .changed : .began
         let frame = DockSwipeFrame(phase: phase, axis: axis, progress: progress)
-        guard let events = factory.makeEvents(for: frame, naturalScrolling: naturalScrolling) else { return }
+        guard let events = makeEvents(frame, naturalScrolling) else { return }
         post(events)
         hasPostedBegan = true
         lastProgress = progress
@@ -637,7 +675,7 @@ private final class DockSwipeSystemPoster {
         guard hasPostedBegan else { return }
         hasPostedBegan = false
         let frame = DockSwipeFrame(phase: phase, axis: axis, progress: lastProgress, velocity: velocity)
-        guard let events = factory.makeEvents(for: frame, naturalScrolling: naturalScrolling) else {
+        guard let events = makeEvents(frame, naturalScrolling) else {
             AppSystemLog.problem("Gestures: the last event of a swipe could not be built; the swipe was not finished")
             return
         }
@@ -650,12 +688,37 @@ private final class DockSwipeSystemPoster {
     func settle() {
         resends.postNowAndDrop()
     }
+}
+
+// MARK: - System poster
+
+/// The poster that builds the real events and posts them to the session. Only reached
+/// through `DockSwipeDriver.system`.
+enum DockSwipeSystemPoster {
+    /// The terminal event is posted again after these delays (`DockSwipeTerminalResends`
+    /// says why). A new swipe drops the pending re-posts, so they cannot end a later
+    /// gesture; `settle` brings them forward. An empty list turns the re-send off.
+    static let terminalResendDelays: [TimeInterval] = [0.2, 0.5]
+
+    private static let factory = DockSwipeEventFactory.system
+
+    fileprivate static let shared = DockSwipePoster<[CGEvent]>(
+        makeEvents: { frame, naturalScrolling in factory.makeEvents(for: frame, naturalScrolling: naturalScrolling) },
+        post: { events in post(events) },
+        isNaturalScrollingEnabled: { isNaturalScrollingEnabled() },
+        resendDelays: terminalResendDelays,
+        schedule: { delay, workItem in DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem) }
+    )
+
+    fileprivate static var isAvailable: Bool {
+        return factory.isAvailable
+    }
 
     private static let wasLaunchedForTests = AppRuntime.isRunningXCTest
 
-    private func post(_ events: [CGEvent]) {
+    private static func post(_ events: [CGEvent]) {
         // Second line of defence: tests must never move the real desktops.
-        guard !Self.wasLaunchedForTests, NSClassFromString("XCTestCase") == nil else { return }
+        guard !wasLaunchedForTests, NSClassFromString("XCTestCase") == nil else { return }
         for event in events {
             event.post(tap: .cgSessionEventTap)
         }

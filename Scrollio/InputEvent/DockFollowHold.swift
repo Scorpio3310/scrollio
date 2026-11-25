@@ -74,7 +74,8 @@ struct DockFollowHold: Equatable {
     enum Reason: Equatable {
         /// This Mac does not follow it now.
         case obstacle(DockFollowAvailability.Obstacle)
-        /// Scrollio believes the view is showing: the same move again closes it.
+        /// Scrollio believes the view is showing, because a hold of its own just opened
+        /// it: the same move again closes it.
         case showing(DockFollowTarget)
         /// The thumb wheel's swipe of the desktops was still running when the motion would
         /// have begun; a hold never takes that swipe over for another motion.
@@ -87,9 +88,10 @@ struct DockFollowHold: Equatable {
             case .obstacle(.swipeUnavailable): return "the swipe cannot be made on this Mac"
             case .obstacle(.gestureOff): return "the Dock's gesture is off"
             case .obstacle(.cannotPostEvents): return "cannot post events"
-            case .showing(.missionControl): return "Mission Control was showing"
-            case .showing(.showDesktop): return "Show Desktop was showing"
-            case .showing(.apps): return "Apps was showing"
+            // Not "was showing": Scrollio cannot know that, only what it opened itself.
+            case .showing(.missionControl): return "Scrollio had just opened Mission Control"
+            case .showing(.showDesktop): return "Scrollio had just opened Show Desktop"
+            case .showing(.apps): return "Scrollio had just opened Apps"
             case .wheelSwipeRunning: return "the wheel's swipe was running"
             }
         }
@@ -117,12 +119,20 @@ struct DockFollowHold: Equatable {
     init(settings: MouseGestureSettings, availability: DockFollowAvailability, believed: DockFollowTarget?) {
         let upPlan = settings.followPlan(for: .up, availability: availability)
         let downPlan = settings.followPlan(for: .down, availability: availability)
-        up = Self.part(for: upPlan, opposite: downPlan, believed: believed)
-        down = Self.part(for: downPlan, opposite: upPlan, believed: believed)
+        // Where the trackpad gesture for App Exposé is on, Mission Control is not left
+        // with the hand (the leaving swipe could open App Exposé instead).
+        let appExpose = availability.switches.appExpose
+        up = Self.part(for: upPlan, opposite: downPlan, believed: believed, appExposeGestureIsOn: appExpose)
+        down = Self.part(for: downPlan, opposite: upPlan, believed: believed, appExposeGestureIsOn: appExpose)
     }
 
-    private static func part(for plan: DockFollowPlan, opposite: DockFollowPlan, believed: DockFollowTarget?) -> Part {
-        switch DockBelief.move(for: plan, opposite: opposite, believed: believed) {
+    private static func part(
+        for plan: DockFollowPlan, opposite: DockFollowPlan, believed: DockFollowTarget?, appExposeGestureIsOn: Bool
+    ) -> Part {
+        let move = DockBelief.move(
+            for: plan, opposite: opposite, believed: believed, appExposeGestureIsOn: appExposeGestureIsOn
+        )
+        switch move {
         case .toggle(let view):
             return .onceInstead(view, .showing(view))
         case .leaveMissionControl:
@@ -167,6 +177,9 @@ struct DockFollowedMotion: Equatable {
         case ended(velocity: Double, expected: Bool)
         /// The button came up at the start, or with the hand heading back.
         case cancelledAtRelease
+        /// A flick (`isFlickIfReleasedToSwitch`): the motion was taken back and the
+        /// direction's action ran once instead. `velocity` as in `ended`.
+        case flick(velocity: Double)
         /// Something else took the motion back.
         case cancelled(Interruption)
     }
@@ -202,6 +215,13 @@ struct DockFollowedMotion: Equatable {
         }
     }
 
+    /// The line of a swipe of the desktops that was taken back (the screens changed, the
+    /// displays went to sleep): a hold's or the thumb wheel's. The desktops' swipe writes
+    /// no other line.
+    static func desktopsSwipeTakenBackLine(_ interruption: Interruption) -> String {
+        return "Gestures: a swipe of the desktops was taken back (\(interruption.logText))"
+    }
+
     var direction: MouseGestureDirection
     /// What the direction did: `.opens` or `.leavesMissionControl`.
     var part: DockFollowHold.Part
@@ -224,6 +244,55 @@ struct DockFollowedMotion: Equatable {
         furthest = max(furthest, last)
     }
 
+    /// The view moved at least `DockFollowTuning.flickFloor` of the way, as the Dock was
+    /// last told.
+    var hasMovedTheView: Bool {
+        return fullProgress > 0 && last / fullProgress >= DockFollowTuning.flickFloor
+    }
+
+    /// Whether a release that is expected to switch is a flick: the hold opens a view and
+    /// the view has moved less than `DockFollowTuning.flickFloor` of the way, so only the
+    /// hand's speed says "open". The motion is then taken back and the direction's action
+    /// runs once, as it did before the direction could follow the hand. A hold that leaves
+    /// Mission Control is never one: its direction's own action is another view's.
+    var isFlickIfReleasedToSwitch: Bool {
+        guard case .opens = part else { return false }
+        return !hasMovedTheView
+    }
+
+    // MARK: What it does to the belief
+
+    /// What the end of a motion does to the view Scrollio believes it put up (`DockBelief`).
+    enum BeliefChange: Equatable {
+        case none
+        /// The hold opened this view with the hand.
+        case opened(DockFollowTarget)
+        /// Nothing is believed to show any more.
+        case dropped
+    }
+
+    /// What this motion's end does to the belief.
+    /// - A hold that opened a view and was let go as expected to open put that view up,
+    ///   if the view had moved (`hasMovedTheView`): a release that is expected to open
+    ///   only because the hand was fast, at a few hundredths of the way, may well fall
+    ///   back, and a wrong belief costs more than none.
+    /// - A hold that left Mission Control ends the belief unless it was turned back to
+    ///   where it started (nothing was left then): whatever the Dock made of it, and
+    ///   whatever ended it. Had Mission Control not been showing after all, the next move
+    ///   is the direction's own action again, instead of nothing for up to a minute.
+    /// - Any other end changes nothing (a flick's own toggle ends the belief by itself).
+    func beliefChange(after ending: Ending) -> BeliefChange {
+        switch part {
+        case .opens(let target):
+            if case .ended(_, expected: true) = ending, hasMovedTheView { return .opened(target) }
+            return .none
+        case .leavesMissionControl:
+            return last > 0 ? .dropped : .none
+        case .once, .onceInstead:
+            return .none
+        }
+    }
+
     private func share(_ progress: Double) -> String {
         return String(format: "%.2f", fullProgress > 0 ? progress / fullProgress : 0)
     }
@@ -243,16 +312,22 @@ struct DockFollowedMotion: Equatable {
             + "\(part.logName), \(motionName) \(sign < 0 ? "-" : "+"), "
             + "began after \(milliseconds) ms, "
             + "\(updates) update\(updates == 1 ? "" : "s"), furthest \(share(furthest)), "
-        switch ending {
-        case .ended(let velocity, let expected):
+        /// The hand's speed outwards, to the one decimal shown; a hand at rest reads 0.0,
+        /// never -0.0.
+        func speed(_ velocity: Double) -> String {
             var outward = fullProgress > 0 ? velocity * (sign < 0 ? -1 : 1) / fullProgress : 0
-            // To the one decimal shown; a hand at rest reads 0.0, never -0.0.
             outward = (outward * 10).rounded() / 10
             if outward == 0 { outward = 0 }
-            text += "released at \(share(last)), \(String(format: "%.1f", outward))/s: ended"
+            return String(format: "%.1f", outward)
+        }
+        switch ending {
+        case .ended(let velocity, let expected):
+            text += "released at \(share(last)), \(speed(velocity))/s: ended"
             if expected {
                 text += part == .leavesMissionControl ? ", expected to close" : ", expected to open"
             }
+        case .flick(let velocity):
+            text += "released at \(share(last)), \(speed(velocity))/s: cancelled, a flick: ran once"
         case .cancelledAtRelease:
             text += "released at \(share(last)): cancelled"
         case .cancelled(let interruption):

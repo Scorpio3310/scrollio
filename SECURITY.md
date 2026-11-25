@@ -41,8 +41,10 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
   sandboxed app cannot change other apps' events, talk to the mouse or run your scripts.
 - Four things use macOS interfaces that are in no public header, each looked up by name
   while the app runs and left alone where it is missing. "Follow the hand", and the thumb
-  wheel's "Follow the wheel", make the swipe between desktops with them (missing: the
-  mode is not available, and the thumb wheel switches desktops in steps). Mission Control
+  wheel's "Follow the wheel", make the swipe between desktops with them, and "Up and
+  Down follow the hand too" the motion that opens Mission Control or Show Desktop
+  (missing: the mode is not available, and the thumb wheel switches desktops in
+  steps). Mission Control
   and Show Desktop ask the Dock through `CoreDockSendNotification` (missing: they are
   sent as key presses). "Trackpad-style scrolling (Experimental)" takes the wheel's
   hardware record off the events it sends, on macOS 27 and later (missing: the record
