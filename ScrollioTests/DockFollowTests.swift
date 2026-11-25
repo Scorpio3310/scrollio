@@ -521,16 +521,31 @@ final class DockFollowPlanTests: XCTestCase {
         XCTAssertEqual(same.followPlan(for: .down, availability: mac()), .follows(.missionControl))
     }
 
-    /// The default actions: Up is Mission Control and follows; Down is Apps, which runs
-    /// once in every ordinary build.
+    /// The default actions: Up is Mission Control and follows; Down is Apps. In a build that
+    /// never lets Apps follow (every release, on every macOS) Apps is an action like any
+    /// other: it runs once and nothing asks it to follow, so no reason is given, whatever
+    /// else is in the way on that Mac. Only the owner's own build asks more of it.
     func testWithTheDefaultActionsUpFollowsAndAppsRunsOnce() {
         var defaults = MouseGestureSettings.default
         defaults.mode = .interactive
         defaults.actionsFollowHand = true
         XCTAssertEqual(defaults.followPlan(for: .up, availability: mac()), .follows(.missionControl))
-        XCTAssertEqual(defaults.followPlan(for: .down, availability: mac()), .cannotFollow(.apps, .notOnThisMacOS))
-        XCTAssertEqual(defaults.followPlan(for: .down, availability: mac(apps: true)), .follows(.apps), "the owner's own build")
+        XCTAssertEqual(defaults.followPlan(for: .down, availability: mac()), .doesNotFollow)
+        let nothing = DockGestureSwitches(missionControl: false, showDesktop: false, launchpad: false)
+        for release in [mac(major: 14), mac(major: 26), mac(swipe: false), mac(post: false), mac(switches: nothing)] {
+            XCTAssertEqual(defaults.followPlan(for: .down, availability: release), .doesNotFollow, "\(release)")
+        }
+        let swapped = settings(up: "appExpose", down: "showDesktop")
+        XCTAssertEqual(swapped.followPlan(for: .up, availability: mac()), .doesNotFollow, "the direction does not matter")
+        XCTAssertEqual(swapped.followPlan(for: .down, availability: mac()), .follows(.showDesktop))
+
+        // The owner's own build: Apps follows, or says what is in the way.
+        XCTAssertEqual(defaults.followPlan(for: .down, availability: mac(apps: true)), .follows(.apps))
         XCTAssertEqual(defaults.followPlan(for: .down, availability: mac(major: 26, apps: true)), .cannotFollow(.apps, .notOnThisMacOS))
+        let noShowDesktop = DockGestureSwitches(missionControl: true, showDesktop: false, launchpad: true)
+        XCTAssertEqual(
+            defaults.followPlan(for: .down, availability: mac(switches: noShowDesktop, apps: true)), .cannotFollow(.apps, .gestureOff)
+        )
     }
 
     /// Sideways is the desktops' in "Follow the hand", whatever Left and Right hold.
@@ -814,7 +829,7 @@ final class DockFollowHoldTests: XCTestCase {
     func testEachDirectionOpensItsViewOrSaysWhyNot() {
         var hold = DockFollowHold(settings: settings(), availability: mac(), believed: nil)
         XCTAssertEqual(hold.up, .opens(.missionControl))
-        XCTAssertEqual(hold.down, .onceInstead(.apps, .obstacle(.notOnThisMacOS)), "Apps runs once in an ordinary build")
+        XCTAssertEqual(hold.down, .once, "Apps is an action like any other in an ordinary build: no reason is given")
         XCTAssertEqual(hold[.up], hold.up)
         XCTAssertEqual(hold[.down], hold.down)
         XCTAssertEqual(hold[.left], .once)
@@ -856,7 +871,7 @@ final class DockFollowHoldTests: XCTestCase {
         let off = DockGestureSwitches(missionControl: false, showDesktop: true, launchpad: true)
         hold = DockFollowHold(settings: settings(), availability: mac(switches: off), believed: .missionControl)
         XCTAssertEqual(hold.up, .onceInstead(.missionControl, .obstacle(.gestureOff)))
-        XCTAssertEqual(hold.down, .onceInstead(.apps, .obstacle(.notOnThisMacOS)))
+        XCTAssertEqual(hold.down, .once)
     }
 
     /// The motion a direction drives: one-sided, whole at 1, with the travel, the room for
