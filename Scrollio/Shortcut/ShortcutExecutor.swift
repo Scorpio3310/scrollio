@@ -365,6 +365,21 @@ class ShortcutExecutor {
         ? { _ in false }
         : { ShortcutExecutor.askDock(for: $0) }
 
+    /// Told right before Scrollio asks the Dock for one of its views in one go (Mission
+    /// Control or Show Desktop by name or by key, Apps by its key), whoever runs the action:
+    /// a button, a gesture, the Shortcut Ring. The Dock hears one voice at a time: a swipe
+    /// that follows the hand or the thumb wheel is settled first, and the toggle turns over
+    /// what Scrollio believes the Dock shows (`InputProcessor.dockViewWillBeToggled`).
+    /// Actions run on the main thread; one that ever did not would settle there, late
+    /// rather than from the wrong thread. A test may give its own.
+    var dockViewWillBeToggled: (DockFollowTarget) -> Void = { view in
+        if Thread.isMainThread {
+            InputProcessor.shared.dockViewWillBeToggled(view)
+        } else {
+            DispatchQueue.main.async { InputProcessor.shared.dockViewWillBeToggled(view) }
+        }
+    }
+
     /// Which way the Dock's modes go is written to the log once per run of the app.
     private static var didLogDockModeWay = false
 
@@ -733,6 +748,11 @@ class ShortcutExecutor {
             let name = SystemShortcut.getShortcut(named: shortcutName)?.localizedName ?? shortcutName
             switchedOffNotice(name)
             return .switchedOffInSystemSettings
+        }
+        // One voice to the Dock: before it is asked for one of its views in one go (by
+        // name or by key, right below), what is left of a swipe is settled.
+        if let view = DockFollowTarget(actionIdentifier: shortcutName) {
+            dockViewWillBeToggled(view)
         }
         // Mission Control and Show Desktop are asked of the Dock itself; their key is only
         // sent where that cannot be done (DockModes.swift).
