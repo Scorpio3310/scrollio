@@ -642,6 +642,17 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
     static let desktopItemCount = 3
     static let desktopItemSize = NSSize(width: 15, height: 12)
     static let desktopItemPitch: CGFloat = 25
+    /// Show Desktop: how far the windows have slid away (0…1) before what lies on the
+    /// desktop starts to show. The window that passes over the column of items has left it
+    /// by then (a test holds the number against the layout), so nothing of an item sticks
+    /// out from under a window on its way, where a hold that follows the hand can stand
+    /// still and where Reduce Motion shows it.
+    static let desktopItemsAppearAt: CGFloat = 0.93
+    /// The app grid: the windows have faded out when it is this far open, and its icons
+    /// show from this far on, so that half open (the stop of a hold that follows the hand)
+    /// reads as the grid arriving, not as two pictures half there.
+    static let appGridWindowsGoneAt: CGFloat = 0.6
+    static let appGridIconsFrom: CGFloat = 0.3
     static let pointerSize = NSSize(width: 11, height: 17)
 
     private(set) var shown: GesturePreviewLoop.Frame?
@@ -746,6 +757,49 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         }
     }
 
+    /// The name under a thing on the desktop whose icon is at `item` (the second one's is
+    /// shorter).
+    static func desktopItemNameRect(under item: NSRect, index: Int) -> NSRect {
+        let width: CGFloat = index == 1 ? 13 : 17
+        return NSRect(x: item.midX - width / 2, y: item.maxY + 3, width: width, height: 2.5)
+    }
+
+    // MARK: How strongly a piece shows
+
+    private static func unit(_ value: CGFloat) -> CGFloat {
+        return min(1, max(0, value.isFinite ? value : 0))
+    }
+
+    /// What lies on the desktop while the windows are `windowsAway` (0…1) out of the way
+    /// for Show Desktop: nothing until they have left (`desktopItemsAppearAt`), then it
+    /// comes up, whole when they are away.
+    static func desktopItemStrength(windowsAway: CGFloat) -> CGFloat {
+        let p = unit((windowsAway - desktopItemsAppearAt) / (1 - desktopItemsAppearAt))
+        return p * p * (3 - 2 * p)
+    }
+
+    /// Mission Control's row of Spaces while the overview is `overview` (0…1) open: whole
+    /// from half open on. The row also slides out from under the menu bar, which shows it
+    /// coming; half open it must not be half transparent as well.
+    static func spacesBarStrength(overview: CGFloat) -> CGFloat {
+        return unit(overview * 2)
+    }
+
+    /// The windows while the app grid is `appGrid` (0…1) open: gone at
+    /// `appGridWindowsGoneAt`, and most of the way there early (half open, a trace of them
+    /// is left).
+    static func windowStrength(appGrid: CGFloat) -> CGFloat {
+        let left = 1 - unit(appGrid / appGridWindowsGoneAt)
+        return left * left
+    }
+
+    /// The icons of the app grid while it is `appGrid` (0…1) open: from `appGridIconsFrom`
+    /// on, quickly at first (half open they are half there, and clearly the picture).
+    static func appGridIconStrength(_ appGrid: CGFloat) -> CGFloat {
+        let missing = 1 - unit((appGrid - appGridIconsFrom) / (1 - appGridIconsFrom))
+        return 1 - missing * missing
+    }
+
     /// The pointer's tip when the hand has not moved it.
     var pointerHome: NSPoint {
         return NSPoint(x: (bounds.width * 0.72).rounded(), y: 64)
@@ -803,9 +857,12 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
     }
 
     /// One desktop: its wallpaper and its windows. `overview` moves the windows to their
-    /// places in Mission Control, `gridFade` fades them out under the app grid, and
-    /// `windowsAway` slides them to the edges for Show Desktop while what lies on the
-    /// desktop comes up (all 0…1; one of them at a time).
+    /// places in Mission Control, `gridFade` is how far the app grid is open (the windows
+    /// fade out under it, `windowStrength`), and `windowsAway` slides them to the edges for
+    /// Show Desktop; what lies on the desktop comes up once they have left
+    /// (`desktopItemStrength`). All 0…1; one of them at a time. The windows are drawn under
+    /// the menu bar's lower edge only: one that goes up for Show Desktop slides in behind
+    /// the menu bar and does not show through it.
     private func drawDesktop(_ index: Int, at x: CGFloat, overview: CGFloat, gridFade: CGFloat, windowsAway: CGFloat) {
         let rect = NSRect(x: x, y: 0, width: bounds.width, height: bounds.height)
         let start = index == 0 ? ScrollPreviewPalette.desktopStart : GesturePreviewPalette.secondDesktopStart
@@ -815,13 +872,15 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
             GesturePreviewPalette.overviewShade.withAlphaComponent(0.28 * overview).setFill()
             rect.fill(using: .sourceOver)
         }
-        if windowsAway > 0 {
-            drawDesktopItems(at: x, strength: windowsAway)
+        let items = Self.desktopItemStrength(windowsAway: windowsAway)
+        if items > 0 {
+            drawDesktopItems(at: x, strength: items)
         }
 
-        let alpha = 1 - gridFade
+        let alpha = Self.windowStrength(appGrid: gridFade)
         guard alpha > 0.01 else { return }
         NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: NSRect(x: 0, y: Self.menuBarHeight, width: bounds.width, height: bounds.height - Self.menuBarHeight)).addClip()
         NSGraphicsContext.current?.cgContext.setAlpha(alpha)
         NSGraphicsContext.current?.cgContext.beginTransparencyLayer(auxiliaryInfo: nil)
         for kind in Self.windows(onDesktop: index) {
@@ -838,8 +897,8 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
     }
 
     /// What lies on the desktop, a column in the top-right corner: two folders and a
-    /// document, each with its name under it. They come up as the windows move away
-    /// (`strength`, 0…1), as the things on a Mac's desktop do when it is shown.
+    /// document, each with its name under it, as strong as `strength` (0…1,
+    /// `desktopItemStrength`: they come up once the windows have left).
     private func drawDesktopItems(at x: CGFloat, strength: CGFloat) {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current?.cgContext.setAlpha(min(1, max(0, strength)))
@@ -872,9 +931,8 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
                 NSBezierPath(roundedRect: NSRect(x: rect.minX, y: rect.minY + 3.5, width: rect.width, height: rect.height - 3.5), xRadius: 2, yRadius: 2).fill()
             }
             // Its name.
-            let nameWidth: CGFloat = index == 1 ? 13 : 17
             GesturePreviewPalette.desktopItemName.setFill()
-            capsule(NSRect(x: rect.midX - nameWidth / 2, y: rect.maxY + 3, width: nameWidth, height: 2.5)).fill()
+            capsule(Self.desktopItemNameRect(under: rect, index: index)).fill()
         }
         NSGraphicsContext.current?.cgContext.endTransparencyLayer()
         NSGraphicsContext.restoreGraphicsState()
@@ -1018,8 +1076,8 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
     }
 
     /// Mission Control's row of Spaces, coming down from under the menu bar, which stays
-    /// as it is (a hold that follows the hand can stop with the row half out): the one on
-    /// screen framed.
+    /// as it is (a hold that follows the hand can stop with the row half out, where it is
+    /// already whole in strength, `spacesBarStrength`): the one on screen framed.
     private func drawSpacesBar(progress: CGFloat, current: Int) {
         let size = NSSize(width: 34, height: 21)
         let gap: CGFloat = 8
@@ -1027,7 +1085,7 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         let y = Self.menuBarHeight + 5 - (1 - progress) * 30
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: NSRect(x: 0, y: Self.menuBarHeight, width: bounds.width, height: bounds.height - Self.menuBarHeight)).addClip()
-        NSGraphicsContext.current?.cgContext.setAlpha(progress)
+        NSGraphicsContext.current?.cgContext.setAlpha(Self.spacesBarStrength(overview: progress))
         for index in 0..<2 {
             let rect = NSRect(x: ((bounds.width - total) / 2).rounded() + CGFloat(index) * (size.width + gap), y: y, width: size.width, height: size.height)
             let start = index == 0 ? ScrollPreviewPalette.desktopStart : GesturePreviewPalette.secondDesktopStart
@@ -1044,7 +1102,8 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    /// Launchpad: the desktop darkens and the windows give way to rows of app icons.
+    /// Launchpad: the desktop darkens and the windows give way to rows of app icons, which
+    /// show once the windows are on their way out (`appGridIconStrength`).
     private func drawAppGrid(_ progress: CGFloat) {
         GesturePreviewPalette.gridShade.withAlphaComponent(0.42 * progress).setFill()
         bounds.fill(using: .sourceOver)
@@ -1058,8 +1117,10 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         let centre = NSPoint(x: bounds.midX, y: (bounds.height - Self.dockHeight) / 2 + 2)
         // The icons settle in from a little larger, as Launchpad's do.
         let zoom = 1 + 0.12 * (1 - progress)
+        let strength = Self.appGridIconStrength(progress)
+        guard strength > 0 else { return }
         NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current?.cgContext.setAlpha(progress)
+        NSGraphicsContext.current?.cgContext.setAlpha(strength)
         for row in 0..<rows {
             for column in 0..<columns {
                 let x = centre.x - gridWidth / 2 + CGFloat(column) * (icon + spacingX) + icon / 2

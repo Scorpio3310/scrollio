@@ -1250,7 +1250,8 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         }
     }
 
-    /// Apps runs once in every ordinary build, by its key as before.
+    /// Apps runs once in every ordinary build, by its key as before, and the log gives no
+    /// reason for it: no build of that kind lets Apps follow, so nothing was asked.
     func testAppsRunsOnceByItsKeyWhereItDoesNotFollow() {
         configureFollowing()
 
@@ -1258,10 +1259,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
 
         XCTAssertEqual(swipeCalls, [])
         XCTAssertEqual(dockVoices, [.settle, .key(resolvedShortcut(SystemShortcut.appExpose).code)])
-        XCTAssertEqual(gestureLog, [
-            "Gestures: down did not follow the hand: appExpose, not on this macOS",
-            "Gestures: down ran appExpose",
-        ])
+        XCTAssertEqual(gestureLog, ["Gestures: down ran appExpose"], "no line about following")
     }
 
     /// An action without a view of the Dock is what it was: once, and no line about following.

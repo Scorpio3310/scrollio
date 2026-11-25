@@ -202,9 +202,10 @@ struct MouseGestureFollowPresentation: Equatable {
     }
 
     /// Why a row whose action could open with the hand runs once here, where the reason is
-    /// the row's own: this macOS, or the Dock's own switch for the trackpad gesture. nil
-    /// where it is not (nothing follows the hand at all, or macOS lets Scrollio post
-    /// nothing): the row then shows its action without words.
+    /// the row's own: this macOS (Show Desktop before macOS 27), or the Dock's own switch
+    /// for the trackpad gesture. nil where it is not (nothing follows the hand at all, or
+    /// macOS lets Scrollio post nothing): the row then shows its action without words.
+    /// (Apps in a released build never gets here: nothing asks it to follow, `followPlan`.)
     static func note(for obstacle: DockFollowAvailability.Obstacle) -> String? {
         switch obstacle {
         case .notOnThisMacOS: return text("gesture-follow-once-macos")

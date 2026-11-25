@@ -7,7 +7,10 @@
 //  the mouse and the desktop follow the loop, and that it draws off screen in light and
 //  dark; for a row that follows the hand up or down, that its view stands half open at the
 //  stop and under Reduce Motion, that the mouse and its arrow stay in their card, and what
-//  Show Desktop draws. Nothing is shown on screen: windows are created but never ordered
+//  a half-open view draws (Show Desktop: what lies on the desktop waits until the windows
+//  have left, and a window that goes up does not show through the menu bar; Mission
+//  Control: the row of Spaces is whole by half open; the app grid: the windows are gone
+//  before it is whole). Nothing is shown on screen: windows are created but never ordered
 //  in, and frames are asked for by loop time, not waited for. Nothing runs a real action.
 //
 //  With the render tests' switch set (`RenderShots`), `testContactSheets` also writes contact
@@ -588,6 +591,195 @@ final class GesturePreviewViewTests: XCTestCase {
                 warmth(try colour(in: half, x: inMenuBar.x, y: inMenuBar.y)), warmth(try colour(in: rest, x: inMenuBar.x, y: inMenuBar.y)),
                 accuracy: 0.06, "and not over it: \(message)"
             )
+        }
+    }
+
+    /// The desktop card alone, showing the first desktop at rest with `change` made to its
+    /// frame (how far a view is open), rendered off screen. Points are the card's own.
+    private func renderDesktop(dark: Bool, _ change: (inout Loop.Frame) -> Void) throws -> NSBitmapImageRep {
+        let view = makeView()
+        view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        view.scene = scene()
+        var frame = view.loop.frame(at: 0)
+        change(&frame)
+        let card = view.screenCard
+        card.show(frame)
+        let rep = try XCTUnwrap(card.bitmapImageRepForCachingDisplay(in: card.bounds))
+        card.cacheDisplay(in: card.bounds, to: rep)
+        return rep
+    }
+
+    private func assertSameColour(
+        _ a: NSColor, _ b: NSColor, accuracy: CGFloat = 0.02, _ message: String, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        XCTAssertEqual(a.redComponent, b.redComponent, accuracy: accuracy, "red: \(message)", file: file, line: line)
+        XCTAssertEqual(a.greenComponent, b.greenComponent, accuracy: accuracy, "green: \(message)", file: file, line: line)
+        XCTAssertEqual(a.blueComponent, b.blueComponent, accuracy: accuracy, "blue: \(message)", file: file, line: line)
+    }
+
+    /// What lies on the desktop shows only once the windows have left: while they are on
+    /// their way (where a hold that follows can stand still, and what Reduce Motion shows)
+    /// nothing of it sticks out from under a window.
+    func testWhatLiesOnTheDesktopShowsOnlyOnceTheWindowsHaveLeft() throws {
+        typealias Card = GesturePreviewScreenCard
+        // The tab of the first folder: above the windows of the first desktop wherever
+        // they are on their way, so without the folder it is the wallpaper alone.
+        let folder = Card.desktopItemRects(in: NSSize(width: 234, height: 150))[0]
+        let tab = (x: folder.minX + 3.5, y: folder.minY + 2.5)
+        for dark in [false, true] {
+            let message = dark ? "dark" : "light"
+            let rest = try colour(in: try renderDesktop(dark: dark) { _ in }, x: tab.x, y: tab.y)
+            for away in [0.25, 0.5, 0.8, 0.9] {
+                let onTheWay = try colour(in: try renderDesktop(dark: dark) { $0.showDesktop = away }, x: tab.x, y: tab.y)
+                assertSameColour(onTheWay, rest, accuracy: 0.01, "nothing on the desktop yet at \(away): \(message)")
+            }
+            let whole = try colour(in: try renderDesktop(dark: dark) { $0.showDesktop = 1 }, x: tab.x, y: tab.y)
+            XCTAssertGreaterThan(abs(whole.redComponent - rest.redComponent) + abs(whole.greenComponent - rest.greenComponent), 0.1, "the folder is there: \(message)")
+        }
+    }
+
+    /// The rule behind it, against the layout of the tab's picture: no item shows before
+    /// the windows have left, and from the moment one shows at all no window of either
+    /// desktop is over an item or its name.
+    func testTheThingsOnTheDesktopWaitUntilNoWindowIsOverThem() {
+        typealias Card = GesturePreviewScreenCard
+        let size = NSSize(width: 234, height: 150)
+        for away in [-1, 0, 0.25, 0.5, 0.8, 0.9, Card.desktopItemsAppearAt] as [CGFloat] {
+            XCTAssertEqual(Card.desktopItemStrength(windowsAway: away), 0, "\(away)")
+        }
+        XCTAssertEqual(Card.desktopItemStrength(windowsAway: 1), 1)
+        XCTAssertEqual(Card.desktopItemStrength(windowsAway: 2), 1)
+        XCTAssertEqual(Card.desktopItemStrength(windowsAway: (Card.desktopItemsAppearAt + 1) / 2), 0.5, accuracy: 1e-9)
+        XCTAssertEqual(Card.desktopItemStrength(windowsAway: .nan), 0)
+
+        let footprints = Card.desktopItemRects(in: size).enumerated().map { index, item in
+            item.union(Card.desktopItemNameRect(under: item, index: index))
+        }
+        func place(_ kind: Card.WindowKind, away: CGFloat) -> NSRect {
+            let home = Card.windowRect(kind, in: size)
+            let end = Card.showDesktopRect(kind, in: size)
+            return home.offsetBy(dx: (end.minX - home.minX) * away, dy: (end.minY - home.minY) * away)
+        }
+        var last: CGFloat = 0
+        for step in 0...200 {
+            let away = CGFloat(step) / 200
+            let strength = Card.desktopItemStrength(windowsAway: away)
+            XCTAssertGreaterThanOrEqual(strength, last, "it only comes up: \(away)")
+            last = strength
+            guard strength > 0 else { continue }
+            for kind in Card.WindowKind.allCases {
+                for (index, footprint) in footprints.enumerated() {
+                    XCTAssertFalse(place(kind, away: away).intersects(footprint), "\(kind) over item \(index) at \(away)")
+                }
+            }
+        }
+        // The number is the layout's, not a guess: a little earlier the window on the
+        // right is still over the column.
+        XCTAssertTrue(footprints.contains { place(.notes, away: Card.desktopItemsAppearAt - 0.02).intersects($0) })
+    }
+
+    /// How strongly the row of Spaces, the windows under the app grid and the grid's icons
+    /// show: the row whole by half open; the windows gone at three fifths, the icons from
+    /// three tenths on, so half open is the grid arriving.
+    func testHowStronglyThePiecesOfAViewShowWhileItOpens() {
+        typealias Card = GesturePreviewScreenCard
+        XCTAssertEqual(Card.spacesBarStrength(overview: 0), 0)
+        XCTAssertEqual(Card.spacesBarStrength(overview: 0.25), 0.5, accuracy: 1e-9)
+        XCTAssertEqual(Card.spacesBarStrength(overview: 0.5), 1, "whole at the stop of a hold that follows")
+        XCTAssertEqual(Card.spacesBarStrength(overview: 1), 1)
+
+        XCTAssertEqual(Card.appGridWindowsGoneAt, 0.6)
+        XCTAssertEqual(Card.appGridIconsFrom, 0.3)
+        XCTAssertEqual(Card.windowStrength(appGrid: 0), 1, "no grid: the windows as they are")
+        XCTAssertEqual(Card.windowStrength(appGrid: 0.3), 0.25, accuracy: 1e-9)
+        XCTAssertEqual(Card.windowStrength(appGrid: 0.6), 0)
+        XCTAssertEqual(Card.windowStrength(appGrid: 1), 0)
+        XCTAssertEqual(Card.appGridIconStrength(0), 0)
+        XCTAssertEqual(Card.appGridIconStrength(0.3), 0)
+        XCTAssertEqual(Card.appGridIconStrength(0.65), 0.75, accuracy: 1e-9)
+        XCTAssertEqual(Card.appGridIconStrength(1), 1)
+        // Half open, the stop of a hold that follows: the grid is the picture (about half
+        // there), with a trace of the windows; the two are never both half there.
+        XCTAssertLessThan(Card.windowStrength(appGrid: 0.5), 0.05)
+        XCTAssertGreaterThan(Card.appGridIconStrength(0.5), 0.45)
+        var windows: CGFloat = 1, icons: CGFloat = 0
+        for step in 0...100 {
+            let grid = CGFloat(step) / 100
+            XCTAssertFalse(Card.windowStrength(appGrid: grid) > 0.3 && Card.appGridIconStrength(grid) > 0.3, "\(grid)")
+            XCTAssertLessThanOrEqual(Card.windowStrength(appGrid: grid), windows, "the windows only fade: \(grid)")
+            XCTAssertGreaterThanOrEqual(Card.appGridIconStrength(grid), icons, "the icons only come: \(grid)")
+            windows = Card.windowStrength(appGrid: grid)
+            icons = Card.appGridIconStrength(grid)
+        }
+    }
+
+    /// Mission Control half open: the row of Spaces is half out from under the menu bar and
+    /// already as strong as when it is whole (half out and half transparent, the second
+    /// Space nearly vanished in dark).
+    func testTheRowOfSpacesIsWholeByHalfOpen() throws {
+        // A point of the second Space (the one without the frame), 17 pt into its picture
+        // from the left and from the top, where the row is at half open and at whole.
+        let half = (x: CGFloat(138), y: CGFloat(15))
+        let whole = (x: CGFloat(138), y: CGFloat(30))
+        for dark in [false, true] {
+            let halfOpen = try colour(in: try renderDesktop(dark: dark) { $0.overview = 0.5 }, x: half.x, y: half.y)
+            let open = try colour(in: try renderDesktop(dark: dark) { $0.overview = 1 }, x: whole.x, y: whole.y)
+            XCTAssertGreaterThan(open.redComponent, open.blueComponent, "the warm second Space")
+            assertSameColour(halfOpen, open, "the row at half open, \(dark ? "dark" : "light")")
+        }
+    }
+
+    /// The app grid half open reads as the grid arriving: the windows are gone when it is
+    /// three fifths open, so the two are never both half there.
+    func testTheWindowsAreGoneBeforeTheAppGridIsWhole() throws {
+        // The left margin of the front window's page, where no icon of the grid comes.
+        let page = (x: CGFloat(23), y: CGFloat(60))
+        for dark in [false, true] {
+            let message = dark ? "dark" : "light"
+            let atRest = try colour(in: try renderDesktop(dark: dark) { _ in }, x: page.x, y: page.y)
+            XCTAssertLessThan(abs(atRest.blueComponent - atRest.redComponent), 0.05, "the window's page: \(message)")
+            for grid in [0.6, 0.8] {
+                // What is there without a window: the same grid over a desktop whose windows
+                // are out of the way (the wallpaper under the grid's shade).
+                let bare = try colour(in: try renderDesktop(dark: dark) { $0.appGrid = grid; $0.showDesktop = 1 }, x: page.x, y: page.y)
+                XCTAssertGreaterThan(bare.blueComponent, bare.redComponent + 0.1, "the wallpaper: \(message)")
+                let shown = try colour(in: try renderDesktop(dark: dark) { $0.appGrid = grid }, x: page.x, y: page.y)
+                assertSameColour(shown, bare, accuracy: 0.01, "no window left at \(grid): \(message)")
+            }
+        }
+    }
+
+    /// Show Desktop on the second desktop (one action per hold: Left moves a Space, Right
+    /// shows the desktop): its window goes up, and what is behind the menu bar does not
+    /// show through it; a sliver of the window stays in sight under it.
+    func testTheWindowThatGoesUpDoesNotShowThroughTheMenuBar() throws {
+        let secondDesktop = scene {
+            $0.leftAction = SystemShortcut.moveSpaceLeft.identifier
+            $0.rightAction = SystemShortcut.showDesktop.identifier
+        }
+        let loop = Loop(scene: secondDesktop)
+        XCTAssertEqual(loop.legs.count, 4, "left, right, and both again to come back")
+        let restMoment = loop.starts[1] + 0.05
+        let wholeMoment = loop.starts[1] + loop.legs[1].stillTime
+        XCTAssertEqual(loop.frame(at: restMoment).desktop, 1, accuracy: 1e-9)
+        XCTAssertEqual(loop.frame(at: restMoment).showDesktop, 0)
+        XCTAssertEqual(loop.frame(at: wholeMoment).desktop, 1, accuracy: 1e-9)
+        XCTAssertEqual(loop.frame(at: wholeMoment).showDesktop, 1, accuracy: 1e-9)
+        // Over the window's middle: in the menu bar, and just under it.
+        let inMenuBar = (x: CGFloat(246 + 117), y: CGFloat(4))
+        let sliver = (x: CGFloat(246 + 117), y: GesturePreviewScreenCard.menuBarHeight + 2.5)
+        for dark in [false, true] {
+            let message = dark ? "dark" : "light"
+            let rest = try render(secondDesktop, dark: dark, time: restMoment)
+            let whole = try render(secondDesktop, dark: dark, time: wholeMoment)
+            assertSameColour(
+                try colour(in: whole, x: inMenuBar.x, y: inMenuBar.y), try colour(in: rest, x: inMenuBar.x, y: inMenuBar.y),
+                accuracy: 0.01, "the menu bar keeps its look: \(message)"
+            )
+            let edge = try colour(in: whole, x: sliver.x, y: sliver.y)
+            XCTAssertLessThan(abs(edge.blueComponent - edge.redComponent), 0.05, "a sliver of the window: \(message)")
+            let before = try colour(in: rest, x: sliver.x, y: sliver.y)
+            XCTAssertGreaterThan(before.redComponent, before.blueComponent + 0.1, "the warm wallpaper at rest: \(message)")
         }
     }
 
@@ -1212,6 +1404,11 @@ final class GesturePreviewViewTests: XCTestCase {
                 $0.freezePointer = false
             }),
             ("follow-up-mission-control-fast", followScene(focus: .up) { $0.trackingSpeed = 3 }),
+            // Left moves a Space, so Right shows the desktop on the second one.
+            ("discrete-cycle-show-desktop-on-the-second-desktop", scene {
+                $0.leftAction = SystemShortcut.moveSpaceLeft.identifier
+                $0.rightAction = SystemShortcut.showDesktop.identifier
+            }),
         ]
         for (name, scene) in cases {
             try write("\(name)-light", scene, dark: false)
@@ -1228,7 +1425,7 @@ final class GesturePreviewViewTests: XCTestCase {
     /// Single pictures of the rows that follow the hand, four times their size, when the
     /// render tests are asked for (`RenderShots`): Mission Control, the app grid and Show
     /// Desktop half open at the stop and whole, and the frame Reduce Motion shows, in
-    /// light and in dark.
+    /// light and in dark; and Show Desktop run once on the second desktop, half-way and whole.
     func testRenderFollowedRows() throws {
         let directory = try RenderShots.directory(for: "the rows that follow the hand", subfolder: "gesture-preview-follow")
         let showDesktopDownSlowest = followScene(focus: .down) {
@@ -1271,7 +1468,19 @@ final class GesturePreviewViewTests: XCTestCase {
             ("down-show-desktop-slowest-let-go", showDesktopDownSlowest, Loop.followRelease),
             ("once-show-desktop-reduce-motion", showDesktopOnce, nil),
         ]
-        for (name, scene, time) in cases {
+        // Show Desktop on the second desktop, whose window goes up under the menu bar: one
+        // action per hold, nothing pointed at, Left moves a Space and Right shows the desktop.
+        let secondDesktop = self.scene {
+            $0.leftAction = SystemShortcut.moveSpaceLeft.identifier
+            $0.rightAction = SystemShortcut.showDesktop.identifier
+        }
+        let second = Loop(scene: secondDesktop)
+        let fire = second.starts[1] + (second.legs[1].fireTime ?? 0)
+        let onTheSecondDesktop: [(String, GesturePreviewScene, TimeInterval?)] = [
+            ("once-show-desktop-second-desktop-half", secondDesktop, fire + Loop.overlayIn / 2),
+            ("once-show-desktop-second-desktop-whole", secondDesktop, second.starts[1] + second.legs[1].stillTime),
+        ]
+        for (name, scene, time) in cases + onTheSecondDesktop {
             for dark in [false, true] {
                 let rep = try render(scene, dark: dark, time: time, picture: gestureButton(on: .mxMaster4), scale: 4)
                 let data = try XCTUnwrap(rep.representation(using: .png, properties: [:]))

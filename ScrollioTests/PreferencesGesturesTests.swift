@@ -24,14 +24,16 @@ final class PreferencesGesturesTests: XCTestCase {
     private var summary = MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false)
     /// What the connected mice can do: none is connected unless a test says so.
     private var support = MouseGestureDeviceSupport.none
-    /// What can follow the hand up and down on the Mac a test describes: macOS 27, every
-    /// gesture of the Dock on and Apps too (the owner's own build), unless a test says so.
+    /// What can follow the hand up and down on the Mac a test describes: a released build
+    /// on macOS 27 with every gesture of the Dock on (Mission Control and Show Desktop
+    /// follow, Apps runs once), unless a test says so.
     private var follow = PreferencesGesturesTests.follows()
 
-    /// A Mac for `follow`: its macOS, whether this build lets Apps follow, the Dock's own
-    /// switches and whether macOS lets Scrollio post events.
+    /// A Mac for `follow`: its macOS, whether the build lets Apps follow (`apps: true` is
+    /// the owner's own installed copy, made with SCROLLIO_TRACE; no release is one), the
+    /// Dock's own switches and whether macOS lets Scrollio post events.
     static func follows(
-        macOS: Int = 27, apps: Bool = true, switches: DockGestureSwitches = .allOn, canPostEvents: Bool = true
+        macOS: Int = 27, apps: Bool = false, switches: DockGestureSwitches = .allOn, canPostEvents: Bool = true
     ) -> DockFollowAvailability {
         return DockFollowAvailability(
             swipeIsAvailable: true, canPostEvents: canPostEvents, majorVersion: macOS, switches: switches, appsMayFollow: apps
@@ -39,7 +41,7 @@ final class PreferencesGesturesTests: XCTestCase {
     }
 
     private func follows(
-        macOS: Int = 27, apps: Bool = true, switches: DockGestureSwitches = .allOn, canPostEvents: Bool = true
+        macOS: Int = 27, apps: Bool = false, switches: DockGestureSwitches = .allOn, canPostEvents: Bool = true
     ) -> DockFollowAvailability {
         return Self.follows(macOS: macOS, apps: apps, switches: switches, canPostEvents: canPostEvents)
     }
@@ -617,31 +619,45 @@ final class PreferencesGesturesTests: XCTestCase {
             return "\(InterfaceList.joined(names)) open with your hand, like on a trackpad. Other actions run once."
         }
         // A released build on macOS 27; before macOS 27; the owner's own build on macOS 27.
-        XCTAssertEqual(hint(follows(apps: false)), open(["Mission Control", "Show Desktop"]))
+        XCTAssertEqual(hint(follows()), open(["Mission Control", "Show Desktop"]))
         XCTAssertEqual(open(["Mission Control", "Show Desktop"]), "Mission Control and Show Desktop open with your hand, like on a trackpad. Other actions run once.")
         for macOS in [14, 15, 26] {
-            XCTAssertEqual(
-                hint(follows(macOS: macOS)), "Mission Control opens with your hand, like on a trackpad. Other actions run once.", "macOS \(macOS)"
-            )
+            for apps in [false, true] {
+                XCTAssertEqual(
+                    hint(follows(macOS: macOS, apps: apps)),
+                    "Mission Control opens with your hand, like on a trackpad. Other actions run once.", "macOS \(macOS), apps \(apps)"
+                )
+            }
         }
-        XCTAssertEqual(hint(follows()), open(["Mission Control", "Apps", "Show Desktop"]))
+        XCTAssertEqual(hint(follows(apps: true)), open(["Mission Control", "Apps", "Show Desktop"]))
         // The Dock's own switch for a gesture is off: that one is left out.
         var switches = DockGestureSwitches.allOn
         switches.missionControl = false
-        XCTAssertEqual(hint(follows(apps: false, switches: switches)), "Show Desktop opens with your hand, like on a trackpad. Other actions run once.")
-        XCTAssertEqual(hint(follows(switches: switches)), open(["Apps", "Show Desktop"]))
+        XCTAssertEqual(hint(follows(switches: switches)), "Show Desktop opens with your hand, like on a trackpad. Other actions run once.")
+        XCTAssertEqual(hint(follows(apps: true, switches: switches)), open(["Apps", "Show Desktop"]))
         switches = .allOn
         switches.showDesktop = false
-        XCTAssertEqual(hint(follows(switches: switches)), "Mission Control opens with your hand, like on a trackpad. Other actions run once.")
+        for apps in [false, true] {
+            XCTAssertEqual(
+                hint(follows(apps: apps, switches: switches)),
+                "Mission Control opens with your hand, like on a trackpad. Other actions run once.", "apps \(apps)"
+            )
+        }
         // Nothing can: the gestures are off, or macOS does not let Scrollio post events.
-        let none = "Nothing can open with your hand on this Mac right now. Every action runs once."
-        XCTAssertEqual(hint(follows(switches: DockGestureSwitches(missionControl: false, showDesktop: false, launchpad: false))), none)
-        XCTAssertEqual(hint(follows(canPostEvents: false)), none)
+        // The line says only that: with the gestures off Left and Right still follow the
+        // hand, and where Scrollio may post nothing an action that needs a key does not run.
+        let none = "Nothing can open with your hand on this Mac right now."
+        let allOff = DockGestureSwitches(missionControl: false, showDesktop: false, launchpad: false)
+        for apps in [false, true] {
+            XCTAssertEqual(hint(follows(apps: apps, switches: allOff)), none, "apps \(apps)")
+            XCTAssertEqual(hint(follows(apps: apps, canPostEvents: false)), none, "apps \(apps)")
+        }
+        XCTAssertEqual(hint(follows(macOS: 15, canPostEvents: false)), none)
 
         // What is stored changes nothing of it: the switch off, other actions.
         var off = followSettings(up: SystemShortcut.copy.identifier)
         off.actionsFollowHand = false
-        XCTAssertEqual(hint(follows(apps: false), off), open(["Mission Control", "Show Desktop"]))
+        XCTAssertEqual(hint(follows(), off), open(["Mission Control", "Show Desktop"]))
 
         // "One action per hold", and a "Follow the hand" that cannot run here.
         let notUsed = "Only used in “Follow the hand”."
@@ -675,26 +691,41 @@ final class PreferencesGesturesTests: XCTestCase {
         let gestureOff = Follow.Row.runsOnceHere("Runs once. Its trackpad gesture is off in System Settings.")
         let showDesktop = SystemShortcut.showDesktop.identifier
 
-        // The defaults: Up is Mission Control, Down is Apps.
-        XCTAssertEqual(rows(followSettings(), follows()), [.follows("Mission Control follows the hand"), .follows("Apps follow the hand")])
-        XCTAssertEqual(rows(followSettings(), follows(apps: false)), [.follows("Mission Control follows the hand"), notHere])
+        // The defaults: Up is Mission Control, Down is Apps. In a released build Apps is an
+        // action like any other, on every macOS, so its row says nothing (and never names
+        // macOS as the reason).
+        XCTAssertEqual(rows(followSettings(), follows()), [.follows("Mission Control follows the hand"), .plain])
+        XCTAssertEqual(rows(followSettings(up: SystemShortcut.appExpose.identifier), follows()), [.plain, .plain])
+        for macOS in [14, 15, 26] {
+            XCTAssertEqual(
+                rows(followSettings(up: showDesktop), follows(macOS: macOS)), [notHere, .plain],
+                "macOS \(macOS): the sentence is Show Desktop's"
+            )
+        }
         XCTAssertEqual(
             rows(followSettings(up: showDesktop, down: SystemShortcut.missionControl.identifier), follows()),
             [.follows("Show Desktop follows the hand"), .follows("Mission Control follows the hand")]
         )
-        XCTAssertEqual(rows(followSettings(up: showDesktop), follows(macOS: 26)), [notHere, notHere])
+        // The owner's own build lets Apps try: it follows from macOS 27, and says so before.
+        XCTAssertEqual(
+            rows(followSettings(), follows(apps: true)), [.follows("Mission Control follows the hand"), .follows("Apps follow the hand")]
+        )
+        XCTAssertEqual(rows(followSettings(up: showDesktop), follows(macOS: 26, apps: true)), [notHere, notHere])
         XCTAssertEqual(Follow.face(of: .apps, majorVersion: 15), "Launchpad follows the hand")
         XCTAssertEqual(Follow.face(of: .apps, majorVersion: 26), "Apps follow the hand")
         XCTAssertEqual(Follow.face(of: .missionControl, majorVersion: 14), "Mission Control follows the hand")
         XCTAssertEqual(Follow.face(of: .showDesktop, majorVersion: 27), "Show Desktop follows the hand")
 
-        // The Dock's own switch (Apps goes by Show Desktop's since macOS 26).
+        // The Dock's own switch (in the owner's own build Apps goes by Show Desktop's since
+        // macOS 26; in a release Apps has nothing to say about a switch).
         var switches = DockGestureSwitches.allOn
         switches.missionControl = false
-        XCTAssertEqual(rows(followSettings(), follows(switches: switches)), [gestureOff, .follows("Apps follow the hand")])
+        XCTAssertEqual(rows(followSettings(), follows(switches: switches)), [gestureOff, .plain])
+        XCTAssertEqual(rows(followSettings(), follows(apps: true, switches: switches)), [gestureOff, .follows("Apps follow the hand")])
         switches = .allOn
         switches.showDesktop = false
-        XCTAssertEqual(rows(followSettings(up: showDesktop), follows(switches: switches)), [gestureOff, gestureOff])
+        XCTAssertEqual(rows(followSettings(up: showDesktop), follows(switches: switches)), [gestureOff, .plain])
+        XCTAssertEqual(rows(followSettings(up: showDesktop), follows(apps: true, switches: switches)), [gestureOff, gestureOff])
         // macOS does not let Scrollio post events: nothing a row could say.
         XCTAssertEqual(rows(followSettings(), follows(canPostEvents: false)), [.plain, .plain])
 
@@ -718,7 +749,8 @@ final class PreferencesGesturesTests: XCTestCase {
 
     /// With the switch on, an Up or Down row whose action opens with the hand says so in
     /// place of the action, without its picture, as Left and Right do; it stays a pull-down
-    /// with its menu, the tick on the action. Click and every other action stay plain.
+    /// with its menu, the tick on the action. Click and every other action stay plain: with
+    /// the default actions that is Down, Apps, as a release shows it.
     func testRowsThatFollowSayItInPlaceOfTheirAction() throws {
         Options.shared.gesture = followSettings()
         let controller = makeController()
@@ -728,18 +760,25 @@ final class PreferencesGesturesTests: XCTestCase {
         let itemCount = up.menu?.items.count
 
         XCTAssertEqual(title(of: up), "Mission Control follows the hand")
-        XCTAssertEqual(title(of: down), "Apps follow the hand")
+        XCTAssertNil(up.menu?.items.first?.image, "a sentence has no picture")
+        XCTAssertNil(up.menu?.items.first?.attributedTitle)
+        XCTAssertEqual(title(of: down), SystemShortcut.appExpose.localizedName, "Apps runs once: the action as ever")
+        XCTAssertNotNil(down.menu?.items.first?.image)
+        XCTAssertNil(down.face)
         for popup in [up, down] {
-            XCTAssertNil(popup.menu?.items.first?.image, "a sentence has no picture")
-            XCTAssertNil(popup.menu?.items.first?.attributedTitle)
             XCTAssertTrue(popup.isEnabled, "still a choice")
             XCTAssertNil(popup.toolTip)
+            XCTAssertNil(popup.accessibilityHelp())
         }
         XCTAssertTrue(controller.directionRows[Slot.up.rawValue].isEnabled)
         XCTAssertEqual(up.accessibilityLabel(), "Up", "VoiceOver: Up, Mission Control follows the hand")
         XCTAssertEqual(up.shownActionItem?.item.title, SystemShortcut.missionControl.localizedName, "the tick is on the action")
         XCTAssertEqual(down.shownActionItem?.item.title, SystemShortcut.appExpose.localizedName)
         XCTAssertEqual(Options.shared.gesture.upAction, SystemShortcut.missionControl.identifier, "what is stored is the action")
+        XCTAssertEqual(
+            controller.followRow.explanation,
+            "Mission Control and Show Desktop open with your hand, like on a trackpad. Other actions run once."
+        )
         // Left and Right are the desktops', as before; Click runs once.
         XCTAssertEqual(title(of: controls.actionPopUp(for: .left)), "Desktop follows the hand")
         XCTAssertFalse(controls.actionPopUp(for: .left).isEnabled)
@@ -756,17 +795,68 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(title(of: up), "Show Desktop follows the hand")
         XCTAssertNil(up.menu?.items.first?.image)
 
+        // Down set to a view that follows says so too.
+        choose(SystemShortcut.missionControl.identifier, in: down)
+        XCTAssertEqual(title(of: down), "Mission Control follows the hand")
+        XCTAssertNil(down.menu?.items.first?.image)
+
         // The switch off, and "One action per hold": the actions as they are.
         toggle(controls.followToggle, on: false)
         XCTAssertEqual(title(of: up), SystemShortcut.showDesktop.localizedName)
+        XCTAssertEqual(title(of: down), SystemShortcut.missionControl.localizedName)
+        XCTAssertNotNil(down.menu?.items.first?.image)
+        toggle(controls.followToggle, on: true)
+        XCTAssertEqual(title(of: down), "Mission Control follows the hand")
+        controls.modeControl.selectedSegment = 0
+        send(controls.modeControl)
+        XCTAssertEqual(title(of: up), SystemShortcut.showDesktop.localizedName)
+        XCTAssertEqual(title(of: down), SystemShortcut.missionControl.localizedName)
+    }
+
+    /// The owner's own installed copy (a build made with SCROLLIO_TRACE) lets Apps try to
+    /// follow the hand: there, and in no release, the Down row with the default action says
+    /// "Apps follow the hand" and the switch's line names Apps too.
+    func testInTheOwnersOwnBuildAppsFollowTheHandToo() {
+        Options.shared.gesture = followSettings()
+        follow = follows(apps: true)
+        let controller = makeController()
+        let controls = controller.controls!
+        let down = controls.actionPopUp(for: .down)
+
+        XCTAssertEqual(title(of: controls.actionPopUp(for: .up)), "Mission Control follows the hand")
+        XCTAssertEqual(title(of: down), "Apps follow the hand")
+        XCTAssertNil(down.menu?.items.first?.image, "a sentence has no picture")
+        XCTAssertNil(down.menu?.items.first?.attributedTitle)
+        XCTAssertTrue(down.isEnabled, "still a choice")
+        XCTAssertNil(down.toolTip)
+        XCTAssertEqual(down.accessibilityLabel(), "Down")
+        XCTAssertEqual(down.shownActionItem?.item.title, SystemShortcut.appExpose.localizedName, "the tick is on the action")
+        XCTAssertEqual(Options.shared.gesture.downAction, SystemShortcut.appExpose.identifier)
+        XCTAssertEqual(
+            controller.followRow.explanation,
+            "\(InterfaceList.joined(["Mission Control", "Apps", "Show Desktop"])) open with your hand, like on a trackpad. Other actions run once."
+        )
+
+        // The switch off, and on again.
+        toggle(controls.followToggle, on: false)
         XCTAssertEqual(title(of: down), SystemShortcut.appExpose.localizedName)
         XCTAssertNotNil(down.menu?.items.first?.image)
         toggle(controls.followToggle, on: true)
         XCTAssertEqual(title(of: down), "Apps follow the hand")
+
+        // Before macOS 27 that build's Apps runs once, and there the macOS is the reason.
+        follow = follows(macOS: 26, apps: true)
+        controller.reload()
+        XCTAssertEqual(title(of: down), SystemShortcut.appExpose.localizedName)
+        XCTAssertEqual(down.toolTip, "Runs once. It does not follow the hand on this version of macOS.")
+        XCTAssertEqual(down.accessibilityHelp(), down.toolTip)
+
+        // "One action per hold": the action as it is.
+        follow = follows(apps: true)
         controls.modeControl.selectedSegment = 0
         send(controls.modeControl)
-        XCTAssertEqual(title(of: up), SystemShortcut.showDesktop.localizedName)
         XCTAssertEqual(title(of: down), SystemShortcut.appExpose.localizedName)
+        XCTAssertNil(down.toolTip)
     }
 
     /// The sentence is the pull-down's own: it is still there after the menu opened and
@@ -847,13 +937,26 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertNil(down.toolTip)
         XCTAssertNil(down.accessibilityHelp())
         XCTAssertEqual(title(of: up), SystemShortcut.missionControl.localizedName)
+
+        // A released build, the default actions (Down = Apps): no macOS makes Apps follow
+        // there, so the row is the action as ever and blames nothing.
+        Options.shared.gesture = followSettings()
+        for macOS in [27, 26, 15, 14] {
+            follow = follows(macOS: macOS)
+            controller.reload()
+            XCTAssertEqual(title(of: up), "Mission Control follows the hand", "macOS \(macOS)")
+            XCTAssertEqual(title(of: down), SystemShortcut.appExpose.localizedName, "macOS \(macOS)")
+            XCTAssertNotNil(down.menu?.items.first?.image, "macOS \(macOS)")
+            XCTAssertNil(down.face, "macOS \(macOS)")
+            XCTAssertNil(down.toolTip, "macOS \(macOS)")
+            XCTAssertNil(down.accessibilityHelp(), "macOS \(macOS)")
+        }
     }
 
     /// The Dock's own switches were read again and changed (System Settings › Trackpad ›
     /// More Gestures): the pane on screen says at once what opens with the hand now.
     func testThePaneFollowsTheDocksSwitchesWhenTheyChange() {
         Options.shared.gesture = followSettings()
-        follow = follows(apps: false)
         let controller = makeController()
         let up = controller.controls.actionPopUp(for: .up)
         XCTAssertEqual(title(of: up), "Mission Control follows the hand")
@@ -861,7 +964,7 @@ final class PreferencesGesturesTests: XCTestCase {
 
         var switches = DockGestureSwitches.allOn
         switches.missionControl = false
-        follow = follows(apps: false, switches: switches)
+        follow = follows(switches: switches)
         NotificationCenter.default.post(name: DockGestureSwitches.didChangeNotification, object: nil)
 
         XCTAssertEqual(title(of: up), SystemShortcut.missionControl.localizedName)
@@ -874,7 +977,7 @@ final class PreferencesGesturesTests: XCTestCase {
     func testThePaneKeepsItsHeightWhateverTheModeTheSwitchAndTheDockSay() {
         var switches = DockGestureSwitches.allOn
         switches.missionControl = false
-        let macs = [follows(), follows(apps: false), follows(macOS: 26), follows(macOS: 15, switches: switches), follows(canPostEvents: false)]
+        let macs = [follows(), follows(apps: true), follows(macOS: 26), follows(macOS: 15, switches: switches), follows(canPostEvents: false)]
         var heights: [String: CGFloat] = [:]
         for (index, mac) in macs.enumerated() {
             follow = mac
@@ -919,7 +1022,10 @@ final class PreferencesGesturesTests: XCTestCase {
         }
         XCTAssertGreaterThanOrEqual(lines.count, 9)
         XCTAssertTrue(lines.contains("Only used in “Follow the hand”."))
-        XCTAssertTrue(lines.contains("Nothing can open with your hand on this Mac right now. Every action runs once."))
+        let none = "Nothing can open with your hand on this Mac right now."
+        XCTAssertTrue(lines.contains(none))
+        XCTAssertFalse(lines.contains { $0.contains("Every action runs once") }, "not true where Scrollio may post nothing")
+        XCTAssertLessThan(height(none), twoLines - 0.5, "one line")
         XCTAssertTrue(lines.contains { $0.hasPrefix(InterfaceList.joined(["Mission Control", "Launchpad", "Show Desktop"])) })
         XCTAssertTrue(lines.contains { $0.hasPrefix(InterfaceList.joined(["Mission Control", "Apps", "Show Desktop"])) })
         for line in lines {
@@ -927,6 +1033,22 @@ final class PreferencesGesturesTests: XCTestCase {
         }
         XCTAssertEqual(Set(row.reservedExplanations), Set(MouseGestureFollowPresentation.hints(majorVersion: 27)), "the Mac the test describes")
         XCTAssertGreaterThanOrEqual(row.explanationLabel.frame.height, twoLines - 0.5, "room for two lines, also for one")
+
+        // The row itself shows that line where macOS lets Scrollio post no events, and
+        // where every gesture of the Dock is off, in "Follow the hand"; the row keeps its room.
+        let room = row.explanationLabel.frame.height
+        controller.controls.modeControl.selectedSegment = 1
+        send(controller.controls.modeControl)
+        XCTAssertNotEqual(row.explanation, none)
+        follow = follows(canPostEvents: false)
+        controller.reload()
+        XCTAssertEqual(row.explanation, none)
+        XCTAssertEqual(controller.controls.followToggle.accessibilityHelp(), none, "VoiceOver gets the line")
+        follow = follows(switches: DockGestureSwitches(missionControl: false, showDesktop: false, launchpad: false))
+        controller.reload()
+        XCTAssertEqual(row.explanation, none)
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(row.explanationLabel.frame.height, room, accuracy: 0.5)
         // The switch's title is whole.
         XCTAssertGreaterThanOrEqual(row.titleLabel.frame.width + 0.5, row.titleLabel.intrinsicContentSize.width)
     }
@@ -1548,6 +1670,59 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertNil(controller.hoveredSlot)
         XCTAssertNil(controller.focusedSlot)
         XCTAssertNil(preview.scene.focus)
+    }
+
+    /// The picture goes by what the rows say: a row that follows the hand is played as a
+    /// hold that opens its view with the hand, and the moment the row runs once instead
+    /// (the Dock's own switch for the gesture went off, the switch of the pane is turned
+    /// off) the picture is the action run once.
+    func testThePictureChangesWithWhatTheRowsSayFollows() {
+        Options.shared.gesture = followSettings()
+        let controller = makeController()
+        let controls = controller.controls!
+        let preview = controller.previewView!
+        let up = controls.actionPopUp(for: .up)
+
+        controller.slotHoverChanged(.up, inside: true)
+        XCTAssertEqual(title(of: up), "Mission Control follows the hand")
+        XCTAssertEqual(preview.loop.legs, [.follow(.up, opening: .missionControl)])
+        XCTAssertEqual(preview.scene.availability, controls.availability)
+
+        // The Dock's own switch for Mission Control goes off (System Settings).
+        var switches = DockGestureSwitches.allOn
+        switches.missionControl = false
+        follow = follows(switches: switches)
+        NotificationCenter.default.post(name: DockGestureSwitches.didChangeNotification, object: nil)
+        XCTAssertEqual(title(of: up), SystemShortcut.missionControl.localizedName)
+        XCTAssertEqual(preview.loop.legs, [.move(.up, effect: .missionControl)], "the row runs once, and so does the picture")
+        XCTAssertEqual(preview.loopTime, 0, "the demo starts again")
+
+        // And on again; then the pane's own switch off.
+        follow = follows()
+        NotificationCenter.default.post(name: DockGestureSwitches.didChangeNotification, object: nil)
+        XCTAssertEqual(preview.loop.legs, [.follow(.up, opening: .missionControl)])
+        toggle(controls.followToggle, on: false)
+        XCTAssertEqual(preview.loop.legs, [.move(.up, effect: .missionControl)])
+        toggle(controls.followToggle, on: true)
+        XCTAssertEqual(preview.loop.legs, [.follow(.up, opening: .missionControl)])
+
+        // Down is Apps: run once in a release, as its row says; with the hand only in the
+        // owner's own build.
+        controller.slotHoverChanged(.down, inside: true)
+        controller.slotHoverChanged(.up, inside: false)
+        XCTAssertEqual(title(of: controls.actionPopUp(for: .down)), SystemShortcut.appExpose.localizedName)
+        XCTAssertEqual(preview.loop.legs, [.move(.down, effect: .appGrid)])
+        follow = follows(apps: true)
+        controller.reload()
+        XCTAssertEqual(title(of: controls.actionPopUp(for: .down)), "Apps follow the hand")
+        XCTAssertEqual(preview.loop.legs, [.follow(.down, opening: .appGrid)])
+
+        // Nothing pointed at: the round shows what follows, after left and right.
+        controller.slotHoverChanged(.down, inside: false)
+        XCTAssertEqual(preview.loop.legs.map(\.direction), [.left, .right, .up, .down])
+        follow = follows()
+        controller.reload()
+        XCTAssertEqual(preview.loop.legs.map(\.direction), [.left, .right, .up], "Apps runs once: not in the round")
     }
 
     func testDirectionRowsReportThePointerAndThePopUpsTheFocus() throws {
