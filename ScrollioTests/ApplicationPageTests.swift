@@ -2209,7 +2209,8 @@ final class ApplicationPageTests: XCTestCase {
         general.actionsFollowHand = true
         Options.shared.gesture = general
         calculator.setUsesGeneralGestures(false, general: general)
-        var mac = PreferencesGesturesTests.follows(apps: false)
+        // (A released build on macOS 27, as the pane's tests describe their Mac.)
+        var mac = PreferencesGesturesTests.follows()
         let (pane, part) = try gesturesPart(interactiveAvailable: true, follow: { mac })
         let controls = try XCTUnwrap(part.controls)
         let row = try XCTUnwrap(part.followRow)
@@ -2236,12 +2237,12 @@ final class ApplicationPageTests: XCTestCase {
         // The Dock's own switches changed: the part on the page follows.
         var switches = DockGestureSwitches.allOn
         switches.missionControl = false
-        mac = PreferencesGesturesTests.follows(apps: false, switches: switches)
+        mac = PreferencesGesturesTests.follows(switches: switches)
         NotificationCenter.default.post(name: DockGestureSwitches.didChangeNotification, object: nil)
         XCTAssertEqual(title(up), SystemShortcut.missionControl.localizedName)
         XCTAssertEqual(up.toolTip, "Runs once. Its trackpad gesture is off in System Settings.")
         XCTAssertEqual(row.explanation, "Show Desktop opens with your hand, like on a trackpad. Other actions run once.")
-        mac = PreferencesGesturesTests.follows(apps: false)
+        mac = PreferencesGesturesTests.follows()
         NotificationCenter.default.post(name: DockGestureSwitches.didChangeNotification, object: nil)
         XCTAssertEqual(title(up), "Mission Control follows the hand")
 
