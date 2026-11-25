@@ -1099,6 +1099,36 @@ final class DockFollowHoldTests: XCTestCase {
         )
     }
 
+    /// A flick: a hold that opens a view, let go as expected to open while the view has
+    /// moved less than a fifth of the way. A hold that leaves Mission Control is never one.
+    func testAFlickIsAHoldThatOpensAViewAndBarelyMovedIt() {
+        var up = motion()
+        XCTAssertTrue(up.isFlickIfReleasedToSwitch, "nothing told yet")
+        up.told(progress: 0.19)
+        XCTAssertTrue(up.isFlickIfReleasedToSwitch)
+        up.told(progress: 0.2)
+        XCTAssertFalse(up.isFlickIfReleasedToSwitch, "from the floor on macOS decides")
+        up.told(progress: 0.05)
+        XCTAssertTrue(up.isFlickIfReleasedToSwitch, "where it was let go counts")
+
+        var apps = motion(.down, .opens(.apps), .pinch, sign: -1)
+        apps.told(progress: -0.1)
+        XCTAssertTrue(apps.isFlickIfReleasedToSwitch)
+        var leave = motion(.down, .leavesMissionControl, .vertical, sign: -1)
+        leave.told(progress: -0.1)
+        XCTAssertFalse(leave.isFlickIfReleasedToSwitch)
+
+        // Its line, and it leaves nothing believed (its toggle is never believed either).
+        up.told(progress: 0.15)
+        XCTAssertEqual(
+            up.line(.flick(velocity: 9), appsOwn: true),
+            "Gestures: up followed the hand: missionControl, vertical +, began after 48 ms, 4 updates, "
+                + "furthest 0.20, released at 0.15, 9.0/s: cancelled, a flick: ran once, the app in front has its own gestures"
+        )
+        XCTAssertTrue(apps.line(.flick(velocity: -2.5)).hasSuffix(", released at 0.10, 2.5/s: cancelled, a flick: ran once"))
+        XCTAssertEqual(up.beliefChange(after: .flick(velocity: 9)), DockFollowedMotion.BeliefChange.none)
+    }
+
     /// A motion of negative sign reads the hand's way out as positive too.
     func testTheLineCountsTheHandsWayOut() {
         var apps = motion(.down, .opens(.apps), .pinch, sign: -1, beganAfter: 0.0554)

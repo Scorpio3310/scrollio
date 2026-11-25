@@ -843,7 +843,8 @@ class InputProcessor: ModifierFlagsProviding {
     // MARK: - Haptic cues
     //
     // - lockIn (light): a discrete action fires, or a "follow the hand" swipe begins
-    //   (sideways, or up or down towards a view of the Dock).
+    //   (sideways, or up or down towards a view of the Dock; a flick that then runs the
+    //   direction's action once plays no second one).
     // - commit (stronger): a swipe is released towards a switch: the next Space, or a view
     //   that is expected to open or to be left (`InteractiveGestureSession.isExpectedToSwitch`).
     // Only for buttons that arrive over HID++ and while "haptic feedback" is on; the mouse
@@ -1166,8 +1167,23 @@ class InputProcessor: ModifierFlagsProviding {
                     finishFollowedMotion(of: session, .cancelled(.takenBack))
                     continue
                 }
-                DockSwipeSynthesizer.shared.end(velocity: velocity)
                 let expected = session.interactive?.isExpectedToSwitch(releaseVelocity: velocity) == true
+                if expected, let motion = session.followed, motion.isFlickIfReleasedToSwitch {
+                    // A quick flick: the view has barely moved and only the hand's speed
+                    // says "open". Whether the Dock would finish that is its own secret,
+                    // and before the direction could follow the hand such a flick opened
+                    // the view. So the motion goes back and the direction's action runs
+                    // once, through the usual path (a later turn; it settles the swipe and
+                    // writes its line). No second pulse: the light one played at the begin.
+                    DockSwipeSynthesizer.shared.cancel()
+                    finishFollowedMotion(of: session, .flick(velocity: velocity))
+                    executeMouseGestureAction(
+                        session.settings.action(for: motion.direction), part: .direction(motion.direction),
+                        appsOwn: session.isAppsOwn
+                    )
+                    continue
+                }
+                DockSwipeSynthesizer.shared.end(velocity: velocity)
                 if expected {
                     playGestureHaptic(.commit, for: session)
                 }

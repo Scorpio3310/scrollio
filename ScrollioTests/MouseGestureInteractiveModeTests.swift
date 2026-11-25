@@ -918,6 +918,132 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(instantVoices, [])
     }
 
+    // MARK: A quick flick opens the view at once
+
+    /// A quick flick used to open the view (the action ran at 40 pt). Followed with the
+    /// hand it is a motion of a few hundredths of the way, let go fast, and whether the
+    /// Dock finishes that is its own secret. So a hold that opens a view and is let go
+    /// as expected to open while the view has moved less than a fifth of the way takes
+    /// its motion back and runs the direction's action once, in one go.
+    func testAQuickFlickOpensTheViewAtOnce() {
+        configureFollowing()
+
+        // 60 pt, all of it in the turn of the release: 0.15 of the way at nine views a second.
+        pressGestureButton()
+        clock += 0.05
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: -60)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        XCTAssertEqual(dockVoices, [], "nothing is posted inside the callbacks")
+        drainMainQueue()
+        XCTAssertEqual(dockVoices, [
+            .swipe(.begin(.vertical)), .swipe(.update(0.15)), .swipe(.cancel), .settle, .toggle(.missionControl),
+        ])
+        XCTAssertEqual(gestureLog, [
+            "Gestures: up followed the hand: missionControl, vertical +, began after 50 ms, 1 update, "
+                + "furthest 0.15, released at 0.15, 9.0/s: cancelled, a flick: ran once",
+            "Gestures: up ran missionControl",
+        ])
+        XCTAssertEqual(hapticCues, [.lockIn], "one light pulse, as when the action ran at 40 pt")
+        XCTAssertNil(InputProcessor.shared.believedDockView, "a toggle is never believed")
+        XCTAssertFalse(DockSwipeSynthesizer.shared.isActive)
+
+        // The same flick again closes it the same way (the toggle), and so on.
+        dockVoices = []
+        gestureLog = []
+        pressGestureButton()
+        moveHand(0, -45)
+        moveHand(0, -30)
+        releaseGestureButton(after: 0.01)
+        XCTAssertEqual(dockVoices.suffix(3), [.swipe(.cancel), .settle, .toggle(.missionControl)])
+        XCTAssertEqual(gestureLog.count, 2)
+        XCTAssertTrue(gestureLog.first?.hasSuffix("released at 0.19, 7.0/s: cancelled, a flick: ran once") == true, "\(gestureLog)")
+    }
+
+    /// Only a flick: a slow small move that is let go goes back and runs nothing, and from
+    /// a fifth of the way on macOS decides, however fast the hand was.
+    func testASlowSmallMoveGoesBackAndAFlickFromAFifthOnIsTheDocks() {
+        configureFollowing()
+
+        // 0.15 of the way, at rest.
+        hold([(0, -60)])
+        assertSwipeCalls([.begin(.vertical), .update(0.15), .end(0)])
+        XCTAssertEqual(instantVoices, [], "nothing runs")
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+
+        // 0.15 of the way, heading back: cancelled, and still nothing runs.
+        swipeCalls = []
+        pressGestureButton()
+        moveHand(0, -100)
+        clock += 0.2
+        moveHand(0, 40)
+        releaseGestureButton(after: 0.01)
+        assertSwipeCalls([.begin(.vertical), .update(0.25), .update(0.15), .cancel])
+        XCTAssertEqual(instantVoices, [])
+
+        // Exactly a fifth, fast: the Dock's.
+        swipeCalls = []
+        gestureLog = []
+        pressGestureButton()
+        clock += 0.05
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: -80)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        drainMainQueue()
+        assertSwipeCalls([.begin(.vertical), .update(0.2), .end(12)])
+        XCTAssertEqual(instantVoices, [])
+        XCTAssertEqual(gestureLog.count, 1)
+        XCTAssertTrue(gestureLog.first?.hasSuffix("released at 0.20, 12.0/s: ended, expected to open") == true, "\(gestureLog)")
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+    }
+
+    /// The pinch's two views flick the same way, each by its own action; an app's own set
+    /// says so in both lines.
+    func testAFlickRunsTheActionOfItsOwnDirection() {
+        configureFollowing(up: "showDesktop", down: "appExpose", on: mac(apps: true))
+
+        hold([(0, -60)], rest: 0.01)
+        XCTAssertEqual(dockVoices, [
+            .swipe(.begin(.pinch)), .swipe(.update(0.15)), .swipe(.cancel), .settle, .toggle(.showDesktop),
+        ])
+        XCTAssertEqual(gestureLog.last, "Gestures: up ran showDesktop")
+
+        // Apps, where a build lets it follow: the other end of the pinch, then its key.
+        swipeCalls = []
+        dockVoices = []
+        gestureLog = []
+        hold([(0, 45)], rest: 0.01)
+        assertSwipeCalls([.begin(.pinch), .update(-0.15), .cancel])
+        XCTAssertEqual(instantVoices, [.settle, .key(resolvedShortcut(SystemShortcut.appExpose).code)])
+        XCTAssertEqual(dockVoices.last, .key(resolvedShortcut(SystemShortcut.appExpose).code), "the key after the motion went back")
+        XCTAssertEqual(gestureLog, [
+            "Gestures: down followed the hand: appExpose, pinch -, began after 17 ms, 1 update, "
+                + "furthest 0.15, released at 0.15, 9.0/s: cancelled, a flick: ran once",
+            "Gestures: down ran appExpose",
+        ])
+    }
+
+    /// A hold that leaves Mission Control never runs a toggle, however short and fast: its
+    /// direction's own action is another view's (Apps), and a toggle of Mission Control
+    /// would open it again where it had been left another way.
+    func testAFlickThatLeavesMissionControlNeverRunsAToggle() {
+        configureFollowing()
+        openMissionControlWithTheHand()
+
+        pressGestureButton()
+        clock += 0.05
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: 60)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        drainMainQueue()
+
+        assertSwipeCalls([.begin(.vertical), .update(-0.15), .end(-9)])
+        XCTAssertEqual(instantVoices, [])
+        XCTAssertEqual(gestureLog, [
+            "Gestures: down followed the hand: leaving missionControl, vertical -, began after 50 ms, 1 update, "
+                + "furthest 0.15, released at 0.15, 9.0/s: ended, expected to close",
+        ])
+        XCTAssertEqual(hapticCues, [.lockIn, .commit])
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+    }
+
     func testEachViewDrivesItsOwnMotionAndSign() {
         // Show Desktop: the spread, the positive end of the pinch.
         configureFollowing(up: "showDesktop", down: "missionControl")

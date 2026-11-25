@@ -177,6 +177,9 @@ struct DockFollowedMotion: Equatable {
         case ended(velocity: Double, expected: Bool)
         /// The button came up at the start, or with the hand heading back.
         case cancelledAtRelease
+        /// A flick (`isFlickIfReleasedToSwitch`): the motion was taken back and the
+        /// direction's action ran once instead. `velocity` as in `ended`.
+        case flick(velocity: Double)
         /// Something else took the motion back.
         case cancelled(Interruption)
     }
@@ -247,6 +250,16 @@ struct DockFollowedMotion: Equatable {
         return fullProgress > 0 && last / fullProgress >= DockFollowTuning.flickFloor
     }
 
+    /// Whether a release that is expected to switch is a flick: the hold opens a view and
+    /// the view has moved less than `DockFollowTuning.flickFloor` of the way, so only the
+    /// hand's speed says "open". The motion is then taken back and the direction's action
+    /// runs once, as it did before the direction could follow the hand. A hold that leaves
+    /// Mission Control is never one: its direction's own action is another view's.
+    var isFlickIfReleasedToSwitch: Bool {
+        guard case .opens = part else { return false }
+        return !hasMovedTheView
+    }
+
     // MARK: What it does to the belief
 
     /// What the end of a motion does to the view Scrollio believes it put up (`DockBelief`).
@@ -267,7 +280,7 @@ struct DockFollowedMotion: Equatable {
     ///   where it started (nothing was left then): whatever the Dock made of it, and
     ///   whatever ended it. Had Mission Control not been showing after all, the next move
     ///   is the direction's own action again, instead of nothing for up to a minute.
-    /// - Any other end changes nothing.
+    /// - Any other end changes nothing (a flick's own toggle ends the belief by itself).
     func beliefChange(after ending: Ending) -> BeliefChange {
         switch part {
         case .opens(let target):
@@ -299,16 +312,22 @@ struct DockFollowedMotion: Equatable {
             + "\(part.logName), \(motionName) \(sign < 0 ? "-" : "+"), "
             + "began after \(milliseconds) ms, "
             + "\(updates) update\(updates == 1 ? "" : "s"), furthest \(share(furthest)), "
-        switch ending {
-        case .ended(let velocity, let expected):
+        /// The hand's speed outwards, to the one decimal shown; a hand at rest reads 0.0,
+        /// never -0.0.
+        func speed(_ velocity: Double) -> String {
             var outward = fullProgress > 0 ? velocity * (sign < 0 ? -1 : 1) / fullProgress : 0
-            // To the one decimal shown; a hand at rest reads 0.0, never -0.0.
             outward = (outward * 10).rounded() / 10
             if outward == 0 { outward = 0 }
-            text += "released at \(share(last)), \(String(format: "%.1f", outward))/s: ended"
+            return String(format: "%.1f", outward)
+        }
+        switch ending {
+        case .ended(let velocity, let expected):
+            text += "released at \(share(last)), \(speed(velocity))/s: ended"
             if expected {
                 text += part == .leavesMissionControl ? ", expected to close" : ", expected to open"
             }
+        case .flick(let velocity):
+            text += "released at \(share(last)), \(speed(velocity))/s: cancelled, a flick: ran once"
         case .cancelledAtRelease:
             text += "released at \(share(last)): cancelled"
         case .cancelled(let interruption):
