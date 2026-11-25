@@ -644,9 +644,15 @@ final class PreferencesGesturesTests: XCTestCase {
             )
         }
         // Nothing can: the gestures are off, or macOS does not let Scrollio post events.
-        let none = "Nothing can open with your hand on this Mac right now. Every action runs once."
-        XCTAssertEqual(hint(follows(switches: DockGestureSwitches(missionControl: false, showDesktop: false, launchpad: false))), none)
-        XCTAssertEqual(hint(follows(canPostEvents: false)), none)
+        // The line says only that: with the gestures off Left and Right still follow the
+        // hand, and where Scrollio may post nothing an action that needs a key does not run.
+        let none = "Nothing can open with your hand on this Mac right now."
+        let allOff = DockGestureSwitches(missionControl: false, showDesktop: false, launchpad: false)
+        for apps in [false, true] {
+            XCTAssertEqual(hint(follows(apps: apps, switches: allOff)), none, "apps \(apps)")
+            XCTAssertEqual(hint(follows(apps: apps, canPostEvents: false)), none, "apps \(apps)")
+        }
+        XCTAssertEqual(hint(follows(macOS: 15, canPostEvents: false)), none)
 
         // What is stored changes nothing of it: the switch off, other actions.
         var off = followSettings(up: SystemShortcut.copy.identifier)
@@ -1016,7 +1022,10 @@ final class PreferencesGesturesTests: XCTestCase {
         }
         XCTAssertGreaterThanOrEqual(lines.count, 9)
         XCTAssertTrue(lines.contains("Only used in “Follow the hand”."))
-        XCTAssertTrue(lines.contains("Nothing can open with your hand on this Mac right now. Every action runs once."))
+        let none = "Nothing can open with your hand on this Mac right now."
+        XCTAssertTrue(lines.contains(none))
+        XCTAssertFalse(lines.contains { $0.contains("Every action runs once") }, "not true where Scrollio may post nothing")
+        XCTAssertLessThan(height(none), twoLines - 0.5, "one line")
         XCTAssertTrue(lines.contains { $0.hasPrefix(InterfaceList.joined(["Mission Control", "Launchpad", "Show Desktop"])) })
         XCTAssertTrue(lines.contains { $0.hasPrefix(InterfaceList.joined(["Mission Control", "Apps", "Show Desktop"])) })
         for line in lines {
@@ -1024,6 +1033,22 @@ final class PreferencesGesturesTests: XCTestCase {
         }
         XCTAssertEqual(Set(row.reservedExplanations), Set(MouseGestureFollowPresentation.hints(majorVersion: 27)), "the Mac the test describes")
         XCTAssertGreaterThanOrEqual(row.explanationLabel.frame.height, twoLines - 0.5, "room for two lines, also for one")
+
+        // The row itself shows that line where macOS lets Scrollio post no events, and
+        // where every gesture of the Dock is off, in "Follow the hand"; the row keeps its room.
+        let room = row.explanationLabel.frame.height
+        controller.controls.modeControl.selectedSegment = 1
+        send(controller.controls.modeControl)
+        XCTAssertNotEqual(row.explanation, none)
+        follow = follows(canPostEvents: false)
+        controller.reload()
+        XCTAssertEqual(row.explanation, none)
+        XCTAssertEqual(controller.controls.followToggle.accessibilityHelp(), none, "VoiceOver gets the line")
+        follow = follows(switches: DockGestureSwitches(missionControl: false, showDesktop: false, launchpad: false))
+        controller.reload()
+        XCTAssertEqual(row.explanation, none)
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(row.explanationLabel.frame.height, room, accuracy: 0.5)
         // The switch's title is whole.
         XCTAssertGreaterThanOrEqual(row.titleLabel.frame.width + 0.5, row.titleLabel.intrinsicContentSize.width)
     }
