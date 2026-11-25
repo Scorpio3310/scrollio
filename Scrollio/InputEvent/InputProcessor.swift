@@ -24,6 +24,12 @@ class InputProcessor: ModifierFlagsProviding {
     static let shared = InputProcessor()
     init() {
         observeSurroundings()
+        // Both swipes of the desktops (a hold's and the thumb wheel's) end through the one
+        // synthesizer: when macOS reports the change of the desktop late, it is known for
+        // Scrollio's own (`surroundingsChanged`).
+        DockSwipeSynthesizer.shared.desktopsSwipeDidEnd = { [weak self] in
+            self?.desktopsSwipeEnded()
+        }
     }
 
     private static let scrollActionTapReplayMovementTolerance: CGFloat = 8.0
@@ -265,6 +271,9 @@ class InputProcessor: ModifierFlagsProviding {
     private var followAvailability: () -> DockFollowAvailability = { .live }
     /// The view of the Dock Scrollio believes it put up itself (`DockBelief`). Main thread.
     private var dockBelief = DockBelief()
+    /// When Scrollio's own swipe of the desktops last ended (a hold's or the thumb wheel's),
+    /// on the gestures' clock: macOS tells of the change of the desktop after it, late.
+    private var desktopsSwipeEndedAt = -TimeInterval.infinity
     /// The app in front when a gesture button goes down: whose gestures the hold runs
     /// (`MouseGestureChoice`). Read once per hold, inside the event callback: what
     /// `NSWorkspace` and the running app already hold, as for the ring's press, and then
@@ -1291,7 +1300,11 @@ class InputProcessor: ModifierFlagsProviding {
     ///   Scrollio put up is most likely gone, so nothing is believed to show any more.
     /// - The desktop in use changed: a motion towards a view is taken back too (the Dock
     ///   has just rebuilt what the motion was moving). The desktops' own swipe goes on: its
-    ///   own switch is such a change.
+    ///   own switch is such a change. And macOS tells of that switch late, up to about
+    ///   half a second after the swipe ended: a change that comes within
+    ///   `DockFollowTuning.lateDesktopChange` of the end of Scrollio's own swipe of the
+    ///   desktops (a hold's or the thumb wheel's) is that swipe's, and changes nothing here.
+    ///   Otherwise a flick sideways would take back the view the next hold is opening.
     /// - The screens changed, or the displays went to sleep: any swipe that runs is taken
     ///   back. (Sleep, another user, Pause and quit stop the cores, which does the same:
     ///   `clearActiveBindings`.)
@@ -1301,6 +1314,7 @@ class InputProcessor: ModifierFlagsProviding {
         case .anotherApplicationCameToFront:
             dockBelief.drop()
         case .activeSpaceChanged:
+            guard !isLateWordOfOwnDesktopsSwipe else { return }
             dockBelief.drop()
             takeBackSwipe(onlyTowardsAView: true, because: .spaceChanged)
         case .screenParametersChanged:
@@ -1308,6 +1322,18 @@ class InputProcessor: ModifierFlagsProviding {
         case .displaysWentToSleep:
             takeBackSwipe(onlyTowardsAView: false, because: .displaysSlept)
         }
+    }
+
+    /// A swipe of the desktops was let go to macOS (`DockSwipeSynthesizer.desktopsSwipeDidEnd`).
+    private func desktopsSwipeEnded() {
+        desktopsSwipeEndedAt = interactiveEnvironment.now()
+    }
+
+    /// Scrollio's own swipe of the desktops ended so short a while ago that a change of the
+    /// desktop told now is taken for its own.
+    private var isLateWordOfOwnDesktopsSwipe: Bool {
+        let since = interactiveEnvironment.now() - desktopsSwipeEndedAt
+        return since >= 0 && since < DockFollowTuning.lateDesktopChange
     }
 
     private var surroundingsObservers: [NSObjectProtocol] = []
@@ -1360,6 +1386,7 @@ class InputProcessor: ModifierFlagsProviding {
     func setTestingInteractiveGestureEnvironment(_ environment: InteractiveGestureEnvironment) {
         interactiveEnvironment = environment
         lastInteractiveFlushTime = -TimeInterval.infinity
+        desktopsSwipeEndedAt = -TimeInterval.infinity
     }
 
     func clearTestingInteractiveGestureEnvironment() {

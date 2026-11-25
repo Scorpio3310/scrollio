@@ -107,6 +107,12 @@ enum DockFollowTuning {
     /// pinch. (For the two new motions only.)
     static let maximumTravelsPerSecond: Double = 12
 
+    /// macOS tells that the desktop in use changed up to about half a second after a swipe
+    /// of the desktops ended. For this long after the end of Scrollio's own swipe of the
+    /// desktops (a hold's or the thumb wheel's), such a change is taken for that swipe's:
+    /// it takes back no view that is opening and leaves the belief alone.
+    static let lateDesktopChange: TimeInterval = 1
+
     /// The share of the travel a target takes.
     static func travelFactor(for target: DockFollowTarget) -> CGFloat {
         switch target {

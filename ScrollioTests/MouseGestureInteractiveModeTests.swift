@@ -1554,6 +1554,55 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(gestureLog, [], "the desktops write no line")
     }
 
+    /// macOS tells of a change of the desktop up to about half a second after a swipe of
+    /// the desktops ended. Such late word of Scrollio's own swipe (a hold's or the thumb
+    /// wheel's) takes back nothing and leaves the belief alone; a second after the swipe
+    /// ended, a change is somebody else's again.
+    func testLateWordOfScrolliosOwnSwipeOfTheDesktopsTakesNothingBack() {
+        configureFollowing()
+
+        // A flick left switches desktops, and Up is held right after it.
+        hold([(-100, 0)])
+        swipeCalls = []
+        pressGestureButton()
+        moveHand(0, -240)
+        clock += 0.4
+        InputProcessor.shared.surroundingsChanged(.activeSpaceChanged)
+        assertSwipeCalls([.begin(.vertical), .update(0.6)])
+        moveHand(0, -40)
+        releaseGestureButton()
+        assertSwipeCalls([.begin(.vertical), .update(0.6), .update(0.7), .end(0)])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+        XCTAssertEqual(gestureLog.count, 1)
+        XCTAssertTrue(gestureLog.first?.hasSuffix("released at 0.70, 0.0/s: ended, expected to open") == true, "\(gestureLog)")
+
+        // The thumb wheel slides the desktops inside Mission Control: the word of that
+        // switch comes late too, and Mission Control is still believed to show.
+        DockSwipeSynthesizer.shared.begin(axis: .horizontal)
+        DockSwipeSynthesizer.shared.update(progress: 0.8)
+        DockSwipeSynthesizer.shared.end(velocity: 0)
+        clock += 0.9
+        InputProcessor.shared.surroundingsChanged(.activeSpaceChanged)
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+
+        // More than a second after that swipe ended, a change is not its own any more.
+        clock += 0.2
+        InputProcessor.shared.surroundingsChanged(.activeSpaceChanged)
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+
+        // A swipe of the desktops that was taken back switched nothing: a change right
+        // after it still takes back the view that is opening.
+        swipeCalls = []
+        DockSwipeSynthesizer.shared.begin(axis: .horizontal)
+        DockSwipeSynthesizer.shared.cancel()
+        pressGestureButton()
+        moveHand(0, -240)
+        InputProcessor.shared.surroundingsChanged(.activeSpaceChanged)
+        assertSwipeCalls([.begin(.horizontal), .cancel, .begin(.vertical), .update(0.6), .cancel])
+        releaseGestureButton()
+        XCTAssertEqual(swipeCalls.count, 5)
+    }
+
     /// A motion whose button is up and whose last event still waits for the main queue is
     /// taken back as well, and the event that waited is not sent after it.
     func testAMotionThatWasLetGoIsStillTakenBackBeforeItsLastEventGoesOut() {

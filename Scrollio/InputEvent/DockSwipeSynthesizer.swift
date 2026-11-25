@@ -444,6 +444,12 @@ final class DockSwipeSynthesizer {
     /// cancels it (below), and its owner then sends nothing more.
     private(set) var swipeNumber = 0
 
+    /// Told when a swipe of the desktops was let go to macOS (`end`; not when one was
+    /// taken back): a hold's or the thumb wheel's. macOS then tells of the change of the
+    /// desktop up to about half a second later, and whoever hears that change must not
+    /// take it for someone else's (`InputProcessor.surroundingsChanged`). Main thread.
+    var desktopsSwipeDidEnd: (() -> Void)?
+
     /// False when the events cannot be built on this system. Callers then stay discrete.
     var isAvailable: Bool {
         return driver.isAvailable()
@@ -473,9 +479,13 @@ final class DockSwipeSynthesizer {
     /// Lets macOS complete or revert the swipe from its position and the release velocity.
     func end(velocity: Double) {
         guard isActive else { return }
+        let wasOfTheDesktops = runningAxis == .horizontal
         isActive = false
         runningAxis = nil
         driver.end(velocity)
+        if wasOfTheDesktops {
+            desktopsSwipeDidEnd?()
+        }
     }
 
     /// Returns to what the swipe started from (the Space it began on; the desktop, or the

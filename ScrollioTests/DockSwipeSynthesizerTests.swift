@@ -555,6 +555,40 @@ final class DockSwipeSynthesizerTests: XCTestCase {
         ])
     }
 
+    /// The end of a swipe of the desktops is told (macOS reports the change of the desktop
+    /// late, and the gestures must know it for their own): only an end, and only sideways.
+    func testTheEndOfASwipeOfTheDesktopsIsTold() {
+        // Its own synthesizer: under XCTest it has the driver that does nothing.
+        let synthesizer = DockSwipeSynthesizer()
+        var told = 0
+        synthesizer.desktopsSwipeDidEnd = { told += 1 }
+
+        synthesizer.begin(axis: .horizontal)
+        synthesizer.update(progress: 0.6)
+        XCTAssertEqual(told, 0)
+        synthesizer.end(velocity: 1)
+        XCTAssertEqual(told, 1)
+        synthesizer.end(velocity: 1)
+        XCTAssertEqual(told, 1, "nothing ran")
+
+        // Taken back: the desktop stays, no change follows.
+        synthesizer.begin(axis: .horizontal)
+        synthesizer.cancel()
+        synthesizer.begin(axis: .horizontal)
+        synthesizer.begin(axis: .horizontal)
+        synthesizer.settle()
+        XCTAssertEqual(told, 1)
+        synthesizer.end(velocity: 0)
+        XCTAssertEqual(told, 2)
+
+        // A motion towards a view is no swipe of the desktops.
+        for axis in [DockSwipeAxis.vertical, .pinch] {
+            synthesizer.begin(axis: axis)
+            synthesizer.end(velocity: 3)
+        }
+        XCTAssertEqual(told, 2)
+    }
+
     // MARK: - Settling before an instant toggle
 
     /// A driver that also records `settle`.
