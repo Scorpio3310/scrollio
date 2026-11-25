@@ -31,7 +31,8 @@ enum GesturePreviewEffect: Equatable {
     case none
     /// Mission Control: the windows shrink into an overview and the Spaces bar comes down.
     case missionControl
-    /// Launchpad (Apps on macOS 26): a grid of app icons over the desktop.
+    /// Launchpad, a grid of app icons over the desktop; from macOS 26 on Apps, a panel of
+    /// them over the windows (`GesturePreviewAppsLook`: the artwork draws this Mac's).
     case appGrid
     /// Show Desktop: the windows slide away to the edges of the screen and the desktop,
     /// with what lies on it, shows.

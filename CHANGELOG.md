@@ -43,6 +43,8 @@ open with your hand, like on a trackpad.
 
 - **A swipe between desktops** goes back when a display is connected or removed or the
   displays go to sleep, instead of staying half-way.
+- **The picture in Gestures** draws Apps as macOS 26 and later show it, a panel over the
+  windows. It drew Launchpad's grid there.
 
 ## 1.1.1
 

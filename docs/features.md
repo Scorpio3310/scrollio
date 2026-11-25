@@ -186,8 +186,9 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   macOS 27 and later. Everything else is as before: Apps (Launchpad) and every other
   action run once, Left and Right are the desktops, the click is the click. The preview
   shows a direction that follows as its view opening with the hand, and one that runs
-  once as its view in one go. An app's own gestures have the switch too, and the app in
-  front when you press decides.
+  once as its view in one go; it draws Apps as the Mac has it (a panel over the windows
+  on macOS 26 and later, Launchpad's grid before). An app's own gestures have the switch
+  too, and the app in front when you press decides.
 - A direction that could follow the hand runs its action once instead: where the view's
   trackpad gesture is switched off in System Settings › Trackpad › More Gestures (the
   Dock would ignore the motion; Scrollio reads those switches and never changes them);

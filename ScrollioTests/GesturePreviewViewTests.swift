@@ -9,8 +9,9 @@
 //  stop and under Reduce Motion, that the mouse and its arrow stay in their card, and what
 //  a half-open view draws (Show Desktop: what lies on the desktop waits until the windows
 //  have left, and a window that goes up does not show through the menu bar; Mission
-//  Control: the row of Spaces is whole by half open; the app grid: the windows are gone
-//  before it is whole). Nothing is shown on screen: windows are created but never ordered
+//  Control: the row of Spaces is whole by half open; the app grid: Launchpad's windows are
+//  gone before it is whole, and from macOS 26 on it is the panel of Apps over the windows,
+//  `GesturePreviewAppsLook`). Nothing is shown on screen: windows are created but never ordered
 //  in, and frames are asked for by loop time, not waited for. Nothing runs a real action.
 //
 //  With the render tests' switch set (`RenderShots`), `testContactSheets` also writes contact
@@ -29,11 +30,13 @@ final class GesturePreviewViewTests: XCTestCase {
     /// The width the preview has in the tab (520 pt pane, 20 pt margins).
     private let size = NSSize(width: 480, height: GesturePreviewView.preferredHeight)
 
+    /// `apps`: how the app grid is drawn (a value: the tests do not ask this Mac's version).
     private func makeView(
         reduceMotion: Bool = false, size: NSSize? = nil, mouse: MouseArtworkModel = .mxMaster4,
-        picture: TriggerPictureSource = .none
+        picture: TriggerPictureSource = .none, apps: GesturePreviewAppsLook = .panel
     ) -> GesturePreviewView {
         let view = GesturePreviewView(frame: NSRect(origin: .zero, size: size ?? self.size))
+        view.screenCard.appsLook = apps
         view.mouseSource = { mouse }
         view.reloadMouse()
         view.picture = picture
@@ -596,8 +599,10 @@ final class GesturePreviewViewTests: XCTestCase {
 
     /// The desktop card alone, showing the first desktop at rest with `change` made to its
     /// frame (how far a view is open), rendered off screen. Points are the card's own.
-    private func renderDesktop(dark: Bool, _ change: (inout Loop.Frame) -> Void) throws -> NSBitmapImageRep {
-        let view = makeView()
+    private func renderDesktop(
+        dark: Bool, apps: GesturePreviewAppsLook = .panel, _ change: (inout Loop.Frame) -> Void
+    ) throws -> NSBitmapImageRep {
+        let view = makeView(apps: apps)
         view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         view.scene = scene()
         var frame = view.loop.frame(at: 0)
@@ -729,8 +734,8 @@ final class GesturePreviewViewTests: XCTestCase {
         }
     }
 
-    /// The app grid half open reads as the grid arriving: the windows are gone when it is
-    /// three fifths open, so the two are never both half there.
+    /// Launchpad (before macOS 26) half open reads as the grid arriving: the windows are
+    /// gone when it is three fifths open, so the two are never both half there.
     func testTheWindowsAreGoneBeforeTheAppGridIsWhole() throws {
         // The left margin of the front window's page, where no icon of the grid comes.
         let page = (x: CGFloat(23), y: CGFloat(60))
@@ -741,12 +746,176 @@ final class GesturePreviewViewTests: XCTestCase {
             for grid in [0.6, 0.8] {
                 // What is there without a window: the same grid over a desktop whose windows
                 // are out of the way (the wallpaper under the grid's shade).
-                let bare = try colour(in: try renderDesktop(dark: dark) { $0.appGrid = grid; $0.showDesktop = 1 }, x: page.x, y: page.y)
+                let bare = try colour(
+                    in: try renderDesktop(dark: dark, apps: .launchpad) { $0.appGrid = grid; $0.showDesktop = 1 }, x: page.x, y: page.y
+                )
                 XCTAssertGreaterThan(bare.blueComponent, bare.redComponent + 0.1, "the wallpaper: \(message)")
-                let shown = try colour(in: try renderDesktop(dark: dark) { $0.appGrid = grid }, x: page.x, y: page.y)
+                let shown = try colour(in: try renderDesktop(dark: dark, apps: .launchpad) { $0.appGrid = grid }, x: page.x, y: page.y)
                 assertSameColour(shown, bare, accuracy: 0.01, "no window left at \(grid): \(message)")
             }
         }
+    }
+
+    // MARK: - Apps, as the Mac shows it
+
+    /// Launchpad's key opens Launchpad before macOS 26 and Apps from macOS 26 on, and the
+    /// picture draws the one this Mac has.
+    func testAppsIsDrawnAsThisMacShowsIt() {
+        XCTAssertEqual(GesturePreviewAppsLook(macOS: 14), .launchpad)
+        XCTAssertEqual(GesturePreviewAppsLook(macOS: 15), .launchpad)
+        XCTAssertEqual(GesturePreviewAppsLook(macOS: 26), .panel)
+        XCTAssertEqual(GesturePreviewAppsLook(macOS: 27), .panel)
+        let thisMac = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        XCTAssertEqual(GesturePreviewAppsLook.current, GesturePreviewAppsLook(macOS: thisMac))
+        XCTAssertEqual(GesturePreviewScreenCard().appsLook, .current, "a card not told otherwise")
+        // The name the rows give the action changes at the same version.
+        for version in [14, 15, 26, 27] {
+            let isApps = SystemShortcut.Shortcut.nameKey(of: "appExpose", onMacOS: version) == "appExposeApps"
+            XCTAssertEqual(GesturePreviewAppsLook(macOS: version) == .panel, isApps, "macOS \(version)")
+        }
+    }
+
+    /// Where the panel of Apps and its pieces are: between the menu bar and the Dock,
+    /// the search field at its top, the icons in rows under the field, all inside it, at
+    /// every width the card can have.
+    func testThePanelOfAppsFitsBetweenTheMenuBarAndTheDock() {
+        typealias Card = GesturePreviewScreenCard
+        for width in stride(from: CGFloat(200), through: 320, by: 2) {
+            let size = NSSize(width: width, height: GesturePreviewView.preferredHeight)
+            let panel = Card.appsPanelRect(in: size)
+            let message = "card \(width) wide"
+            XCTAssertEqual(panel.midX, size.width / 2, accuracy: 0.5, message)
+            XCTAssertGreaterThanOrEqual(panel.minY, Card.menuBarHeight + 8, message)
+            XCTAssertLessThanOrEqual(panel.maxY, size.height - 4 - Card.dockHeight - 8, message)
+            XCTAssertGreaterThanOrEqual(panel.minX, 24, "the windows show beside it: \(message)")
+            let field = Card.appsSearchFieldRect(in: panel)
+            XCTAssertTrue(panel.insetBy(dx: 5, dy: 5).contains(field), message)
+            let icons = Card.appsIconRects(in: panel)
+            XCTAssertEqual(icons.count, Card.appsIconColumns * Card.appsIconRows, message)
+            for (index, icon) in icons.enumerated() {
+                XCTAssertTrue(panel.insetBy(dx: 6, dy: 6).contains(icon), "icon \(index): \(message)")
+                XCTAssertGreaterThanOrEqual(icon.minY, field.maxY + 5, "under the field, icon \(index): \(message)")
+                XCTAssertEqual(icon.width, icon.height, accuracy: 1e-9, message)
+                for other in icons[(index + 1)...] {
+                    XCTAssertFalse(icon.insetBy(dx: -2, dy: -2).intersects(other), "icons apart: \(message)")
+                }
+            }
+        }
+    }
+
+    /// How strongly the panel shows and how large it is while it opens: it only comes and
+    /// only grows; half open (the stop of a hold that follows the hand) it is whole in
+    /// strength and still clearly smaller than when it is open.
+    func testThePanelOfAppsComesInQuicklyAndGrowsIntoPlace() {
+        typealias Card = GesturePreviewScreenCard
+        XCTAssertEqual(Card.appsPanelStrength(0), 0)
+        XCTAssertEqual(Card.appsPanelStrength(0.25), 0.75, accuracy: 1e-9)
+        XCTAssertEqual(Card.appsPanelStrength(0.5), 1)
+        XCTAssertEqual(Card.appsPanelStrength(1), 1)
+        XCTAssertEqual(Card.appsPanelScale(0), Card.appsPanelStartScale)
+        XCTAssertEqual(Card.appsPanelScale(0.5), (1 + Card.appsPanelStartScale) / 2, accuracy: 1e-9)
+        XCTAssertEqual(Card.appsPanelScale(1), 1)
+        XCTAssertGreaterThanOrEqual(Card.appsPanelStartScale, 0.5)
+        XCTAssertLessThanOrEqual(Card.appsPanelScale(0.5), 0.85, "half open is not yet the whole panel")
+        var strength: CGFloat = 0, scale: CGFloat = 0
+        for step in 0...100 {
+            let open = CGFloat(step) / 100
+            XCTAssertGreaterThanOrEqual(Card.appsPanelStrength(open), strength, "\(open)")
+            XCTAssertGreaterThanOrEqual(Card.appsPanelScale(open), scale, "\(open)")
+            strength = Card.appsPanelStrength(open)
+            scale = Card.appsPanelScale(open)
+        }
+        for odd in [-1, 2, CGFloat.nan, .infinity] {
+            XCTAssertTrue((0...1).contains(Card.appsPanelStrength(odd)), "\(odd)")
+            XCTAssertTrue((Card.appsPanelStartScale...1).contains(Card.appsPanelScale(odd)), "\(odd)")
+        }
+    }
+
+    /// Apps on macOS 26 and later is a panel over the windows: the windows and the
+    /// wallpaper beside it stay as they are (nothing fades, nothing darkens), the panel
+    /// covers what is under it, and its icons are on it.
+    func testAppsFromMacOS26OnIsAPanelOverTheWindows() throws {
+        typealias Card = GesturePreviewScreenCard
+        let cardSize = NSSize(width: floor((size.width - GesturePreviewView.cardSpacing) / 2), height: size.height)
+        let panel = Card.appsPanelRect(in: cardSize)
+        // The left margin of the front window's page and the wallpaper under the windows:
+        // beside the panel and clear of its shadow.
+        let page = (x: CGFloat(23), y: CGFloat(60))
+        let wallpaper = (x: CGFloat(10), y: CGFloat(124))
+        XCTAssertLessThan(page.x, panel.minX - 12)
+        // A corner of the panel that lies over the wallpaper, under its last row of icons.
+        let corner = (x: panel.maxX - 16, y: panel.maxY - 3.5)
+        let icons = Card.appsIconRects(in: panel)
+        XCTAssertGreaterThan(corner.y, (icons.map(\.maxY).max() ?? 0) + 1)
+        XCTAssertGreaterThan(corner.x, Card.windowRect(.article, in: cardSize).maxX)
+        XCTAssertGreaterThan(corner.y, Card.windowRect(.notes, in: cardSize).maxY)
+        // In the first icon, left of its dot.
+        let first = try XCTUnwrap(icons.first)
+        let tile = (x: first.minX + 2, y: first.midY)
+        for dark in [false, true] {
+            let message = dark ? "dark" : "light"
+            let rest = try renderDesktop(dark: dark) { _ in }
+            let open = try renderDesktop(dark: dark) { $0.appGrid = 1 }
+            assertSameColour(
+                try colour(in: open, x: page.x, y: page.y), try colour(in: rest, x: page.x, y: page.y),
+                accuracy: 0.01, "the window stays: \(message)"
+            )
+            assertSameColour(
+                try colour(in: open, x: wallpaper.x, y: wallpaper.y), try colour(in: rest, x: wallpaper.x, y: wallpaper.y),
+                accuracy: 0.01, "the desktop does not darken: \(message)"
+            )
+            // The wallpaper has a colour; the panel over it is nearly grey.
+            func spread(_ colour: NSColor) -> CGFloat {
+                let parts = [colour.redComponent, colour.greenComponent, colour.blueComponent]
+                return (parts.max() ?? 0) - (parts.min() ?? 0)
+            }
+            XCTAssertGreaterThan(spread(try colour(in: rest, x: corner.x, y: corner.y)), 0.12, "the wallpaper at rest: \(message)")
+            XCTAssertLessThan(spread(try colour(in: open, x: corner.x, y: corner.y)), 0.06, "the panel, not the wallpaper: \(message)")
+            let icon = try colour(in: open, x: tile.x, y: tile.y)
+            XCTAssertGreaterThan(icon.blueComponent, icon.redComponent + 0.3, "the first app's icon: \(message)")
+
+            // Half open, the stop of a hold that follows the hand: the windows are as they
+            // were, and the panel, smaller, lets nothing show through it.
+            let halfOpen = try renderDesktop(dark: dark) { $0.appGrid = 0.5 }
+            assertSameColour(
+                try colour(in: halfOpen, x: page.x, y: page.y), try colour(in: rest, x: page.x, y: page.y),
+                accuracy: 0.01, "the window stays half-way: \(message)"
+            )
+            let scale = Card.appsPanelScale(0.5)
+            let lowest = (icons.map(\.maxY).max() ?? 0)
+            // Under the smaller panel's last row, over the wallpaper.
+            let low = (x: panel.midX + (panel.width / 2 - 14) * scale, y: panel.midY + (panel.height / 2 - 2) * scale)
+            XCTAssertGreaterThan(low.y, panel.midY + (lowest - panel.midY) * scale + 1)
+            XCTAssertGreaterThan(low.x, Card.windowRect(.article, in: cardSize).maxX)
+            XCTAssertGreaterThan(low.y, Card.windowRect(.notes, in: cardSize).maxY)
+            XCTAssertLessThan(spread(try colour(in: halfOpen, x: low.x, y: low.y)), 0.06, "nothing shows through it half open: \(message)")
+
+            // Before macOS 26 the same number is Launchpad: the desktop darkens.
+            let launchpad = try colour(in: try renderDesktop(dark: dark, apps: .launchpad) { $0.appGrid = 1 }, x: wallpaper.x, y: wallpaper.y)
+            let bright = try colour(in: rest, x: wallpaper.x, y: wallpaper.y)
+            XCTAssertLessThan(mean(launchpad), mean(bright) * 0.8, "Launchpad darkens the desktop: \(message)")
+        }
+    }
+
+    /// Telling a card how Apps looks redraws it; telling it the same again does not.
+    func testChangingHowAppsLooksRedrawsTheCard() {
+        let view = makeView(apps: .panel)
+        // A window with a window server window (never shown), so the card has its layer.
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 200),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(view)
+        addTeardownBlock { window.close() }
+        let card = view.screenCard
+        window.displayIfNeeded()
+        drawPendingLayers(of: view)
+        XCTAssertEqual(card.layer?.needsDisplay(), false)
+        card.appsLook = .panel
+        XCTAssertEqual(card.layer?.needsDisplay(), false, "the same look again")
+        card.appsLook = .launchpad
+        XCTAssertEqual(card.layer?.needsDisplay(), true)
     }
 
     /// Show Desktop on the second desktop (one action per hold: Left moves a Space, Right
@@ -849,9 +1018,9 @@ final class GesturePreviewViewTests: XCTestCase {
     /// picture to look at; without it, as the view would cache itself).
     private func render(
         _ scene: GesturePreviewScene, dark: Bool, time: TimeInterval?, size: NSSize? = nil, mouse: MouseArtworkModel = .mxMaster4,
-        picture: TriggerPictureSource = .none, scale: CGFloat? = nil
+        picture: TriggerPictureSource = .none, scale: CGFloat? = nil, apps: GesturePreviewAppsLook = .panel
     ) throws -> NSBitmapImageRep {
-        let view = makeView(reduceMotion: time == nil, size: size, mouse: mouse, picture: picture)
+        let view = makeView(reduceMotion: time == nil, size: size, mouse: mouse, picture: picture, apps: apps)
         view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         view.scene = scene
         if let time {
@@ -1485,6 +1654,25 @@ final class GesturePreviewViewTests: XCTestCase {
                 let rep = try render(scene, dark: dark, time: time, picture: gestureButton(on: .mxMaster4), scale: 4)
                 let data = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
                 try data.write(to: directory.appendingPathComponent("\(name)-\(dark ? "dark" : "light").png"))
+            }
+        }
+        // Apps as each macOS shows it (the panel from macOS 26 on, Launchpad before):
+        // following the hand a quarter, half and whole, and run once.
+        let appsOnce = self.scene(focus: .down)
+        let once = Loop(scene: appsOnce)
+        for (look, word) in [(GesturePreviewAppsLook.panel, "apps-panel"), (.launchpad, "launchpad")] {
+            let shots: [(String, GesturePreviewScene, TimeInterval?)] = [
+                ("down-\(word)-quarter", followScene(focus: .down), 0.8),
+                ("down-\(word)-half", followScene(focus: .down), stopTime),
+                ("down-\(word)-whole", followScene(focus: .down), wholeTime),
+                ("once-\(word)-whole", appsOnce, once.starts[0] + once.legs[0].stillTime),
+            ]
+            for (name, scene, time) in shots {
+                for dark in [false, true] {
+                    let rep = try render(scene, dark: dark, time: time, picture: gestureButton(on: .mxMaster4), scale: 4, apps: look)
+                    let data = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
+                    try data.write(to: directory.appendingPathComponent("\(name)-\(dark ? "dark" : "light").png"))
+                }
             }
         }
     }

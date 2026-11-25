@@ -50,6 +50,12 @@ enum GesturePreviewPalette {
     static let desktopDocument = ScrollPreviewPalette.adaptive(light: .white, dark: NSColor(white: 0.86, alpha: 1))
     static let desktopDocumentLine = NSColor(white: 0, alpha: 0.28)
     static let desktopItemName = ScrollPreviewPalette.adaptive(light: NSColor(white: 1, alpha: 0.9), dark: NSColor(white: 1, alpha: 0.7))
+    /// Apps (macOS 26 and later): its panel, the search field at the panel's top and what
+    /// stands in the field.
+    static let appsPanel = ScrollPreviewPalette.adaptive(light: NSColor(white: 0.97, alpha: 0.95), dark: NSColor(white: 0.17, alpha: 0.95))
+    static let appsPanelEdge = ScrollPreviewPalette.adaptive(light: NSColor(white: 1, alpha: 0.75), dark: NSColor(white: 1, alpha: 0.18))
+    static let appsSearchField = ScrollPreviewPalette.adaptive(light: NSColor(white: 0, alpha: 0.07), dark: NSColor(white: 1, alpha: 0.10))
+    static let appsSearchText = ScrollPreviewPalette.adaptive(light: NSColor(white: 0, alpha: 0.34), dark: NSColor(white: 1, alpha: 0.40))
     /// App icons, the photos in the second desktop's window and the dock.
     static let tiles: [NSColor] = [
         .systemBlue, .systemOrange, .systemGreen, .systemPink, .systemPurple,
@@ -619,9 +625,31 @@ final class GesturePreviewMouse: GesturePreviewArtworkView {
 
 // MARK: - The screen card
 
+/// What Launchpad's key opens, which the picture draws as the Mac it runs on shows it.
+enum GesturePreviewAppsLook: Equatable {
+    /// Before macOS 26, Launchpad: the desktop darkens and the windows give way to a grid
+    /// of app icons over the whole screen.
+    case launchpad
+    /// From macOS 26 on, Apps: a panel in the middle of the screen, a search field at its
+    /// top and the apps under it. The windows stay where they are behind it.
+    case panel
+
+    /// The look on macOS `majorVersion`. It changes with the name the rows give the action
+    /// (`SystemShortcut.Shortcut.nameKey`).
+    init(macOS majorVersion: Int) {
+        self = majorVersion >= 26 ? .panel : .launchpad
+    }
+
+    /// This Mac's.
+    static var current: GesturePreviewAppsLook {
+        return GesturePreviewAppsLook(macOS: ProcessInfo.processInfo.operatingSystemVersion.majorVersion)
+    }
+}
+
 /// The right card: a row of desktops seen through the screen, a menu bar and a dock that
-/// stay put, the overview of Mission Control, the app grid, the windows out of the way for
-/// Show Desktop, the pulse of other actions and the pointer.
+/// stay put, the overview of Mission Control, the app grid (Launchpad, or the panel of Apps:
+/// `appsLook`), the windows out of the way for Show Desktop, the pulse of other actions and
+/// the pointer.
 final class GesturePreviewScreenCard: GesturePreviewArtworkView {
 
     static let cornerRadius: CGFloat = 10
@@ -653,9 +681,21 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
     /// reads as the grid arriving, not as two pictures half there.
     static let appGridWindowsGoneAt: CGFloat = 0.6
     static let appGridIconsFrom: CGFloat = 0.3
+    /// The panel of Apps: its icons, and how much smaller it is when it starts to show.
+    static let appsIconColumns = 6
+    static let appsIconRows = 3
+    static let appsIconSize: CGFloat = 12
+    static let appsPanelStartScale: CGFloat = 0.6
     static let pointerSize = NSSize(width: 11, height: 17)
 
     private(set) var shown: GesturePreviewLoop.Frame?
+
+    /// How the app grid is drawn: as this Mac shows it. A seam for the tests and renders.
+    var appsLook = GesturePreviewAppsLook.current {
+        didSet {
+            if appsLook != oldValue { needsDisplay = true }
+        }
+    }
 
     override func setFrameSize(_ newSize: NSSize) {
         let changed = newSize != frame.size
@@ -764,6 +804,45 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         return NSRect(x: item.midX - width / 2, y: item.maxY + 3, width: width, height: 2.5)
     }
 
+    /// The panel of Apps when it is whole, on a desktop `size` large: in the middle of the
+    /// room between the menu bar and the Dock, a little above it, the windows in sight on
+    /// both sides.
+    static func appsPanelRect(in size: NSSize) -> NSRect {
+        var width = min(150, (size.width * 0.62).rounded())
+        // On whole points and in the middle: as odd or even as the card is wide.
+        if (size.width - width).truncatingRemainder(dividingBy: 2) != 0 { width -= 1 }
+        let height: CGFloat = 92
+        let room = size.height - menuBarHeight - dockHeight - 4
+        let top = menuBarHeight + ((room - height) / 2).rounded() - 3
+        return NSRect(x: (size.width - width) / 2, y: top, width: width, height: height)
+    }
+
+    /// The search field at the top of the panel at `panel`.
+    static func appsSearchFieldRect(in panel: NSRect) -> NSRect {
+        return NSRect(x: panel.minX + 7, y: panel.minY + 7, width: panel.width - 14, height: 12)
+    }
+
+    /// The app icons on the panel at `panel`, row by row from the top left: rows as wide
+    /// as the search field's text, evenly apart, in the room under the field.
+    static func appsIconRects(in panel: NSRect) -> [NSRect] {
+        let field = appsSearchFieldRect(in: panel)
+        let side = appsIconSize
+        let left = panel.minX + 12, right = panel.maxX - 12
+        let top = field.maxY + 9, bottom = panel.maxY - 9
+        let pitchX = (right - left - side) / CGFloat(appsIconColumns - 1)
+        let pitchY = (bottom - top - side) / CGFloat(appsIconRows - 1)
+        var rects: [NSRect] = []
+        for row in 0..<appsIconRows {
+            for column in 0..<appsIconColumns {
+                // On half points, a whole pixel of a Retina screen.
+                let x = ((left + CGFloat(column) * pitchX) * 2).rounded() / 2
+                let y = ((top + CGFloat(row) * pitchY) * 2).rounded() / 2
+                rects.append(NSRect(x: x, y: y, width: side, height: side))
+            }
+        }
+        return rects
+    }
+
     // MARK: How strongly a piece shows
 
     private static func unit(_ value: CGFloat) -> CGFloat {
@@ -798,6 +877,21 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
     static func appGridIconStrength(_ appGrid: CGFloat) -> CGFloat {
         let missing = 1 - unit((appGrid - appGridIconsFrom) / (1 - appGridIconsFrom))
         return 1 - missing * missing
+    }
+
+    /// The panel of Apps while it is `appGrid` (0…1) open: whole from half open on, the
+    /// stop of a hold that follows the hand, where the windows behind it must not show
+    /// through it (the same picture twice, half there). How far it is open shows in its
+    /// size.
+    static func appsPanelStrength(_ appGrid: CGFloat) -> CGFloat {
+        let missing = 1 - unit(appGrid * 2)
+        return 1 - missing * missing
+    }
+
+    /// The panel's size while it is `appGrid` (0…1) open: it grows into place from
+    /// `appsPanelStartScale`, with the hand.
+    static func appsPanelScale(_ appGrid: CGFloat) -> CGFloat {
+        return appsPanelStartScale + (1 - appsPanelStartScale) * unit(appGrid)
     }
 
     /// The pointer's tip when the hand has not moved it.
@@ -836,7 +930,10 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
 
         drawMenuBar()
         if let frame, frame.appGrid > 0 {
-            drawAppGrid(CGFloat(frame.appGrid))
+            switch appsLook {
+            case .launchpad: drawAppGrid(CGFloat(frame.appGrid))
+            case .panel: drawAppsPanel(CGFloat(frame.appGrid))
+            }
         }
         // The dock stays on top of the app grid, as it does on a Mac.
         drawDock()
@@ -858,7 +955,8 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
 
     /// One desktop: its wallpaper and its windows. `overview` moves the windows to their
     /// places in Mission Control, `gridFade` is how far the app grid is open (the windows
-    /// fade out under it, `windowStrength`), and `windowsAway` slides them to the edges for
+    /// fade out under Launchpad, `windowStrength`; behind the panel of Apps they stay as
+    /// they are), and `windowsAway` slides them to the edges for
     /// Show Desktop; what lies on the desktop comes up once they have left
     /// (`desktopItemStrength`). All 0…1; one of them at a time. The windows are drawn under
     /// the menu bar's lower edge only: one that goes up for Show Desktop slides in behind
@@ -877,7 +975,7 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
             drawDesktopItems(at: x, strength: items)
         }
 
-        let alpha = Self.windowStrength(appGrid: gridFade)
+        let alpha = appsLook == .launchpad ? Self.windowStrength(appGrid: gridFade) : 1
         guard alpha > 0.01 else { return }
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: NSRect(x: 0, y: Self.menuBarHeight, width: bounds.width, height: bounds.height - Self.menuBarHeight)).addClip()
@@ -1102,8 +1200,67 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    /// Launchpad: the desktop darkens and the windows give way to rows of app icons, which
-    /// show once the windows are on their way out (`appGridIconStrength`).
+    /// Apps (macOS 26 and later): a panel that comes up in the middle of the screen over
+    /// the windows, which stay as they are: a search field at its top and rows of app
+    /// icons under it. It grows into place as it shows (`appsPanelScale`,
+    /// `appsPanelStrength`).
+    private func drawAppsPanel(_ progress: CGFloat) {
+        let strength = Self.appsPanelStrength(progress)
+        guard strength > 0, let context = NSGraphicsContext.current?.cgContext else { return }
+        let whole = Self.appsPanelRect(in: bounds.size)
+        let scale = Self.appsPanelScale(progress)
+        NSGraphicsContext.saveGraphicsState()
+        context.setAlpha(strength)
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        let grow = NSAffineTransform()
+        grow.translateX(by: whole.midX, yBy: whole.midY)
+        grow.scaleX(by: scale, yBy: scale)
+        grow.translateX(by: -whole.midX, yBy: -whole.midY)
+        grow.concat()
+
+        let radius: CGFloat = 10
+        let panel = NSBezierPath(roundedRect: whole, xRadius: radius, yRadius: radius)
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor(white: 0, alpha: 0.35)
+        shadow.shadowBlurRadius = 8
+        shadow.shadowOffset = NSSize(width: 0, height: -2)
+        shadow.set()
+        GesturePreviewPalette.appsPanel.setFill()
+        panel.fill()
+        NSGraphicsContext.restoreGraphicsState()
+        let edge = NSBezierPath(roundedRect: whole.insetBy(dx: 0.25, dy: 0.25), xRadius: radius, yRadius: radius)
+        edge.lineWidth = 0.5
+        GesturePreviewPalette.appsPanelEdge.setStroke()
+        edge.stroke()
+
+        // The search field: a magnifying glass and a word.
+        let field = Self.appsSearchFieldRect(in: whole)
+        GesturePreviewPalette.appsSearchField.setFill()
+        capsule(field).fill()
+        GesturePreviewPalette.appsSearchText.setStroke()
+        let lens = NSRect(x: field.minX + 5, y: field.midY - 2.5, width: 4, height: 4)
+        let glass = NSBezierPath(ovalIn: lens)
+        glass.move(to: NSPoint(x: lens.maxX - 0.6, y: lens.maxY - 0.6))
+        glass.line(to: NSPoint(x: lens.maxX + 1.4, y: lens.maxY + 1.4))
+        glass.lineWidth = 1
+        glass.lineCapStyle = .round
+        glass.stroke()
+        GesturePreviewPalette.appsSearchText.setFill()
+        capsule(NSRect(x: lens.maxX + 5, y: field.midY - 1, width: 26, height: 2)).fill()
+
+        for (index, rect) in Self.appsIconRects(in: whole).enumerated() {
+            GesturePreviewPalette.tiles[index % GesturePreviewPalette.tiles.count].setFill()
+            NSBezierPath(roundedRect: rect, xRadius: rect.width * 0.24, yRadius: rect.width * 0.24).fill()
+            NSColor.white.withAlphaComponent(0.55).setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: rect.width * 0.32, dy: rect.width * 0.32)).fill()
+        }
+        context.endTransparencyLayer()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// Launchpad (before macOS 26): the desktop darkens and the windows give way to rows of
+    /// app icons, which show once the windows are on their way out (`appGridIconStrength`).
     private func drawAppGrid(_ progress: CGFloat) {
         GesturePreviewPalette.gridShade.withAlphaComponent(0.42 * progress).setFill()
         bounds.fill(using: .sourceOver)
