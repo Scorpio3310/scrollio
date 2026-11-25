@@ -293,7 +293,7 @@ struct DockFollowAvailability: Equatable {
     var majorVersion: Int
     /// The Dock's own switches.
     var switches: DockGestureSwitches
-    /// Whether Apps may follow at all in this build (`appsFollowInThisBuild`).
+    /// Whether Apps may follow at all (`appsFollow`; false only where it is held back).
     var appsMayFollow: Bool
 
     /// The first macOS on which the pinch is driven: a synthesized spread is reported to
@@ -303,21 +303,16 @@ struct DockFollowAvailability: Equatable {
     /// once there.
     static let firstPinchMajorVersion = 27
 
-    /// Apps follows the hand only in a build made with SCROLLIO_TRACE, which
-    /// `scripts/install.sh` passes for the owner's own installed copy, so that it can be
-    /// seen on a real Mac whether the Apps view tracks a pinch at all (Launchpad's
-    /// successor is no view of the Dock's own, and the one public report calls it laggy).
-    /// A release, a debug build and the tests keep Apps instant.
-    static let appsFollowInThisBuild: Bool = {
-        #if SCROLLIO_TRACE
-        return true
-        #else
-        return false
-        #endif
-    }()
+    /// Apps follows the hand in every build, like the Dock's own two views: it was seen to
+    /// track the pinch on a real Mac (macOS 27.2, 2026-11-25; until then only a build made
+    /// with SCROLLIO_TRACE let it). Launchpad's successor is no view of the Dock's own, so
+    /// it keeps a switch of its own here: the one place to hold it back again, should a
+    /// macOS update break its pinch. Held back, Apps runs once, an action like any other
+    /// (`MouseGestureSettings.followPlan`).
+    static let appsFollow = true
 
     /// The table of macOS versions: Mission Control on every macOS Scrollio runs on, Show
-    /// Desktop from `firstPinchMajorVersion`, Apps there too and only where a build lets it.
+    /// Desktop from `firstPinchMajorVersion`, Apps there too (unless it is held back).
     static func isKnownToFollow(_ target: DockFollowTarget, majorVersion: Int, appsMayFollow: Bool) -> Bool {
         switch target {
         case .missionControl: return true
@@ -358,7 +353,7 @@ struct DockFollowAvailability: Equatable {
             canPostEvents: ScrollPoster.shared.canPostEvents,
             majorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
             switches: DockGestureSwitches.current,
-            appsMayFollow: appsFollowInThisBuild
+            appsMayFollow: appsFollow
         )
     }
 }
@@ -390,17 +385,19 @@ extension MouseGestureSettings {
     /// What `direction` follows with these settings on a Mac with this availability: the
     /// one place that says so, for the hold (asked once, when the button goes down) and for
     /// the pane's rows. Only Up and Down can follow; Left and Right stay what they are in
-    /// "Follow the hand", the desktops. Apps is asked to follow only where the build lets
-    /// it (`appsMayFollow`); everywhere else it is `.doesNotFollow`, like "Copy". For an
-    /// app's own set, ask the settings that run in the app (`Application.gesturesThatRun`).
+    /// "Follow the hand", the desktops. Apps is asked to follow unless it is held back
+    /// (`appsMayFollow`, which every build has on); held back it is `.doesNotFollow`, like
+    /// "Copy". For an app's own set, ask the settings that run in the app
+    /// (`Application.gesturesThatRun`).
     func followPlan(for direction: MouseGestureDirection, availability: DockFollowAvailability) -> DockFollowPlan {
         guard actionsFollowNow, direction == .up || direction == .down,
               let target = DockFollowTarget(action: action(for: direction)) else {
             return .doesNotFollow
         }
-        // In a build that never lets Apps follow (every release, on every macOS) Apps is an
-        // action like any other: nothing asks it to follow, so its row is plain and the log
-        // gives no reason. (The reason would be the build, which nobody can change.)
+        // Where Apps is held back (`DockFollowAvailability.appsFollow` off: no build today)
+        // it is an action like any other: nothing asks it to follow, so its row is plain
+        // and the log gives no reason. (The reason would be the build, which nobody can
+        // change.)
         if target == .apps, !availability.appsMayFollow {
             return .doesNotFollow
         }

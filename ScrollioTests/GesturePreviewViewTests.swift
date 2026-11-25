@@ -9,8 +9,8 @@
 //  stop and under Reduce Motion, that the mouse and its arrow stay in their card, and what
 //  a half-open view draws (Show Desktop: what lies on the desktop waits until the windows
 //  have left, and a window that goes up does not show through the menu bar; Mission
-//  Control: the row of Spaces is whole by half open; the app grid: Launchpad's windows are
-//  gone before it is whole, and from macOS 26 on it is the panel of Apps over the windows,
+//  Control: its Spaces bar takes the menu bar's place, as on a Mac, and is in place and
+//  whole by half open; the app grid: Launchpad's windows are gone before it is whole, and from macOS 26 on it is the panel of Apps over the windows,
 //  `GesturePreviewAppsLook`). Nothing is shown on screen: windows are created but never ordered
 //  in, and frames are asked for by loop time, not waited for. Nothing runs a real action.
 //
@@ -573,27 +573,102 @@ final class GesturePreviewViewTests: XCTestCase {
         }
     }
 
-    /// Mission Control half open, as a hold that follows can stand still: the row of Spaces
-    /// comes out from under the menu bar, which keeps its look; it is not drawn over it.
-    func testTheSpacesComeDownFromUnderTheMenuBar() throws {
-        // Over the second Space (the warm one) in the row: in the menu bar, and under it.
-        let inMenuBar = (x: CGFloat(246 + 138), y: CGFloat(4))
-        let below = (x: CGFloat(246 + 138), y: CGFloat(14))
-        func warmth(_ colour: NSColor) -> CGFloat {
-            return colour.redComponent - colour.blueComponent
+    /// How far two colours are apart (the largest of the three differences).
+    private func apart(_ a: NSColor, _ b: NSColor) -> CGFloat {
+        return max(abs(a.redComponent - b.redComponent), abs(a.greenComponent - b.greenComponent), abs(a.blueComponent - b.blueComponent))
+    }
+
+    /// Mission Control as a Mac shows it when it has just opened: the menu bar is gone, a
+    /// strip along the top edge (the Spaces bar) carries the names of the Spaces, the one
+    /// on screen stronger, and no row of pictures of the Spaces stands under it (those
+    /// only come when the pointer goes up there).
+    func testMissionControlPutsTheSpacesBarInTheMenuBarsPlace() throws {
+        typealias Card = GesturePreviewScreenCard
+        let size = NSSize(width: 234, height: 150)
+        XCTAssertEqual(Card.spacesBarRect(in: size), NSRect(x: 0, y: 0, width: 234, height: Card.spacesBarHeight))
+        XCTAssertGreaterThan(Card.spacesBarHeight, Card.menuBarHeight, "it covers where the menu bar was")
+        let names = Card.spaceNameRects(in: size)
+        XCTAssertEqual(names.count, 2)
+        XCTAssertEqual(names[0].minX + names[1].maxX, size.width, accuracy: 0.5, "in the middle")
+        XCTAssertGreaterThan(names[1].minX - names[0].maxX, 8, "two names, apart")
+        for name in names {
+            XCTAssertTrue(Card.spacesBarRect(in: size).insetBy(dx: 0, dy: 3).contains(name), "\(name)")
         }
+        // The second menu item (12 pt wide from x 20) and the gap before it.
+        let item = (x: CGFloat(26), y: CGFloat(4))
+        let gap = (x: CGFloat(17.5), y: CGFloat(4))
+        // On the bar and on the wallpaper under it, away from the names and the windows.
+        let onBar = (x: CGFloat(60), y: Card.spacesBarHeight - 3)
+        let underBar = (x: CGFloat(60), y: Card.spacesBarHeight + 3)
+        // Where the picture of the second, warm Space used to stand.
+        let oldPicture = (x: CGFloat(138), y: CGFloat(30))
         for dark in [false, true] {
-            let rest = try render(followScene(focus: .up), dark: dark, time: 0)
-            let half = try render(followScene(focus: .up), dark: dark, time: stopTime)
             let message = dark ? "dark" : "light"
+            let rest = try renderDesktop(dark: dark) { _ in }
+            let open = try renderDesktop(dark: dark) { $0.overview = 1 }
             XCTAssertGreaterThan(
-                warmth(try colour(in: half, x: below.x, y: below.y)), warmth(try colour(in: rest, x: below.x, y: below.y)) + 0.2,
-                "the second Space shows under the menu bar: \(message)"
+                apart(try colour(in: rest, x: item.x, y: item.y), try colour(in: rest, x: gap.x, y: gap.y)), 0.08,
+                "at rest the menu bar has its items: \(message)"
             )
-            XCTAssertEqual(
-                warmth(try colour(in: half, x: inMenuBar.x, y: inMenuBar.y)), warmth(try colour(in: rest, x: inMenuBar.x, y: inMenuBar.y)),
-                accuracy: 0.06, "and not over it: \(message)"
+            XCTAssertLessThan(
+                apart(try colour(in: open, x: item.x, y: item.y), try colour(in: open, x: gap.x, y: gap.y)), 0.02,
+                "in Mission Control the menu is gone: \(message)"
             )
+            XCTAssertGreaterThan(
+                apart(try colour(in: open, x: onBar.x, y: onBar.y), try colour(in: open, x: underBar.x, y: underBar.y)), 0.04,
+                "the bar stands out from the wallpaper under it: \(message)"
+            )
+            XCTAssertLessThan(
+                apart(try colour(in: rest, x: onBar.x, y: onBar.y), try colour(in: rest, x: underBar.x, y: underBar.y)), 0.02,
+                "at rest there is no bar there: \(message)"
+            )
+            // The names: each stands out from the bar beside it, the one on screen more.
+            func contrast(_ name: NSRect) throws -> CGFloat {
+                return apart(
+                    try colour(in: open, x: name.midX, y: name.midY), try colour(in: open, x: name.minX - 5, y: name.midY)
+                )
+            }
+            XCTAssertGreaterThan(try contrast(names[1]), 0.08, "the other Space's name: \(message)")
+            XCTAssertGreaterThan(try contrast(names[0]), try contrast(names[1]) + 0.15, "the one on screen is stronger: \(message)")
+            // No pictures of the Spaces under the bar, and the wallpaper is not darkened:
+            // there is what a desktop without its windows has there.
+            let bare = try renderDesktop(dark: dark) { $0.showDesktop = 1 }
+            assertSameColour(
+                try colour(in: open, x: oldPicture.x, y: oldPicture.y), try colour(in: bare, x: oldPicture.x, y: oldPicture.y),
+                accuracy: 0.01, "the wallpaper alone: \(message)"
+            )
+        }
+    }
+
+    /// In Mission Control no window lies over another: they are smaller, side by side, in
+    /// the room between the Spaces bar and the Dock, at any width of the card.
+    func testInMissionControlTheWindowsLieSideBySideBetweenTheSpacesBarAndTheDock() {
+        typealias Card = GesturePreviewScreenCard
+        for width in [200, 234, 280, 320] as [CGFloat] {
+            let size = NSSize(width: width, height: 150)
+            let room = NSRect(
+                x: 4, y: Card.spacesBarHeight + 4, width: width - 8,
+                height: size.height - Card.dockHeight - 4 - Card.spacesBarHeight - 8
+            )
+            for desktop in [0, 1] {
+                let kinds = Card.windows(onDesktop: desktop)
+                let places = kinds.map { Card.overviewRect($0, onDesktop: desktop, in: size) }
+                for (kind, place) in zip(kinds, places) {
+                    let message = "\(kind) on desktop \(desktop), \(width) pt"
+                    let home = Card.windowRect(kind, in: size)
+                    XCTAssertTrue(room.contains(place), "\(place) in \(room): \(message)")
+                    XCTAssertEqual(place.width, home.width * Card.overviewScale, accuracy: 1e-9, message)
+                    XCTAssertEqual(place.height, home.height * Card.overviewScale, accuracy: 1e-9, message)
+                    XCTAssertEqual(place.midY, room.midY, accuracy: 0.5, "in the middle of the room: \(message)")
+                }
+                for (index, place) in places.enumerated() {
+                    for other in places[(index + 1)...] {
+                        XCTAssertFalse(place.insetBy(dx: -4, dy: 0).intersects(other), "apart: desktop \(desktop), \(width) pt")
+                    }
+                }
+                let left = places.map(\.minX).min() ?? 0, right = places.map(\.maxX).max() ?? 0
+                XCTAssertEqual(left + right, width, accuracy: 0.5, "in the middle: desktop \(desktop), \(width) pt")
+            }
         }
     }
 
@@ -692,6 +767,14 @@ final class GesturePreviewViewTests: XCTestCase {
         XCTAssertEqual(Card.spacesBarStrength(overview: 0.25), 0.5, accuracy: 1e-9)
         XCTAssertEqual(Card.spacesBarStrength(overview: 0.5), 1, "whole at the stop of a hold that follows")
         XCTAssertEqual(Card.spacesBarStrength(overview: 1), 1)
+        // The menu bar makes way for it: what the one gains, the other loses.
+        for overview in [0, 0.1, 0.25, 0.4, 0.5, 0.75, 1] as [CGFloat] {
+            XCTAssertEqual(
+                Card.menuBarStrength(overview: overview) + Card.spacesBarStrength(overview: overview), 1, accuracy: 1e-9, "\(overview)"
+            )
+        }
+        XCTAssertEqual(Card.menuBarStrength(overview: 0), 1, "no Mission Control: the menu bar as it is")
+        XCTAssertEqual(Card.menuBarStrength(overview: 0.5), 0, "gone at the stop of a hold that follows")
 
         XCTAssertEqual(Card.appGridWindowsGoneAt, 0.6)
         XCTAssertEqual(Card.appGridIconsFrom, 0.3)
@@ -718,19 +801,35 @@ final class GesturePreviewViewTests: XCTestCase {
         }
     }
 
-    /// Mission Control half open: the row of Spaces is half out from under the menu bar and
-    /// already as strong as when it is whole (half out and half transparent, the second
-    /// Space nearly vanished in dark).
-    func testTheRowOfSpacesIsWholeByHalfOpen() throws {
-        // A point of the second Space (the one without the frame), 17 pt into its picture
-        // from the left and from the top, where the row is at half open and at whole.
-        let half = (x: CGFloat(138), y: CGFloat(15))
-        let whole = (x: CGFloat(138), y: CGFloat(30))
+    /// Mission Control half open, where a hold that follows the hand can stand still: the
+    /// Spaces bar is in place and as strong as when Mission Control is whole, and the menu
+    /// bar is gone (not half out, not half transparent, no menu showing through). A quarter
+    /// open it is still on its way: nothing of it under the menu bar's height yet.
+    func testTheSpacesBarIsInPlaceAndWholeByHalfOpen() throws {
+        typealias Card = GesturePreviewScreenCard
+        let names = Card.spaceNameRects(in: NSSize(width: 234, height: 150))
+        let item = (x: CGFloat(26), y: CGFloat(4))
+        let gap = (x: CGFloat(17.5), y: CGFloat(4))
+        let onBar = (x: CGFloat(60), y: Card.spacesBarHeight - 2)
+        let underBar = (x: CGFloat(60), y: Card.spacesBarHeight + 3)
         for dark in [false, true] {
-            let halfOpen = try colour(in: try renderDesktop(dark: dark) { $0.overview = 0.5 }, x: half.x, y: half.y)
-            let open = try colour(in: try renderDesktop(dark: dark) { $0.overview = 1 }, x: whole.x, y: whole.y)
-            XCTAssertGreaterThan(open.redComponent, open.blueComponent, "the warm second Space")
-            assertSameColour(halfOpen, open, "the row at half open, \(dark ? "dark" : "light")")
+            let message = dark ? "dark" : "light"
+            let quarter = try renderDesktop(dark: dark) { $0.overview = 0.25 }
+            let half = try renderDesktop(dark: dark) { $0.overview = 0.5 }
+            let open = try renderDesktop(dark: dark) { $0.overview = 1 }
+            func contrast(_ rep: NSBitmapImageRep, _ a: (x: CGFloat, y: CGFloat), _ b: (x: CGFloat, y: CGFloat)) throws -> CGFloat {
+                return apart(try colour(in: rep, x: a.x, y: a.y), try colour(in: rep, x: b.x, y: b.y))
+            }
+            // The bar, the wallpaper under it and each name: as at whole.
+            for point in [onBar, underBar] + names.map({ (x: $0.midX, y: $0.midY) }) {
+                assertSameColour(
+                    try colour(in: half, x: point.x, y: point.y), try colour(in: open, x: point.x, y: point.y),
+                    "at \(point), \(message)"
+                )
+            }
+            XCTAssertGreaterThan(try contrast(half, onBar, underBar), 0.04, message)
+            XCTAssertLessThan(try contrast(half, item, gap), 0.02, "no menu shows through the bar: \(message)")
+            XCTAssertLessThan(try contrast(quarter, onBar, underBar), 0.02, "a quarter open the bar is half out: \(message)")
         }
     }
 

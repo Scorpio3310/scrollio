@@ -444,7 +444,8 @@ final class DockFollowAvailabilityTests: XCTestCase {
     }
 
     /// Mission Control follows on every macOS Scrollio runs on; Show Desktop from macOS 27
-    /// (the pinch is unverified below); Apps nowhere in an ordinary build.
+    /// (the pinch is unverified below); Apps with Show Desktop, whose pinch it shares,
+    /// unless it is held back (`appsMayFollow`, which every build has on).
     func testTheTableOfMacOSVersions() {
         XCTAssertEqual(DockFollowAvailability.firstPinchMajorVersion, 27)
         for major in [14, 15, 26] {
@@ -459,9 +460,9 @@ final class DockFollowAvailabilityTests: XCTestCase {
             let mac = availability(major: major)
             XCTAssertTrue(mac.follows(.missionControl), "macOS \(major)")
             XCTAssertTrue(mac.follows(.showDesktop), "macOS \(major)")
-            XCTAssertEqual(mac.obstacle(to: .apps), .notOnThisMacOS, "macOS \(major): a release keeps Apps instant")
+            XCTAssertEqual(mac.obstacle(to: .apps), .notOnThisMacOS, "macOS \(major): held back, Apps runs once")
             XCTAssertEqual(mac.targetsThatFollow, [.missionControl, .showDesktop], "macOS \(major)")
-            // The owner's own build.
+            // As every build is made: Apps follows too.
             XCTAssertTrue(availability(major: major, apps: true).follows(.apps), "macOS \(major)")
             XCTAssertEqual(availability(major: major, apps: true).targetsThatFollow, [.missionControl, .showDesktop, .apps])
         }
@@ -472,13 +473,19 @@ final class DockFollowAvailabilityTests: XCTestCase {
         XCTAssertTrue(DockFollowAvailability.isKnownToFollow(.apps, majorVersion: 27, appsMayFollow: true))
     }
 
-    /// Apps follows only in a build made with SCROLLIO_TRACE (the owner's installed copy).
-    /// The build the tests run in is not one, and neither is a release: there the flag is
-    /// off, and the live answer carries it.
-    func testAppsFollowsInNoBuildWithoutTheTraceCondition() {
-        XCTAssertFalse(DockFollowAvailability.appsFollowInThisBuild)
-        XCTAssertFalse(DockFollowAvailability.live.appsMayFollow)
-        XCTAssertFalse(DockFollowAvailability.live.follows(.apps))
+    /// Apps follows the hand in every build (it was seen to on macOS 27.2): no build
+    /// condition decides it any more, and the live answer carries it. From macOS 27 on,
+    /// as Show Desktop, whose pinch it shares; before that it runs once.
+    func testAppsFollowInEveryBuild() {
+        XCTAssertTrue(DockFollowAvailability.appsFollow)
+        XCTAssertTrue(DockFollowAvailability.live.appsMayFollow)
+        let asBuilt = DockFollowAvailability.appsFollow
+        XCTAssertTrue(DockFollowAvailability.isKnownToFollow(.apps, majorVersion: 27, appsMayFollow: asBuilt))
+        XCTAssertFalse(DockFollowAvailability.isKnownToFollow(.apps, majorVersion: 26, appsMayFollow: asBuilt))
+        XCTAssertEqual(availability(apps: asBuilt).targetsThatFollow, [.missionControl, .showDesktop, .apps])
+        // So the line under the switch names all three on such a Mac.
+        let line = MouseGestureFollowPresentation.hint(naming: availability(apps: asBuilt).targetsThatFollow, majorVersion: 27)
+        XCTAssertTrue(line.hasPrefix(InterfaceList.joined(["Mission Control", "Apps", "Show Desktop"])), line)
     }
 
     func testEachObstacleKeepsATargetFromFollowing() {
@@ -537,7 +544,7 @@ final class DockFollowAvailabilityTests: XCTestCase {
         XCTAssertEqual(live.canPostEvents, ScrollPoster.shared.canPostEvents)
         XCTAssertEqual(live.majorVersion, ProcessInfo.processInfo.operatingSystemVersion.majorVersion)
         XCTAssertEqual(live.switches, DockGestureSwitches.current)
-        XCTAssertEqual(live.appsMayFollow, DockFollowAvailability.appsFollowInThisBuild)
+        XCTAssertEqual(live.appsMayFollow, DockFollowAvailability.appsFollow)
     }
 }
 
@@ -547,7 +554,8 @@ final class DockFollowPlanTests: XCTestCase {
 
     private let directions: [MouseGestureDirection] = [.up, .down, .left, .right]
 
-    /// A Mac on which Mission Control and Show Desktop follow (macOS 27, an ordinary build).
+    /// A Mac on which Mission Control and Show Desktop follow (macOS 27; Apps held back
+    /// unless `apps` says it follows, as every build has it).
     private func mac(
         swipe: Bool = true, post: Bool = true, major: Int = 27, switches: DockGestureSwitches = .allOn, apps: Bool = false
     ) -> DockFollowAvailability {
@@ -593,10 +601,11 @@ final class DockFollowPlanTests: XCTestCase {
         XCTAssertEqual(same.followPlan(for: .down, availability: mac()), .follows(.missionControl))
     }
 
-    /// The default actions: Up is Mission Control and follows; Down is Apps. In a build that
-    /// never lets Apps follow (every release, on every macOS) Apps is an action like any
-    /// other: it runs once and nothing asks it to follow, so no reason is given, whatever
-    /// else is in the way on that Mac. Only the owner's own build asks more of it.
+    /// The default actions: Up is Mission Control and follows; Down is Apps. Where Apps is
+    /// held back (`appsMayFollow` off: no build today, the switch is kept for a macOS that
+    /// breaks its pinch) Apps is an action like any other: it runs once and nothing asks it
+    /// to follow, so no reason is given, whatever else is in the way on that Mac. As every
+    /// build is made, more is asked of it: it follows, or says what is in the way.
     func testWithTheDefaultActionsUpFollowsAndAppsRunsOnce() {
         var defaults = MouseGestureSettings.default
         defaults.mode = .interactive
@@ -604,14 +613,14 @@ final class DockFollowPlanTests: XCTestCase {
         XCTAssertEqual(defaults.followPlan(for: .up, availability: mac()), .follows(.missionControl))
         XCTAssertEqual(defaults.followPlan(for: .down, availability: mac()), .doesNotFollow)
         let nothing = DockGestureSwitches(missionControl: false, showDesktop: false, launchpad: false)
-        for release in [mac(major: 14), mac(major: 26), mac(swipe: false), mac(post: false), mac(switches: nothing)] {
-            XCTAssertEqual(defaults.followPlan(for: .down, availability: release), .doesNotFollow, "\(release)")
+        for heldBack in [mac(major: 14), mac(major: 26), mac(swipe: false), mac(post: false), mac(switches: nothing)] {
+            XCTAssertEqual(defaults.followPlan(for: .down, availability: heldBack), .doesNotFollow, "\(heldBack)")
         }
         let swapped = settings(up: "appExpose", down: "showDesktop")
         XCTAssertEqual(swapped.followPlan(for: .up, availability: mac()), .doesNotFollow, "the direction does not matter")
         XCTAssertEqual(swapped.followPlan(for: .down, availability: mac()), .follows(.showDesktop))
 
-        // The owner's own build: Apps follows, or says what is in the way.
+        // As every build is made: Apps follows, or says what is in the way.
         XCTAssertEqual(defaults.followPlan(for: .down, availability: mac(apps: true)), .follows(.apps))
         XCTAssertEqual(defaults.followPlan(for: .down, availability: mac(major: 26, apps: true)), .cannotFollow(.apps, .notOnThisMacOS))
         let noShowDesktop = DockGestureSwitches(missionControl: true, showDesktop: false, launchpad: true)
@@ -927,7 +936,7 @@ final class DockFollowHoldTests: XCTestCase {
     func testEachDirectionOpensItsViewOrSaysWhyNot() {
         var hold = DockFollowHold(settings: settings(), availability: mac(), believed: nil)
         XCTAssertEqual(hold.up, .opens(.missionControl))
-        XCTAssertEqual(hold.down, .once, "Apps is an action like any other in an ordinary build: no reason is given")
+        XCTAssertEqual(hold.down, .once, "held back, Apps is an action like any other: no reason is given")
         XCTAssertEqual(hold[.up], hold.up)
         XCTAssertEqual(hold[.down], hold.down)
         XCTAssertEqual(hold[.left], .once)

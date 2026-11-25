@@ -684,7 +684,8 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
     /// The Dock's switches of a Mac whose trackpad gesture for App Exposé is on as well.
     private let appExposeOn = DockGestureSwitches(missionControl: true, showDesktop: true, launchpad: true, appExpose: true)
 
-    /// A Mac on which Mission Control and Show Desktop follow: macOS 27, an ordinary build.
+    /// A Mac on which Mission Control and Show Desktop follow: macOS 27, Apps held back
+    /// unless `apps` says it follows (as every build has it).
     private func mac(
         swipe: Bool = true, post: Bool = true, major: Int = 27, switches: DockGestureSwitches = .allOn, apps: Bool = false
     ) -> DockFollowAvailability {
@@ -1250,8 +1251,8 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         }
     }
 
-    /// Apps runs once in every ordinary build, by its key as before, and the log gives no
-    /// reason for it: no build of that kind lets Apps follow, so nothing was asked.
+    /// Where Apps is held back it runs once, by its key as before, and the log gives no
+    /// reason for it: nothing asked it to follow.
     func testAppsRunsOnceByItsKeyWhereItDoesNotFollow() {
         configureFollowing()
 

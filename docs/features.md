@@ -171,8 +171,8 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   slides the desktops with your hand, like a trackpad swipe. "Follow the hand" uses a
   private macOS interface; where it is missing, the mode is not available.
 - "Up and Down follow the hand too", a switch for "Follow the hand", off until you turn
-  it on: an Up or Down direction whose action is Mission Control or Show Desktop opens
-  that view with your hand, like the trackpad gesture, instead of running once.
+  it on: an Up or Down direction whose action is Mission Control, Show Desktop or Apps
+  opens that view with your hand, like the trackpad gesture, instead of running once.
   The view starts to move where the action would have run (after about 40 points
   of travel, so a click and the jolt of a press show nothing), goes back as your hand
   goes back and never past where it started, and when you let go macOS finishes it or
@@ -182,12 +182,15 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   before: let go while the view has moved less than a fifth of the way, with the hand
   still moving that way at one whole view a second or more, the view goes back and the
   action runs once. A slow small move that is let go goes back and runs nothing.
-  Mission Control follows on every macOS that has "Follow the hand", Show Desktop on
-  macOS 27 and later. Everything else is as before: Apps (Launchpad) and every other
-  action run once, Left and Right are the desktops, the click is the click. The preview
-  shows a direction that follows as its view opening with the hand, and one that runs
-  once as its view in one go; it draws Apps as the Mac has it (a panel over the windows
-  on macOS 26 and later, Launchpad's grid before). An app's own gestures have the switch
+  Mission Control follows on every macOS that has "Follow the hand", Show Desktop and
+  Apps on macOS 27 and later (before that they run once: Apps, there Launchpad, too).
+  Everything else is as before: every other action runs once, Left and Right are the
+  desktops, the click is the click. The preview shows a direction that follows as its
+  view opening with the hand, and one that runs once as its view in one go. It draws
+  the views as the Mac has them: Mission Control without the menu bar, its Spaces bar
+  along the top edge with the names of the desktops (their pictures only come when the
+  pointer goes up there), the windows side by side and the wallpaper as it is; Apps as
+  a panel over the windows on macOS 26 and later, Launchpad's grid before. An app's own gestures have the switch
   too, and the app in front when you press decides.
 - A direction that could follow the hand runs its action once instead: where the view's
   trackpad gesture is switched off in System Settings › Trackpad › More Gestures (the

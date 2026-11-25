@@ -359,7 +359,7 @@ final class GesturePreviewMotionTests: XCTestCase {
         // The hand moves the row's way, whatever the row opens.
         XCTAssertEqual(Loop(scene: followScene(focus: .down) { $0.downAction = SystemShortcut.missionControl.identifier }).legs,
                        [.follow(.down, opening: .missionControl)])
-        // A release build: Mission Control and Show Desktop, not Apps.
+        // Apps held back: Mission Control and Show Desktop, not Apps.
         XCTAssertEqual(Loop(scene: followScene(focus: .up, on: mac())).legs, [.follow(.up, opening: .missionControl)])
         // Before macOS 27: Mission Control only.
         XCTAssertEqual(Loop(scene: followScene(focus: .up, on: mac(version: 14))).legs, [.follow(.up, opening: .missionControl)])
@@ -494,10 +494,10 @@ final class GesturePreviewMotionTests: XCTestCase {
         XCTAssertEqual(all.length, 2 * 3.05 + 2 * 4.2, accuracy: 1e-9)
         XCTAssertEqual(all.legs.count, 4, "nothing plays twice")
 
-        // A release build with the defaults: Mission Control follows, Apps does not.
-        let release = Loop(scene: followScene(on: mac()))
-        XCTAssertEqual(release.legs.map(\.direction), [.left, .right, .up])
-        XCTAssertEqual(release.legs.last, .follow(.up, opening: .missionControl))
+        // Apps held back, with the defaults: Mission Control follows, Apps does not.
+        let heldBack = Loop(scene: followScene(on: mac()))
+        XCTAssertEqual(heldBack.legs.map(\.direction), [.left, .right, .up])
+        XCTAssertEqual(heldBack.legs.last, .follow(.up, opening: .missionControl))
         // Show Desktop on Down joins it; Copy on Up leaves.
         let showDesktop = Loop(scene: followScene(on: mac()) {
             $0.upAction = SystemShortcut.copy.identifier

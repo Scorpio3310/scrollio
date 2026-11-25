@@ -24,14 +24,16 @@ final class PreferencesGesturesTests: XCTestCase {
     private var summary = MouseGestureBindingSummary(hasGestureButton: true, hasLogitechGestureButton: false)
     /// What the connected mice can do: none is connected unless a test says so.
     private var support = MouseGestureDeviceSupport.none
-    /// What can follow the hand up and down on the Mac a test describes: a released build
-    /// on macOS 27 with every gesture of the Dock on (Mission Control and Show Desktop
-    /// follow, Apps runs once), unless a test says so.
+    /// What can follow the hand up and down on the Mac a test describes: macOS 27 with
+    /// every gesture of the Dock on and Apps held back (Mission Control and Show Desktop
+    /// follow, Apps runs once), unless a test says so. (Every build lets Apps follow now:
+    /// `apps: true`. Held back is the one-line switch kept in `DockFollowAvailability`,
+    /// and the rows must stay right with it.)
     private var follow = PreferencesGesturesTests.follows()
 
-    /// A Mac for `follow`: its macOS, whether the build lets Apps follow (`apps: true` is
-    /// the owner's own installed copy, made with SCROLLIO_TRACE; no release is one), the
-    /// Dock's own switches and whether macOS lets Scrollio post events.
+    /// A Mac for `follow`: its macOS, whether Apps may follow (`apps: true` is every build
+    /// as it is made; false is Apps held back), the Dock's own switches and whether macOS
+    /// lets Scrollio post events.
     static func follows(
         macOS: Int = 27, apps: Bool = false, switches: DockGestureSwitches = .allOn, canPostEvents: Bool = true
     ) -> DockFollowAvailability {
@@ -657,7 +659,7 @@ final class PreferencesGesturesTests: XCTestCase {
         func open(_ names: [String]) -> String {
             return "\(InterfaceList.joined(names)) open with your hand, like on a trackpad. Other actions run once."
         }
-        // A released build on macOS 27; before macOS 27; the owner's own build on macOS 27.
+        // macOS 27 with Apps held back; before macOS 27; macOS 27 as every build is made.
         XCTAssertEqual(hint(follows()), open(["Mission Control", "Show Desktop"]))
         XCTAssertEqual(open(["Mission Control", "Show Desktop"]), "Mission Control and Show Desktop open with your hand, like on a trackpad. Other actions run once.")
         for macOS in [14, 15, 26] {
@@ -730,9 +732,9 @@ final class PreferencesGesturesTests: XCTestCase {
         let gestureOff = Follow.Row.runsOnceHere("Runs once. Its trackpad gesture is off in System Settings.")
         let showDesktop = SystemShortcut.showDesktop.identifier
 
-        // The defaults: Up is Mission Control, Down is Apps. In a released build Apps is an
-        // action like any other, on every macOS, so its row says nothing (and never names
-        // macOS as the reason).
+        // The defaults: Up is Mission Control, Down is Apps. Held back, Apps is an action
+        // like any other, on every macOS, so its row says nothing (and never names macOS
+        // as the reason).
         XCTAssertEqual(rows(followSettings(), follows()), [.follows("Mission Control follows the hand"), .plain])
         XCTAssertEqual(rows(followSettings(up: SystemShortcut.appExpose.identifier), follows()), [.plain, .plain])
         for macOS in [14, 15, 26] {
@@ -745,7 +747,7 @@ final class PreferencesGesturesTests: XCTestCase {
             rows(followSettings(up: showDesktop, down: SystemShortcut.missionControl.identifier), follows()),
             [.follows("Show Desktop follows the hand"), .follows("Mission Control follows the hand")]
         )
-        // The owner's own build lets Apps try: it follows from macOS 27, and says so before.
+        // As every build is made, Apps follows from macOS 27, and its row says so before.
         XCTAssertEqual(
             rows(followSettings(), follows(apps: true)), [.follows("Mission Control follows the hand"), .follows("Apps follow the hand")]
         )
@@ -755,8 +757,8 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(Follow.face(of: .missionControl, majorVersion: 14), "Mission Control follows the hand")
         XCTAssertEqual(Follow.face(of: .showDesktop, majorVersion: 27), "Show Desktop follows the hand")
 
-        // The Dock's own switch (in the owner's own build Apps goes by Show Desktop's since
-        // macOS 26; in a release Apps has nothing to say about a switch).
+        // The Dock's own switch (Apps goes by Show Desktop's since macOS 26; held back it
+        // has nothing to say about a switch).
         var switches = DockGestureSwitches.allOn
         switches.missionControl = false
         XCTAssertEqual(rows(followSettings(), follows(switches: switches)), [gestureOff, .plain])
@@ -789,7 +791,7 @@ final class PreferencesGesturesTests: XCTestCase {
     /// With the switch on, an Up or Down row whose action opens with the hand says so in
     /// place of the action, without its picture, as Left and Right do; it stays a pull-down
     /// with its menu, the tick on the action. Click and every other action stay plain: with
-    /// the default actions that is Down, Apps, as a release shows it.
+    /// the default actions that is Down, Apps, where Apps is held back.
     func testRowsThatFollowSayItInPlaceOfTheirAction() throws {
         Options.shared.gesture = followSettings()
         let controller = makeController()
@@ -852,10 +854,10 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(title(of: down), SystemShortcut.missionControl.localizedName)
     }
 
-    /// The owner's own installed copy (a build made with SCROLLIO_TRACE) lets Apps try to
-    /// follow the hand: there, and in no release, the Down row with the default action says
-    /// "Apps follow the hand" and the switch's line names Apps too.
-    func testInTheOwnersOwnBuildAppsFollowTheHandToo() {
+    /// Apps follow the hand too, as every build is made (until 2026-11-25 only the owner's
+    /// own installed copy let them): the Down row with the default action says "Apps follow
+    /// the hand" and the switch's line names Apps too.
+    func testAppsFollowTheHandToo() {
         Options.shared.gesture = followSettings()
         follow = follows(apps: true)
         let controller = makeController()
@@ -977,7 +979,7 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertNil(down.accessibilityHelp())
         XCTAssertEqual(title(of: up), SystemShortcut.missionControl.localizedName)
 
-        // A released build, the default actions (Down = Apps): no macOS makes Apps follow
+        // Apps held back, the default actions (Down = Apps): no macOS makes Apps follow
         // there, so the row is the action as ever and blames nothing.
         Options.shared.gesture = followSettings()
         for macOS in [27, 26, 15, 14] {
@@ -1748,8 +1750,8 @@ final class PreferencesGesturesTests: XCTestCase {
         toggle(controls.followToggle, on: true)
         XCTAssertEqual(preview.loop.legs, [.follow(.up, opening: .missionControl)])
 
-        // Down is Apps: run once in a release, as its row says; with the hand only in the
-        // owner's own build.
+        // Down is Apps: run once where it is held back, as its row says; with the hand as
+        // every build is made.
         controller.slotHoverChanged(.down, inside: true)
         controller.slotHoverChanged(.up, inside: false)
         XCTAssertEqual(title(of: controls.actionPopUp(for: .down)), SystemShortcut.appExpose.localizedName)
@@ -2280,8 +2282,8 @@ final class PreferencesGesturesRenderTests: XCTestCase {
 
     /// "Up and Down follow the hand too" (`follow-hand-<case>-<appearance>.png`), by what
     /// can follow on the Mac each case describes, never this Mac's own Dock settings:
-    /// `all-three` (the owner's own build on macOS 27: Mission Control, Apps and Show
-    /// Desktop), `release-27` (a released build: Up says it follows, Down is plain "Apps"),
+    /// `all-three` (macOS 27 as every build is made: Mission Control, Apps and Show
+    /// Desktop), `apps-held-back` (Up says it follows, Down is plain "Apps"),
     /// `mixed` (Up = Show Desktop as a sentence, Down = a recorded key combination with its
     /// icon), `before-27` (only Mission Control; Down = Show Desktop plain), `gesture-off`
     /// (the Dock's switch for Mission Control off: Up plain, Down = Show Desktop follows),
@@ -2301,7 +2303,7 @@ final class PreferencesGesturesRenderTests: XCTestCase {
         typealias Change = (inout MouseGestureSettings) -> Void
         let cases: [(name: String, mac: DockFollowAvailability, change: Change)] = [
             ("all-three", mac(apps: true), { _ in }),
-            ("release-27", mac(), { _ in }),
+            ("apps-held-back", mac(), { _ in }),
             ("mixed", mac(), { $0.upAction = showDesktop; $0.actions.down = keys }),
             ("before-27", mac(26), { $0.downAction = showDesktop }),
             ("gesture-off", mac(switches: missionControlOff), { $0.downAction = showDesktop }),

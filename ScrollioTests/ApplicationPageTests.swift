@@ -2209,7 +2209,7 @@ final class ApplicationPageTests: XCTestCase {
         general.actionsFollowHand = true
         Options.shared.gesture = general
         calculator.setUsesGeneralGestures(false, general: general)
-        // (A released build on macOS 27, as the pane's tests describe their Mac.)
+        // (macOS 27 with Apps held back, as the pane's tests describe their Mac.)
         var mac = PreferencesGesturesTests.follows()
         let (pane, part) = try gesturesPart(interactiveAvailable: true, follow: { mac })
         let controls = try XCTUnwrap(part.controls)
@@ -2229,7 +2229,7 @@ final class ApplicationPageTests: XCTestCase {
         XCTAssertEqual(row.explanation, "Mission Control and Show Desktop open with your hand, like on a trackpad. Other actions run once.")
         XCTAssertEqual(title(up), "Mission Control follows the hand")
         XCTAssertTrue(up.isEnabled)
-        XCTAssertEqual(title(down), SystemShortcut.appExpose.localizedName, "Apps runs once in a released build")
+        XCTAssertEqual(title(down), SystemShortcut.appExpose.localizedName, "Apps runs once where it is held back")
         XCTAssertNil(down.toolTip, "an action like any other there: no reason is given")
         XCTAssertNil(down.accessibilityHelp())
         pane.detailController?.view.layoutSubtreeIfNeeded()

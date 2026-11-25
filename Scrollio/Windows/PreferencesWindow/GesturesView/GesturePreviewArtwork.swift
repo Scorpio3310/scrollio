@@ -31,9 +31,15 @@ enum GesturePreviewPalette {
     static let desktopGap = NSColor(white: 0, alpha: 0.85)
     static let dock = ScrollPreviewPalette.adaptive(light: NSColor(white: 1, alpha: 0.45), dark: NSColor(white: 0.1, alpha: 0.45))
     static let dockEdge = ScrollPreviewPalette.adaptive(light: NSColor(white: 1, alpha: 0.6), dark: NSColor(white: 1, alpha: 0.12))
-    /// Over the desktop while Mission Control or the app grid shows.
-    static let overviewShade = NSColor(white: 0, alpha: 0.28)
+    /// Over the desktop while Launchpad's grid shows. (Mission Control leaves the
+    /// wallpaper as it is.)
     static let gridShade = NSColor(white: 0, alpha: 0.42)
+    /// Mission Control's Spaces bar, the strip that takes the menu bar's place, and the
+    /// names of the Spaces on it: the one on screen, and the other.
+    static let spacesBar = ScrollPreviewPalette.adaptive(light: NSColor(white: 1, alpha: 0.62), dark: NSColor(white: 0, alpha: 0.45))
+    static let spacesBarEdge = ScrollPreviewPalette.adaptive(light: NSColor(white: 0, alpha: 0.10), dark: NSColor(white: 1, alpha: 0.10))
+    static let spaceName = ScrollPreviewPalette.adaptive(light: NSColor(white: 0, alpha: 0.70), dark: NSColor(white: 1, alpha: 0.90))
+    static let otherSpaceName = ScrollPreviewPalette.adaptive(light: NSColor(white: 0, alpha: 0.30), dark: NSColor(white: 1, alpha: 0.40))
     static let hudFill = ScrollPreviewPalette.adaptive(light: NSColor(white: 0.90, alpha: 0.95), dark: NSColor(white: 0.20, alpha: 0.92))
     static let hudEdge = ScrollPreviewPalette.adaptive(light: NSColor(white: 0, alpha: 0.12), dark: NSColor(white: 1, alpha: 0.12))
     static let hudSymbol = ScrollPreviewPalette.adaptive(light: NSColor(white: 0.15, alpha: 1), dark: NSColor(white: 0.92, alpha: 1))
@@ -647,9 +653,9 @@ enum GesturePreviewAppsLook: Equatable {
 }
 
 /// The right card: a row of desktops seen through the screen, a menu bar and a dock that
-/// stay put, the overview of Mission Control, the app grid (Launchpad, or the panel of Apps:
-/// `appsLook`), the windows out of the way for Show Desktop, the pulse of other actions and
-/// the pointer.
+/// stay put, the overview of Mission Control (whose Spaces bar takes the menu bar's place,
+/// as on a Mac), the app grid (Launchpad, or the panel of Apps: `appsLook`), the windows
+/// out of the way for Show Desktop, the pulse of other actions and the pointer.
 final class GesturePreviewScreenCard: GesturePreviewArtworkView {
 
     static let cornerRadius: CGFloat = 10
@@ -662,7 +668,14 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
     static let dockIconSize: CGFloat = 8
     static let dockIconCount = 7
     /// How much smaller the windows get in the overview.
-    static let overviewScale: CGFloat = 0.6
+    static let overviewScale: CGFloat = 0.7
+    /// Mission Control's Spaces bar: a strip along the top edge, a little taller than the
+    /// menu bar it replaces, with the names of the Spaces in its middle. (The pictures of
+    /// the Spaces only come when the pointer goes up there; the picture shows the bar as
+    /// it is when Mission Control has just opened.)
+    static let spacesBarHeight: CGFloat = 12
+    static let spaceNameSize = NSSize(width: 22, height: 3)
+    static let spaceNameGap: CGFloat = 14
     /// Show Desktop: how much of a window stays in sight at the edge it slid to.
     static let showDesktopSliver: CGFloat = 5
     /// What lies on the desktop: how many items, their size, and their place in a column
@@ -746,7 +759,8 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         }
     }
 
-    /// Where a window is in Mission Control: smaller, side by side under the Spaces bar.
+    /// Where a window is in Mission Control: smaller, side by side (none over another),
+    /// in the middle of the room between the Spaces bar and the Dock.
     static func overviewRect(_ kind: WindowKind, onDesktop index: Int, in size: NSSize) -> NSRect {
         let kinds = windows(onDesktop: index)
         let scale = overviewScale
@@ -759,7 +773,7 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         }
         let total = sizes.reduce(0) { $0 + $1.width } + gap * CGFloat(max(0, sizes.count - 1))
         var x = (size.width - total) / 2
-        let top: CGFloat = 40, bottom = size.height - dockHeight - 10
+        let top = spacesBarHeight, bottom = size.height - dockHeight - 4
         for (index, candidate) in order.enumerated() {
             let itemSize = sizes[index]
             if candidate == kind {
@@ -843,6 +857,24 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         return rects
     }
 
+    /// Mission Control's Spaces bar when it is whole: along the top edge, where the menu
+    /// bar was.
+    static func spacesBarRect(in size: NSSize) -> NSRect {
+        return NSRect(x: 0, y: 0, width: size.width, height: spacesBarHeight)
+    }
+
+    /// The names of the two Spaces on the whole bar, side by side in its middle.
+    static func spaceNameRects(in size: NSSize) -> [NSRect] {
+        let name = spaceNameSize
+        let left = ((size.width - 2 * name.width - spaceNameGap) / 2).rounded()
+        return (0..<2).map { index in
+            NSRect(
+                x: left + CGFloat(index) * (name.width + spaceNameGap), y: (spacesBarHeight - name.height) / 2,
+                width: name.width, height: name.height
+            )
+        }
+    }
+
     // MARK: How strongly a piece shows
 
     private static func unit(_ value: CGFloat) -> CGFloat {
@@ -857,11 +889,18 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         return p * p * (3 - 2 * p)
     }
 
-    /// Mission Control's row of Spaces while the overview is `overview` (0…1) open: whole
-    /// from half open on. The row also slides out from under the menu bar, which shows it
-    /// coming; half open it must not be half transparent as well.
+    /// Mission Control's Spaces bar while the overview is `overview` (0…1) open: how far
+    /// it has come down from above the top edge, and how strong it is. In place and whole
+    /// from half open on, the stop of a hold that follows the hand, where it must not
+    /// stand half out or half transparent.
     static func spacesBarStrength(overview: CGFloat) -> CGFloat {
         return unit(overview * 2)
+    }
+
+    /// The menu bar while the overview is `overview` (0…1) open: it makes way for the
+    /// Spaces bar, and is gone when that is in place.
+    static func menuBarStrength(overview: CGFloat) -> CGFloat {
+        return 1 - spacesBarStrength(overview: overview)
     }
 
     /// The windows while the app grid is `appGrid` (0…1) open: gone at
@@ -928,7 +967,7 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
             drawDesktop(index % 2, at: x, overview: overview, gridFade: grid, windowsAway: away)
         }
 
-        drawMenuBar()
+        drawMenuBar(strength: Self.menuBarStrength(overview: CGFloat(frame?.overview ?? 0)))
         if let frame, frame.appGrid > 0 {
             switch appsLook {
             case .launchpad: drawAppGrid(CGFloat(frame.appGrid))
@@ -966,10 +1005,6 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         let start = index == 0 ? ScrollPreviewPalette.desktopStart : GesturePreviewPalette.secondDesktopStart
         let end = index == 0 ? ScrollPreviewPalette.desktopEnd : GesturePreviewPalette.secondDesktopEnd
         NSGradient(starting: start, ending: end)?.draw(in: rect, angle: index == 0 ? -35 : 35)
-        if overview > 0 {
-            GesturePreviewPalette.overviewShade.withAlphaComponent(0.28 * overview).setFill()
-            rect.fill(using: .sourceOver)
-        }
         let items = Self.desktopItemStrength(windowsAway: windowsAway)
         if items > 0 {
             drawDesktopItems(at: x, strength: items)
@@ -1138,7 +1173,15 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         }
     }
 
-    private func drawMenuBar() {
+    /// The menu bar, as strong as `strength` (0…1): whole, except while Mission Control
+    /// opens (`menuBarStrength`).
+    private func drawMenuBar(strength: CGFloat = 1) {
+        guard strength > 0, let context = NSGraphicsContext.current?.cgContext else { return }
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        if strength < 1 {
+            context.setAlpha(strength)
+        }
         ScrollPreviewPalette.menuBar.setFill()
         NSRect(x: 0, y: 0, width: bounds.width, height: Self.menuBarHeight).fill(using: .sourceOver)
         ScrollPreviewPalette.menuItem.setFill()
@@ -1173,30 +1216,26 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
         }
     }
 
-    /// Mission Control's row of Spaces, coming down from under the menu bar, which stays
-    /// as it is (a hold that follows the hand can stop with the row half out, where it is
-    /// already whole in strength, `spacesBarStrength`): the one on screen framed.
+    /// Mission Control's Spaces bar, as a Mac shows it when Mission Control has just
+    /// opened: a strip along the top edge in the menu bar's place, with the names of the
+    /// Spaces in its middle, the one on screen stronger. It comes down from above the top
+    /// edge and is in place, and whole, by half open (`spacesBarStrength`).
     private func drawSpacesBar(progress: CGFloat, current: Int) {
-        let size = NSSize(width: 34, height: 21)
-        let gap: CGFloat = 8
-        let total = 2 * size.width + gap
-        let y = Self.menuBarHeight + 5 - (1 - progress) * 30
+        let shown = Self.spacesBarStrength(overview: progress)
+        guard shown > 0, let context = NSGraphicsContext.current?.cgContext else { return }
+        let bar = Self.spacesBarRect(in: bounds.size).offsetBy(dx: 0, dy: -(1 - shown) * Self.spacesBarHeight)
         NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(rect: NSRect(x: 0, y: Self.menuBarHeight, width: bounds.width, height: bounds.height - Self.menuBarHeight)).addClip()
-        NSGraphicsContext.current?.cgContext.setAlpha(Self.spacesBarStrength(overview: progress))
-        for index in 0..<2 {
-            let rect = NSRect(x: ((bounds.width - total) / 2).rounded() + CGFloat(index) * (size.width + gap), y: y, width: size.width, height: size.height)
-            let start = index == 0 ? ScrollPreviewPalette.desktopStart : GesturePreviewPalette.secondDesktopStart
-            let end = index == 0 ? ScrollPreviewPalette.desktopEnd : GesturePreviewPalette.secondDesktopEnd
-            let thumb = NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3)
-            NSGradient(starting: start, ending: end)?.draw(in: thumb, angle: index == 0 ? -35 : 35)
-            if index == current {
-                NSColor.white.setStroke()
-                let frame = NSBezierPath(roundedRect: rect.insetBy(dx: -1.5, dy: -1.5), xRadius: 4, yRadius: 4)
-                frame.lineWidth = 1.5
-                frame.stroke()
-            }
+        context.setAlpha(shown)
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        GesturePreviewPalette.spacesBar.setFill()
+        bar.fill(using: .sourceOver)
+        GesturePreviewPalette.spacesBarEdge.setFill()
+        NSRect(x: bar.minX, y: bar.maxY - 0.5, width: bar.width, height: 0.5).fill(using: .sourceOver)
+        for (index, name) in Self.spaceNameRects(in: bounds.size).enumerated() {
+            (index == current ? GesturePreviewPalette.spaceName : GesturePreviewPalette.otherSpaceName).setFill()
+            capsule(name.offsetBy(dx: 0, dy: bar.minY)).fill()
         }
+        context.endTransparencyLayer()
         NSGraphicsContext.restoreGraphicsState()
     }
 

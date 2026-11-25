@@ -10,19 +10,19 @@ it for the people who use the app, and give the version its part before you tag 
 
 ## Unreleased
 
-**Up and Down follow the hand too:** Mission Control and Show Desktop can open with your
-hand, like on a trackpad.
+**Up and Down follow the hand too:** Mission Control, Show Desktop and Apps can open with
+your hand, like on a trackpad.
 
 ### New
 
 - **"Up and Down follow the hand too"**, a switch in Gestures for "Follow the hand", off
-  until you turn it on. An Up or Down direction set to Mission Control or Show Desktop
-  opens it with your hand instead of running once.
+  until you turn it on. An Up or Down direction set to Mission Control, Show Desktop or
+  Apps opens it with your hand instead of running once.
 - **Let go and macOS finishes it** or puts it back, from how far it is and how fast your
   hand was moving. A quick flick opens it at once, as before. "Swipe speed" sets how far
   your hand goes for the whole view.
-- **Mission Control** follows on every macOS that has "Follow the hand", **Show Desktop**
-  on macOS 27 and later. Apps (Launchpad) and every other action run once, as before.
+- **Mission Control** follows on every macOS that has "Follow the hand", **Show Desktop
+  and Apps** on macOS 27 and later (before that they run once, as every other action).
 - **The same move again closes** a view you just opened with your hand. While that
   Mission Control is showing, the opposite move puts it away with your hand.
 - **The rows say what follows** ("Mission Control follows the hand"), and the line under
@@ -34,7 +34,8 @@ hand, like on a trackpad.
   paused.
 - **For each app:** Safari › Gestures has the same switch for the app's own gestures.
 - **The picture in Gestures** shows the view opening with your hand where Up or Down
-  follows it, and Show Desktop has a picture of its own.
+  follows it, and Show Desktop has a picture of its own. Mission Control is drawn as the
+  Mac shows it: no menu bar, the names of the desktops along the top edge.
 - **What it cannot do yet:** Scrollio cannot ask macOS what is showing. After you leave a
   view another way (Esc, a click, the trackpad), the next move may open it at once instead
   of with your hand, or do nothing once (the switch's tooltip says so). Not yet tried on

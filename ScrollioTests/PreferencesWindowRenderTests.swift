@@ -1991,9 +1991,9 @@ final class PreferencesWindowRenderTests: XCTestCase {
                 apps?.openApplication(withID: calculator.path, part: part)
                 guard let detail = apps?.detailController else { return }
                 detail.gesturesPart.isInteractiveAvailable = { true }
-                // (A released build on macOS 27, whatever this Mac is.)
+                // (macOS 27 as every build is made, whatever this Mac is.)
                 detail.gesturesPart.followAvailability = {
-                    DockFollowAvailability(swipeIsAvailable: true, canPostEvents: true, majorVersion: 27, switches: .allOn, appsMayFollow: false)
+                    DockFollowAvailability(swipeIsAvailable: true, canPostEvents: true, majorVersion: 27, switches: .allOn, appsMayFollow: true)
                 }
                 detail.gesturesPart.deviceSource = mice
                 detail.gesturesPart.syncViewWithOptions()
