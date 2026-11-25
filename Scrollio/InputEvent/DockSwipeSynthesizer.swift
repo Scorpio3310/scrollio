@@ -487,15 +487,24 @@ final class DockSwipeSynthesizer {
         driver.cancel()
     }
 
-    /// The Dock hears one voice at a time. Before Scrollio asks it for a view in one go (the
-    /// instant toggle of Mission Control or Show Desktop, the Apps key), nothing of a swipe
-    /// may still be on its way: a swipe that runs is cancelled (its owner then sends nothing
-    /// more, `isRunning`), and a terminal event that was still to be posted again is posted
-    /// now, once, and its timers are dropped. Otherwise that re-post would reach the Dock
-    /// after the toggle, as a terminal event of a swipe that never began. Safe to call when
-    /// idle, and as often as wanted. Main thread.
+    /// The Dock hears one voice about its views at a time. Before Scrollio asks it for a
+    /// view in one go (the instant toggle of Mission Control or Show Desktop, the Apps
+    /// key), nothing of a motion towards a view may still be on its way: a vertical swipe
+    /// or a pinch that runs is cancelled (its owner then sends nothing more, `isRunning`),
+    /// and a terminal event that was still to be posted again is posted now, once, and its
+    /// timers are dropped. Otherwise that re-post would reach the Dock after the toggle, as
+    /// a terminal event of a swipe that never began.
+    ///
+    /// A swipe of the desktops that runs is left alone (a hold's, the thumb wheel's slide
+    /// or its rest after a turn): it ends by itself and the toggle goes out beside it, as
+    /// it always did. Taking it back would put the desktop back where the wheel had just
+    /// moved it from.
+    ///
+    /// Safe to call when idle, and as often as wanted. Main thread.
     func settle() {
-        cancel()
+        if let runningAxis, runningAxis != .horizontal {
+            cancel()
+        }
         driver.settle()
     }
 

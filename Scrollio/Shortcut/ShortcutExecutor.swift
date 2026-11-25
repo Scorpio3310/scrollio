@@ -367,9 +367,10 @@ class ShortcutExecutor {
 
     /// Told right before Scrollio asks the Dock for one of its views in one go (Mission
     /// Control or Show Desktop by name or by key, Apps by its key), whoever runs the action:
-    /// a button, a gesture, the Shortcut Ring. The Dock hears one voice at a time: a swipe
-    /// that follows the hand or the thumb wheel is settled first, and the toggle turns over
-    /// what Scrollio believes the Dock shows (`InputProcessor.dockViewWillBeToggled`).
+    /// a button, a gesture, the Shortcut Ring. The Dock hears one voice about its views at
+    /// a time: a motion towards a view that follows the hand is settled first (a swipe of
+    /// the desktops goes on), and the toggle turns over what Scrollio believes the Dock
+    /// shows (`InputProcessor.dockViewWillBeToggled`).
     /// Actions run on the main thread; one that ever did not would settle there, late
     /// rather than from the wrong thread. A test may give its own.
     var dockViewWillBeToggled: (DockFollowTarget) -> Void = { view in

@@ -1130,7 +1130,9 @@ class InputProcessor: ModifierFlagsProviding {
                     // drives at a time), or its tail while the wheel rests. A motion towards
                     // a view never takes it over: the Dock would get the end of one motion
                     // and the begin of another in one go. The direction runs its action
-                    // once instead, and the rest of this hold's commands are dropped.
+                    // once instead, beside the wheel's slide, which finishes by itself (the
+                    // settle of an instant toggle leaves a swipe of the desktops alone);
+                    // the rest of this hold's commands are dropped.
                     runOnceInsteadOfFollowing(session)
                     return
                 }
@@ -1332,9 +1334,11 @@ class InputProcessor: ModifierFlagsProviding {
     /// Scrollio is about to ask the Dock for one of its views in one go: Mission Control
     /// or Show Desktop by name (or by key), Apps by its key; from a button, a gesture, the
     /// Shortcut Ring (`ShortcutExecutor.dockViewWillBeToggled`). The Dock hears one voice
-    /// at a time, so whatever is left of a swipe is settled first: one that runs is
-    /// cancelled, and a last event that was still to be posted again is posted now. And the
-    /// toggle turns over what Scrollio believes the Dock shows. Main thread.
+    /// about its views at a time, so whatever is left of a swipe is settled first: a motion
+    /// towards a view that runs is cancelled, and a last event that was still to be posted
+    /// again is posted now. A swipe of the desktops that runs goes on (the thumb wheel's
+    /// slide ends by itself, and the desktop switches, as before). And the toggle turns
+    /// over what Scrollio believes the Dock shows. Main thread.
     func dockViewWillBeToggled(_ view: DockFollowTarget) {
         assertMainThread()
         DockSwipeSynthesizer.shared.settle()

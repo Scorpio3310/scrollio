@@ -571,26 +571,49 @@ final class DockSwipeSynthesizerTests: XCTestCase {
         return { calls }
     }
 
-    /// Before Scrollio asks the Dock for a view in one go, nothing of a swipe may still be
-    /// on its way: a swipe that runs is cancelled first, then the poster settles what it
-    /// still had to post again.
+    /// Before Scrollio asks the Dock for a view in one go, nothing of a motion towards a
+    /// view may still be on its way: a vertical swipe or a pinch that runs is cancelled
+    /// first, then the poster settles what it still had to post again.
     func testSettlingCancelsARunningSwipeAndThenSettlesThePoster() {
+        for axis in [DockSwipeAxis.vertical, .pinch] {
+            let calls = installSettlingDriver()
+            let synthesizer = DockSwipeSynthesizer.shared
+
+            synthesizer.begin(axis: axis)
+            synthesizer.update(progress: 0.4)
+            let number = synthesizer.swipeNumber
+            synthesizer.settle()
+            XCTAssertFalse(synthesizer.isActive)
+            XCTAssertNil(synthesizer.runningAxis)
+            XCTAssertFalse(synthesizer.isRunning(number), "its owner sends nothing more")
+            XCTAssertEqual(calls(), ["begin \(axis)", "update 0.4", "cancel", "settle"])
+
+            // Nothing more of that swipe afterwards.
+            synthesizer.update(progress: 0.5)
+            synthesizer.end(velocity: 1)
+            XCTAssertEqual(calls(), ["begin \(axis)", "update 0.4", "cancel", "settle"])
+        }
+    }
+
+    /// A swipe of the desktops is never taken back by an instant toggle (a hold's sideways
+    /// swipe, the thumb wheel's slide or its rest after a turn): it goes on and ends by
+    /// itself, and the toggle goes out beside it, as it did before there was a settle.
+    func testSettlingLeavesASwipeOfTheDesktopsRunning() {
         let calls = installSettlingDriver()
         let synthesizer = DockSwipeSynthesizer.shared
 
-        synthesizer.begin(axis: .vertical)
-        synthesizer.update(progress: 0.4)
+        synthesizer.begin(axis: .horizontal)
+        synthesizer.update(progress: 0.7)
         let number = synthesizer.swipeNumber
         synthesizer.settle()
-        XCTAssertFalse(synthesizer.isActive)
-        XCTAssertNil(synthesizer.runningAxis)
-        XCTAssertFalse(synthesizer.isRunning(number), "its owner sends nothing more")
-        XCTAssertEqual(calls(), ["begin vertical", "update 0.4", "cancel", "settle"])
+        XCTAssertTrue(synthesizer.isActive)
+        XCTAssertEqual(synthesizer.runningAxis, .horizontal)
+        XCTAssertTrue(synthesizer.isRunning(number), "its owner goes on")
+        XCTAssertEqual(calls(), ["begin horizontal", "update 0.7", "settle"])
 
-        // Nothing more of that swipe afterwards.
-        synthesizer.update(progress: 0.5)
+        synthesizer.update(progress: 0.9)
         synthesizer.end(velocity: 1)
-        XCTAssertEqual(calls(), ["begin vertical", "update 0.4", "cancel", "settle"])
+        XCTAssertEqual(calls(), ["begin horizontal", "update 0.7", "settle", "update 0.9", "end 1.0"])
     }
 
     /// With no swipe running only the poster is settled (the terminal event of a swipe that

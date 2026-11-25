@@ -1335,6 +1335,34 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertFalse(dockVoices.contains(.settle))
     }
 
+    /// A swipe of the desktops is never taken back by an instant toggle, as before there
+    /// was a settle: the thumb wheel's slide (or its rest after a turn) ends by itself and
+    /// the desktop switches, and a hold's own sideways swipe goes on under the hand.
+    func testAnInstantToggleNeverTakesBackASwipeOfTheDesktops() {
+        configureFollowing(follow: false)
+
+        // "Follow the wheel" slides the desktops; a button asks for Mission Control.
+        DockSwipeSynthesizer.shared.begin(axis: .horizontal)
+        DockSwipeSynthesizer.shared.update(progress: 0.7)
+        ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: "missionControl"))
+        XCTAssertEqual(dockVoices, [
+            .swipe(.begin(.horizontal)), .swipe(.update(0.7)), .settle, .toggle(.missionControl),
+        ])
+        XCTAssertTrue(DockSwipeSynthesizer.shared.isActive, "the slide finishes by itself")
+        DockSwipeSynthesizer.shared.end(velocity: 0)
+
+        // A hold slides the desktops; the Apps key from elsewhere does not stop it.
+        swipeCalls = []
+        dockVoices = []
+        pressGestureButton()
+        moveHand(-100, 0)
+        ShortcutExecutor.shared.executeOnePress(.systemShortcut(identifier: "appExpose"))
+        moveHand(-100, 0)
+        releaseGestureButton()
+        assertSwipeCalls([.begin(.horizontal), .update(0.1), .update(0.2), .end(0)])
+        XCTAssertEqual(instantVoices, [.settle, .key(resolvedShortcut(SystemShortcut.appExpose).code)])
+    }
+
     /// A toggle from elsewhere while a hold drives a motion: the motion goes back first, the
     /// hold sends nothing more, and its release cannot end a swipe that began after it.
     func testAToggleFromElsewhereTakesTheHoldsMotionBackFirst() {
@@ -1394,15 +1422,16 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         moveHand(0, -100)
         XCTAssertEqual(dockVoices, [.swipe(.begin(.horizontal)), .swipe(.update(0.5))], "no vertical begin, nothing taken over")
         waitForMainQueue()
-        // The action runs once instead. It is a toggle of the Dock, so the swipe that runs
-        // is settled first: one voice.
+        // The action runs once instead, beside the wheel's slide, which finishes by itself
+        // (the desktop switches) as it did before Up could follow the hand.
         XCTAssertEqual(dockVoices, [
-            .swipe(.begin(.horizontal)), .swipe(.update(0.5)), .swipe(.cancel), .settle, .toggle(.missionControl),
+            .swipe(.begin(.horizontal)), .swipe(.update(0.5)), .settle, .toggle(.missionControl),
         ])
+        XCTAssertTrue(DockSwipeSynthesizer.shared.isActive, "the wheel's swipe goes on")
         moveHand(0, -300)
         releaseGestureButton()
 
-        XCTAssertEqual(dockVoices.count, 5, "the rest of the hold does nothing")
+        XCTAssertEqual(dockVoices.count, 4, "the rest of the hold does nothing")
         XCTAssertEqual(gestureLog, [
             "Gestures: up did not follow the hand: missionControl, the wheel's swipe was running",
             "Gestures: up ran missionControl",
@@ -1411,9 +1440,8 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
 
         // Sideways still takes the wheel's swipe over, as before.
         swipeCalls = []
-        DockSwipeSynthesizer.shared.begin(axis: .horizontal)
         hold([(-100, 0)])
-        assertSwipeCalls([.begin(.horizontal), .cancel, .begin(.horizontal), .update(0.1), .end(0)])
+        assertSwipeCalls([.cancel, .begin(.horizontal), .update(0.1), .end(0)])
     }
 
     /// The same when the motion would begin with the release itself.
@@ -1427,11 +1455,13 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
         drainMainQueue()
 
-        XCTAssertEqual(dockVoices, [.swipe(.begin(.horizontal)), .swipe(.cancel), .settle, .toggle(.missionControl)])
+        XCTAssertEqual(dockVoices, [.swipe(.begin(.horizontal)), .settle, .toggle(.missionControl)])
+        XCTAssertTrue(DockSwipeSynthesizer.shared.isActive, "the wheel's swipe goes on")
         XCTAssertEqual(gestureLog, [
             "Gestures: up did not follow the hand: missionControl, the wheel's swipe was running",
             "Gestures: up ran missionControl",
         ])
+        DockSwipeSynthesizer.shared.cancel()
     }
 
     // MARK: Nothing stuck
