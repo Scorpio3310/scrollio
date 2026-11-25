@@ -103,6 +103,7 @@ final class DockFollowTuningTests: XCTestCase {
         XCTAssertEqual(DockFollowTuning.reverseTolerance, 8)
         XCTAssertEqual(DockFollowTuning.maximumTravelsPerSecond, 12)
         XCTAssertEqual(DockFollowTuning.lateDesktopChange, 1)
+        XCTAssertEqual(DockFollowTuning.flickFloor, 0.2)
     }
 
     /// Travel to a whole view at Swipe speed 1: 40 % of the screen's height, between 320 and
@@ -953,6 +954,27 @@ final class DockFollowHoldTests: XCTestCase {
         var desktop = motion(.down, .opens(.showDesktop), .pinch)
         desktop.told(progress: 0.7)
         XCTAssertEqual(desktop.beliefChange(after: .ended(velocity: 0, expected: true)), .opened(.showDesktop))
+
+        // The belief needs the view to have moved: a fifth of the way, as the Dock was
+        // told. A release that was only fast (expected to open at 2 % of the way) is none.
+        var flick = motion()
+        flick.told(progress: 0.02)
+        XCTAssertEqual(flick.beliefChange(after: .ended(velocity: 3, expected: true)), DockFollowedMotion.BeliefChange.none)
+        flick.told(progress: 0.19)
+        XCTAssertEqual(flick.beliefChange(after: .ended(velocity: 3, expected: true)), DockFollowedMotion.BeliefChange.none)
+        XCTAssertFalse(flick.hasMovedTheView)
+        flick.told(progress: 0.2)
+        XCTAssertTrue(flick.hasMovedTheView)
+        XCTAssertEqual(flick.beliefChange(after: .ended(velocity: 3, expected: true)), .opened(.missionControl))
+        // Where it was let go counts, not how far it had been.
+        flick.told(progress: 0.9)
+        flick.told(progress: 0.1)
+        XCTAssertFalse(flick.hasMovedTheView)
+        XCTAssertEqual(flick.beliefChange(after: .ended(velocity: 3, expected: true)), DockFollowedMotion.BeliefChange.none)
+        // Apps, the other end of the pinch: its progress is negative, the share is not.
+        var apps = motion(.down, .opens(.apps), .pinch, sign: -1)
+        apps.told(progress: -0.5)
+        XCTAssertEqual(apps.beliefChange(after: .ended(velocity: -1, expected: true)), .opened(.apps))
 
         let endings: [Ending] = [
             .ended(velocity: 0, expected: true), .ended(velocity: 0, expected: false), .cancelledAtRelease,

@@ -107,6 +107,11 @@ enum DockFollowTuning {
     /// pinch. (For the two new motions only.)
     static let maximumTravelsPerSecond: Double = 12
 
+    /// The share of the whole travel a view must have moved, as the Dock was told, for a
+    /// hold to count as one that opened it with the hand. Below it a release that is
+    /// expected to open is a flick: the hand was fast, but the view had barely moved, and
+    /// whether the Dock would finish such a motion is its own secret.
+    static let flickFloor: Double = 0.2
     /// macOS tells that the desktop in use changed up to about half a second after a swipe
     /// of the desktops ended. For this long after the end of Scrollio's own swipe of the
     /// desktops (a hold's or the thumb wheel's), such a change is taken for that swipe's:

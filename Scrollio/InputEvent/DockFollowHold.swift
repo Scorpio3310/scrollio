@@ -241,6 +241,12 @@ struct DockFollowedMotion: Equatable {
         furthest = max(furthest, last)
     }
 
+    /// The view moved at least `DockFollowTuning.flickFloor` of the way, as the Dock was
+    /// last told.
+    var hasMovedTheView: Bool {
+        return fullProgress > 0 && last / fullProgress >= DockFollowTuning.flickFloor
+    }
+
     // MARK: What it does to the belief
 
     /// What the end of a motion does to the view Scrollio believes it put up (`DockBelief`).
@@ -253,7 +259,10 @@ struct DockFollowedMotion: Equatable {
     }
 
     /// What this motion's end does to the belief.
-    /// - A hold that opened a view and was let go as expected to open put that view up.
+    /// - A hold that opened a view and was let go as expected to open put that view up,
+    ///   if the view had moved (`hasMovedTheView`): a release that is expected to open
+    ///   only because the hand was fast, at a few hundredths of the way, may well fall
+    ///   back, and a wrong belief costs more than none.
     /// - A hold that left Mission Control ends the belief unless it was turned back to
     ///   where it started (nothing was left then): whatever the Dock made of it, and
     ///   whatever ended it. Had Mission Control not been showing after all, the next move
@@ -262,7 +271,7 @@ struct DockFollowedMotion: Equatable {
     func beliefChange(after ending: Ending) -> BeliefChange {
         switch part {
         case .opens(let target):
-            if case .ended(_, expected: true) = ending { return .opened(target) }
+            if case .ended(_, expected: true) = ending, hasMovedTheView { return .opened(target) }
             return .none
         case .leavesMissionControl:
             return last > 0 ? .dropped : .none
