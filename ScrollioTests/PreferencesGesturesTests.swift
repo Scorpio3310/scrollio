@@ -1488,7 +1488,9 @@ final class PreferencesGesturesTests: XCTestCase {
         let controller = makeController()
         let preview = controller.previewView!
         XCTAssertEqual(preview.identifier, GesturesPreferencesViewController.Identifier.preview)
-        XCTAssertEqual(preview.scene, GesturePreviewScene(gesture: .default, focus: nil))
+        XCTAssertEqual(preview.scene, GesturePreviewScene(
+            gesture: .default, focus: nil, availability: controller.controls.availability
+        ), "the picture and the rows go by the same answer on what follows")
         XCTAssertFalse(preview.isTimerRunning, "not shown, not running")
 
         // Every control that writes a setting changes the scene, and so restarts the demo.

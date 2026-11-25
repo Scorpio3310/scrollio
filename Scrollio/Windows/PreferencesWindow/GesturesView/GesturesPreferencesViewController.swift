@@ -398,14 +398,19 @@ final class GesturesPreferencesViewController: NSViewController {
     // MARK: - Preview
 
     /// What the preview shows: the settings in effect and the row pointed at. Its pointer
-    /// stays still as the Freeze switch shows it (also while the mouse holds it).
+    /// stays still as the Freeze switch shows it (also while the mouse holds it). What
+    /// follows the hand in the picture is what the rows say follows (the same availability).
     var previewScene: GesturePreviewScene {
         var gesture = Options.shared.gesture
         if let controls {
             gesture.mode = controls.modePresentation.selectedMode
         }
         gesture.freezePointer = pointerHolder.showsFreeze(stored: gesture.freezePointer)
-        return GesturePreviewScene(gesture: gesture, focus: hoveredSlot ?? focusedSlot)
+        return GesturePreviewScene(
+            gesture: gesture,
+            focus: hoveredSlot ?? focusedSlot,
+            availability: controls?.availability ?? followAvailability()
+        )
     }
 
     private func updatePreviewScene() {
