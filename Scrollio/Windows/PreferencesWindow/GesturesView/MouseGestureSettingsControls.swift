@@ -552,9 +552,9 @@ final class MouseGestureSettingsControls: NSObject {
     /// What can follow the hand up and down on this Mac now. The swipe is there as the
     /// mode's own answer says: one answer for the mode and for the rows.
     var availability: DockFollowAvailability {
-        var availability = followAvailability()
-        availability.swipeIsAvailable = isInteractiveAvailable()
-        return availability
+        var value = followAvailability()
+        value.swipeIsAvailable = isInteractiveAvailable()
+        return value
     }
 
     /// What the switch "Up and Down follow the hand too", its line and the Up and Down rows
