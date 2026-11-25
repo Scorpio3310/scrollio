@@ -178,23 +178,28 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   goes back and never past where it started, and when you let go macOS finishes it or
   puts it back, from how far it is and how fast your hand was moving. "Swipe speed" sets
   how far the hand goes for the whole view (at 1, two fifths of the screen's height,
-  between 320 and 600 points). A quick flick still opens the view in one go, as it did
-  before: let go while the view has moved less than a fifth of the way, with the hand
-  still moving that way at one whole view a second or more, the view goes back and the
-  action runs once. A slow small move that is let go goes back and runs nothing.
+  between 320 and 600 points; three quarters of that for Apps). A quick flick still
+  opens the view in one go, as it did before: let go while the view has moved less
+  than a fifth of the way, with the hand still moving that way at one whole view a
+  second or more, or let go in the very moment the view would start to move, the view
+  goes back and the action runs once. A slow small move that is let go goes back and
+  runs nothing.
   Mission Control follows on every macOS that has "Follow the hand", Show Desktop and
-  Apps on macOS 27 and later (before that they run once: Apps, there Launchpad, too).
+  Apps on macOS 27 and later (before that they run once; before macOS 26 Apps is called
+  Launchpad).
   Everything else is as before: every other action runs once, Left and Right are the
   desktops, the click is the click. The preview shows a direction that follows as its
   view opening with the hand, and one that runs once as its view in one go. It draws
   the views as the Mac has them: Mission Control without the menu bar, its Spaces bar
   along the top edge with the names of the desktops (their pictures only come when the
   pointer goes up there), the windows side by side and the wallpaper as it is; Apps as
-  a panel over the windows on macOS 26 and later, Launchpad's grid before. An app's own gestures have the switch
-  too, and the app in front when you press decides.
+  a panel over the windows on macOS 26 and later, Launchpad's grid before. An app's own
+  gestures have the switch too, and the app in front when you press decides.
 - A direction that could follow the hand runs its action once instead: where the view's
   trackpad gesture is switched off in System Settings › Trackpad › More Gestures (the
-  Dock would ignore the motion; Scrollio reads those switches and never changes them);
+  Dock would ignore the motion; Scrollio reads those switches and never changes them;
+  Apps has no switch of its own there from macOS 26 on: Show Desktop's counts for both,
+  and the row of Apps says so);
   while macOS does not let Scrollio post events; while the thumb wheel's "Follow the
   wheel" still slides the desktops or rests after a turn (a gesture never takes that
   swipe over for another motion; the slide finishes by itself, as before); and when
@@ -211,10 +216,13 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   comes to the front (Finder may while Show Desktop is showing: a click on a file on
   the desktop), the desktop in use changes, the Mac sleeps or Scrollio is paused. After
   you left such a view another way (Esc, a click on a window of the same app, the
-  trackpad), the next move may open it at once instead of with your hand, or do nothing,
-  once: a move that was meant to put Mission Control away and is not turned back to
-  its start ends what Scrollio knew, so the move after it is that direction's own
-  action again. The switch's tooltip says this in three sentences.
+  trackpad), the next move may open it at once instead of with your hand, or do nothing
+  (a move that was meant to put Mission Control away; not turned back to its start, it
+  ends what Scrollio knew). And a view that opened in one go (a flick, or that move) is
+  not known to Scrollio: a slow same move then sends the opening motion into a view
+  that is already there, nothing shows, and only the move after it closes the view. A
+  quick flick always toggles the view in one go. The switch's tooltip says this in
+  short, in "Follow the hand" where something can open with your hand.
 - A view that is opening with your hand goes back at once when the button is held for
   more than ten seconds, when the Shortcut Ring opens, when the desktop in use changes
   (not for the change Scrollio's own swipe of the desktops has just made, a gesture's
@@ -482,9 +490,9 @@ wheel.
   swipe that slid back, is given a second for its switch: macOS says it later while it
   still draws the one before, and the wheel is not held up that way for it.
   While a gesture's swipe runs the wheel waits; a gesture that starts one sideways takes
-  over, and one that would open Mission Control or Show Desktop with the hand runs that
-  action once instead (see [Mouse gestures](#mouse-gestures)), which takes the wheel's swipe
-  back first.
+  over, and one that would open Mission Control, Show Desktop or Apps with the hand runs
+  that action once instead (see [Mouse gestures](#mouse-gestures)); the wheel's slide
+  finishes by itself.
   Where macOS cannot be sent a swipe, the desktops go in steps.
 - For every action but Scroll Sideways, a small tick of the wheel, or a pair of them
   (where the thumb lets go of it or takes it again), does nothing on its own: the ticks

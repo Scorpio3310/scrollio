@@ -295,6 +295,19 @@ final class ReleaseReadinessTests: XCTestCase {
                        "no configuration of the project switches the trace on by itself")
     }
 
+    /// What follows the hand is the same in every build. Until 1.1.2 a build condition let
+    /// Apps follow only in a copy made by `scripts/install.sh`; the test of the flag itself
+    /// (`testAppsFollowInEveryBuild`) runs in a debug build and could not see a condition
+    /// that spared it. So: no build condition at all in the file that decides it.
+    func testWhatFollowsTheHandIsTheSameInEveryBuild() throws {
+        let source = try text("Scrollio/InputEvent/DockFollow.swift")
+        let conditions = source.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.hasPrefix("#if") || $0.hasPrefix("#else") }
+        XCTAssertEqual(conditions, [], "a build condition in DockFollow.swift")
+        XCTAssertTrue(source.contains("static let appsFollow = true"), "Apps follow, in one place")
+    }
+
     // MARK: - The build scripts
 
     func testTheScriptsAreValidShell() throws {

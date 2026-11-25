@@ -960,6 +960,60 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertTrue(gestureLog.first?.hasSuffix("released at 0.19, 7.0/s: cancelled, a flick: ran once") == true, "\(gestureLog)")
     }
 
+    /// A hold let go in the very turn its hand passed the starting distance: the motion
+    /// begins and ends at once, and the speed it is given is the last few points over a
+    /// whole frame (0.45 views a second here, for a hand that may have been flicking). The
+    /// Dock would be told to begin and end a motion that shows nothing, and nothing would
+    /// run, where the action ran at 40 pt before the direction could follow the hand. So it
+    /// counts as a flick: the motion goes back and the action runs once.
+    func testAHoldLetGoAsItsMotionBeginsRunsTheActionOnce() {
+        configureFollowing(on: mac(apps: true))
+
+        // Up: 39 pt, then 3 pt more with the release.
+        pressGestureButton()
+        moveHand(0, -39)
+        XCTAssertEqual(dockVoices, [], "not yet past the starting distance")
+        clock += 0.004
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: -3)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        XCTAssertEqual(dockVoices, [], "nothing is posted inside the callbacks")
+        drainMainQueue()
+        XCTAssertEqual(dockVoices.first, .swipe(.begin(.vertical)))
+        XCTAssertEqual(dockVoices.suffix(3), [.swipe(.cancel), .settle, .toggle(.missionControl)])
+        XCTAssertEqual(gestureLog.count, 2, "\(gestureLog)")
+        XCTAssertTrue(gestureLog.first?.hasSuffix("cancelled, a flick: ran once") == true, "\(gestureLog)")
+        XCTAssertEqual(gestureLog.last, "Gestures: up ran missionControl")
+        XCTAssertNil(InputProcessor.shared.believedDockView, "a toggle is never believed")
+        XCTAssertFalse(DockSwipeSynthesizer.shared.isActive)
+
+        // Down, Apps: the same, by its key.
+        dockVoices = []
+        gestureLog = []
+        pressGestureButton()
+        moveHand(0, 39)
+        clock += 0.004
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: 4)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        drainMainQueue()
+        XCTAssertEqual(dockVoices.first, .swipe(.begin(.pinch)))
+        XCTAssertEqual(dockVoices.suffix(3), [.swipe(.cancel), .settle, .key(resolvedShortcut(SystemShortcut.appExpose).code)])
+        XCTAssertEqual(gestureLog.last, "Gestures: down ran appExpose")
+
+        // A hold that leaves Mission Control is never one: let go as its motion begins, it
+        // is the Dock's, and no toggle runs.
+        openMissionControlWithTheHand()
+        dockVoices = []
+        pressGestureButton()
+        moveHand(0, 39)
+        clock += 0.004
+        InputProcessor.shared.handleMouseGestureMovement(deltaX: 0, deltaY: 3)
+        XCTAssertEqual(InputProcessor.shared.process(gestureInputEvent(phase: .up)), .consumed)
+        drainMainQueue()
+        XCTAssertEqual(dockVoices.first, .swipe(.begin(.vertical)))
+        XCTAssertFalse(dockVoices.contains(.swipe(.cancel)), "\(dockVoices)")
+        XCTAssertEqual(instantVoices, [], "no toggle")
+    }
+
     /// Only a flick: a slow small move that is let go goes back and runs nothing, and from
     /// a fifth of the way on macOS decides, however fast the hand was.
     func testASlowSmallMoveGoesBackAndAFlickFromAFifthOnIsTheDocks() {
@@ -1007,7 +1061,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         ])
         XCTAssertEqual(gestureLog.last, "Gestures: up ran showDesktop")
 
-        // Apps, where a build lets it follow: the other end of the pinch, then its key.
+        // Apps: the other end of the pinch, then its key.
         swipeCalls = []
         dockVoices = []
         gestureLog = []
@@ -1055,8 +1109,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         hold([(0, 100)])
         assertSwipeCalls([.begin(.vertical), .update(0.25), .end(0)])
 
-        // Apps follows only where a build lets it: the other end of the pinch, over three
-        // quarters of the travel.
+        // Apps: the other end of the pinch, over three quarters of the travel.
         swipeCalls = []
         gestureLog = []
         setFollowAvailability(mac(apps: true))
@@ -1337,6 +1390,93 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(instantVoices, [])
     }
 
+    /// The default actions as every build is made (Up Mission Control, Down Apps): Down
+    /// opens Apps with the hand, by the pinch's other end, and Apps is then believed to
+    /// show; the same move again closes it by its key, once and with no swipe; another app
+    /// in front (one was picked) ends the belief; and while Mission Control is believed to
+    /// show, Down leaves it with the hand and sends no pinch and no key.
+    func testAppsOpenWithTheHandAsEveryBuildIsMade() {
+        configureFollowing(on: mac(apps: true))
+        let appsKey = resolvedShortcut(SystemShortcut.appExpose).code
+
+        // 180 pt of Apps' 300, let go while the hand still moves.
+        pressGestureButton()
+        moveHand(0, 100)
+        moveHand(0, 80)
+        releaseGestureButton(after: 0.01)
+        XCTAssertEqual(swipeCalls.first, .begin(.pinch))
+        XCTAssertEqual(swipeCalls.count, 4, "\(swipeCalls)")
+        for call in swipeCalls.dropFirst().dropLast() {
+            guard case .update(let progress) = call else { return XCTFail("\(swipeCalls)") }
+            XCTAssertLessThan(progress, 0, "Apps' end of the pinch")
+        }
+        guard case .end(let velocity)? = swipeCalls.last else { return XCTFail("\(swipeCalls)") }
+        XCTAssertLessThan(velocity, 0, "the speed has the sign of the way")
+        XCTAssertEqual(instantVoices, [], "no key: it opened with the hand")
+        XCTAssertEqual(gestureLog.count, 1, "\(gestureLog)")
+        XCTAssertTrue(gestureLog.first?.hasPrefix("Gestures: down followed the hand: appExpose, pinch -, ") == true, "\(gestureLog)")
+        XCTAssertTrue(gestureLog.first?.hasSuffix("ended, expected to open") == true, "\(gestureLog)")
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .apps)
+
+        // Down again: its key, once.
+        swipeCalls = []
+        dockVoices = []
+        gestureLog = []
+        hold([(0, 100)])
+        XCTAssertEqual(swipeCalls, [], "no swipe into a view that shows")
+        XCTAssertEqual(dockVoices, [.settle, .key(appsKey)])
+        XCTAssertEqual(gestureLog, [
+            "Gestures: down did not follow the hand: appExpose, Scrollio had just opened Apps",
+            "Gestures: down ran appExpose",
+        ])
+        XCTAssertNil(InputProcessor.shared.believedDockView, "the key closed it")
+
+        // Opened with the hand again; then an app is picked in it and comes to the front.
+        hold([(0, 100), (0, 80)], rest: 0.01)
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .apps)
+        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+
+        // Mission Control opened with the hand: Down leaves it, and is not Apps.
+        openMissionControlWithTheHand()
+        hold([(0, 240)])
+        XCTAssertEqual(swipeCalls.first, .begin(.vertical))
+        XCTAssertFalse(swipeCalls.contains(.begin(.pinch)), "\(swipeCalls)")
+        XCTAssertEqual(instantVoices, [], "no key either")
+        XCTAssertNil(InputProcessor.shared.believedDockView, "it was left")
+
+        // And after that Down is Apps with the hand again.
+        swipeCalls = []
+        hold([(0, 100)])
+        XCTAssertEqual(swipeCalls.first, .begin(.pinch))
+    }
+
+    /// As every build is made, Apps runs once where it cannot follow, by its key, and the
+    /// log says why: before macOS 27, and where the Dock's gesture that governs its pinch
+    /// (Show Desktop's, since macOS 26) is off.
+    func testAppsRunOnceWithTheReasonWhereTheyCannotFollow() {
+        let appsKey = resolvedShortcut(SystemShortcut.appExpose).code
+        var showDesktopOff = DockGestureSwitches.allOn
+        showDesktopOff.showDesktop = false
+        let cases: [(mac: DockFollowAvailability, reason: String)] = [
+            (mac(major: 26, apps: true), "not on this macOS"),
+            (mac(major: 15, apps: true), "not on this macOS"),
+            (mac(switches: showDesktopOff, apps: true), "the Dock's gesture is off"),
+        ]
+        for item in cases {
+            configureFollowing(on: item.mac)
+            swipeCalls = []
+            hold([(0, 100)])
+            XCTAssertEqual(swipeCalls, [], item.reason)
+            XCTAssertEqual(dockVoices, [.settle, .key(appsKey)], item.reason)
+            XCTAssertEqual(gestureLog, [
+                "Gestures: down did not follow the hand: appExpose, \(item.reason)",
+                "Gestures: down ran appExpose",
+            ])
+            InputProcessor.shared.clearActiveBindings()
+        }
+    }
+
     func testTheOppositeMoveLeavesMissionControlWithTheHand() {
         configureFollowing()
         openMissionControlWithTheHand()
@@ -1357,7 +1497,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(hapticCues, [.lockIn, .commit])
         XCTAssertNil(InputProcessor.shared.believedDockView, "it was left")
 
-        // Now Down is Apps again.
+        // Now Down is Apps again (here held back: by its key).
         dockVoices = []
         swipeCalls = []
         hold([(0, 100)])

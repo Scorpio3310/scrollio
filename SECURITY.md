@@ -42,7 +42,7 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
 - Four things use macOS interfaces that are in no public header, each looked up by name
   while the app runs and left alone where it is missing. "Follow the hand", and the thumb
   wheel's "Follow the wheel", make the swipe between desktops with them, and "Up and
-  Down follow the hand too" the motion that opens Mission Control or Show Desktop
+  Down follow the hand too" the motions that open Mission Control, Show Desktop and Apps
   (missing: the mode is not available, and the thumb wheel switches desktops in
   steps). Mission Control
   and Show Desktop ask the Dock through `CoreDockSendNotification` (missing: they are

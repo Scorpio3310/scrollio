@@ -22,31 +22,27 @@ your hand, like on a trackpad.
   hand was moving. A quick flick opens it at once, as before. "Swipe speed" sets how far
   your hand goes for the whole view.
 - **Mission Control** follows on every macOS that has "Follow the hand", **Show Desktop
-  and Apps** on macOS 27 and later (before that they run once, as every other action).
-- **The same move again closes** a view you just opened with your hand. While that
-  Mission Control is showing, the opposite move puts it away with your hand.
+  and Apps** on macOS 27 and later; before that they run once. So does a direction whose
+  trackpad gesture is off in System Settings › Trackpad › More Gestures (Scrollio reads
+  those switches and never changes them). *Tried on macOS 27 only.*
+- **The same move again closes** a view you just opened with your hand; while Mission
+  Control is showing, the opposite move puts it away with your hand.
 - **The rows say what follows** ("Mission Control follows the hand"), and the line under
-  the switch names what opens with your hand on this Mac.
-- **A trackpad gesture that is off** in System Settings › Trackpad › More Gestures: that
-  direction runs its action once. Scrollio reads those switches and never changes them.
-- **Never left half-open:** a view that is opening with your hand goes back when the
-  Shortcut Ring opens, the desktop or the screens change, the Mac sleeps or Scrollio is
-  paused.
-- **For each app:** Safari › Gestures has the same switch for the app's own gestures.
-- **The picture in Gestures** shows the view opening with your hand where Up or Down
-  follows it, and Show Desktop has a picture of its own. Mission Control is drawn as the
-  Mac shows it: no menu bar, the names of the desktops along the top edge.
-- **What it cannot do yet:** Scrollio cannot ask macOS what is showing. After you leave a
-  view another way (Esc, a click, the trackpad), the next move may open it at once instead
-  of with your hand, or do nothing once (the switch's tooltip says so). Not yet tried on
-  macOS 14, 15 and 26.
+  the switch names what opens with your hand on this Mac. Safari › Gestures has the same
+  switch for the app's own gestures.
+- **Show Desktop has a picture** in Gestures, and the picture shows a view opening with
+  your hand.
+- **Scrollio cannot see what macOS is showing.** After you close a view another way (Esc,
+  a click, the trackpad), the next move may open it at once or do nothing, and closing a
+  view may take the same move twice. A quick flick opens or closes it in one go.
 
 ### Fixed
 
 - **A swipe between desktops** goes back when a display is connected or removed or the
   displays go to sleep, instead of staying half-way.
-- **The picture in Gestures** draws Apps as macOS 26 and later show it, a panel over the
-  windows. It drew Launchpad's grid there.
+- **The picture in Gestures** draws Mission Control and Apps as the Mac shows them:
+  Mission Control without the menu bar, with the names of the desktops along the top
+  edge; Apps as a panel over the windows on macOS 26 and later.
 
 ## 1.1.1
 

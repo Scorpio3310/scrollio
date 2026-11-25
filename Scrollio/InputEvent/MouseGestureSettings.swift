@@ -76,7 +76,7 @@ struct MouseGestureSettings: Codable, Equatable {
     /// Haptic cues on mice that have them (MX Master 4): a light pulse when a gesture locks
     /// in, a stronger one when a "follow the hand" swipe is released towards a switch.
     var hapticFeedback: Bool
-    /// "Up and Down follow the hand too" (experimental, off by default): in "Follow the
+    /// "Up and Down follow the hand too" (off by default): in "Follow the
     /// hand", an Up or Down direction whose action shows a view of the Dock (Mission
     /// Control, Show Desktop, Apps) opens it with the hand instead of running once, where
     /// this Mac can (`followPlan(for:availability:)`). Kept, and not used, while the mode

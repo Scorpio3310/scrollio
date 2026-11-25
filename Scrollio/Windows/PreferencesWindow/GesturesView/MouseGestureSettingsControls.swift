@@ -103,6 +103,10 @@ struct MouseGestureFollowPresentation: Equatable {
     /// The line under the switch: what opens with the hand on this Mac, or that the mode
     /// in effect does not use the switch.
     var hint: String
+    /// Whether the row says its note (`MouseGestureRows.followNote`, the tooltip): only
+    /// where it can be true, in "Follow the hand" on a Mac where something opens with
+    /// the hand.
+    var saysNote: Bool
     var up: Row
     var down: Row
 
@@ -131,8 +135,8 @@ struct MouseGestureFollowPresentation: Equatable {
             switch running.followPlan(for: direction, availability: availability) {
             case .follows(let target):
                 return .follows(face(of: target, majorVersion: availability.majorVersion))
-            case .cannotFollow(_, let obstacle):
-                return note(for: obstacle).map(Row.runsOnceHere) ?? .plain
+            case .cannotFollow(let target, let obstacle):
+                return note(for: obstacle, target: target, majorVersion: availability.majorVersion).map(Row.runsOnceHere) ?? .plain
             case .doesNotFollow:
                 return .plain
             }
@@ -143,6 +147,7 @@ struct MouseGestureFollowPresentation: Equatable {
             hint: isUsed
                 ? hint(naming: availability.targetsThatFollow, majorVersion: availability.majorVersion)
                 : text("gesture-follow-actions-hint-discrete"),
+            saysNote: isUsed && !availability.targetsThatFollow.isEmpty,
             up: row(.up),
             down: row(.down)
         )
@@ -202,14 +207,19 @@ struct MouseGestureFollowPresentation: Equatable {
     }
 
     /// Why a row whose action could open with the hand runs once here, where the reason is
-    /// the row's own: this macOS (Show Desktop before macOS 27), or the Dock's own switch
-    /// for the trackpad gesture. nil where it is not (nothing follows the hand at all, or
-    /// macOS lets Scrollio post nothing): the row then shows its action without words.
-    /// (Apps in a released build never gets here: nothing asks it to follow, `followPlan`.)
-    static func note(for obstacle: DockFollowAvailability.Obstacle) -> String? {
+    /// the row's own: this macOS (Show Desktop and Apps before macOS 27), or the Dock's own
+    /// switch for the trackpad gesture. Apps has no switch of its own in System Settings
+    /// since macOS 26 (Show Desktop's governs its pinch, `DockGestureSwitches.allows`), so
+    /// its row names that one. nil where the reason is not the row's (nothing follows the
+    /// hand at all, or macOS lets Scrollio post nothing): the row then shows its action
+    /// without words. (Apps held back never gets here: nothing asks it to follow,
+    /// `followPlan`.)
+    static func note(for obstacle: DockFollowAvailability.Obstacle, target: DockFollowTarget, majorVersion: Int) -> String? {
         switch obstacle {
         case .notOnThisMacOS: return text("gesture-follow-once-macos")
-        case .gestureOff: return text("gesture-follow-once-gesture-off")
+        case .gestureOff:
+            let isShowDesktops = target == .apps && majorVersion >= 26
+            return text(isShowDesktops ? "gesture-follow-once-show-desktop-off" : "gesture-follow-once-gesture-off")
         case .swipeUnavailable, .cannotPostEvents: return nil
         }
     }
@@ -879,16 +889,17 @@ enum MouseGestureRows {
     }
 
     /// What the row "Up and Down follow the hand too" says when the pointer rests on it:
-    /// the one thing the line under the switch has no room for (after a view was closed
-    /// some other way, one move may go wrong).
+    /// what the line under the switch has no room for (Scrollio cannot ask the Dock what it
+    /// shows: after a view was closed some other way a move may go wrong, a slow move may
+    /// not close a view that opened in one go, and a quick flick always toggles it).
     static var followNote: String {
         return text("gesture-follow-actions-note")
     }
 
     /// "Up and Down follow the hand too", under "Mode": what it does on this Mac under the
-    /// title, the switch on the right, `followNote` as the tooltip of all of it. Always
-    /// there, so that picking the other mode never changes the height; only "Follow the
-    /// hand" uses it (`show(_:in:toggle:)`).
+    /// title, the switch on the right. Always there, so that picking the other mode never
+    /// changes the height; only "Follow the hand" uses it (`show(_:in:toggle:)`, which also
+    /// gives the row its tooltip where that applies).
     /// - Parameter reserving: every line the row can show (`MouseGestureSettingsControls.followHints`):
     ///   it keeps room for the longest, whatever the mode, the switch and the Dock say.
     static func followActions(_ toggle: NSControl, reserving hints: [String]) -> PreferencesGroupRow {
@@ -898,22 +909,33 @@ enum MouseGestureRows {
             accessory: toggle
         )
         row.reservedExplanations = hints
-        // Wherever the pointer rests on the row: its texts and its switch say it too.
-        for view in [row, row.titleLabel, row.explanationLabel, toggle] {
-            view.toolTip = followNote
-        }
         return row
     }
 
     /// Puts the switch "Up and Down follow the hand too" and its line into their row:
     /// dimmed in "One action per hold", with the line that says so (the stored choice
-    /// still shows). Where the switch is in use, VoiceOver hears the tooltip after the line.
+    /// still shows). Where the note applies (`saysNote`) it is the tooltip wherever the
+    /// pointer rests on the row (the row, its two texts, its switch), and VoiceOver hears
+    /// it once, after the line, as the switch's help; the two texts carry none of their
+    /// own (a text's tooltip would be read as its help, the same note three times).
     static func show(_ follow: MouseGestureFollowPresentation, in row: PreferencesGroupRow, toggle: NSControl) {
         MouseGestureSettingsControls.setOn(follow.isOn, toggle)
         row.isEnabled = follow.isEditable
         row.explanation = follow.hint
-        if follow.isEditable {
-            toggle.setAccessibilityHelp(follow.hint + " " + followNote)
+        let note = follow.saysNote ? followNote : nil
+        for view in [row, row.titleLabel, row.explanationLabel, toggle] {
+            if let note {
+                if view.toolTip != note { view.toolTip = note }
+            } else if view.toolTip == followNote {
+                // Only the note is taken away: a tooltip someone else gave stays.
+                view.toolTip = nil
+            }
+        }
+        for label in [row.titleLabel, row.explanationLabel] {
+            label.setAccessibilityHelp("")
+        }
+        if let note {
+            toggle.setAccessibilityHelp(follow.hint + " " + note)
         }
     }
 

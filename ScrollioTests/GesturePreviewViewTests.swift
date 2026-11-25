@@ -593,7 +593,17 @@ final class GesturePreviewViewTests: XCTestCase {
         XCTAssertGreaterThan(names[1].minX - names[0].maxX, 8, "two names, apart")
         for name in names {
             XCTAssertTrue(Card.spacesBarRect(in: size).insetBy(dx: 0, dy: 3).contains(name), "\(name)")
+            XCTAssertEqual(name.minY, name.minY.rounded(), "on whole points: \(name)")
+            XCTAssertEqual(name.height, name.height.rounded(), "\(name)")
+            XCTAssertEqual(name.minX, name.minX.rounded(), "\(name)")
         }
+        // The gap between the two windows where they lie in Mission Control: at rest the
+        // front window covers it.
+        let places = Card.windows(onDesktop: 0).map { Card.overviewRect($0, onDesktop: 0, in: size) }
+        let gapLeft = places.map(\.maxX).min() ?? 0, gapRight = places.map(\.minX).max() ?? 0
+        XCTAssertGreaterThan(gapRight - gapLeft, 6, "a gap")
+        let between = (x: (gapLeft + gapRight) / 2, y: places[0].midY)
+        XCTAssertTrue(Card.windowRect(.article, in: size).insetBy(dx: 6, dy: 16).contains(NSPoint(x: between.x, y: between.y)))
         // The second menu item (12 pt wide from x 20) and the gap before it.
         let item = (x: CGFloat(26), y: CGFloat(4))
         let gap = (x: CGFloat(17.5), y: CGFloat(4))
@@ -630,9 +640,28 @@ final class GesturePreviewViewTests: XCTestCase {
             }
             XCTAssertGreaterThan(try contrast(names[1]), 0.08, "the other Space's name: \(message)")
             XCTAssertGreaterThan(try contrast(names[0]), try contrast(names[1]) + 0.15, "the one on screen is stronger: \(message)")
+            // The windows are drawn where the layout puts them, side by side: between
+            // them is the wallpaper (under their shadows), where at rest a window lay.
+            let bare = try renderDesktop(dark: dark) { $0.showDesktop = 1 }
+            let wallpaperThere = try colour(in: bare, x: between.x, y: between.y)
+            let covered = apart(try colour(in: rest, x: between.x, y: between.y), wallpaperThere)
+            XCTAssertGreaterThan(covered, 0.1, "at rest a window lies there: \(message)")
+            XCTAssertLessThan(
+                apart(try colour(in: open, x: between.x, y: between.y), wallpaperThere), covered / 2,
+                "the windows have parted: \(message)"
+            )
+            // On the second desktop the second name is the stronger one.
+            let second = try renderDesktop(dark: dark) { $0.desktop = 1; $0.overview = 1 }
+            func contrastOnSecond(_ name: NSRect) throws -> CGFloat {
+                return apart(
+                    try colour(in: second, x: name.midX, y: name.midY), try colour(in: second, x: name.minX - 5, y: name.midY)
+                )
+            }
+            XCTAssertGreaterThan(
+                try contrastOnSecond(names[1]), try contrastOnSecond(names[0]) + 0.15, "the desktop on screen: \(message)"
+            )
             // No pictures of the Spaces under the bar, and the wallpaper is not darkened:
             // there is what a desktop without its windows has there.
-            let bare = try renderDesktop(dark: dark) { $0.showDesktop = 1 }
             assertSameColour(
                 try colour(in: open, x: oldPicture.x, y: oldPicture.y), try colour(in: bare, x: oldPicture.x, y: oldPicture.y),
                 accuracy: 0.01, "the wallpaper alone: \(message)"
@@ -758,8 +787,8 @@ final class GesturePreviewViewTests: XCTestCase {
         XCTAssertTrue(footprints.contains { place(.notes, away: Card.desktopItemsAppearAt - 0.02).intersects($0) })
     }
 
-    /// How strongly the row of Spaces, the windows under the app grid and the grid's icons
-    /// show: the row whole by half open; the windows gone at three fifths, the icons from
+    /// How strongly the Spaces bar, the windows under the app grid and the grid's icons
+    /// show: the bar whole by half open; the windows gone at three fifths, the icons from
     /// three tenths on, so half open is the grid arriving.
     func testHowStronglyThePiecesOfAViewShowWhileItOpens() {
         typealias Card = GesturePreviewScreenCard
@@ -988,6 +1017,15 @@ final class GesturePreviewViewTests: XCTestCase {
             XCTAssertGreaterThan(low.x, Card.windowRect(.article, in: cardSize).maxX)
             XCTAssertGreaterThan(low.y, Card.windowRect(.notes, in: cardSize).maxY)
             XCTAssertLessThan(spread(try colour(in: halfOpen, x: low.x, y: low.y)), 0.06, "nothing shows through it half open: \(message)")
+            // And it is smaller there: the whole panel's top margin, right of the front
+            // window and above the one behind it, is still the wallpaper half open.
+            let margin = (x: Card.windowRect(.article, in: cardSize).maxX + 20, y: panel.minY + 4)
+            XCTAssertLessThan(margin.x, panel.maxX - 4)
+            XCTAssertLessThan(margin.y, Card.windowRect(.notes, in: cardSize).minY - 1)
+            XCTAssertLessThan(margin.y, Card.appsSearchFieldRect(in: panel).minY - 1)
+            XCTAssertLessThan(margin.y, panel.midY - panel.height / 2 * scale - 2, "outside the panel half open")
+            XCTAssertLessThan(spread(try colour(in: open, x: margin.x, y: margin.y)), 0.06, "the whole panel: \(message)")
+            XCTAssertGreaterThan(spread(try colour(in: halfOpen, x: margin.x, y: margin.y)), 0.12, "smaller half open: \(message)")
 
             // Before macOS 26 the same number is Launchpad: the desktop darkens.
             let launchpad = try colour(in: try renderDesktop(dark: dark, apps: .launchpad) { $0.appGrid = 1 }, x: wallpaper.x, y: wallpaper.y)

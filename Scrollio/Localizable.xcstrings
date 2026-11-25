@@ -11537,7 +11537,7 @@
       }
     },
     "gesture-follow-actions-label": {
-      "comment": "Gestures pane and an app's Gestures part: the switch under \"Mode\" that makes the Up and Down directions open Mission Control and Show Desktop with the hand, as the desktops follow it sideways",
+      "comment": "Gestures pane and an app's Gestures part: the switch under \"Mode\" that makes the Up and Down directions open Mission Control, Show Desktop and Apps with the hand, as the desktops follow it sideways",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -11549,13 +11549,13 @@
       }
     },
     "gesture-follow-actions-note": {
-      "comment": "Gestures pane and an app's Gestures part: tooltip of the row \"Up and Down follow the hand too\" (VoiceOver hears it after the line under the switch): what to expect after a view that opened with the hand was closed some other way",
+      "comment": "Gestures pane and an app's Gestures part: tooltip of the row \"Up and Down follow the hand too\" in \"Follow the hand\", where something opens with the hand (VoiceOver hears it after the line under the switch): what to expect, since Scrollio cannot ask macOS which view is showing",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scrollio cannot see what macOS is showing. If you close a view another way (Esc, a click, the trackpad), the next move may open it at once or do nothing. After that it follows your hand again."
+            "value": "Scrollio cannot see what macOS is showing. After you close a view another way (Esc, a click, the trackpad), the next move may open it at once or do nothing, and closing a view may take the same move twice. A quick flick opens or closes it in one go."
           }
         }
       }
@@ -11609,7 +11609,7 @@
       }
     },
     "gesture-follow-action-value": {
-      "comment": "Gestures pane: what the pull-down of Up or Down shows in place of its action while that action opens with the hand; %@ is the action's name (\"Mission Control\", \"Show Desktop\", \"Launchpad\")",
+      "comment": "Gestures pane: what the pull-down of Up or Down shows in place of its action while that action opens with the hand; %@ is the action's name (\"Mission Control\", \"Show Desktop\")",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -11652,6 +11652,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Runs once. Its trackpad gesture is off in System Settings."
+          }
+        }
+      }
+    },
+    "gesture-follow-once-show-desktop-off": {
+      "comment": "Gestures pane: tooltip and VoiceOver help of the pull-down of Up or Down whose action is Apps (macOS 26 and later) while \"Up and Down follow the hand too\" is on and the trackpad gesture for Show Desktop is switched off in System Settings (Trackpad, More Gestures): Apps has no switch of its own there, Show Desktop's governs both",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runs once. The Show Desktop trackpad gesture is off in System Settings."
           }
         }
       }

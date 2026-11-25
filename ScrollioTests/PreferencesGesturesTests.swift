@@ -555,23 +555,26 @@ final class PreferencesGesturesTests: XCTestCase {
     }
 
     /// What the row says when the pointer rests on it.
-    static let followNote = "Scrollio cannot see what macOS is showing. If you close a view another way "
-        + "(Esc, a click, the trackpad), the next move may open it at once or do nothing. "
-        + "After that it follows your hand again."
+    static let followNote = "Scrollio cannot see what macOS is showing. After you close a view another way "
+        + "(Esc, a click, the trackpad), the next move may open it at once or do nothing, "
+        + "and closing a view may take the same move twice. A quick flick opens or closes it in one go."
 
     /// The switch is no longer marked "(Experimental)": what a person may meet is said
     /// where the pointer rests, on the title, the line, the switch and the room between
-    /// them, in both modes. VoiceOver hears it after the line, in the mode that uses the
-    /// switch. The title fits, so the tooltip never stands in for a cut title.
+    /// them, and VoiceOver hears it once, after the line, as the switch's help. Only where
+    /// it can be true: in "Follow the hand", on a Mac where something opens with the hand.
+    /// In "One action per hold", and where nothing can follow, the row says its line
+    /// alone. The title fits, so the tooltip never stands in for a cut title.
     func testTheFollowSwitchSaysInItsTooltipWhatToExpect() throws {
         let controller = makeController()
         controller.view.layoutSubtreeIfNeeded()
         let row = try XCTUnwrap(controller.followRow)
         let followToggle = controller.controls.followToggle
+        let places = [row, row.titleLabel, row.explanationLabel, followToggle] as [NSView]
         XCTAssertFalse(row.title.contains("Experimental"), row.title)
         XCTAssertEqual(MouseGestureRows.followNote, Self.followNote)
-        for view in [row, row.titleLabel, row.explanationLabel, followToggle] as [NSView] {
-            XCTAssertEqual(view.toolTip, Self.followNote, "\(type(of: view)), one action per hold")
+        for view in places {
+            XCTAssertNil(view.toolTip, "\(type(of: view)), one action per hold: the switch is not in use")
         }
         XCTAssertLessThanOrEqual(row.titleLabel.intrinsicContentSize.width, row.titleLabel.frame.width + 0.5, "the title is whole")
         XCTAssertEqual(followToggle.accessibilityHelp(), "Only used in “Follow the hand”.", "the mode does not use it")
@@ -584,13 +587,57 @@ final class PreferencesGesturesTests: XCTestCase {
         XCTAssertEqual(followToggle.accessibilityHelp(), line + " " + Self.followNote)
         toggle(followToggle, on: true)
         XCTAssertEqual(followToggle.accessibilityHelp(), line + " " + Self.followNote, "and with the switch on")
-        for view in [row, row.titleLabel, row.explanationLabel, followToggle] as [NSView] {
+        for view in places {
             XCTAssertEqual(view.toolTip, Self.followNote, "\(type(of: view)), follow the hand")
         }
+        // VoiceOver hears the note once: the two texts give it no help of their own (a
+        // text's tooltip would be read as its help).
+        XCTAssertEqual(row.titleLabel.accessibilityHelp() ?? "", "")
+        XCTAssertEqual(row.explanationLabel.accessibilityHelp() ?? "", "")
+        // A reload keeps it.
+        controller.reload()
+        XCTAssertEqual(followToggle.accessibilityHelp(), line + " " + Self.followNote)
+        XCTAssertEqual(row.toolTip, Self.followNote)
+
+        // Nothing can open with the hand on this Mac now: the note would not be true.
+        follow = follows(canPostEvents: false)
+        controller.reload()
+        let none = "Nothing can open with your hand on this Mac right now."
+        XCTAssertEqual(row.explanation, none)
+        XCTAssertEqual(followToggle.accessibilityHelp(), none)
+        for view in places {
+            XCTAssertNil(view.toolTip, "\(type(of: view)), nothing follows")
+        }
+        follow = follows()
+        controller.reload()
+        XCTAssertEqual(row.toolTip, Self.followNote, "and back")
 
         controller.controls.modeControl.selectedSegment = 0
         send(controller.controls.modeControl)
         XCTAssertEqual(followToggle.accessibilityHelp(), "Only used in “Follow the hand”.", "back to the line alone")
+        for view in places {
+            XCTAssertNil(view.toolTip, "\(type(of: view)), one action per hold again")
+        }
+    }
+
+    /// The presentation says where the note applies: only in "Follow the hand" on a Mac
+    /// where something opens with the hand, whatever the switch itself says.
+    func testTheNoteAppliesOnlyWhereSomethingOpensWithTheHand() {
+        typealias Follow = MouseGestureFollowPresentation
+        let interactive = MouseGestureModePresentation.make(storedMode: .interactive, isInteractiveAvailable: true)
+        let discrete = MouseGestureModePresentation.make(storedMode: .discrete, isInteractiveAvailable: true)
+        let unavailable = MouseGestureModePresentation.make(storedMode: .interactive, isInteractiveAvailable: false)
+        var off = followSettings()
+        off.actionsFollowHand = false
+        let allOff = DockGestureSwitches(missionControl: false, showDesktop: false, launchpad: false)
+        for settings in [followSettings(), off] {
+            XCTAssertTrue(Follow.make(settings: settings, mode: interactive, availability: follows()).saysNote)
+            XCTAssertTrue(Follow.make(settings: settings, mode: interactive, availability: follows(macOS: 15)).saysNote, "Mission Control")
+            XCTAssertFalse(Follow.make(settings: settings, mode: discrete, availability: follows()).saysNote)
+            XCTAssertFalse(Follow.make(settings: settings, mode: unavailable, availability: follows()).saysNote)
+            XCTAssertFalse(Follow.make(settings: settings, mode: interactive, availability: follows(canPostEvents: false)).saysNote)
+            XCTAssertFalse(Follow.make(settings: settings, mode: interactive, availability: follows(switches: allOff)).saysNote)
+        }
     }
 
     /// Under "Mode", in its box, always there: the switch "Up and Down follow the hand
@@ -766,7 +813,17 @@ final class PreferencesGesturesTests: XCTestCase {
         switches = .allOn
         switches.showDesktop = false
         XCTAssertEqual(rows(followSettings(up: showDesktop), follows(switches: switches)), [gestureOff, .plain])
-        XCTAssertEqual(rows(followSettings(up: showDesktop), follows(apps: true, switches: switches)), [gestureOff, gestureOff])
+        // Apps has no switch of its own in System Settings since macOS 26: its row names
+        // the one that governs its pinch.
+        let showDesktopOff = Follow.Row.runsOnceHere("Runs once. The Show Desktop trackpad gesture is off in System Settings.")
+        XCTAssertEqual(rows(followSettings(up: showDesktop), follows(apps: true, switches: switches)), [gestureOff, showDesktopOff])
+        XCTAssertEqual(rows(followSettings(), follows(apps: true, switches: switches)), [.follows("Mission Control follows the hand"), showDesktopOff])
+        XCTAssertEqual(
+            Follow.note(for: .gestureOff, target: .apps, majorVersion: 26), "Runs once. The Show Desktop trackpad gesture is off in System Settings."
+        )
+        XCTAssertEqual(Follow.note(for: .gestureOff, target: .apps, majorVersion: 15), "Runs once. Its trackpad gesture is off in System Settings.")
+        XCTAssertEqual(Follow.note(for: .gestureOff, target: .showDesktop, majorVersion: 27), "Runs once. Its trackpad gesture is off in System Settings.")
+        XCTAssertNil(Follow.note(for: .cannotPostEvents, target: .apps, majorVersion: 27))
         // macOS does not let Scrollio post events: nothing a row could say.
         XCTAssertEqual(rows(followSettings(), follows(canPostEvents: false)), [.plain, .plain])
 
@@ -885,7 +942,7 @@ final class PreferencesGesturesTests: XCTestCase {
         toggle(controls.followToggle, on: true)
         XCTAssertEqual(title(of: down), "Apps follow the hand")
 
-        // Before macOS 27 that build's Apps runs once, and there the macOS is the reason.
+        // Before macOS 27 Apps runs once, and there the macOS is the reason.
         follow = follows(macOS: 26, apps: true)
         controller.reload()
         XCTAssertEqual(title(of: down), SystemShortcut.appExpose.localizedName)
@@ -1084,10 +1141,7 @@ final class PreferencesGesturesTests: XCTestCase {
         follow = follows(canPostEvents: false)
         controller.reload()
         XCTAssertEqual(row.explanation, none)
-        XCTAssertEqual(
-            controller.controls.followToggle.accessibilityHelp(), none + " " + Self.followNote,
-            "VoiceOver gets the line, and the tooltip after it"
-        )
+        XCTAssertEqual(controller.controls.followToggle.accessibilityHelp(), none, "VoiceOver gets the line (the note is not true here)")
         follow = follows(switches: DockGestureSwitches(missionControl: false, showDesktop: false, launchpad: false))
         controller.reload()
         XCTAssertEqual(row.explanation, none)
@@ -2296,14 +2350,15 @@ final class PreferencesGesturesRenderTests: XCTestCase {
         var missionControlOff = DockGestureSwitches.allOn
         missionControlOff.missionControl = false
         let allOff = DockGestureSwitches(missionControl: false, showDesktop: false, launchpad: false)
-        func mac(_ macOS: Int = 27, apps: Bool = false, switches: DockGestureSwitches = .allOn) -> DockFollowAvailability {
+        // As every build is made, Apps follow; only `apps-held-back` shows the other.
+        func mac(_ macOS: Int = 27, apps: Bool = true, switches: DockGestureSwitches = .allOn) -> DockFollowAvailability {
             return PreferencesGesturesTests.follows(macOS: macOS, apps: apps, switches: switches)
         }
         let keys = GestureAction(action: "custom::15:1179648", label: ShortcutLabel(name: "Reload", icon: .symbol("arrow.clockwise")))
         typealias Change = (inout MouseGestureSettings) -> Void
         let cases: [(name: String, mac: DockFollowAvailability, change: Change)] = [
-            ("all-three", mac(apps: true), { _ in }),
-            ("apps-held-back", mac(), { _ in }),
+            ("all-three", mac(), { _ in }),
+            ("apps-held-back", mac(apps: false), { _ in }),
             ("mixed", mac(), { $0.upAction = showDesktop; $0.actions.down = keys }),
             ("before-27", mac(26), { $0.downAction = showDesktop }),
             ("gesture-off", mac(switches: missionControlOff), { $0.downAction = showDesktop }),

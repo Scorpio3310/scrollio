@@ -33,7 +33,8 @@ final class GesturePreviewMotionTests: XCTestCase {
     }
 
     /// A Mac on which views of the Dock follow the hand: the swipe can be built, events can
-    /// be posted, the Dock's own gestures are on. Apps follows only in a build that lets it.
+    /// be posted, the Dock's own gestures are on. Apps held back unless `apps` says they
+    /// follow (as every build has it).
     private func mac(
         version: Int = 27, apps: Bool = false, swipe: Bool = true, canPost: Bool = true,
         switches: DockGestureSwitches = .allOn
@@ -163,7 +164,7 @@ final class GesturePreviewMotionTests: XCTestCase {
         )
         XCTAssertEqual(Loop(scene: followScene(focus: .up) { $0.upAction = "" }).legs, [.move(.up, effect: .none)])
         XCTAssertEqual(Loop(scene: followScene(focus: .down, on: mac())).legs, [.move(.down, effect: .appGrid)],
-                       "Apps runs once in a build that does not let it follow")
+                       "Apps runs once where it is held back")
         XCTAssertEqual(Loop(scene: followScene(focus: .up, on: mac(swipe: false))).legs, [.move(.up, effect: .missionControl)],
                        "the swipe cannot be built")
         XCTAssertEqual(Loop(scene: followScene(focus: .up, on: mac(canPost: false))).legs, [.move(.up, effect: .missionControl)])

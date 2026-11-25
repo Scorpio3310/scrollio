@@ -674,7 +674,8 @@ final class GesturePreviewScreenCard: GesturePreviewArtworkView {
     /// the Spaces only come when the pointer goes up there; the picture shows the bar as
     /// it is when Mission Control has just opened.)
     static let spacesBarHeight: CGFloat = 12
-    static let spaceNameSize = NSSize(width: 22, height: 3)
+    /// (Four points high in a bar of twelve: on whole points, sharp on any screen.)
+    static let spaceNameSize = NSSize(width: 22, height: 4)
     static let spaceNameGap: CGFloat = 14
     /// Show Desktop: how much of a window stays in sight at the edge it slid to.
     static let showDesktopSliver: CGFloat = 5

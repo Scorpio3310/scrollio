@@ -606,7 +606,7 @@ final class DockFollowPlanTests: XCTestCase {
     /// breaks its pinch) Apps is an action like any other: it runs once and nothing asks it
     /// to follow, so no reason is given, whatever else is in the way on that Mac. As every
     /// build is made, more is asked of it: it follows, or says what is in the way.
-    func testWithTheDefaultActionsUpFollowsAndAppsRunsOnce() {
+    func testWithTheDefaultActionsUpFollowsAndAppsFollowUnlessHeldBack() {
         var defaults = MouseGestureSettings.default
         defaults.mode = .interactive
         defaults.actionsFollowHand = true
@@ -955,6 +955,38 @@ final class DockFollowHoldTests: XCTestCase {
 
         hold = DockFollowHold(settings: settings(down: "showDesktop"), availability: mac(major: 15), believed: nil)
         XCTAssertEqual(hold, DockFollowHold(up: .opens(.missionControl), down: .onceInstead(.showDesktop, .obstacle(.notOnThisMacOS))))
+    }
+
+    /// The default actions as every build is made (Apps follow): what each direction of a
+    /// hold does, by what is believed to show.
+    func testTheDefaultHoldAsEveryBuildIsMade() {
+        let asBuilt = mac(apps: DockFollowAvailability.appsFollow)
+        func hold(_ believed: DockFollowTarget?, switches: DockGestureSwitches = .allOn) -> DockFollowHold {
+            return DockFollowHold(settings: settings(), availability: mac(switches: switches, apps: true), believed: believed)
+        }
+        XCTAssertEqual(DockFollowHold(settings: settings(), availability: asBuilt, believed: nil), hold(nil), "as built is apps: true")
+        XCTAssertEqual(hold(nil), DockFollowHold(up: .opens(.missionControl), down: .opens(.apps)))
+        XCTAssertEqual(
+            hold(.apps), DockFollowHold(up: .opens(.missionControl), down: .onceInstead(.apps, .showing(.apps))),
+            "the same move again closes Apps; Up is its own"
+        )
+        XCTAssertEqual(
+            hold(.missionControl), DockFollowHold(up: .onceInstead(.missionControl, .showing(.missionControl)), down: .leavesMissionControl),
+            "Down leaves Mission Control, and is not Apps"
+        )
+        XCTAssertEqual(hold(.showDesktop), hold(nil), "no direction holds Show Desktop: nothing changes")
+        // Where App Exposé has its trackpad gesture, Down keeps its own plan: Apps.
+        let appExposeOn = DockGestureSwitches(missionControl: true, showDesktop: true, launchpad: true, appExpose: true)
+        XCTAssertEqual(hold(.missionControl, switches: appExposeOn).down, .opens(.apps))
+        // Apps' pinch goes by Show Desktop's switch since macOS 26.
+        var showDesktopOff = DockGestureSwitches.allOn
+        showDesktopOff.showDesktop = false
+        XCTAssertEqual(hold(nil, switches: showDesktopOff).down, .onceInstead(.apps, .obstacle(.gestureOff)))
+        // Apps' travel is three quarters of the others'.
+        let down = hold(nil).down.channel(screenHeight: 1000, trackingSpeed: 1)
+        let up = hold(nil).up.channel(screenHeight: 1000, trackingSpeed: 1)
+        XCTAssertEqual(down?.motion, .pinch)
+        XCTAssertEqual(up?.motion, .vertical)
     }
 
     /// The belief: the same move again runs once (the toggle closes the view), and the

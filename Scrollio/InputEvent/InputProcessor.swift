@@ -1161,9 +1161,13 @@ class InputProcessor: ModifierFlagsProviding {
         for session: ActiveMouseGestureSession,
         cancelledBy interruption: DockFollowedMotion.Interruption? = nil
     ) {
+        // The motion began in this very pass: the button came up in the turn that took the
+        // hand past the starting distance, and the release brought begin and end at once.
+        var beganInThisPass = false
         for command in commands {
             switch command {
             case .begin(let axis):
+                beganInThisPass = true
                 if axis != .horizontal, DockSwipeSynthesizer.shared.isActive {
                     // Only the thumb wheel's swipe of the desktops can run here (one hold
                     // drives at a time), or its tail while the wheel rests. A motion towards
@@ -1190,13 +1194,19 @@ class InputProcessor: ModifierFlagsProviding {
                     continue
                 }
                 let expected = session.interactive?.isExpectedToSwitch(releaseVelocity: velocity) == true
-                if expected, let motion = session.followed, motion.isFlickIfReleasedToSwitch {
+                if expected || beganInThisPass, let motion = session.followed, motion.isFlickIfReleasedToSwitch {
                     // A quick flick: the view has barely moved and only the hand's speed
                     // says "open". Whether the Dock would finish that is its own secret,
                     // and before the direction could follow the hand such a flick opened
                     // the view. So the motion goes back and the direction's action runs
                     // once, through the usual path (a later turn; it settles the swipe and
                     // writes its line). No second pulse: the light one played at the begin.
+                    //
+                    // The same for a hold let go in the turn its motion began, whatever
+                    // speed it is given: that speed is the last few points over a whole
+                    // frame, far too low for a hand that was flicking, so the Dock would be
+                    // told to begin and end a motion that shows nothing and nothing would
+                    // run, where the action ran at this distance before.
                     DockSwipeSynthesizer.shared.cancel()
                     finishFollowedMotion(of: session, .flick(velocity: velocity))
                     executeMouseGestureAction(

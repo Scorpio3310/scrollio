@@ -148,8 +148,8 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   one line for a direction that could follow the hand and ran once instead, right
   before the line of its action (`Gestures: up did not follow the hand: missionControl,
   the Dock's gesture is off`; the other reasons: "not on this macOS", which is Show
-  Desktop or Apps before macOS 27; "cannot post events"; "the wheel's swipe was
-  running"; and "Scrollio had just opened Mission Control", or "Show Desktop", or
+  Desktop or Apps before macOS 27; "the swipe cannot be made on this Mac"; "cannot post
+  events"; "the wheel's swipe was running"; and "Scrollio had just opened Mission Control", or "Show Desktop", or
   "Apps": that direction opened the view with your hand and the same move closes it.
   Such a line names Apps by its action, `appExpose`),
   one line for a swipe of the desktops that was taken back because the screens changed

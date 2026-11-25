@@ -370,7 +370,7 @@ enum DockFollowPlan: Equatable {
     case cannotFollow(DockFollowTarget, DockFollowAvailability.Obstacle)
     /// Nothing asks for it: the direction runs its action once, as before (sideways, which
     /// is the desktops' in "Follow the hand"; "One action per hold"; the switch off; an
-    /// action without a view to open; Apps in a build that never lets it follow).
+    /// action without a view to open; Apps where it is held back, `appsFollow`).
     case doesNotFollow
 
     /// The target that follows; nil for both ways of running once.

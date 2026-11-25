@@ -162,7 +162,7 @@ final class PreferencesLocalizationTests: XCTestCase {
         "gesture-follow-actions-hint-one", "gesture-follow-actions-hint-several",
         "gesture-follow-actions-hint-none", "gesture-follow-actions-hint-discrete",
         "gesture-follow-action-value", "gesture-follow-apps-value",
-        "gesture-follow-once-macos", "gesture-follow-once-gesture-off",
+        "gesture-follow-once-macos", "gesture-follow-once-gesture-off", "gesture-follow-once-show-desktop-off",
     ]
 
     /// Apps pane and an app's page.

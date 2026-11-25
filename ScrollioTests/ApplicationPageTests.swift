@@ -2248,6 +2248,29 @@ final class ApplicationPageTests: XCTestCase {
         NotificationCenter.default.post(name: DockGestureSwitches.didChangeNotification, object: nil)
         XCTAssertEqual(title(up), "Mission Control follows the hand")
 
+        // As every build is made, Apps follow too: the app's Down row and the line say so,
+        // and the switch's help carries the note after the line.
+        mac = PreferencesGesturesTests.follows(apps: true)
+        NotificationCenter.default.post(name: DockGestureSwitches.didChangeNotification, object: nil)
+        let three = "Mission Control, Apps, and Show Desktop open with your hand, like on a trackpad. Other actions run once."
+        XCTAssertEqual(row.explanation, three)
+        XCTAssertEqual(title(down), "Apps follow the hand")
+        XCTAssertNil(down.toolTip)
+        XCTAssertEqual(toggle.accessibilityHelp(), three + " " + PreferencesGesturesTests.followNote)
+        XCTAssertEqual(row.titleLabel.toolTip, PreferencesGesturesTests.followNote)
+        XCTAssertEqual(row.explanationLabel.toolTip, PreferencesGesturesTests.followNote)
+        XCTAssertFalse(part.view.hasAmbiguousLayout)
+        // Show Desktop's gesture off: Apps has no switch of its own to blame.
+        var noShowDesktop = DockGestureSwitches.allOn
+        noShowDesktop.showDesktop = false
+        mac = PreferencesGesturesTests.follows(apps: true, switches: noShowDesktop)
+        NotificationCenter.default.post(name: DockGestureSwitches.didChangeNotification, object: nil)
+        XCTAssertEqual(title(down), SystemShortcut.appExpose.localizedName)
+        XCTAssertEqual(down.toolTip, "Runs once. The Show Desktop trackpad gesture is off in System Settings.")
+        mac = PreferencesGesturesTests.follows()
+        NotificationCenter.default.post(name: DockGestureSwitches.didChangeNotification, object: nil)
+        XCTAssertNil(down.toolTip)
+
         // Off for this app only.
         toggle.state = .off
         send(toggle)

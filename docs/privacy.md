@@ -100,7 +100,8 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](../SECU
     (`showMissionControlGestureEnabled`, `showDesktopGestureEnabled`,
     `showLaunchpadGestureEnabled` and `showAppExposeGestureEnabled` of `com.apple.dock`),
     which say whether the trackpad gestures for Mission Control, Show Desktop, Launchpad
-    and App Exposé are on (System Settings › Trackpad › More Gestures). They are read
+    and App Exposé are on (System Settings › Trackpad › More Gestures; from macOS 26 on
+    Apps has no switch of its own there, and Show Desktop's counts for both). They are read
     whether or not that switch is on: when Scrollio starts, when it becomes the active
     app, when System Settings was in front and when the Dock starts (macOS tells when
     an app starts; only the Dock's start is acted on). Where a gesture is off the Dock
