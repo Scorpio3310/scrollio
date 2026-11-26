@@ -50,9 +50,10 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
   hardware record off the events it sends, on macOS 27 and later (missing: the record
   stays on). Starting a script (see below) uses one function more. And with "Up and
   Down follow the hand too" Scrollio listens, through the public accessibility
-  interface, to four notifications of the Dock whose names are in no public header
-  (that Mission Control, an app's windows or the desktop is shown, and that the view
-  was left); where the Dock does not post them, Scrollio goes by what it opened itself.
+  interface, to four notifications of the Dock and of the window manager whose names
+  are in no public header (that Mission Control, an app's windows or the desktop is
+  shown, and that the view was left); where they are not posted, Scrollio goes by what
+  it opened itself and by a click.
 
 ## How an update is trusted
 

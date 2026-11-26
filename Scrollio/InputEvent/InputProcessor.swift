@@ -283,9 +283,11 @@ class InputProcessor: ModifierFlagsProviding {
     /// The view of the Dock that shows, as far as Scrollio knows (`DockBelief`): what the
     /// Dock said, and what Scrollio put up itself. Main thread.
     private var dockBelief = DockBelief()
-    /// The regular app that was last told to be in front (its process), so that the same
-    /// app told again is no change (`SurroundingsChange.applicationCameToFront`).
-    private var frontApplicationProcess: pid_t?
+    /// The apps that came to the front in this run of Scrollio, numbered in the order
+    /// they first did (by process), and the number of the last one: for the log, which
+    /// never names an app.
+    private var frontApplicationNumbers: [pid_t: Int] = [:]
+    private var lastFrontApplicationNumber: Int?
     /// Asks for the Dock's word about its views (`DockViewWatch`); a test gives its own.
     private var wantDockViewWatch: () -> Void = { DockViewWatch.shared.want() }
     /// The frames of the screens, in points. Replaced in tests.
@@ -297,6 +299,9 @@ class InputProcessor: ModifierFlagsProviding {
     /// wheel's; towards a view: a hold's), on the gestures' clock: macOS tells of a change
     /// of the desktop in use after it, late.
     private var ownSwipeEndedAt = -TimeInterval.infinity
+    /// When a hold's own motion towards a view last ended: an app that macOS says came to
+    /// the front right after it is that motion's doing, not the user's.
+    private var viewMotionEndedAt = -TimeInterval.infinity
     /// The app in front when a gesture button goes down: whose gestures the hold runs
     /// (`MouseGestureChoice`). Read once per hold, inside the event callback: what
     /// `NSWorkspace` and the running app already hold, as for the ring's press, and then
@@ -1332,9 +1337,11 @@ class InputProcessor: ModifierFlagsProviding {
         case .none: break
         }
         if case .ended = ending {
-            // What macOS tells late about the desktop in use is this motion's own for a
-            // moment (`isLateWordOfOwnSwipe`).
+            // What macOS tells late about the desktop in use, or about an app in front,
+            // is this motion's own for a moment (`isLateWordOfOwnSwipe`,
+            // `isLateWordOfOwnViewMotion`).
             ownSwipeEndedAt = now
+            viewMotionEndedAt = now
         }
         let appsOwn = session.isAppsOwn
         noteMouseGesture { motion.line(ending, appsOwn: appsOwn) }
@@ -1390,25 +1397,21 @@ class InputProcessor: ModifierFlagsProviding {
 
         static let finderBundleIdentifier = "com.apple.finder"
 
-        /// The change that an app coming to the front is, by the app's bundle identifier;
-        /// nil: none. Only a regular app counts (one with a Dock icon and windows of its
-        /// own): choosing a window in Mission Control or an app in Apps brings such an app
-        /// to the front, while an agent (a system panel, a menu bar app, the Dock itself)
-        /// may come up over a view that stays. And the app that was in front already is no
-        /// change, however often macOS tells of it.
-        static func applicationCameToFront(
-            bundleIdentifier: String?, isRegular: Bool = true, wasInFrontAlready: Bool = false
-        ) -> SurroundingsChange? {
-            guard isRegular, !wasInFrontAlready else { return nil }
+        /// The change that an app coming to the front is, by the app's bundle identifier.
+        static func applicationCameToFront(bundleIdentifier: String?) -> SurroundingsChange {
             return bundleIdentifier == finderBundleIdentifier ? .finderCameToFront : .anotherApplicationCameToFront
         }
     }
 
     /// macOS told of a change (the observers below), or a test did.
-    /// - Another app came to the front: whatever view showed is most likely gone (choosing
-    ///   a window or an app is how a view is left), so nothing is taken to show any more.
-    ///   Finder in front keeps a Show Desktop: clicking a file on the desktop brings
-    ///   Finder to the front and is that view's use, and the view stays.
+    /// - Another app came to the front: a view that is only believed is most likely gone
+    ///   (choosing a window or an app is how a view is left), so it is given up. Finder in
+    ///   front keeps a Show Desktop: clicking a file on the desktop brings Finder to the
+    ///   front and is that view's use, and the view stays. But macOS sometimes says an app
+    ///   came to the front right after a view opened with the hand, with no click and no
+    ///   key: within `DockFollowTuning.lateDesktopChange` of the end of a hold's own motion
+    ///   towards a view, such a word is the motion's own and changes nothing (a click in
+    ///   that time ends the view by itself: `pointerClicked`).
     /// - The Dock started: nothing shows.
     /// - The desktop in use changed: a view that is only believed is given up, and a motion
     ///   towards a view is taken back too (the Dock has just rebuilt what the motion was
@@ -1431,11 +1434,16 @@ class InputProcessor: ModifierFlagsProviding {
         let now = interactiveEnvironment.now()
         let before = dockBelief
         switch change {
-        case .anotherApplicationCameToFront:
-            dockBelief.drop()
-        case .finderCameToFront:
-            if dockBelief.view(at: now) != .showDesktop {
-                dockBelief.drop()
+        case .anotherApplicationCameToFront, .finderCameToFront:
+            if isLateWordOfOwnViewMotion {
+                if let view = before.view(at: now) {
+                    let number = lastFrontApplicationNumber
+                    noteMouseGesture { InputProcessor.stillShowingLine(view, appNumber: number) }
+                }
+                return
+            }
+            if change == .anotherApplicationCameToFront || dockBelief.view(at: now) != .showDesktop {
+                dockBelief.doubt()
             }
         case .dockStarted:
             dockBelief.drop()
@@ -1450,16 +1458,32 @@ class InputProcessor: ModifierFlagsProviding {
             takeBackSwipe(onlyTowardsAView: false, because: .displaysSlept)
         }
         if let view = before.view(at: now), dockBelief.view(at: now) == nil {
-            noteMouseGesture { InputProcessor.noLongerShowingLine(view, because: change) }
+            let number = lastFrontApplicationNumber
+            noteMouseGesture { InputProcessor.noLongerShowingLine(view, because: change, appNumber: number) }
+        }
+    }
+
+    /// The main mouse button was pressed somewhere outside Scrollio (`DockViewWatch`, or a
+    /// test): a believed Mission Control or Apps is gone (`DockBelief.clicked`). Main thread.
+    func pointerClicked() {
+        assertMainThread()
+        let now = interactiveEnvironment.now()
+        let before = dockBelief.view(at: now)
+        dockBelief.clicked(at: now)
+        if let view = before, dockBelief.view(at: now) == nil {
+            noteMouseGesture { "Gestures: \(view.actionIdentifier) is no longer taken to show (a click)" }
         }
     }
 
     /// The line of a view that is no longer taken to show because of what happened around
-    /// it. The view by its action's stored name; never an app's name.
-    static func noLongerShowingLine(_ view: DockFollowTarget, because change: SurroundingsChange) -> String {
+    /// it. The view by its action's stored name; never an app's name: an app that came to
+    /// the front is "app 3", the third that did in this run of Scrollio.
+    static func noLongerShowingLine(
+        _ view: DockFollowTarget, because change: SurroundingsChange, appNumber: Int? = nil
+    ) -> String {
         let reason: String
         switch change {
-        case .anotherApplicationCameToFront: reason = "another app came to the front"
+        case .anotherApplicationCameToFront: reason = "another app came to the front" + appText(appNumber)
         case .finderCameToFront: reason = "Finder came to the front"
         case .dockStarted: reason = "the Dock started"
         case .activeSpaceChanged: reason = "the desktop in use changed"
@@ -1469,20 +1493,33 @@ class InputProcessor: ModifierFlagsProviding {
         return "Gestures: \(view.actionIdentifier) is no longer taken to show (\(reason))"
     }
 
-    /// The Dock said something about its views (`DockViewWatch`, or a test): what shows is
-    /// its word from now on, and the log has the line. Main thread.
-    func dockSaid(_ word: DockWord) {
-        assertMainThread()
-        dockBelief.dockSaid(word, at: interactiveEnvironment.now())
-        noteMouseGesture { InputProcessor.dockSaidLine(word) }
+    /// The line of an app that macOS said came to the front right after a hold's own
+    /// motion towards a view: the view stays.
+    static func stillShowingLine(_ view: DockFollowTarget, appNumber: Int? = nil) -> String {
+        return "Gestures: \(view.actionIdentifier) is still taken to show "
+            + "(an app came to the front right after the hold's own motion\(appText(appNumber)))"
     }
 
-    static func dockSaidLine(_ word: DockWord) -> String {
+    private static func appText(_ number: Int?) -> String {
+        return number.map { ", app \($0)" } ?? ""
+    }
+
+    /// macOS said something about the Dock's views (`DockViewWatch`, or a test): what
+    /// shows is that word from now on, and the log has the line with who said it. Main
+    /// thread.
+    func dockSaid(_ word: DockWord, by source: DockViewWatch.Source = .dock) {
+        assertMainThread()
+        dockBelief.dockSaid(word, at: interactiveEnvironment.now())
+        noteMouseGesture { InputProcessor.dockSaidLine(word, by: source) }
+    }
+
+    static func dockSaidLine(_ word: DockWord, by source: DockViewWatch.Source = .dock) -> String {
+        let who = "Gestures: \(source.logName) says "
         switch word {
-        case .missionControl: return "Gestures: the Dock says Mission Control is showing"
-        case .appWindows: return "Gestures: the Dock says an app's windows are showing"
-        case .desktop: return "Gestures: the Dock says the desktop is showing"
-        case .left: return "Gestures: the Dock says its view was left"
+        case .missionControl: return who + "Mission Control is showing"
+        case .appWindows: return who + "an app's windows are showing"
+        case .desktop: return who + "the desktop is showing"
+        case .left: return who + "its view was left"
         }
     }
 
@@ -1507,6 +1544,13 @@ class InputProcessor: ModifierFlagsProviding {
         return since >= 0 && since < DockFollowTuning.lateDesktopChange
     }
 
+    /// A hold's own motion towards a view ended so short a while ago that an app said to
+    /// come to the front now is taken for that motion's doing.
+    private var isLateWordOfOwnViewMotion: Bool {
+        let since = interactiveEnvironment.now() - viewMotionEndedAt
+        return since >= 0 && since < DockFollowTuning.lateDesktopChange
+    }
+
     private var surroundingsObservers: [NSObjectProtocol] = []
 
     /// Hears the four changes from macOS for as long as the app runs. Not under XCTest: a
@@ -1515,22 +1559,13 @@ class InputProcessor: ModifierFlagsProviding {
     private func observeSurroundings() {
         guard !AppRuntime.isRunningXCTest else { return }
         let workspace = NSWorkspace.shared.notificationCenter
-        frontApplicationProcess = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        let watched: [(NotificationCenter, Notification.Name, (Notification) -> SurroundingsChange?)] = [
+        let watched: [(NotificationCenter, Notification.Name, (Notification) -> SurroundingsChange)] = [
             (workspace, NSWorkspace.didActivateApplicationNotification, { [weak self] notification in
-                // Which app it is, only to know Finder, an agent and the app that was in
-                // front already (what the notification carries).
+                // Which app it is, only to know Finder (what the notification carries);
+                // for the log the app gets a number, never a name.
                 let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-                let isRegular = application?.activationPolicy == .regular
-                let process = application?.processIdentifier
-                let wasInFrontAlready = process != nil && process == self?.frontApplicationProcess
-                if isRegular {
-                    self?.frontApplicationProcess = process
-                }
-                return .applicationCameToFront(
-                    bundleIdentifier: application?.bundleIdentifier, isRegular: isRegular,
-                    wasInFrontAlready: wasInFrontAlready
-                )
+                self?.numberFrontApplication(application?.processIdentifier)
+                return .applicationCameToFront(bundleIdentifier: application?.bundleIdentifier)
             }),
             (workspace, NSWorkspace.activeSpaceDidChangeNotification, { _ in .activeSpaceChanged }),
             (workspace, NSWorkspace.screensDidSleepNotification, { _ in .displaysWentToSleep }),
@@ -1538,10 +1573,22 @@ class InputProcessor: ModifierFlagsProviding {
         ]
         surroundingsObservers = watched.map { center, name, change in
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
-                guard let change = change(notification) else { return }
-                self?.surroundingsChanged(change)
+                self?.surroundingsChanged(change(notification))
             }
         }
+    }
+
+    /// Gives the app that came to the front its number for the log: the order in which the
+    /// apps first came to the front in this run (a process seen again keeps its number).
+    private func numberFrontApplication(_ process: pid_t?) {
+        guard let process else {
+            lastFrontApplicationNumber = nil
+            return
+        }
+        if frontApplicationNumbers[process] == nil {
+            frontApplicationNumbers[process] = frontApplicationNumbers.count + 1
+        }
+        lastFrontApplicationNumber = frontApplicationNumbers[process]
     }
 
     /// Scrollio is about to ask the Dock for one of its views in one go: Mission Control
@@ -1596,6 +1643,7 @@ class InputProcessor: ModifierFlagsProviding {
         interactiveEnvironment = environment
         lastInteractiveFlushTime = -TimeInterval.infinity
         ownSwipeEndedAt = -TimeInterval.infinity
+        viewMotionEndedAt = -TimeInterval.infinity
     }
 
     func clearTestingInteractiveGestureEnvironment() {

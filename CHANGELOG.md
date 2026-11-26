@@ -20,12 +20,14 @@ view on top.
   Control over Apps: with "Up and Down follow the hand too", the direction opposite to
   the one that opened a view closes it with your hand, like the trackpad's opposite
   gesture. A quick flick that way closes it in one go.
-- **Scrollio hears from the Dock what is showing.** Mission Control and Show Desktop
-  count as open however they were opened (a key, a hot corner, the trackpad, a click,
-  a quick flick), and as closed when you leave them with Esc or a click. Until now
-  Scrollio only knew of a view it had opened with your hand, and forgot it too easily.
-- **Apps** is the one view macOS does not tell about: after you close it another way
-  (Esc, a click), the next opposite move may show the desktop once.
+- **A view opened in one go counts too**: after a quick flick or a click of the gesture
+  button opened it, the opposite move closes it. Until now Scrollio only knew of a view
+  it had opened with your hand, and forgot it too easily.
+- **After a click closed a view, the next move is its own again.** A click on a window
+  or on the desktop leaves Mission Control, and a click beside the panel leaves Apps;
+  the move after it no longer tries to close a view that is gone.
+- **A view you close with Esc** may still count as open: the next opposite move then
+  does nothing, or shows the desktop, once.
 
 ## 1.1.2
 

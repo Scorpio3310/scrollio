@@ -556,8 +556,8 @@ final class PreferencesGesturesTests: XCTestCase {
 
     /// What the row says when the pointer rests on it.
     static let followNote = "With a view open, the same move closes it at once, and the opposite move puts it away "
-        + "with your hand instead of opening its own view on top. macOS does not say when Apps closes: "
-        + "after you close Apps another way (Esc, a click), the next opposite move may show the desktop once."
+        + "with your hand instead of opening its own view on top. A view you close with Esc may still count as "
+        + "open: the next opposite move then does nothing, or shows the desktop, once."
 
     /// The switch is no longer marked "(Experimental)": what a person may meet is said
     /// where the pointer rests, on the title, the line, the switch and the room between

@@ -892,6 +892,32 @@ final class DockBeliefTests: XCTestCase {
         XCTAssertNil(belief.view(at: 3), "dropped is dropped, told or not")
     }
 
+    /// A click of the main mouse button ends a believed Mission Control or Apps (a click
+    /// on a window, on the desktop or beside the panel is how they are left); Show Desktop
+    /// and a view the Dock named stay.
+    func testAClickEndsABelievedMissionControlOrApps() {
+        var belief = DockBelief()
+        belief.clicked(at: 0)
+        XCTAssertEqual(belief, DockBelief(), "nothing showed")
+
+        for view in [DockFollowTarget.missionControl, .apps] {
+            belief.holdOpened(view, at: 1)
+            belief.clicked(at: 2)
+            XCTAssertNil(belief.view(at: 2), "\(view)")
+            belief.toggled(view, at: 3)
+            belief.clicked(at: 4)
+            XCTAssertNil(belief.view(at: 4), "put up by a toggle: \(view)")
+        }
+        belief.holdOpened(.showDesktop, at: 5)
+        belief.clicked(at: 6)
+        XCTAssertEqual(belief.view(at: 6), .showDesktop, "a click on a file on the desktop is its use")
+
+        belief.dockSaid(.missionControl, at: 7)
+        belief.clicked(at: 8)
+        XCTAssertEqual(belief.view(at: 8), .missionControl, "the Dock says when it is left")
+        XCTAssertTrue(belief.isTold(at: 8))
+    }
+
     /// A hold that left the view with the hand: one that was let go as expected to close
     /// it ends the view; one that was not ends a belief and leaves the Dock's word.
     func testAHoldThatLeftTheView() {
@@ -1073,6 +1099,22 @@ final class DockViewWatchTests: XCTestCase {
         DockViewWatch.shared.dockStarted()
         RunLoop.main.run(until: Date().addingTimeInterval(0.01))
         XCTAssertFalse(DockViewWatch.shared.isListening)
+    }
+
+    /// The Dock and the window manager both name the notifications; a callback learns who
+    /// spoke from a small number, never from a pointer to anything.
+    func testWhoIsListenedTo() {
+        XCTAssertEqual(DockViewWatch.Source.allCases, [.dock, .windowManager])
+        XCTAssertEqual(DockViewWatch.Source.dock.bundleIdentifier, "com.apple.dock")
+        XCTAssertEqual(DockViewWatch.Source.windowManager.bundleIdentifier, "com.apple.WindowManager")
+        XCTAssertEqual(DockViewWatch.Source.dock.logName, "the Dock")
+        XCTAssertEqual(DockViewWatch.Source.windowManager.logName, "the window manager")
+        XCTAssertNil(DockViewWatch.source(forTag: nil))
+        XCTAssertEqual(DockViewWatch.source(forTag: UnsafeMutableRawPointer(bitPattern: 1)), .dock)
+        XCTAssertEqual(DockViewWatch.source(forTag: UnsafeMutableRawPointer(bitPattern: 2)), .windowManager)
+        XCTAssertNil(DockViewWatch.source(forTag: UnsafeMutableRawPointer(bitPattern: 3)))
+        XCTAssertEqual(InputProcessor.dockSaidLine(.left, by: .windowManager), "Gestures: the window manager says its view was left")
+        XCTAssertEqual(InputProcessor.dockSaidLine(.desktop), "Gestures: the Dock says the desktop is showing")
     }
 }
 

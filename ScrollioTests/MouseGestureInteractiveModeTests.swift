@@ -805,6 +805,13 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         releaseGestureButton(after: rest)
     }
 
+    /// Another app comes to the front, later than what macOS may say right after a hold's
+    /// own motion (which changes nothing: `testAnAppSaidToComeToTheFrontRightAfterAHoldChangesNothing`).
+    private func anotherAppComesToTheFront() {
+        clock += DockFollowTuning.lateDesktopChange
+        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
+    }
+
     /// Nothing is taken to show any more (as when the Dock starts over), and the line about
     /// it is not among what a test reads next.
     private func forgetWhatShows() {
@@ -1152,7 +1159,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         hold([(0, -100)])
         assertSwipeCalls([.begin(.pinch), .update(0.25), .end(0)])
         swipeCalls = []
-        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
+        anotherAppComesToTheFront()
         hold([(0, 100)])
         assertSwipeCalls([.begin(.vertical), .update(0.25), .end(0)])
 
@@ -1479,10 +1486,10 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         ])
         XCTAssertNil(InputProcessor.shared.believedDockView, "the key closed it")
 
-        // Opened with the hand again; then an app is picked in it and comes to the front.
+        // Opened with the hand again; then another app comes to the front (⌘Tab).
         hold([(0, 100), (0, 80)], rest: 0.01)
         XCTAssertEqual(InputProcessor.shared.believedDockView, .apps)
-        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
+        anotherAppComesToTheFront()
         XCTAssertNil(InputProcessor.shared.believedDockView)
 
         // Mission Control opened with the hand: Down leaves it, and is not Apps.
@@ -1575,7 +1582,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(instantVoices, [.settle, .key(appsKey)])
 
         // Let go while heading back, short of the start: the belief ends as well.
-        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
+        anotherAppComesToTheFront()
         openMissionControlWithTheHand()
         pressGestureButton()
         moveHand(0, 240)
@@ -1784,6 +1791,121 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl, "it was not left")
     }
 
+    // MARK: A view that was left with a click
+
+    /// The owner's second case: Up opens Mission Control, a click on the desktop (or on a
+    /// window) closes it, and the next move down must open Apps at once. No app came to
+    /// the front (the same one stayed there), so the click itself is what ends the view;
+    /// without it Down would "leave" a Mission Control that is gone, and do nothing.
+    func testAClickEndsABelievedMissionControlSoTheNextMoveIsItsOwn() {
+        configureFollowing(on: mac(apps: true))
+        openMissionControlWithTheHand()
+
+        InputProcessor.shared.pointerClicked()
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+        drainMainQueue()
+        XCTAssertEqual(gestureLog, ["Gestures: missionControl is no longer taken to show (a click)"])
+
+        // Down is Apps, with the hand, at the first move.
+        hold([(0, 100), (0, 80)], rest: 0.01)
+        XCTAssertEqual(swipeCalls.first, .begin(.pinch))
+        XCTAssertFalse(swipeCalls.contains(.begin(.vertical)), "nothing is left that is not there: \(swipeCalls)")
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .apps)
+
+        // A click beside Apps closes it: Up is Mission Control again, not the way back of
+        // Apps' pinch (which would show the desktop).
+        InputProcessor.shared.pointerClicked()
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+        swipeCalls = []
+        hold([(0, -100)])
+        assertSwipeCalls([.begin(.vertical), .update(0.25), .end(0)])
+
+        // A view an instant toggle put up (the click of the gesture button, a flick) ends
+        // with a click the same way.
+        forgetWhatShows()
+        hold([])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+        InputProcessor.shared.pointerClicked()
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+
+        // With nothing showing a click is nothing, and writes no line.
+        drainMainQueue()
+        gestureLog = []
+        InputProcessor.shared.pointerClicked()
+        drainMainQueue()
+        XCTAssertEqual(gestureLog, [])
+    }
+
+    /// A click leaves Show Desktop standing (a click on a file on the desktop is what the
+    /// view is for), and a view the Dock named (the Dock says when that one is left).
+    func testAClickLeavesShowDesktopAndAToldViewStanding() {
+        configureFollowing(up: "showDesktop", down: "missionControl")
+        hold([(0, -240)])
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .showDesktop)
+        InputProcessor.shared.pointerClicked()
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .showDesktop)
+
+        forgetWhatShows()
+        InputProcessor.shared.dockSaid(.missionControl)
+        InputProcessor.shared.pointerClicked()
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+        XCTAssertTrue(InputProcessor.shared.dockViewIsTold)
+    }
+
+    /// macOS sometimes says an app came to the front right after a view opened with the
+    /// hand, with no click and no key. Within a second of the end of the hold's own motion
+    /// that word changes nothing: the view stays, and the opposite move leaves it. A click
+    /// in that time ends the view by itself, and later the word counts as always.
+    func testAnAppSaidToComeToTheFrontRightAfterAHoldChangesNothing() {
+        configureFollowing(on: mac(apps: true))
+        openMissionControlWithTheHand()
+
+        clock += 0.1
+        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
+        clock += 0.35
+        InputProcessor.shared.surroundingsChanged(.finderCameToFront)
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+        drainMainQueue()
+        XCTAssertEqual(gestureLog, [
+            "Gestures: missionControl is still taken to show (an app came to the front right after the hold's own motion)",
+            "Gestures: missionControl is still taken to show (an app came to the front right after the hold's own motion)",
+        ])
+        // Down leaves it; Apps is not opened on top.
+        hold([(0, 240)])
+        XCTAssertEqual(swipeCalls.first, .begin(.vertical))
+        XCTAssertFalse(swipeCalls.contains(.begin(.pinch)), "\(swipeCalls)")
+
+        // A click right after the opening ends the view at once.
+        forgetWhatShows()
+        openMissionControlWithTheHand()
+        clock += 0.1
+        InputProcessor.shared.pointerClicked()
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+
+        // And a second after the motion ended, an app in front is a change like any other.
+        forgetWhatShows()
+        openMissionControlWithTheHand()
+        clock += DockFollowTuning.lateDesktopChange
+        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+        drainMainQueue()
+        XCTAssertEqual(gestureLog, ["Gestures: missionControl is no longer taken to show (another app came to the front)"])
+
+        // The app's number in the log, where the notification gave one; never a name.
+        XCTAssertEqual(
+            InputProcessor.noLongerShowingLine(.apps, because: .anotherApplicationCameToFront, appNumber: 3),
+            "Gestures: appExpose is no longer taken to show (another app came to the front, app 3)"
+        )
+        XCTAssertEqual(
+            InputProcessor.stillShowingLine(.missionControl, appNumber: 2),
+            "Gestures: missionControl is still taken to show (an app came to the front right after the hold's own motion, app 2)"
+        )
+        XCTAssertEqual(
+            InputProcessor.noLongerShowingLine(.missionControl, because: .finderCameToFront, appNumber: 2),
+            "Gestures: missionControl is no longer taken to show (Finder came to the front)"
+        )
+    }
+
     // MARK: The Dock's own word
 
     /// The Dock says when Mission Control or the desktop is shown and when the view is
@@ -1844,9 +1966,18 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(gestureLog, [
             "Gestures: the Dock says the desktop is showing", "Gestures: the Dock says an app's windows are showing",
         ])
-        // Another app in front: the view is gone, told or not.
-        InputProcessor.shared.dockSaid(.missionControl)
-        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
+        // Another app in front, or a click: a told view waits for the Dock's own "left".
+        InputProcessor.shared.dockSaid(.missionControl, by: .windowManager)
+        anotherAppComesToTheFront()
+        InputProcessor.shared.pointerClicked()
+        XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+        drainMainQueue()
+        XCTAssertEqual(gestureLog.last, "Gestures: the window manager says Mission Control is showing")
+        InputProcessor.shared.dockSaid(.left, by: .windowManager)
+        XCTAssertNil(InputProcessor.shared.believedDockView)
+        // A Dock that starts over shows nothing, whatever it said before.
+        InputProcessor.shared.dockSaid(.desktop)
+        InputProcessor.shared.surroundingsChanged(.dockStarted)
         XCTAssertNil(InputProcessor.shared.believedDockView)
     }
 
@@ -1936,12 +2067,13 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
 
         hold([(0, -240)])
         XCTAssertEqual(InputProcessor.shared.believedDockView, .showDesktop)
-        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
+        anotherAppComesToTheFront()
         XCTAssertNil(InputProcessor.shared.believedDockView)
 
         // Mission Control: Finder in front means it was left.
         hold([(0, 240)])
         XCTAssertEqual(InputProcessor.shared.believedDockView, .missionControl)
+        clock += DockFollowTuning.lateDesktopChange
         InputProcessor.shared.surroundingsChanged(.finderCameToFront)
         XCTAssertNil(InputProcessor.shared.believedDockView)
 
@@ -1951,20 +2083,13 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         for other in ["com.apple.Safari", "com.apple.dock", "com.apple.finder.Open-With-Pool", "", nil] {
             XCTAssertEqual(Change.applicationCameToFront(bundleIdentifier: other), .anotherApplicationCameToFront)
         }
-        // An agent (a system panel, a menu bar app, the Dock) may come up over a view that
-        // stays, and the app that was in front already is no change: neither counts.
-        for identifier in ["com.apple.Safari", "com.apple.finder", "com.apple.dock", nil] {
-            XCTAssertNil(Change.applicationCameToFront(bundleIdentifier: identifier, isRegular: false))
-            XCTAssertNil(Change.applicationCameToFront(bundleIdentifier: identifier, isRegular: true, wasInFrontAlready: true))
-            XCTAssertNil(Change.applicationCameToFront(bundleIdentifier: identifier, isRegular: false, wasInFrontAlready: true))
-        }
     }
 
     func testTheBeliefIsDroppedByEachOfItsTriggers() {
         configureFollowing()
         let triggers: [(name: String, happen: () -> Void)] = [
             ("a minute passed", { [unowned self] in self.clock += 60 }),
-            ("another app came to the front", { InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront) }),
+            ("another app came to the front", { [unowned self] in self.anotherAppComesToTheFront() }),
             ("the desktop in use changed", { [unowned self] in
                 // Later than what macOS tells late about the hold's own motion.
                 self.clock += DockFollowTuning.lateDesktopChange
@@ -2090,7 +2215,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         XCTAssertEqual(dockVoices, [.settle, .toggle(.missionControl)])
 
         // Down follows; Up's action does not run afterwards, and the release is no click.
-        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
+        anotherAppComesToTheFront()
         dockVoices = []
         hold([(0, 100), (0, -600)])
         assertSwipeCalls([.begin(.pinch), .update(0.25), .update(0), .cancel])
@@ -2223,7 +2348,7 @@ final class MouseGestureInteractiveModeTests: XCTestCase {
         pressGestureButton()
         moveHand(-100, 0)
         InputProcessor.shared.surroundingsChanged(.activeSpaceChanged)
-        InputProcessor.shared.surroundingsChanged(.anotherApplicationCameToFront)
+        anotherAppComesToTheFront()
         assertSwipeCalls([.begin(.horizontal), .update(0.1)])
         moveHand(-100, 0)
         changeTheScreens()

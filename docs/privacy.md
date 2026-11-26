@@ -109,18 +109,20 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](../SECU
     for App Exposé is on, a Mission Control that Scrollio only remembers (see below) is
     not put away with your hand. Nothing else of the Dock's settings is read, and none
     is changed. From the first hold with that switch on, Scrollio also listens to four
-    accessibility notifications of the Dock, which say that Mission Control, an app's
-    windows (App Exposé) or the desktop is shown, or that such a view was left: so the
-    opposite move closes a view instead of opening another on top. They are four names
-    and nothing more (no window, no title, no app), they come through the Accessibility
-    access Scrollio already has, and without the switch the listening never starts. The
-    Dock says nothing about Apps: there Scrollio remembers, for a minute and only while
-    it runs, that one of its own gestures or actions opened the view, and hears from
-    macOS that another app came to the front (of which it only looks whether it is
-    Finder, whether it is an app with windows of its own and whether it was in front
-    already), that the desktop in use changed, that the screens changed (it then looks
-    at the screens' places and sizes) or that the displays went to sleep, to forget
-    that view or to take a swipe back;
+    accessibility notifications of the Dock and of the window manager, which say that
+    Mission Control, an app's windows (App Exposé) or the desktop is shown, or that such
+    a view was left, and it notices that the main mouse button was pressed outside
+    Scrollio (only that it was, not where or on what: a click is how Mission Control and
+    Apps are left): so the opposite move closes a view instead of opening another on
+    top, and does nothing odd after a view was left. The four names carry no window, no
+    title and no app, they come through the Accessibility access Scrollio already has,
+    and without the switch none of this listening starts. Nothing is said about Apps:
+    there, and where the notifications do not come, Scrollio remembers, for a minute and
+    only while it runs, that one of its own gestures or actions opened the view, and
+    hears from macOS that another app came to the front (of which it only looks whether
+    it is Finder; the log counts it as "app 2", never by name), that the desktop in use
+    changed, that the screens changed (it then looks at the screens' places and sizes)
+    or that the displays went to sleep, to forget that view or to take a swipe back;
   - which app is under the pointer or in front, for the per-app settings and "Smooth
     Scrolling in …". With "Trackpad-style scrolling (Experimental)" on, for a wheel scroll in an
     app that gets the one-touch form, it reads the kind of the element under the pointer

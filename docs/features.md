@@ -210,23 +210,25 @@ Trackpad-style scrolling (Experimental), is in [scrolling.md](scrolling.md).
   its own view on top; a quick flick that way closes it in one go. Within one hold a
   view only goes back to where it started: the hand going on the other way opens
   nothing.
-  What is showing, Scrollio hears from the Dock: with the switch on it listens to the
-  Dock's word that Mission Control or the desktop is shown and that the view was left,
-  however it was opened (a key, a hot corner, the trackpad, a click on a window). The
-  Dock says nothing about Apps. There, and should the Dock's word be missing, Scrollio
-  goes by what it did itself: a view that one of its gestures opened with your hand
-  (moved at least a fifth of the way and let go to open) or that one of its actions
-  opened in one go (a flick, a button, the Shortcut Ring) counts as showing for a
-  minute, and no longer once another app with windows of its own comes to the front
-  (Finder may while Show Desktop is showing: a click on a file on the desktop), the
-  desktop in use changes, the Mac sleeps or Scrollio is paused. After you closed Apps
-  another way (Esc, a click beside it), the next opposite move may therefore show the
-  desktop once (Apps then counts as closed again); the same move opens Apps, as it
-  always did. Where the trackpad gesture for App Exposé is on in System Settings, a
-  Mission Control that Scrollio only knows from itself is not put away with your hand
-  (that move could show the app's windows instead): the direction keeps its own
-  action. The switch's tooltip says this in short, in "Follow the hand" where
-  something can open with your hand.
+  What is showing, Scrollio takes from what it hears and from what it did. With the
+  switch on it listens for macOS's own word that Mission Control or the desktop is
+  shown and that the view was left, however it was opened (the Dock and the window
+  manager name such notifications; where they come, they decide). Nothing is said
+  about Apps, and the word may not come at all. Then Scrollio goes by what it did
+  itself: a view that one of its gestures opened with your hand (moved at least a fifth
+  of the way and let go to open) or that one of its actions opened in one go (a flick,
+  a button, the Shortcut Ring) counts as showing for a minute, and no longer once you
+  click (a click on a window, on the desktop or beside the panel is how Mission
+  Control and Apps are left; Show Desktop stays, a click on a file is its use), another
+  app comes to the front (Finder may while Show Desktop is showing), the desktop in use
+  changes, the Mac sleeps or Scrollio is paused. A view you closed with Esc may
+  therefore still count as open: the next opposite move then does nothing (Mission
+  Control) or shows the desktop (Apps) once, and counts the view as closed again; the
+  same move opens it, as it always did. Where the trackpad gesture for App Exposé is
+  on in System Settings, a Mission Control that Scrollio only knows from itself is not
+  put away with your hand (that move could show the app's windows instead): the
+  direction keeps its own action. The switch's tooltip says this in short, in "Follow
+  the hand" where something can open with your hand.
 - A view that is opening with your hand goes back at once when the button is held for
   more than ten seconds, when the Shortcut Ring opens, when the desktop in use changes
   (not for the change Scrollio's own swipe of the desktops has just made, a gesture's

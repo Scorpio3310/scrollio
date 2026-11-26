@@ -205,8 +205,16 @@ final class TestIsolationTests: XCTestCase {
         Effect(name: "makes an event tap", pattern: #"CGEvent\.tapCreate\(|CGEventTapCreate\("#, allowed: ["Scrollio/Utils/Interceptor.swift"]),
         // Clicks in other apps: the Shortcut Ring hears of them while a ring stands open
         // (ShortcutRingController.Environment.system starts no monitor under XCTest).
+        // And "Up and Down follow the hand too" hears that the main button was pressed
+        // (DockViewWatch starts nothing under XCTest: DockViewWatchTests holds that line).
         Effect(name: "listens to events of other apps", pattern: #"addGlobalMonitorForEvents\("#, allowed: [
             "Scrollio/Ring/ShortcutRingController.swift",
+            "Scrollio/InputEvent/DockViewWatch.swift",
+        ]),
+        // The Dock's and the window manager's word about the Dock's views: the same watch,
+        // which makes no observer under XCTest.
+        Effect(name: "listens to another app's accessibility notifications", pattern: #"AXObserverCreate\("#, allowed: [
+            "Scrollio/InputEvent/DockViewWatch.swift",
         ]),
         // The pointer: MouseGesturePointerDriver.inert under XCTest.
         Effect(name: "moves or detaches the pointer", pattern: #"CGWarpMouseCursorPosition\(|CGAssociateMouseAndMouseCursorPosition\("#, allowed: [

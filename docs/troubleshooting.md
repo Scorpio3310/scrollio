@@ -152,15 +152,20 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   events"; "the wheel's swipe was running"; and "Mission Control was taken to show", or
   "Show Desktop", or "Apps": the view was showing as far as Scrollio knew, and the same
   move closes it. Such a line names Apps by its action, `appExpose`),
-  with "Up and Down follow the hand too" in use, what the Dock says about its views
-  (`Gestures: the Dock says Mission Control is showing`, or "an app's windows are
-  showing", "the desktop is showing", "its view was left"), one line when a view stops
-  counting as showing because of what happened around it (`Gestures: appExpose is no
-  longer taken to show (another app came to the front)`, or "Finder came to the front",
-  "the desktop in use changed", "the Dock started"), and once, at the first hold with
-  that switch on, `Gestures: listening to the Dock for its views (4 of 4
-  notifications)`, or "the Dock's word about its views is not available" with the
-  reason when that could not be set up,
+  with "Up and Down follow the hand too" in use, what macOS says about the Dock's views
+  and who said it (`Gestures: the Dock says Mission Control is showing`, or "the window
+  manager says", and "an app's windows are showing", "the desktop is showing", "its
+  view was left"), one line when a view stops counting as showing because of what
+  happened around it (`Gestures: appExpose is no longer taken to show (another app came
+  to the front, app 2)`: the second app that came to the front in this run of Scrollio,
+  never its name; or "a click", "Finder came to the front", "the desktop in use
+  changed", "the Dock started"), one when an app is said to come to the front within a
+  second of a hold's own motion and the view stays (`Gestures: missionControl is still
+  taken to show (an app came to the front right after the hold's own motion, app 2)`),
+  and once, after the first holds with that switch on, `Gestures: listening for the
+  Dock's views to the Dock and the window manager (the Dock: 4 of 4, the window
+  manager: 4 of 4), and for clicks`, or "to nobody (the notifications are not
+  available)",
   one line for a swipe of the desktops that was taken back because the screens changed
   or the displays went to sleep (`Gestures: a swipe of the desktops was taken back (the
   screens changed)`; the desktops' swipe writes no other line),

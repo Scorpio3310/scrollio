@@ -21,8 +21,10 @@
 //    macOS 26 on, and the word may be missing on some Mac): a hold that opened a view with
 //    the hand, and an instant toggle of a view while it was not taken to show, put that
 //    view up. Such a view is only believed: it is given up after a minute, when another app
-//    comes to the front or the desktop in use changes (`doubt`), because every way of
-//    leaving it that Scrollio does not see makes it wrong.
+//    comes to the front or the desktop in use changes (`doubt`), and at a click of the
+//    main mouse button (`clicked`: a click on a window, on the desktop or beside the panel
+//    is how Mission Control and Apps are left), because every way of leaving it that
+//    Scrollio does not see makes it wrong.
 //
 //  A believed view may be wrong (it was left with Esc or a click), so it is only used in
 //  ways that cost one odd move at most when it is:
@@ -150,6 +152,17 @@ struct DockBelief: Equatable {
         if !isTold {
             drop()
         }
+    }
+
+    /// The main mouse button was pressed somewhere outside Scrollio. In Mission Control a
+    /// click chooses a window or the desktop, and beside Apps it closes the panel (on an
+    /// app in it, it starts the app): either way the view is gone, with no app coming to
+    /// the front where the same app stays there. So a believed Mission Control or Apps
+    /// ends. Show Desktop stays: a click on a file on the desktop is what it is for. And a
+    /// told view stays: the Dock says when it is left.
+    mutating func clicked(at now: TimeInterval) {
+        guard !isTold, let showing = view(at: now), showing != .showDesktop else { return }
+        drop()
     }
 
     /// Nothing is taken to show any more.
