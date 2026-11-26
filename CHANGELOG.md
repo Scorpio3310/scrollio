@@ -8,7 +8,7 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
-## Unreleased
+## 1.1.3
 
 **The opposite move closes what is open:** with Mission Control, Show Desktop or Apps
 showing, the other direction puts it away with your hand instead of opening its own
@@ -25,9 +25,8 @@ view on top.
   it had opened with your hand, and forgot it too easily.
 - **After a click closed a view, the next move is its own again.** A click on a window
   or on the desktop leaves Mission Control, and a click beside the panel leaves Apps;
-  the move after it no longer tries to close a view that is gone.
-- **A view you close with Esc** may still count as open: the next opposite move then
-  does nothing, or shows the desktop, once.
+  the move after it no longer tries to close a view that is gone. Esc is not noticed
+  yet: after it the next opposite move does nothing, or shows the desktop, once.
 
 ## 1.1.2
 
