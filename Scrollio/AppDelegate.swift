@@ -402,6 +402,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let launched = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
         guard DockGestureSwitches.reloads(afterLaunchOf: launched?.bundleIdentifier) else { return }
         DockGestureSwitches.reload()
+        // A new Dock shows none of its views, and what the old one said is void; where a
+        // hold had asked for the Dock's word, the new Dock is listened to.
+        InputProcessor.shared.surroundingsChanged(.dockStarted)
+        DockViewWatch.shared.dockStarted()
     }
     // 辅助功能权限在运行时被撤销 (可能由多个 Interceptor 同时触发, 此方法必须幂等)
     @objc func handleAccessibilityPermissionLost() {

@@ -696,35 +696,64 @@ final class DockFollowPlanTests: XCTestCase {
     }
 }
 
-// MARK: - What Scrollio believes the Dock shows
+// MARK: - Which view of the Dock shows, as far as Scrollio knows
 
-/// The belief (`DockBelief`): the view Scrollio's own last followed swipe put up. Pure: the
+/// `DockBelief`: the view the Dock named, or the one Scrollio put up itself. Pure: the
 /// times are made up.
 final class DockBeliefTests: XCTestCase {
 
-    func testThereIsNoBeliefUntilScrollioOpensAView() {
+    func testNothingShowsUntilSomethingSaysSo() {
         let belief = DockBelief()
         XCTAssertNil(belief.view(at: 0))
         XCTAssertNil(belief.view(at: 1_000))
+        XCTAssertFalse(belief.isTold(at: 0))
     }
 
-    /// A followed hold that is expected to open a view sets it, and nothing else does: an
-    /// instant toggle can only end it (`drop`; `InputProcessor.dockViewWillBeToggled`).
-    func testOnlyAFollowedHoldSetsIt() {
+    /// A followed hold that is expected to open a view puts it up: believed, not told.
+    func testAFollowedHoldPutsItsViewUp() {
         var belief = DockBelief()
         belief.holdOpened(.missionControl, at: 10)
         XCTAssertEqual(belief.view(at: 10), .missionControl)
         XCTAssertEqual(belief.view(at: 40), .missionControl)
+        XCTAssertFalse(belief.isTold(at: 10))
 
         belief.drop()
-        XCTAssertNil(belief.view(at: 41), "a toggle ends it")
-        belief.drop()
-        XCTAssertNil(belief.view(at: 42), "and never sets it")
+        XCTAssertNil(belief.view(at: 41))
         belief.holdOpened(.apps, at: 44)
         XCTAssertEqual(belief.view(at: 44), .apps)
     }
 
-    func testItIsDroppedAfterAMinuteAndWhenToldTo() {
+    /// An instant toggle of Scrollio's closes the view that is taken to show, and puts its
+    /// view up otherwise: a flick up opens Mission Control, and the next move down must
+    /// know it.
+    func testAnInstantTogglePutsItsViewUpOrClosesIt() {
+        var belief = DockBelief()
+        belief.toggled(.missionControl, at: 1)
+        XCTAssertEqual(belief.view(at: 1), .missionControl, "nothing showed: the toggle opened it")
+        XCTAssertFalse(belief.isTold(at: 1))
+        belief.toggled(.missionControl, at: 2)
+        XCTAssertNil(belief.view(at: 2), "it showed: the toggle closed it")
+
+        // Another view showed: the toggle puts its own up.
+        belief.holdOpened(.apps, at: 3)
+        belief.toggled(.missionControl, at: 4)
+        XCTAssertEqual(belief.view(at: 4), .missionControl)
+        belief.toggled(.showDesktop, at: 5)
+        XCTAssertEqual(belief.view(at: 5), .showDesktop)
+
+        // A view the Dock named is closed by its toggle too.
+        belief.dockSaid(.missionControl, at: 6)
+        belief.toggled(.missionControl, at: 7)
+        XCTAssertNil(belief.view(at: 7))
+        XCTAssertEqual(belief, DockBelief(), "nothing is left of it")
+
+        // A belief that is too old is none: the toggle opens.
+        belief.toggled(.apps, at: 10)
+        belief.toggled(.apps, at: 10 + DockBelief.lifetime)
+        XCTAssertEqual(belief.view(at: 10 + DockBelief.lifetime), .apps)
+    }
+
+    func testABelievedViewIsGivenUpAfterAMinuteAndWhenToldTo() {
         XCTAssertEqual(DockBelief.lifetime, 60)
         var belief = DockBelief()
         belief.holdOpened(.showDesktop, at: 100)
@@ -744,8 +773,8 @@ final class DockBeliefTests: XCTestCase {
     }
 
     /// Show Desktop, the desktop and Apps are one slider: a hold towards the other end of
-    /// the believed view's own motion steps back to the desktop. Another motion's view
-    /// simply becomes the belief.
+    /// the shown view's own motion steps back to the desktop. Another motion's view simply
+    /// becomes the view.
     func testAHoldTowardsTheOtherEndOfTheSameMotionShowsNoView() {
         var belief = DockBelief()
         belief.holdOpened(.showDesktop, at: 1)
@@ -765,130 +794,285 @@ final class DockBeliefTests: XCTestCase {
         // An old belief is none: the hold opens its view.
         belief.holdOpened(.apps, at: 500)
         XCTAssertEqual(belief.view(at: 500), .apps)
+
+        // A told Show Desktop is stepped back from in the same way.
+        belief.dockSaid(.desktop, at: 600)
+        belief.holdOpened(.apps, at: 601)
+        XCTAssertNil(belief.view(at: 601))
+    }
+
+    // MARK: The Dock's own word
+
+    /// The Dock names Mission Control and the desktop when it shows them, however they
+    /// were opened. A told view does not grow old, and "left" ends it.
+    func testTheDocksWordIsWhatShows() {
+        var belief = DockBelief()
+        belief.dockSaid(.missionControl, at: 10)
+        XCTAssertEqual(belief.view(at: 10), .missionControl)
+        XCTAssertTrue(belief.isTold(at: 10))
+        XCTAssertEqual(belief.view(at: 10 + 10 * DockBelief.lifetime), .missionControl, "it stays until the Dock says it was left")
+        XCTAssertTrue(belief.isTold(at: 5_000))
+
+        belief.dockSaid(.left, at: 20)
+        XCTAssertNil(belief.view(at: 20))
+        XCTAssertFalse(belief.isTold(at: 20))
+        XCTAssertEqual(belief, DockBelief())
+
+        belief.dockSaid(.desktop, at: 30)
+        XCTAssertEqual(belief.view(at: 30), .showDesktop)
+        XCTAssertTrue(belief.isTold(at: 30))
+        // The Dock went straight from one view to another.
+        belief.dockSaid(.missionControl, at: 31)
+        XCTAssertEqual(belief.view(at: 31), .missionControl)
+
+        // An app's windows: a view of the Dock's that is none of Scrollio's.
+        belief.dockSaid(.appWindows, at: 32)
+        XCTAssertNil(belief.view(at: 32))
+        belief.holdOpened(.apps, at: 33)
+        belief.dockSaid(.appWindows, at: 34)
+        XCTAssertNil(belief.view(at: 34), "another view is up: Apps is not")
+    }
+
+    /// The Dock's word makes a belief sure, and takes one back that was wrong.
+    func testTheDocksWordConfirmsOrCorrectsABelief() {
+        var belief = DockBelief()
+        // The hold's release comes first, then the Dock's word (or the other way round).
+        belief.holdOpened(.missionControl, at: 1)
+        XCTAssertFalse(belief.isTold(at: 1))
+        belief.dockSaid(.missionControl, at: 1.2)
+        XCTAssertTrue(belief.isTold(at: 1.2))
+        belief.holdOpened(.missionControl, at: 1.3)
+        XCTAssertTrue(belief.isTold(at: 1.3), "the release after the word leaves it told")
+        XCTAssertEqual(belief.view(at: 1_000), .missionControl)
+
+        // Believed, but left with Esc: the Dock says so.
+        belief = DockBelief()
+        belief.holdOpened(.showDesktop, at: 5)
+        belief.dockSaid(.left, at: 6)
+        XCTAssertNil(belief.view(at: 6))
+
+        // A believed view is believed from its last opening on.
+        belief.holdOpened(.missionControl, at: 10)
+        belief.holdOpened(.missionControl, at: 50)
+        XCTAssertEqual(belief.view(at: 100), .missionControl)
+        XCTAssertNil(belief.view(at: 110))
+    }
+
+    /// The Dock says nothing about Apps (it is not the Dock's own from macOS 26 on): a
+    /// believed Apps stays when the Dock says its view was left, and goes when the Dock
+    /// names a view.
+    func testTheDocksWordLeavesAppsToTheBelief() {
+        var belief = DockBelief()
+        belief.holdOpened(.apps, at: 1)
+        belief.dockSaid(.left, at: 2)
+        XCTAssertEqual(belief.view(at: 2), .apps, "Mission Control was left as Apps came up")
+        belief.dockSaid(.missionControl, at: 3)
+        XCTAssertEqual(belief.view(at: 3), .missionControl)
+        belief.dockSaid(.left, at: 4)
+        XCTAssertNil(belief.view(at: 4))
+    }
+
+    /// Doubt (another app in front, another desktop, Scrollio stopped looking) ends a
+    /// believed view and leaves a told one: the Dock says when that one is left.
+    func testDoubtEndsABeliefAndLeavesTheDocksWord() {
+        var belief = DockBelief()
+        belief.holdOpened(.apps, at: 1)
+        belief.doubt()
+        XCTAssertNil(belief.view(at: 1))
+
+        belief.toggled(.missionControl, at: 2)
+        belief.doubt()
+        XCTAssertNil(belief.view(at: 2))
+
+        belief.dockSaid(.missionControl, at: 3)
+        belief.doubt()
+        XCTAssertEqual(belief.view(at: 3), .missionControl)
+        XCTAssertTrue(belief.isTold(at: 3))
+        belief.drop()
+        XCTAssertNil(belief.view(at: 3), "dropped is dropped, told or not")
+    }
+
+    /// A hold that left the view with the hand: one that was let go as expected to close
+    /// it ends the view; one that was not ends a belief and leaves the Dock's word.
+    func testAHoldThatLeftTheView() {
+        var belief = DockBelief()
+        belief.holdOpened(.missionControl, at: 1)
+        belief.holdLeft(completed: false, at: 2)
+        XCTAssertNil(belief.view(at: 2), "believed: whatever the Dock made of the hold")
+
+        belief.holdOpened(.apps, at: 3)
+        belief.holdLeft(completed: true, at: 4)
+        XCTAssertNil(belief.view(at: 4))
+
+        belief.dockSaid(.missionControl, at: 5)
+        belief.holdLeft(completed: false, at: 6)
+        XCTAssertEqual(belief.view(at: 6), .missionControl, "it fell back, and the Dock said nothing")
+        belief.holdLeft(completed: true, at: 7)
+        XCTAssertNil(belief.view(at: 7), "let go as expected to close: gone, also should the Dock never say so")
     }
 
     // MARK: What a hold does about it
 
     private typealias Move = DockBelief.Move
 
-    func testWithoutABeliefEveryPlanStands() {
+    private func move(
+        _ plan: DockFollowPlan, opposite: DockFollowPlan, shown: DockFollowTarget?, told: Bool = false, appExpose: Bool = false
+    ) -> Move {
+        return DockBelief.move(for: plan, opposite: opposite, shown: shown, isTold: told, appExposeGestureIsOn: appExpose)
+    }
+
+    func testWithNothingShowingEveryPlanStands() {
         let plans: [DockFollowPlan] = [
             .follows(.missionControl), .follows(.showDesktop), .follows(.apps),
             .cannotFollow(.missionControl, .gestureOff), .doesNotFollow,
         ]
         for plan in plans {
             for opposite in plans {
-                XCTAssertEqual(DockBelief.move(for: plan, opposite: opposite, believed: nil, appExposeGestureIsOn: false), .asPlanned, "\(plan) / \(opposite)")
+                XCTAssertEqual(move(plan, opposite: opposite, shown: nil), .asPlanned, "\(plan) / \(opposite)")
+                XCTAssertEqual(move(plan, opposite: opposite, shown: nil, told: true, appExpose: true), .asPlanned)
             }
         }
     }
 
-    /// The same move again closes the view: the direction whose own view is believed to
-    /// show runs its instant toggle.
-    func testTheDirectionOfTheBelievedViewToggles() {
+    /// The same move again closes the view: the direction whose own view shows runs its
+    /// instant toggle.
+    func testTheDirectionOfTheShownViewToggles() {
         for target in DockFollowTarget.allCases {
-            XCTAssertEqual(
-                DockBelief.move(for: .follows(target), opposite: .doesNotFollow, believed: target, appExposeGestureIsOn: false), .toggle(target), "\(target)"
-            )
-            XCTAssertEqual(
-                DockBelief.move(for: .follows(target), opposite: .follows(target), believed: target, appExposeGestureIsOn: false), .toggle(target),
-                "both directions hold it: \(target)"
-            )
-            // A direction that runs once anyway is the toggle already.
-            XCTAssertEqual(
-                DockBelief.move(for: .cannotFollow(target, .gestureOff), opposite: .doesNotFollow, believed: target, appExposeGestureIsOn: false), .asPlanned,
-                "\(target)"
-            )
+            for told in [false, true] {
+                XCTAssertEqual(move(.follows(target), opposite: .doesNotFollow, shown: target, told: told), .toggle(target), "\(target)")
+                XCTAssertEqual(
+                    move(.follows(target), opposite: .follows(target), shown: target, told: told), .toggle(target),
+                    "both directions hold it: \(target)"
+                )
+                // A direction that runs once anyway is the toggle already.
+                XCTAssertEqual(
+                    move(.cannotFollow(target, .gestureOff), opposite: .doesNotFollow, shown: target, told: told), .asPlanned,
+                    "\(target)"
+                )
+            }
         }
     }
 
-    /// While Mission Control is believed to show, the direction opposite to the one that
-    /// opens it with the hand leaves it with the hand, whatever its own action is.
-    func testTheOppositeDirectionLeavesMissionControl() {
-        let others: [DockFollowPlan] = [
-            .follows(.showDesktop), .follows(.apps), .cannotFollow(.apps, .notOnThisMacOS),
-            .cannotFollow(.showDesktop, .gestureOff), .doesNotFollow,
-        ]
-        for own in others {
-            XCTAssertEqual(
-                DockBelief.move(for: own, opposite: .follows(.missionControl), believed: .missionControl, appExposeGestureIsOn: false), .leaveMissionControl,
-                "\(own)"
-            )
+    /// While a view shows, the direction opposite to the one that opens it with the hand
+    /// leaves it with the hand, whatever its own action is: it never puts its own view on
+    /// top. Mission Control, Show Desktop and Apps alike.
+    func testTheOppositeDirectionLeavesTheShownView() {
+        for shown in DockFollowTarget.allCases {
+            let others: [DockFollowPlan] = DockFollowTarget.allCases.filter { $0 != shown }.map { .follows($0) }
+                + [.cannotFollow(.apps, .notOnThisMacOS), .cannotFollow(.showDesktop, .gestureOff), .doesNotFollow]
+            for own in others where own != .follows(shown) {
+                for told in [false, true] {
+                    XCTAssertEqual(
+                        move(own, opposite: .follows(shown), shown: shown, told: told), .leave(shown), "\(shown) / \(own) / \(told)"
+                    )
+                }
+            }
         }
+        // The owner's own case: Up opens Mission Control, Down opens Apps.
+        XCTAssertEqual(move(.follows(.apps), opposite: .follows(.missionControl), shown: .missionControl), .leave(.missionControl))
+        XCTAssertEqual(move(.follows(.missionControl), opposite: .follows(.apps), shown: .apps), .leave(.apps))
     }
 
     /// Where the trackpad gesture for App Exposé is on, the swipe that leaves Mission
     /// Control would open App Exposé from the desktop (when Mission Control was left
-    /// another way meanwhile): there the opposite direction keeps its own plan. The same
-    /// move again still toggles.
-    func testMissionControlIsNotLeftWhereAppExposeHasItsGesture() {
+    /// another way meanwhile): there the opposite direction keeps its own plan while
+    /// Mission Control is only believed. One the Dock named is left there too. The same
+    /// move again still toggles, and the pinch's views are left as everywhere.
+    func testABelievedMissionControlIsNotLeftWhereAppExposeHasItsGesture() {
         let others: [DockFollowPlan] = [
             .follows(.showDesktop), .follows(.apps), .cannotFollow(.apps, .notOnThisMacOS), .doesNotFollow,
         ]
         for own in others {
             XCTAssertEqual(
-                DockBelief.move(for: own, opposite: .follows(.missionControl), believed: .missionControl, appExposeGestureIsOn: true),
-                .asPlanned, "\(own)"
+                move(own, opposite: .follows(.missionControl), shown: .missionControl, appExpose: true), .asPlanned, "\(own)"
+            )
+            XCTAssertEqual(
+                move(own, opposite: .follows(.missionControl), shown: .missionControl, told: true, appExpose: true),
+                .leave(.missionControl), "the Dock said it shows: \(own)"
             )
         }
         XCTAssertEqual(
-            DockBelief.move(
-                for: .follows(.missionControl), opposite: .doesNotFollow, believed: .missionControl, appExposeGestureIsOn: true
-            ),
-            .toggle(.missionControl)
+            move(.follows(.missionControl), opposite: .doesNotFollow, shown: .missionControl, appExpose: true), .toggle(.missionControl)
         )
+        XCTAssertEqual(move(.doesNotFollow, opposite: .follows(.missionControl), shown: nil, appExpose: true), .asPlanned)
+        XCTAssertEqual(move(.follows(.missionControl), opposite: .follows(.apps), shown: .apps, appExpose: true), .leave(.apps))
         XCTAssertEqual(
-            DockBelief.move(for: .doesNotFollow, opposite: .follows(.missionControl), believed: nil, appExposeGestureIsOn: true),
-            .asPlanned
+            move(.doesNotFollow, opposite: .follows(.showDesktop), shown: .showDesktop, appExpose: true), .leave(.showDesktop)
         )
     }
 
-    /// Nothing else changes: no other view is ever left by a swipe, and Mission Control
-    /// only where its own direction follows on this Mac now (the same motion).
+    /// Nothing else changes: a view is only left where the other direction opens it with
+    /// the hand on this Mac now (the same motion, so the Dock takes it).
     func testNothingElseChanges() {
         // Mission Control showing, but no direction opens it with the hand.
-        XCTAssertEqual(
-            DockBelief.move(for: .follows(.showDesktop), opposite: .follows(.apps), believed: .missionControl, appExposeGestureIsOn: false), .asPlanned
-        )
-        XCTAssertEqual(DockBelief.move(for: .doesNotFollow, opposite: .doesNotFollow, believed: .missionControl, appExposeGestureIsOn: false), .asPlanned)
-        XCTAssertEqual(
-            DockBelief.move(for: .doesNotFollow, opposite: .cannotFollow(.missionControl, .gestureOff), believed: .missionControl, appExposeGestureIsOn: false),
-            .asPlanned, "the Dock would ignore the way back as it ignores the way in"
-        )
-        // Show Desktop or Apps showing: the opposite direction keeps its own plan.
-        for showing in [DockFollowTarget.showDesktop, .apps] {
-            for own in [DockFollowPlan.follows(.missionControl), .doesNotFollow, .cannotFollow(.apps, .notOnThisMacOS)] {
-                XCTAssertEqual(
-                    DockBelief.move(for: own, opposite: .follows(showing), believed: showing, appExposeGestureIsOn: false), .asPlanned, "\(showing) / \(own)"
-                )
-            }
+        for told in [false, true] {
+            XCTAssertEqual(move(.follows(.showDesktop), opposite: .follows(.apps), shown: .missionControl, told: told), .asPlanned)
+            XCTAssertEqual(move(.doesNotFollow, opposite: .doesNotFollow, shown: .missionControl, told: told), .asPlanned)
+            XCTAssertEqual(
+                move(.doesNotFollow, opposite: .cannotFollow(.missionControl, .gestureOff), shown: .missionControl, told: told),
+                .asPlanned, "the Dock would ignore the way back as it ignores the way in"
+            )
         }
+        // Show Desktop showing where no direction opens it: Apps' own pinch steps back.
+        XCTAssertEqual(move(.follows(.apps), opposite: .follows(.missionControl), shown: .showDesktop, told: true), .asPlanned)
+        // Apps runs once on this Mac: nothing leaves it with the hand.
         XCTAssertEqual(
-            DockBelief.move(for: .follows(.apps), opposite: .follows(.showDesktop), believed: .showDesktop, appExposeGestureIsOn: false), .asPlanned,
-            "the Dock's own slider brings the windows back"
+            move(.follows(.missionControl), opposite: .cannotFollow(.apps, .notOnThisMacOS), shown: .apps), .asPlanned
         )
     }
 
-    /// From a belief, the only closing sign a hold ever sends is the vertical one.
-    func testTheOnlyClosingSwipeIsTheVerticalOne() {
+    /// A closing motion is only ever the way back of the motion that the other direction
+    /// opens the shown view with.
+    func testAViewIsOnlyLeftByTheWayBackOfItsOwnMotion() {
         let plans: [DockFollowPlan] = DockFollowTarget.allCases.map { .follows($0) }
             + DockFollowTarget.allCases.map { .cannotFollow($0, .gestureOff) } + [.doesNotFollow]
-        for believed in DockFollowTarget.allCases {
+        for shown in DockFollowTarget.allCases {
             for plan in plans {
                 for opposite in plans {
                     for appExpose in [false, true] {
-                        let move = DockBelief.move(
-                            for: plan, opposite: opposite, believed: believed, appExposeGestureIsOn: appExpose
-                        )
-                        if move == .leaveMissionControl {
-                            XCTAssertEqual(believed, .missionControl)
-                            XCTAssertEqual(opposite, .follows(.missionControl))
-                            XCTAssertFalse(appExpose)
+                        for told in [false, true] {
+                            let made = move(plan, opposite: opposite, shown: shown, told: told, appExpose: appExpose)
+                            guard case .leave(let view) = made else { continue }
+                            XCTAssertEqual(view, shown)
+                            XCTAssertEqual(opposite, .follows(shown))
+                            XCTAssertNotEqual(plan, .follows(shown))
+                            if shown == .missionControl, appExpose {
+                                XCTAssertTrue(told)
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+// MARK: - The Dock's own word
+
+/// `DockViewWatch`: the four notifications of the Dock and what each says. The listening
+/// itself talks to the Dock and never runs in a test.
+final class DockViewWatchTests: XCTestCase {
+
+    func testTheFourNotificationsAndWhatEachSays() {
+        XCTAssertEqual(DockViewWatch.word(forNotification: "AXExposeShowAllWindows"), .missionControl)
+        XCTAssertEqual(DockViewWatch.word(forNotification: "AXExposeShowFrontWindows"), .appWindows)
+        XCTAssertEqual(DockViewWatch.word(forNotification: "AXExposeShowDesktop"), .desktop)
+        XCTAssertEqual(DockViewWatch.word(forNotification: "AXExposeExit"), .left)
+        // Every word has its notification, and no name is there twice.
+        XCTAssertEqual(Set(DockViewWatch.words.map(\.word)), Set(DockWord.allCases))
+        XCTAssertEqual(Set(DockViewWatch.words.map(\.name)).count, DockWord.allCases.count)
+        for other in ["", "AXExposeShowAllWindows ", "axexposeexit", "AXFocusedWindowChanged", "AXWindowCreated"] {
+            XCTAssertNil(DockViewWatch.word(forNotification: other), other)
+        }
+    }
+
+    /// Asking for the watch does nothing in a test run: no observer, nothing asked of the
+    /// Dock or of the Accessibility access.
+    func testItNeverListensInATestRun() {
+        DockViewWatch.shared.want()
+        DockViewWatch.shared.dockStarted()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        XCTAssertFalse(DockViewWatch.shared.isListening)
     }
 }
 
@@ -925,7 +1109,7 @@ final class DockFollowHoldTests: XCTestCase {
     func testWithTheSwitchOffBothDirectionsRunOnce() {
         for believed in [DockFollowTarget?.none, .missionControl, .showDesktop, .apps] {
             for off in [settings(follow: false), settings(mode: .discrete), MouseGestureSettings.default] {
-                let hold = DockFollowHold(settings: off, availability: mac(), believed: believed)
+                let hold = DockFollowHold(settings: off, availability: mac(), shown: believed)
                 XCTAssertEqual(hold, DockFollowHold(up: .once, down: .once), "\(String(describing: believed))")
                 XCTAssertNil(hold.up.channel(screenHeight: 1000, trackingSpeed: 1))
                 XCTAssertNil(hold.down.channel(screenHeight: 1000, trackingSpeed: 1))
@@ -934,7 +1118,7 @@ final class DockFollowHoldTests: XCTestCase {
     }
 
     func testEachDirectionOpensItsViewOrSaysWhyNot() {
-        var hold = DockFollowHold(settings: settings(), availability: mac(), believed: nil)
+        var hold = DockFollowHold(settings: settings(), availability: mac(), shown: nil)
         XCTAssertEqual(hold.up, .opens(.missionControl))
         XCTAssertEqual(hold.down, .once, "held back, Apps is an action like any other: no reason is given")
         XCTAssertEqual(hold[.up], hold.up)
@@ -942,18 +1126,18 @@ final class DockFollowHoldTests: XCTestCase {
         XCTAssertEqual(hold[.left], .once)
         XCTAssertEqual(hold[.right], .once)
 
-        hold = DockFollowHold(settings: settings(up: "showDesktop", down: "copy"), availability: mac(), believed: nil)
+        hold = DockFollowHold(settings: settings(up: "showDesktop", down: "copy"), availability: mac(), shown: nil)
         XCTAssertEqual(hold, DockFollowHold(up: .opens(.showDesktop), down: .once))
 
         let off = DockGestureSwitches(missionControl: false, showDesktop: true, launchpad: true)
-        hold = DockFollowHold(settings: settings(down: "showDesktop"), availability: mac(switches: off), believed: nil)
+        hold = DockFollowHold(settings: settings(down: "showDesktop"), availability: mac(switches: off), shown: nil)
         XCTAssertEqual(hold, DockFollowHold(up: .onceInstead(.missionControl, .obstacle(.gestureOff)), down: .opens(.showDesktop)))
 
-        hold = DockFollowHold(settings: settings(down: "showDesktop"), availability: mac(post: false), believed: nil)
+        hold = DockFollowHold(settings: settings(down: "showDesktop"), availability: mac(post: false), shown: nil)
         XCTAssertEqual(hold.up, .onceInstead(.missionControl, .obstacle(.cannotPostEvents)))
         XCTAssertEqual(hold.down, .onceInstead(.showDesktop, .obstacle(.cannotPostEvents)))
 
-        hold = DockFollowHold(settings: settings(down: "showDesktop"), availability: mac(major: 15), believed: nil)
+        hold = DockFollowHold(settings: settings(down: "showDesktop"), availability: mac(major: 15), shown: nil)
         XCTAssertEqual(hold, DockFollowHold(up: .opens(.missionControl), down: .onceInstead(.showDesktop, .obstacle(.notOnThisMacOS))))
     }
 
@@ -962,22 +1146,31 @@ final class DockFollowHoldTests: XCTestCase {
     func testTheDefaultHoldAsEveryBuildIsMade() {
         let asBuilt = mac(apps: DockFollowAvailability.appsFollow)
         func hold(_ believed: DockFollowTarget?, switches: DockGestureSwitches = .allOn) -> DockFollowHold {
-            return DockFollowHold(settings: settings(), availability: mac(switches: switches, apps: true), believed: believed)
+            return DockFollowHold(settings: settings(), availability: mac(switches: switches, apps: true), shown: believed)
         }
-        XCTAssertEqual(DockFollowHold(settings: settings(), availability: asBuilt, believed: nil), hold(nil), "as built is apps: true")
+        XCTAssertEqual(DockFollowHold(settings: settings(), availability: asBuilt, shown: nil), hold(nil), "as built is apps: true")
         XCTAssertEqual(hold(nil), DockFollowHold(up: .opens(.missionControl), down: .opens(.apps)))
         XCTAssertEqual(
-            hold(.apps), DockFollowHold(up: .opens(.missionControl), down: .onceInstead(.apps, .showing(.apps))),
-            "the same move again closes Apps; Up is its own"
+            hold(.apps), DockFollowHold(up: .leaves(.apps), down: .onceInstead(.apps, .showing(.apps))),
+            "the same move again closes Apps; Up leaves Apps, and is not Mission Control"
         )
         XCTAssertEqual(
-            hold(.missionControl), DockFollowHold(up: .onceInstead(.missionControl, .showing(.missionControl)), down: .leavesMissionControl),
+            hold(.missionControl), DockFollowHold(up: .onceInstead(.missionControl, .showing(.missionControl)), down: .leaves(.missionControl)),
             "Down leaves Mission Control, and is not Apps"
         )
         XCTAssertEqual(hold(.showDesktop), hold(nil), "no direction holds Show Desktop: nothing changes")
-        // Where App Exposé has its trackpad gesture, Down keeps its own plan: Apps.
+        // Where App Exposé has its trackpad gesture, Down keeps its own plan (Apps) while
+        // Mission Control is only believed; one the Dock named is left there too.
         let appExposeOn = DockGestureSwitches(missionControl: true, showDesktop: true, launchpad: true, appExpose: true)
         XCTAssertEqual(hold(.missionControl, switches: appExposeOn).down, .opens(.apps))
+        XCTAssertEqual(
+            DockFollowHold(
+                settings: settings(), availability: mac(switches: appExposeOn, apps: true), shown: .missionControl,
+                toldByTheDock: true
+            ).down,
+            .leaves(.missionControl)
+        )
+        XCTAssertEqual(hold(.apps, switches: appExposeOn).up, .leaves(.apps), "the pinch has no such neighbour")
         // Apps' pinch goes by Show Desktop's switch since macOS 26.
         var showDesktopOff = DockGestureSwitches.allOn
         showDesktopOff.showDesktop = false
@@ -992,23 +1185,33 @@ final class DockFollowHoldTests: XCTestCase {
     /// The belief: the same move again runs once (the toggle closes the view), and the
     /// opposite move leaves Mission Control with the hand instead of its own action.
     func testWhatIsBelievedToShowChangesTheHold() {
-        var hold = DockFollowHold(settings: settings(), availability: mac(), believed: .missionControl)
+        var hold = DockFollowHold(settings: settings(), availability: mac(), shown: .missionControl)
         XCTAssertEqual(hold.up, .onceInstead(.missionControl, .showing(.missionControl)))
-        XCTAssertEqual(hold.down, .leavesMissionControl, "not Apps")
+        XCTAssertEqual(hold.down, .leaves(.missionControl), "not Apps")
 
-        hold = DockFollowHold(settings: settings(up: "copy", down: "missionControl"), availability: mac(), believed: .missionControl)
-        XCTAssertEqual(hold, DockFollowHold(up: .leavesMissionControl, down: .onceInstead(.missionControl, .showing(.missionControl))))
+        hold = DockFollowHold(settings: settings(up: "copy", down: "missionControl"), availability: mac(), shown: .missionControl)
+        XCTAssertEqual(hold, DockFollowHold(up: .leaves(.missionControl), down: .onceInstead(.missionControl, .showing(.missionControl))))
 
-        hold = DockFollowHold(settings: settings(up: "showDesktop", down: "copy"), availability: mac(), believed: .showDesktop)
-        XCTAssertEqual(hold, DockFollowHold(up: .onceInstead(.showDesktop, .showing(.showDesktop)), down: .once))
+        hold = DockFollowHold(settings: settings(up: "showDesktop", down: "copy"), availability: mac(), shown: .showDesktop)
+        XCTAssertEqual(
+            hold, DockFollowHold(up: .onceInstead(.showDesktop, .showing(.showDesktop)), down: .leaves(.showDesktop)),
+            "Down leaves Show Desktop instead of copying"
+        )
+
+        // Show Desktop above, Apps below: the two ends of one pinch leave each other.
+        let pinch = settings(up: "showDesktop", down: "appExpose")
+        hold = DockFollowHold(settings: pinch, availability: mac(apps: true), shown: .showDesktop)
+        XCTAssertEqual(hold, DockFollowHold(up: .onceInstead(.showDesktop, .showing(.showDesktop)), down: .leaves(.showDesktop)))
+        hold = DockFollowHold(settings: pinch, availability: mac(apps: true), shown: .apps)
+        XCTAssertEqual(hold, DockFollowHold(up: .leaves(.apps), down: .onceInstead(.apps, .showing(.apps))))
 
         // Mission Control was opened by the click; no direction holds it: nothing changes.
-        hold = DockFollowHold(settings: settings(up: "showDesktop", down: "copy"), availability: mac(), believed: .missionControl)
+        hold = DockFollowHold(settings: settings(up: "showDesktop", down: "copy"), availability: mac(), shown: .missionControl)
         XCTAssertEqual(hold, DockFollowHold(up: .opens(.showDesktop), down: .once))
 
         // Its trackpad gesture is off: Up toggles as it does anyway, and Down keeps its action.
         let off = DockGestureSwitches(missionControl: false, showDesktop: true, launchpad: true)
-        hold = DockFollowHold(settings: settings(), availability: mac(switches: off), believed: .missionControl)
+        hold = DockFollowHold(settings: settings(), availability: mac(switches: off), shown: .missionControl)
         XCTAssertEqual(hold.up, .onceInstead(.missionControl, .obstacle(.gestureOff)))
         XCTAssertEqual(hold.down, .once)
     }
@@ -1018,16 +1221,16 @@ final class DockFollowHoldTests: XCTestCase {
     func testMissionControlIsNotLeftWithTheHandWhereAppExposeHasItsGesture() {
         let appExposeOn = DockGestureSwitches(missionControl: true, showDesktop: true, launchpad: true, appExpose: true)
         var hold = DockFollowHold(
-            settings: settings(down: "showDesktop"), availability: mac(switches: appExposeOn), believed: .missionControl
+            settings: settings(down: "showDesktop"), availability: mac(switches: appExposeOn), shown: .missionControl
         )
         XCTAssertEqual(hold.up, .onceInstead(.missionControl, .showing(.missionControl)))
         XCTAssertEqual(hold.down, .opens(.showDesktop), "its own plan")
 
-        hold = DockFollowHold(settings: settings(down: "copy"), availability: mac(switches: appExposeOn), believed: .missionControl)
+        hold = DockFollowHold(settings: settings(down: "copy"), availability: mac(switches: appExposeOn), shown: .missionControl)
         XCTAssertEqual(hold.down, .once)
         // Off (and where the name is missing): left with the hand.
-        hold = DockFollowHold(settings: settings(down: "copy"), availability: mac(), believed: .missionControl)
-        XCTAssertEqual(hold.down, .leavesMissionControl)
+        hold = DockFollowHold(settings: settings(down: "copy"), availability: mac(), shown: .missionControl)
+        XCTAssertEqual(hold.down, .leaves(.missionControl))
     }
 
     /// What the end of a motion does to the belief. A hold that opened a view and is
@@ -1070,14 +1273,22 @@ final class DockFollowHoldTests: XCTestCase {
             .ended(velocity: 0, expected: true), .ended(velocity: 0, expected: false), .cancelledAtRelease,
             .cancelled(.noButtonUp), .cancelled(.ringOpened), .cancelled(.takenBack),
         ]
-        var leave = motion(.down, .leavesMissionControl, .vertical, sign: -1)
+        var leave = motion(.down, .leaves(.missionControl), .vertical, sign: -1)
         for ending in endings {
             XCTAssertEqual(leave.beliefChange(after: ending), DockFollowedMotion.BeliefChange.none, "nothing was told: \(ending)")
         }
         leave.told(progress: -0.25)
         for ending in endings {
-            XCTAssertEqual(leave.beliefChange(after: ending), .dropped, "part of the way: \(ending)")
+            let completed = ending == .ended(velocity: 0, expected: true)
+            XCTAssertEqual(leave.beliefChange(after: ending), .left(completed: completed), "part of the way: \(ending)")
         }
+        // A flick's own toggle changes the belief by itself.
+        XCTAssertEqual(leave.beliefChange(after: .flick(velocity: -3)), DockFollowedMotion.BeliefChange.none)
+        // Apps is left by the way back of its pinch, Show Desktop by the way back of its own.
+        var leaveApps = motion(.up, .leaves(.apps), .pinch, sign: 1)
+        leaveApps.told(progress: 0.7)
+        XCTAssertEqual(leaveApps.beliefChange(after: .ended(velocity: 0, expected: true)), .left(completed: true))
+        XCTAssertEqual(leaveApps.beliefChange(after: .ended(velocity: 0, expected: false)), .left(completed: false))
         leave.told(progress: 0)
         for ending in endings {
             XCTAssertEqual(leave.beliefChange(after: ending), DockFollowedMotion.BeliefChange.none, "back at its start: \(ending)")
@@ -1109,7 +1320,7 @@ final class DockFollowHoldTests: XCTestCase {
         XCTAssertEqual(apps.progressPerPoint, 1.0 / 300, accuracy: 1e-12, "three quarters of the travel")
         XCTAssertEqual(apps.progressRange, -1...0)
 
-        let leave = try XCTUnwrap(Part.leavesMissionControl.channel(screenHeight: 1000, trackingSpeed: 1))
+        let leave = try XCTUnwrap(Part.leaves(.missionControl).channel(screenHeight: 1000, trackingSpeed: 1))
         XCTAssertEqual(leave.motion, .vertical)
         XCTAssertEqual(leave.sign, -1, "the way back of the motion that opens it")
         XCTAssertEqual(leave.progressPerPoint, up.progressPerPoint)
@@ -1117,6 +1328,18 @@ final class DockFollowHoldTests: XCTestCase {
         XCTAssertEqual(leave.reverseTolerance, 8)
         XCTAssertEqual(leave.maximumTravelsPerSecond, 12)
         XCTAssertEqual(leave.progressRange, -1...0)
+
+        // Apps is left over its own (shorter) travel, the other way; Show Desktop over its own.
+        let leaveApps = try XCTUnwrap(Part.leaves(.apps).channel(screenHeight: 1000, trackingSpeed: 1))
+        XCTAssertEqual(leaveApps.motion, .pinch)
+        XCTAssertEqual(leaveApps.sign, 1, "the way back of the pinch that opens it")
+        XCTAssertEqual(leaveApps.progressPerPoint, apps.progressPerPoint)
+        XCTAssertEqual(leaveApps.progressRange, 0...1)
+        let leaveDesktop = try XCTUnwrap(Part.leaves(.showDesktop).channel(screenHeight: 1000, trackingSpeed: 2))
+        XCTAssertEqual(leaveDesktop.motion, .pinch)
+        XCTAssertEqual(leaveDesktop.sign, -1)
+        XCTAssertEqual(leaveDesktop.progressPerPoint, desktop.progressPerPoint)
+        XCTAssertEqual(leaveDesktop.progressRange, -1...0)
 
         XCTAssertNil(Part.once.channel(screenHeight: 1000, trackingSpeed: 1))
         XCTAssertNil(Part.onceInstead(.missionControl, .wheelSwipeRunning).channel(screenHeight: 1000, trackingSpeed: 1))
@@ -1132,9 +1355,9 @@ final class DockFollowHoldTests: XCTestCase {
             (.obstacle(.cannotPostEvents), "cannot post events"),
             (.obstacle(.swipeUnavailable), "the swipe cannot be made on this Mac"),
             (.wheelSwipeRunning, "the wheel's swipe was running"),
-            (.showing(.missionControl), "Scrollio had just opened Mission Control"),
-            (.showing(.showDesktop), "Scrollio had just opened Show Desktop"),
-            (.showing(.apps), "Scrollio had just opened Apps"),
+            (.showing(.missionControl), "Mission Control was taken to show"),
+            (.showing(.showDesktop), "Show Desktop was taken to show"),
+            (.showing(.apps), "Apps was taken to show"),
         ]
         for (reason, text) in reasons {
             XCTAssertEqual(reason.logText, text)
@@ -1150,7 +1373,7 @@ final class DockFollowHoldTests: XCTestCase {
             "Gestures: down did not follow the hand: appExpose, the wheel's swipe was running, the app in front has its own gestures"
         )
         XCTAssertEqual(
-            DockFollowHold.ranOnceLine(.down, insteadOf: .leavesMissionControl, reason: .wheelSwipeRunning),
+            DockFollowHold.ranOnceLine(.down, insteadOf: .leaves(.missionControl), reason: .wheelSwipeRunning),
             "Gestures: down did not follow the hand: leaving missionControl, the wheel's swipe was running"
         )
     }
@@ -1189,8 +1412,9 @@ final class DockFollowHoldTests: XCTestCase {
         )
     }
 
-    /// A flick: a hold that opens a view, let go as expected to open while the view has
-    /// moved less than a fifth of the way. A hold that leaves Mission Control is never one.
+    /// A flick: a hold that opens or leaves a view, let go as expected to switch while the
+    /// view has moved less than a fifth of the way. Its view's own action runs once: the
+    /// hold's direction where it opens, the other one where it leaves.
     func testAFlickIsAHoldThatOpensAViewAndBarelyMovedIt() {
         var up = motion()
         XCTAssertTrue(up.isFlickIfReleasedToSwitch, "nothing told yet")
@@ -1204,11 +1428,17 @@ final class DockFollowHoldTests: XCTestCase {
         var apps = motion(.down, .opens(.apps), .pinch, sign: -1)
         apps.told(progress: -0.1)
         XCTAssertTrue(apps.isFlickIfReleasedToSwitch)
-        var leave = motion(.down, .leavesMissionControl, .vertical, sign: -1)
+        var leave = motion(.down, .leaves(.missionControl), .vertical, sign: -1)
         leave.told(progress: -0.1)
+        XCTAssertTrue(leave.isFlickIfReleasedToSwitch)
+        leave.told(progress: -0.2)
         XCTAssertFalse(leave.isFlickIfReleasedToSwitch)
+        XCTAssertEqual(up.toggledByAFlick, .up)
+        XCTAssertEqual(apps.toggledByAFlick, .down)
+        XCTAssertEqual(leave.toggledByAFlick, .up, "the direction that opens the view being left")
+        XCTAssertEqual(motion(.up, .leaves(.apps), .pinch).toggledByAFlick, .down)
 
-        // Its line, and it leaves nothing believed (its toggle is never believed either).
+        // Its line; the motion itself changes no belief (its toggle does, by itself).
         up.told(progress: 0.15)
         XCTAssertEqual(
             up.line(.flick(velocity: 9), appsOwn: true),
@@ -1228,7 +1458,7 @@ final class DockFollowHoldTests: XCTestCase {
             "Gestures: down followed the hand: appExpose, pinch -, began after 55 ms, 1 update, "
                 + "furthest 0.20, released at 0.20, 2.5/s: ended, expected to open"
         )
-        var leave = motion(.down, .leavesMissionControl, .vertical, sign: -1, beganAfter: 0.04)
+        var leave = motion(.down, .leaves(.missionControl), .vertical, sign: -1, beganAfter: 0.04)
         leave.told(progress: -0.25)
         leave.told(progress: -0.6)
         XCTAssertEqual(

@@ -133,8 +133,8 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   ("Up and Down follow the hand too"), written when its last event went out
   (`Gestures: up followed the hand: missionControl, vertical +, began after 48 ms, 37
   updates, furthest 0.82, released at 0.74, 1.9/s: ended, expected to open`: the view by
-  its action's name, or "leaving missionControl" for the move that puts Mission Control
-  away; the Dock's motion and its sign; the time from the press to the first event; how
+  its action's name, or "leaving missionControl" (or "leaving showDesktop", "leaving
+  appExpose") for the opposite move that puts a view away; the Dock's motion and its sign; the time from the press to the first event; how
   many events went out; the furthest and the last position as a share of the whole
   view, and the hand's speed in whole views a second, all three counted the hand's way
   out; then how it ended: "ended" when the button came up, with "expected to open" or
@@ -149,9 +149,18 @@ log stream --predicate 'subsystem == "com.nikklemenc.Scrollio" AND category == "
   before the line of its action (`Gestures: up did not follow the hand: missionControl,
   the Dock's gesture is off`; the other reasons: "not on this macOS", which is Show
   Desktop or Apps before macOS 27; "the swipe cannot be made on this Mac"; "cannot post
-  events"; "the wheel's swipe was running"; and "Scrollio had just opened Mission Control", or "Show Desktop", or
-  "Apps": that direction opened the view with your hand and the same move closes it.
-  Such a line names Apps by its action, `appExpose`),
+  events"; "the wheel's swipe was running"; and "Mission Control was taken to show", or
+  "Show Desktop", or "Apps": the view was showing as far as Scrollio knew, and the same
+  move closes it. Such a line names Apps by its action, `appExpose`),
+  with "Up and Down follow the hand too" in use, what the Dock says about its views
+  (`Gestures: the Dock says Mission Control is showing`, or "an app's windows are
+  showing", "the desktop is showing", "its view was left"), one line when a view stops
+  counting as showing because of what happened around it (`Gestures: appExpose is no
+  longer taken to show (another app came to the front)`, or "Finder came to the front",
+  "the desktop in use changed", "the Dock started"), and once, at the first hold with
+  that switch on, `Gestures: listening to the Dock for its views (4 of 4
+  notifications)`, or "the Dock's word about its views is not available" with the
+  reason when that could not be set up,
   one line for a swipe of the desktops that was taken back because the screens changed
   or the displays went to sleep (`Gestures: a swipe of the desktops was taken back (the
   screens changed)`; the desktops' swipe writes no other line),

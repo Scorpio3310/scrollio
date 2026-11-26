@@ -48,7 +48,11 @@ report is read, answered, and credited if you wish. Fixes go into the newest rel
   and Show Desktop ask the Dock through `CoreDockSendNotification` (missing: they are
   sent as key presses). "Trackpad-style scrolling (Experimental)" takes the wheel's
   hardware record off the events it sends, on macOS 27 and later (missing: the record
-  stays on). Starting a script (see below) uses one function more.
+  stays on). Starting a script (see below) uses one function more. And with "Up and
+  Down follow the hand too" Scrollio listens, through the public accessibility
+  interface, to four notifications of the Dock whose names are in no public header
+  (that Mission Control, an app's windows or the desktop is shown, and that the view
+  was left); where the Dock does not post them, Scrollio goes by what it opened itself.
 
 ## How an update is trusted
 

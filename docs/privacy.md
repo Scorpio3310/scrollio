@@ -106,13 +106,21 @@ Scrollio's permissions, and the `app` log says so. More in [SECURITY.md](../SECU
     app, when System Settings was in front and when the Dock starts (macOS tells when
     an app starts; only the Dock's start is acted on). Where a gesture is off the Dock
     ignores the motion, so that direction runs its action once instead; where the one
-    for App Exposé is on, Mission Control is not put away with your hand. Nothing else of
-    the Dock's settings is read, and none is changed. Scrollio never asks the Dock what
-    it shows: it remembers, for a minute and only while it runs, which view one of its
-    gestures opened with your hand, and hears from macOS that another app came to the
-    front (of which it only looks whether it is Finder), that the desktop in use
-    changed, that the screens changed (it then looks at the screens' places and sizes)
-    or that the displays went to sleep, to forget that view or to take a swipe back;
+    for App Exposé is on, a Mission Control that Scrollio only remembers (see below) is
+    not put away with your hand. Nothing else of the Dock's settings is read, and none
+    is changed. From the first hold with that switch on, Scrollio also listens to four
+    accessibility notifications of the Dock, which say that Mission Control, an app's
+    windows (App Exposé) or the desktop is shown, or that such a view was left: so the
+    opposite move closes a view instead of opening another on top. They are four names
+    and nothing more (no window, no title, no app), they come through the Accessibility
+    access Scrollio already has, and without the switch the listening never starts. The
+    Dock says nothing about Apps: there Scrollio remembers, for a minute and only while
+    it runs, that one of its own gestures or actions opened the view, and hears from
+    macOS that another app came to the front (of which it only looks whether it is
+    Finder, whether it is an app with windows of its own and whether it was in front
+    already), that the desktop in use changed, that the screens changed (it then looks
+    at the screens' places and sizes) or that the displays went to sleep, to forget
+    that view or to take a swipe back;
   - which app is under the pointer or in front, for the per-app settings and "Smooth
     Scrolling in …". With "Trackpad-style scrolling (Experimental)" on, for a wheel scroll in an
     app that gets the one-touch form, it reads the kind of the element under the pointer

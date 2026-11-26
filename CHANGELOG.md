@@ -8,6 +8,25 @@ it for the people who use the app, and give the version its part before you tag 
 `## Unreleased` collects what the next version brings; it becomes that version's part
 (the heading gets the version) before the tag.
 
+## Unreleased
+
+**The opposite move closes what is open:** with Mission Control, Show Desktop or Apps
+showing, the other direction puts it away with your hand instead of opening its own
+view on top.
+
+### Fixed
+
+- **Down no longer opens Apps over Mission Control**, and Up no longer opens Mission
+  Control over Apps: with "Up and Down follow the hand too", the direction opposite to
+  the one that opened a view closes it with your hand, like the trackpad's opposite
+  gesture. A quick flick that way closes it in one go.
+- **Scrollio hears from the Dock what is showing.** Mission Control and Show Desktop
+  count as open however they were opened (a key, a hot corner, the trackpad, a click,
+  a quick flick), and as closed when you leave them with Esc or a click. Until now
+  Scrollio only knew of a view it had opened with your hand, and forgot it too easily.
+- **Apps** is the one view macOS does not tell about: after you close it another way
+  (Esc, a click), the next opposite move may show the desktop once.
+
 ## 1.1.2
 
 **Up and Down follow the hand too:** Mission Control, Show Desktop and Apps can open with
